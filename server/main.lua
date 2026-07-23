@@ -1054,6 +1054,56 @@ end
 -- keeps the encrypted private key in the player's local CEF storage and sends only its
 -- public half here. This server can route an envelope, but it has no material with which
 -- to open it.
+
+-- ── Lawful intercept (opt-in) ──────────────────────────────────
+-- When Config.Police.cipher.intercept is on, the phone also sends the plaintext, and the
+-- server keeps a WRAPPED copy so the warrant terminal can crack it. The wrap is a keyed
+-- stream over a per-message salt: its job is "not plaintext at rest, only the terminal
+-- recovers it", not military secrecy. The key is a server secret, stable across restarts
+-- so an old message stays recoverable.
+--
+-- This is the ONE place the server holds anything readable, and only when an operator
+-- deliberately turned E2E's promise off. Left off, none of this runs.
+local function interceptKey()
+    local k = GetConvar('phone_intercept_key', '')
+    if k ~= '' then return k end
+    -- No key set: derive a stable one from the server's own license, so it survives a
+    -- restart without the operator having to manage a secret. A server that wants to
+    -- rotate it sets `phone_intercept_key`.
+    return 'vphone-intercept-' .. (GetConvar('sv_licenseKey', 'nolicense'))
+end
+
+local function xorStream(text, salt)
+    local key = interceptKey() .. ':' .. salt
+    local out, klen = {}, #key
+    for i = 1, #text do
+        local kb = string.byte(key, ((i - 1) % klen) + 1)
+        out[i] = string.char((string.byte(text, i) ~ kb) % 256)
+    end
+    return table.concat(out)
+end
+
+--- Plaintext -> a stored blob `salt$base64(xored)`. Global so a future module could use
+--- it; police.lua reads it back through CipherRecover.
+function CipherWrap(plain)
+    plain = tostring(plain or '')
+    if plain == '' then return nil end
+    local salt = tostring(math.random(100000, 999999))
+    local wrapped = xorStream(plain, salt)
+    -- Hex-encode so the blob is printable and passes through JSON and TEXT unharmed.
+    local hex = wrapped:gsub('.', function(c) return string.format('%02x', string.byte(c)) end)
+    return salt .. '$' .. hex
+end
+
+--- The stored blob -> plaintext. Returns nil if the blob is malformed.
+function CipherRecover(blob)
+    blob = tostring(blob or '')
+    local salt, hex = blob:match('^(%d+)%$(%x+)$')
+    if not salt then return nil end
+    local raw = hex:gsub('%x%x', function(h) return string.char(tonumber(h, 16)) end)
+    return xorStream(raw, salt)
+end
+
 local function cipherHasApp(src, p)
     local _, installed = appsFrom(src, p)
     for _, app in ipairs(installed) do
@@ -1199,6 +1249,9 @@ V.Callback('v-phone:open', function(src, resolve)
         -- falls back on its own if a file will not load, so this is a preference and
         -- not a promise.
         soundFiles = Config.Sounds.files ~= false,
+        -- Whether Cipher should hand a plaintext copy to the server for lawful intercept.
+        -- Off unless the operator turned it on, so E2E stays E2E by default.
+        cipherIntercept = (Config.Police and Config.Police.cipher and Config.Police.cipher.intercept) == true,
         -- The operator's automatic-dark policy, so the page can resolve 'auto' itself
         -- against the in-game clock rather than asking on every tick.
         theme = {
@@ -1430,10 +1483,20 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
         end
         local burn = cipherAllowedBurn(data and data.burn)
         local expires = burn > 0 and (os.time() + burn) or 0
+
+        -- Lawful intercept: only when the operator turned it on, and only if the phone
+        -- sent the plaintext for it. Wrapped, never stored in the clear. Off by default,
+        -- so this is nil and Cipher stays a true end-to-end secret.
+        local intercept = nil
+        if Config.Police and Config.Police.cipher and Config.Police.cipher.intercept then
+            local plain = tostring((data and data.intercept_plain) or '')
+            if plain ~= '' then intercept = CipherWrap(plain:sub(1, 700)) end
+        end
+
         local id = MySQL.insert.await([[INSERT INTO vphone_cipher_messages
-            (from_cid, to_cid, envelope, burn, expires_at)
-            VALUES (?,?,?,?,IF(? > 0, FROM_UNIXTIME(?), NULL))]], {
-            p.citizenid, peer.citizenid, envelope, burn, expires, expires,
+            (from_cid, to_cid, envelope, burn, expires_at, intercept)
+            VALUES (?,?,?,?,IF(? > 0, FROM_UNIXTIME(?), NULL),?)]], {
+            p.citizenid, peer.citizenid, envelope, burn, expires, expires, intercept,
         })
         local message = {
             id = id,
@@ -2843,6 +2906,10 @@ CreateThread(function()
         `seen`       TINYINT(1)  NOT NULL DEFAULT 0,
         `at`         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
         `expires_at` TIMESTAMP   NULL DEFAULT NULL,
+        -- Only ever filled when Config.Police.cipher.intercept is on: a server-wrapped
+        -- copy of the plaintext, so the warrant terminal can crack the content. NULL, and
+        -- content is truly unrecoverable, on a server that leaves intercept off.
+        `intercept`  TEXT        NULL DEFAULT NULL,
         PRIMARY KEY (`id`),
         KEY `cipher_from` (`from_cid`, `id`),
         KEY `cipher_to` (`to_cid`, `seen`, `id`),
@@ -2953,6 +3020,15 @@ CreateThread(function()
         MySQL.query.await("ALTER TABLE `vphone_messages` ADD COLUMN `group_id` INT UNSIGNED NULL DEFAULT NULL")
         MySQL.query.await("ALTER TABLE `vphone_messages` ADD KEY `group_idx` (`group_id`, `id`)")
         print('[v-phone] messages migrated: kind, attachment, groups')
+    end
+
+    -- The lawful-intercept column on cipher messages, for a server upgrading from before
+    -- it existed. A fresh install already has it from the CREATE.
+    local hasIntercept = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_cipher_messages'
+          AND COLUMN_NAME = 'intercept' LIMIT 1]])
+    if not hasIntercept then
+        MySQL.query.await("ALTER TABLE `vphone_cipher_messages` ADD COLUMN `intercept` TEXT NULL DEFAULT NULL")
     end
 
     -- Composite indexes mirror the actual hot paths: inbox unread counts, two-person

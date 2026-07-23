@@ -44,6 +44,8 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **Sound**: fourteen audio files ship with the phone, five ringtones, four alerts and five interface sounds. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
 - **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning.
+- **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
+- **`/refreshphone`**: a get-out-of-jail command for a phone stuck to the hand or a frozen animation.
 
 ### The apps
 Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
@@ -82,6 +84,24 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 **The phone owns its own storage.** Preferences, layouts and photo lists live in `vphone_kv`, keyed by character. Nothing is written into your framework's metadata column, so a framework update cannot break the phone.
 
 **Every table it creates begins with `vphone_`,** so it can never collide with another script's table. A server upgraded from an older build has its data moved to the new names automatically at boot.
+
+## Dependencies
+
+**Required** - the phone will not start without it:
+
+- [oxmysql](https://github.com/overextended/oxmysql) - the database layer.
+
+**Optional** - each unlocks one feature and is detected at runtime; the phone runs fine without any of them:
+
+| Resource | Unlocks | Link |
+|---|---|---|
+| [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | the Camera app uploading photos | citizenfx/screenshot-basic |
+| [pma-voice](https://github.com/AvarianKnight/pma-voice) | phone call voice | AvarianKnight/pma-voice |
+| [ox_lib](https://github.com/overextended/ox_lib) | nicer notifications | overextended/ox_lib |
+| [ox_target](https://github.com/overextended/ox_target) | targeting the police forensics terminal | overextended/ox_target |
+| A framework | jobs, money, licences, character names | [qb-core](https://github.com/qbcore-framework/qb-core) · [qbx_core](https://github.com/Qbox-project/qbx_core) · [ox_core](https://github.com/overextended/ox_core) · [es_extended](https://github.com/esx-framework/esx_core) |
+
+Inventory, banking, garage and housing scripts are detected too - see [COMPATIBILITY.md](COMPATIBILITY.md) for the full list and the exact resource names.
 
 ## Installation
 
@@ -165,6 +185,8 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Son** : quatorze fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes et cinq sons d'interface. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
 - **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible.
+- **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.
+- **`/refreshphone`** : une commande de secours quand le téléphone reste collé à la main ou qu'une animation se fige.
 
 ### Les applications
 Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.
@@ -201,6 +223,24 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 **Le mode autonome fonctionne.** Sans framework, le téléphone se rabat sur l'identifiant de licence, et les applications qui ont besoin d'un métier ou d'une banque ne sont simplement pas proposées.
 
 **Le téléphone possède son propre stockage.** Préférences, dispositions et listes de photos vivent dans `vphone_kv`, par personnage. Rien n'est écrit dans la colonne metadata de votre framework, donc une mise à jour de celui-ci ne peut pas casser le téléphone.
+
+## Dépendances
+
+**Obligatoire** - le téléphone ne démarre pas sans :
+
+- [oxmysql](https://github.com/overextended/oxmysql) - la couche base de données.
+
+**Optionnelles** - chacune débloque une fonctionnalité et est détectée à l'exécution ; le téléphone tourne très bien sans aucune :
+
+| Ressource | Débloque | Lien |
+|---|---|---|
+| [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | l'upload de photos de l'app Appareil photo | citizenfx/screenshot-basic |
+| [pma-voice](https://github.com/AvarianKnight/pma-voice) | la voix des appels | AvarianKnight/pma-voice |
+| [ox_lib](https://github.com/overextended/ox_lib) | de plus belles notifications | overextended/ox_lib |
+| [ox_target](https://github.com/overextended/ox_target) | le ciblage du terminal d'enquête police | overextended/ox_target |
+| Un framework | métiers, argent, licences, noms de personnage | [qb-core](https://github.com/qbcore-framework/qb-core) · [qbx_core](https://github.com/Qbox-project/qbx_core) · [ox_core](https://github.com/overextended/ox_core) · [es_extended](https://github.com/esx-framework/esx_core) |
+
+Les scripts d'inventaire, de banque, de garage et de logement sont aussi détectés - voir [COMPATIBILITY.md](COMPATIBILITY.md) pour la liste complète et les noms exacts.
 
 ## Installation
 

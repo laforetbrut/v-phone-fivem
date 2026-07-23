@@ -4,6 +4,36 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.1.1] - 2026-07-23
+
+### Added (English first)
+
+- **Police forensics.** A warrant terminal at the points in `Config.Police.points`. An officer in a police job, at a terminal, reads a suspect's phone from the number: texts, contacts, calls, social posts and DMs, all in the clear. Every read is re-checked on the server and logged. The terminal uses ox_target / qb-target when present, otherwise a marker and the E key.
+- **Cipher, honestly.** Cipher is end-to-end encrypted and the server holds no key, so its content cannot be read by anyone - including the police. The terminal shows the recoverable metadata (who, when, key fingerprints). `Config.Police.cipher.intercept`, off by default, opts into lawful intercept: the phone keeps a server-wrapped copy so the terminal can crack the content, slowly and not always. Left off, Cipher stays a true secret.
+- **`/refreshphone`** (and `/refresh-phone`) - a get-out-of-jail command that tears down a stuck phone: the prop, the animation, the NUI focus, the control guard. For when the phone sticks to the hand. The server can trigger the same on a player with `TriggerClientEvent('v-phone:client:forceReset', src)`.
+- **A Dependencies section in the README** with the git link of every optional resource: screenshot-basic for the camera, pma-voice for calls, ox_lib, ox_target, and each framework.
+
+### Changed
+
+- Documentation covers the police terminal and the forensic Cipher model in [COMPATIBILITY.md](COMPATIBILITY.md), and the new commands in [API.md](API.md).
+
+---
+
+## [1.1.1] - 2026-07-23
+
+### Ajouts (miroir français)
+
+- **Enquête police.** Un terminal d'analyse aux points de `Config.Police.points`. Un agent d'un métier de police, à un terminal, lit le téléphone d'un suspect à partir du numéro : SMS, contacts, appels, publications et messages privés, tout en clair. Chaque lecture est revérifiée sur le serveur et journalisée. Le terminal utilise ox_target / qb-target si présents, sinon un marqueur et la touche E.
+- **Cipher, honnêtement.** Cipher est chiffré de bout en bout et le serveur ne détient aucune clé : son contenu ne peut être lu par personne, police comprise. Le terminal montre les métadonnées récupérables (qui, quand, empreintes de clés). `Config.Police.cipher.intercept`, désactivé par défaut, active l'interception légale : le téléphone garde une copie enveloppée côté serveur pour que le terminal casse le contenu, lentement et pas toujours. Laissé désactivé, Cipher reste un vrai secret.
+- **`/refreshphone`** (et `/refresh-phone`) - une commande de secours qui démonte un téléphone bloqué : le prop, l'animation, le focus NUI, le garde des contrôles. Pour quand le téléphone reste collé à la main. Le serveur peut déclencher la même chose sur un joueur avec `TriggerClientEvent('v-phone:client:forceReset', src)`.
+- **Une section Dépendances dans le README** avec le lien git de chaque ressource optionnelle : screenshot-basic pour l'appareil photo, pma-voice pour les appels, ox_lib, ox_target, et chaque framework.
+
+### Modifications
+
+- La documentation couvre le terminal police et le modèle Cipher forensique dans [COMPATIBILITY.md](COMPATIBILITY.md), et les nouvelles commandes dans [API.md](API.md).
+
+---
+
 ## [1.1.0] - 2026-07-23
 
 ### Added (English first)

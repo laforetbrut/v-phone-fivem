@@ -169,6 +169,18 @@ phone:GetNumber()       --> the local player's number
 phone:OnCall()          --> boolean
 ```
 
+## Commands
+
+```
+/refreshphone     tear down a stuck phone: prop, animation, NUI focus, control guard
+/refresh-phone    same, the other spelling
+/phoneadmin ...   staff actions, behind Config.Admin.ace
+```
+
+`refreshphone` is safe for any player to run: it only resets their own phone, for when it
+sticks to the hand or an animation freezes. The server can trigger the same reset on a
+player with `TriggerClientEvent('v-phone:client:forceReset', src)`.
+
 ## Server events
 
 Listen rather than poll. All three carry citizen ids, so a listener survives a

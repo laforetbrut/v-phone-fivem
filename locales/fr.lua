@@ -876,6 +876,6 @@ local T = {
     ['ph.hush_active_hint'] = 'Desactive, votre profil quitte le paquet. Vos matchs restent.',
     -- Social, cote serveur : ce que le telephone ecrit pour le joueur
     ['soc.match_line'] = 'On a matche sur Hush !',
-    ['soc.dm_photo'] = 'Photo',
+    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reinitialise.',
 }
 for k, v in pairs(T) do Locales.fr[k] = v end

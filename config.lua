@@ -729,3 +729,60 @@ Config.ExternalCharging = {
     -- A ceiling, so a misbehaving script cannot charge a phone in one tick.
     maxRate = 4.0,
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  POLICE FORENSICS
+-- ══════════════════════════════════════════════════════════════
+-- A warrant terminal: police walk to a point on the map and, with the target's number,
+-- read what is on that phone. Everything that is stored in the clear - texts, contacts,
+-- the call log, mail, social posts and DMs - is theirs to read.
+--
+-- Cipher is different, and honestly so. Its messages are end-to-end encrypted: the key
+-- lives on the sender's and recipient's devices, never on the server, so NOBODY on the
+-- server can read the content - not the operator, not the police. The terminal shows the
+-- metadata that IS recoverable (who spoke to whom, when, how often, the key fingerprints)
+-- and, if you opt into lawful intercept below, a deliberately hard crack of the content.
+Config.Police = {
+    enabled = true,
+
+    -- Who may use the terminal. Same list style as the MDT app. Empty means no one.
+    jobs = { 'police', 'sheriff', 'bcso', 'sast' },
+
+    -- A minimum rank on that job, 0 for any. Keeps a cadet out of the wiretap room.
+    minGrade = 0,
+
+    -- An item the officer must carry to start a session, or nil for none. A "forensic
+    -- kit", a warrant, a laptop - whatever your server calls it.
+    item = nil,
+
+    -- The terminals. Interact within `radius` (a target if ox-target/qb-target is
+    -- running, otherwise a marker and a key press).
+    points = {
+        { label = 'Mission Row - Digital Forensics', x = 484.6, y = -996.5, z = 30.7, radius = 1.5 },
+        { label = 'Sandy Shores Sheriff - Tech Bench', x = 1853.0, y = 3689.5, z = 34.3, radius = 1.5 },
+        { label = 'Paleto Bay Sheriff - Evidence',    x = -448.5, y = 6012.0, z = 31.9, radius = 1.5 },
+    },
+
+    -- A session lasts this long before the officer must re-authorise at the terminal, so
+    -- a warrant is not a permanent tap. Seconds.
+    sessionSeconds = 300,
+
+    -- Log every lookup to the server console (and to your framework log if it has one),
+    -- so a wiretap leaves a paper trail an admin can audit.
+    log = true,
+
+    cipher = {
+        -- Lawful intercept. OFF by default, on purpose: leaving it off keeps Cipher a
+        -- true end-to-end secret that the police tool can describe but never read, which
+        -- is the promise the app makes to players.
+        --
+        -- ON changes the deal: the phone keeps a recoverable copy of each Cipher message
+        -- so the terminal CAN crack the content - slowly, and not always. Turn this on
+        -- only if your server wants an encrypted app the police can eventually break.
+        intercept = false,
+
+        -- The crack, when intercept is on. Deliberately expensive.
+        crackSeconds = 20,       -- real seconds of "processing" per message
+        successChance = 0.6,     -- and it can still fail, so it is never a sure thing
+    },
+}
