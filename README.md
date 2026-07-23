@@ -12,13 +12,13 @@ A phone opened for the first time is activated, not just switched on: a name, an
 
 | Hello | Wallpaper and transparency | Face ID |
 |---|---|---|
-| ![First run](docs/images/01-setup-hello.png) | ![Wallpaper](docs/images/02-setup-wallpaper.png) | ![Face ID](docs/images/03-setup-faceid.png) |
+| <img src="docs/images/01-setup-hello.png" alt="First run" width="240"> | <img src="docs/images/02-setup-wallpaper.png" alt="Wallpaper" width="240"> | <img src="docs/images/03-setup-faceid.png" alt="Face ID" width="240"> |
 
 ### Every day
 
 | Home screen | Lock screen | Dynamic Island |
 |---|---|---|
-| ![Home](docs/images/04-home.png) | ![Lock screen](docs/images/10-lock-screen.png) | ![Dynamic Island](docs/images/08-dynamic-island.png) |
+| <img src="docs/images/04-home.png" alt="Home" width="240"> | <img src="docs/images/10-lock-screen.png" alt="Lock screen" width="240"> | <img src="docs/images/08-dynamic-island.png" alt="Dynamic Island" width="240"> |
 
 The Dynamic Island is not decoration: a message arrives out of it, a call lives in it, and locking pinches it around a padlock.
 
@@ -26,13 +26,13 @@ The Dynamic Island is not decoration: a message arrives out of it, a call lives 
 
 | Settings | Bank | Messages |
 |---|---|---|
-| ![Settings](docs/images/05-settings.png) | ![Bank](docs/images/06-bank.png) | ![Messages](docs/images/09-messages.png) |
+| <img src="docs/images/05-settings.png" alt="Settings" width="240"> | <img src="docs/images/06-bank.png" alt="Bank" width="240"> | <img src="docs/images/09-messages.png" alt="Messages" width="240"> |
 
 ### Control centre
 
 Pull down from the top right for the toggles, the brightness and volume slabs, and what is playing.
 
-![Control centre](docs/images/07-control-centre.png)
+<img src="docs/images/07-control-centre.png" alt="Control centre" width="300">
 
 ## Features
 
@@ -41,7 +41,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **First run setup**: name, appearance, wallpaper, transparency, a six digit passcode and optional Face ID. The passcode never reaches the page: the server keeps a character salted SHA-256 digest and blocks for thirty seconds after five failures.
 - **Configurable home screen**: choose the dock, which apps ship installed, their order, which cannot be removed and which are hidden, all in one table.
 - **Grid sizes** from 3x3 to 6x7, chosen by the player in Settings.
-- **Interface sounds**: unlock, lock, keypad, switches, app open and close, sent message, shutter. All synthesised, no audio files shipped.
+- **Sound**: fourteen audio files ship with the phone, five ringtones, four alerts and five interface sounds. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
 - **Battery** with charging, power banks and a low battery warning.
 
@@ -59,6 +59,7 @@ Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Garage, Property,
 - **Drop-in apps**: an app is a folder in `apps/`. No edit to the phone, no build step, no JavaScript framework. See [DEVELOPERS.md](DEVELOPERS.md).
 - **App SDK**: the same Clear Glass components the native apps use.
 - **Integration hooks**: point any app at your own script in one function rather than forking the resource.
+- **A documented API**: thirty two server exports, five client exports, three events and seven hooks. See [API.md](API.md).
 
 ## Compatibility
 
@@ -68,7 +69,9 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 |---|---|
 | Framework | qb-core, qbx_core, ox_core, es_extended, standalone |
 | Inventory | ox_inventory, qs-inventory (Quasar), ps-inventory, qb-inventory, origen_inventory, codem-inventory |
-| Banking | Renewed-Banking, qb-banking, okokBanking, qs-banking, esx_banking |
+| Banking | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking |
+| Garage | qs-advancedgarages, jg-advancedgarages, qb-garages, cd_garage, okokGarage |
+| Housing | qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property |
 | Voice | pma-voice, saltychat, mumble-voip |
 | Notifications | ox_lib, qb-core, ESX, chat, or your own event |
 
@@ -128,13 +131,13 @@ Un téléphone ouvert pour la première fois est activé, pas seulement allumé 
 
 | Bonjour | Fond et transparence | Face ID |
 |---|---|---|
-| ![Premier démarrage](docs/images/01-setup-hello.png) | ![Fond d'écran](docs/images/02-setup-wallpaper.png) | ![Face ID](docs/images/03-setup-faceid.png) |
+| <img src="docs/images/01-setup-hello.png" alt="Premier démarrage" width="240"> | <img src="docs/images/02-setup-wallpaper.png" alt="Fond d'écran" width="240"> | <img src="docs/images/03-setup-faceid.png" alt="Face ID" width="240"> |
 
 ### Au quotidien
 
 | Écran d'accueil | Écran de verrouillage | Dynamic Island |
 |---|---|---|
-| ![Accueil](docs/images/04-home.png) | ![Verrouillage](docs/images/10-lock-screen.png) | ![Dynamic Island](docs/images/08-dynamic-island.png) |
+| <img src="docs/images/04-home.png" alt="Accueil" width="240"> | <img src="docs/images/10-lock-screen.png" alt="Verrouillage" width="240"> | <img src="docs/images/08-dynamic-island.png" alt="Dynamic Island" width="240"> |
 
 La Dynamic Island n'est pas décorative : un message en sort, un appel y vit, et le verrouillage la pince autour d'un cadenas.
 
@@ -142,13 +145,13 @@ La Dynamic Island n'est pas décorative : un message en sort, un appel y vit, et
 
 | Réglages | Banque | Messages |
 |---|---|---|
-| ![Réglages](docs/images/05-settings.png) | ![Banque](docs/images/06-bank.png) | ![Messages](docs/images/09-messages.png) |
+| <img src="docs/images/05-settings.png" alt="Réglages" width="240"> | <img src="docs/images/06-bank.png" alt="Banque" width="240"> | <img src="docs/images/09-messages.png" alt="Messages" width="240"> |
 
 ### Centre de contrôle
 
 Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosité et de volume, et ce qui est en lecture.
 
-![Centre de contrôle](docs/images/07-control-centre.png)
+<img src="docs/images/07-control-centre.png" alt="Centre de contrôle" width="300">
 
 ## Caractéristiques
 
@@ -157,7 +160,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Configuration au premier démarrage** : nom, apparence, fond d'écran, transparence, code à six chiffres et Face ID optionnel. Le code n'atteint jamais la page : le serveur garde une empreinte SHA-256 salée par personnage et bloque trente secondes après cinq échecs.
 - **Écran d'accueil configurable** : le dock, les applications livrées, leur ordre, celles qu'on ne peut pas supprimer et celles qui sont masquées, le tout dans une seule table.
 - **Grilles** de 3x3 à 6x7, choisies par le joueur dans les Réglages.
-- **Sons d'interface** : déverrouillage, verrouillage, clavier, interrupteurs, ouverture et fermeture d'application, message envoyé, obturateur. Tous synthétisés, aucun fichier audio livré.
+- **Son** : quatorze fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes et cinq sons d'interface. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
 - **Batterie** avec recharge, batteries externes et alerte de batterie faible.
 
@@ -175,6 +178,7 @@ Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, 
 - **Applications déposables** : une application est un dossier dans `apps/`. Aucune modification du téléphone, aucune étape de build, aucun framework JavaScript. Voir [DEVELOPERS.md](DEVELOPERS.md).
 - **SDK** : les mêmes composants Clear Glass que les applications natives.
 - **Points d'accroche** : branchez n'importe quelle application sur votre propre script en une fonction plutôt qu'en forkant la ressource.
+- **Une API documentée** : trente-deux exports serveur, cinq exports client, trois événements et sept hooks. Voir [API.md](API.md).
 
 ## Compatibilité
 
@@ -184,7 +188,9 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 |---|---|
 | Framework | qb-core, qbx_core, ox_core, es_extended, autonome |
 | Inventaire | ox_inventory, qs-inventory (Quasar), ps-inventory, qb-inventory, origen_inventory, codem-inventory |
-| Banque | Renewed-Banking, qb-banking, okokBanking, qs-banking, esx_banking |
+| Banque | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking |
+| Garage | qs-advancedgarages, jg-advancedgarages, qb-garages, cd_garage, okokGarage |
+| Logement | qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property |
 | Voix | pma-voice, saltychat, mumble-voip |
 | Notifications | ox_lib, qb-core, ESX, chat, ou votre propre événement |
 

@@ -54,7 +54,6 @@ STUBS['v-core'] = {
     end,
     MenuOpened = function(_, name)
         if isServer then return end
-        LocalPlayer.state:set('phoneOpen', true, false)
         -- ox_inventory and most qb inventories read this to stay shut while a full
         -- screen UI is up.
         LocalPlayer.state:set('invBusy', true, false)
@@ -62,7 +61,6 @@ STUBS['v-core'] = {
     end,
     MenuClosed = function(_, name)
         if isServer then return end
-        LocalPlayer.state:set('phoneOpen', false, false)
         LocalPlayer.state:set('invBusy', false, false)
         TriggerEvent('v-phone:closed', name)
     end,
