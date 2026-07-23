@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.0.0'
+version '1.0.1'
 repository 'https://github.com/laforetbrut/v-phone'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -63,6 +63,9 @@ files {
     -- The app SDK. Served to any resource that ships a phone app, which is why it
     -- is a file rather than a copied snippet.
     'html/sdk.js',
+    -- Ringtones, alerts and interface sounds. Generated rather than sampled, so they
+    -- are safe to ship: tools/make-sounds.py rebuilds every one of them.
+    'sounds/*.wav',
     -- Everything a dropped-in app ships. The page and whatever it loads beside it.
     'apps/*/*.html',
     'apps/*/*.css',

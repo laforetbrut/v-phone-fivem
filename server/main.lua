@@ -1192,6 +1192,10 @@ V.Callback('v-phone:open', function(src, resolve)
             WHERE m.citizenid = ? ORDER BY g.id DESC]], { p.citizenid }) or {},
         wallpapers = Config.Wallpapers,
         sounds = Config.Sounds,
+        -- Whether the page should reach for the shipped WAV files or synthesise. It
+        -- falls back on its own if a file will not load, so this is a preference and
+        -- not a promise.
+        soundFiles = Config.Sounds.files ~= false,
         -- The operator's automatic-dark policy, so the page can resolve 'auto' itself
         -- against the in-game clock rather than asking on every tick.
         theme = {
