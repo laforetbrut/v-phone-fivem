@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>iFruit</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="theme-vars.css">
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The chrome is a phone's. The accent, panel and radius tokens come from v-ui,
+       so a server that themes the framework purple gets a purple iPhone. -->
+  <div id="device" class="device hidden">
+    <div class="bezel">
+      <span class="btn-side action"></span>
+      <span class="btn-side vol-up"></span>
+      <span class="btn-side vol-down"></span>
+      <span class="btn-side power"></span>
+
+      <div class="screen" id="screen">
+        <div class="wallpaper" id="wallpaper"></div>
+        <!-- Brightness is a real dimming layer over everything, driven by the CC slider. -->
+        <div class="dim" id="dim"></div>
+
+        <!-- Status bar -->
+        <div class="status" id="status" role="group" aria-label="Phone status">
+          <span id="clock">00:00</span>
+          <span class="sright">
+            <svg class="apmode hidden" id="apmode" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c.9 0 1.4 1 1.4 2.2v4.1l7.1 4.2v2l-7.1-2.1v4l2.1 1.6v1.6L12 19.6 8.5 20.8v-1.6l2.1-1.6v-4L3.5 15.5v-2l7.1-4.2V5.2C10.6 4 11.1 3 12 3Z"/></svg>
+            <svg id="bars" viewBox="0 0 20 14" fill="currentColor"><rect data-b="1" x="0" y="9" width="3" height="5" rx="1"/><rect data-b="2" x="5" y="6.5" width="3" height="7.5" rx="1"/><rect data-b="3" x="10" y="3.5" width="3" height="10.5" rx="1"/><rect data-b="4" x="15" y="0" width="3" height="14" rx="1"/></svg><span class="nosvc hidden" id="nosvc">SOS</span>
+            <svg viewBox="0 0 20 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 5.2a11 11 0 0 1 16 0M4.8 8.2a7 7 0 0 1 10.4 0"/><circle cx="10" cy="11.6" r="1.2" fill="currentColor" stroke="none"/></svg>
+            <span class="battery" id="battery"></span><span class="battpct" id="battpct"></span>
+          </span>
+        </div>
+
+        <!-- Dynamic Island. It expands for a live activity, which is the single most
+             recognisable thing about a modern iPhone. -->
+        <div class="island" id="island" role="status" aria-live="polite" aria-atomic="true">
+          <div class="icontent">
+            <span class="idot" id="islandIcon"></span>
+            <span class="itxt"><span class="it1" id="islandT1"></span><span class="it2" id="islandT2"></span></span>
+            <span class="iwave"><i></i><i></i><i></i><i></i></span>
+          </div>
+          <!-- The notification that grows out of the black pill, iOS 27 style. -->
+          <div class="inotif" id="inotif">
+            <span class="inic" id="inicon"></span>
+            <span class="intxt"><span class="int1" id="inTitle"></span><span class="int2" id="inBody"></span></span>
+          </div>
+        </div>
+
+        <!-- Lock screen -->
+        <section class="lock" id="lock" aria-label="Lock screen">
+          <div class="lockdate" id="lockdate"></div>
+          <div class="lockclock" id="lockclock">00:00</div>
+          <div class="lockmeta" id="locknum"></div>
+          <div class="locknotifs" id="locknotifs"></div>
+        </section>
+        <div class="lockquick" id="lockquick">
+          <button class="qbtn glass" id="qtorch" type="button" aria-label="torch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6v4l-1.5 2v12h-3V8L9 6z"/></svg>
+          </button>
+          <button class="qbtn glass" id="qcam" type="button" aria-label="camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="14" r="3.6"/></svg>
+          </button>
+        </div>
+
+        <!-- Secure unlock. Face ID is bound to the active character; the six-digit
+             fallback is verified by the server and is never kept in this page. -->
+        <section class="auth" id="auth" role="dialog" aria-modal="true" aria-label="Secure unlock">
+          <div class="authstage" id="authstage"></div>
+        </section>
+
+        <!-- First-run setup. It lives below the real status bar and Dynamic Island,
+             so the device keeps its physical identity throughout activation. -->
+        <section class="setup" id="setup" role="dialog" aria-modal="true" aria-label="Phone setup" aria-hidden="true">
+          <div class="setupstage" id="setupstage"></div>
+        </section>
+
+        <!-- Home screen -->
+        <section class="home behind" id="home" aria-label="Home screen">
+          <div class="widgets" id="widgets"></div>
+          <div class="pages" id="pages"></div>
+          <div class="dots" id="dots"></div>
+          <button class="arrangedone" id="arrangedone" type="button" aria-label="Done"></button>
+          <button class="searchpill glass" id="spill" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+            <span id="spilltxt">Search</span>
+          </button>
+          <div class="dock glass" id="dock"></div>
+        </section>
+
+        <!-- An app -->
+        <section class="app" id="app" aria-label="Application">
+          <header class="navbar" id="navbar">
+            <div class="navrow">
+              <button class="navback" id="navback" type="button" aria-label="Back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+                <span id="navbacktxt"></span>
+              </button>
+              <span class="navspacer"></span>
+              <button class="navact hidden" id="navact" type="button" aria-label="Action"></button>
+            </div>
+            <div class="navtitle-sm" id="navtitlesm"></div>
+            <h1 class="navtitle" id="navtitle">Application</h1>
+          </header>
+          <div class="appbody" id="appbody"></div>
+          <div id="appfoot"></div>
+        </section>
+
+        <!-- Call -->
+        <section class="callui" id="callui">
+          <div class="callav" id="callav"></div>
+          <div class="callnum" id="callnum"></div>
+          <div class="callstate" id="callstate"></div>
+          <div class="callpad" id="callpad"></div>
+          <div class="callbtns" id="callbtns"></div>
+        </section>
+
+        <!-- App switcher. Swipe up from the bottom and pause, as on a real phone. -->
+        <section class="switcher" id="switcher" aria-label="App switcher">
+          <div class="cards" id="cards"></div>
+        </section>
+
+        <!-- Notification shade: swipe down from the top left. -->
+        <section class="shade" id="shade" aria-label="Notifications">
+          <div class="paneltop">
+            <button class="panelclose" id="shadeclose" type="button" aria-label="Close notifications">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>
+            </button>
+          </div>
+          <div class="shadeclock" id="shadeclock"></div>
+          <div class="shadedate" id="shadedate"></div>
+          <div class="shadehead" id="shadehead">
+            <span class="shtitle" id="shtitle"></span>
+            <span class="shacts">
+              <button class="shbtn" id="shmanage" type="button" aria-label="Manage notifications"></button>
+              <button class="shbtn danger" id="shclear" type="button" aria-label="Clear notifications"></button>
+            </span>
+          </div>
+          <div class="shadelist" id="shadelist"></div>
+        </section>
+
+        <!-- An opened folder -->
+        <section class="folderview" id="folderview" role="dialog" aria-modal="true" aria-label="App folder">
+          <div class="foldername" id="foldername"></div>
+          <div class="folderapps" id="folderapps"></div>
+        </section>
+
+        <!-- Control centre -->
+        <section class="cc" id="cc" aria-label="Control centre">
+          <div class="paneltop ccstatus">
+            <span class="ccclock" id="ccclock">00:00</span>
+            <span class="ccdevice" id="ccdevice"></span>
+            <button class="panelclose" id="ccclose" type="button" aria-label="Close control centre">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>
+            </button>
+          </div>
+          <div class="cctop">
+            <div class="ccmod ccconn" id="ccconn"></div>
+            <div class="ccmod ccnow" id="ccnow"></div>
+          </div>
+          <div class="ccbot">
+            <div class="ccslab" id="ccbright"></div>
+            <div class="ccslab" id="ccvol"></div>
+            <div class="cctoggles" id="cctoggles"></div>
+          </div>
+        </section>
+
+        <div class="scrim" id="scrim"></div>
+        <div class="sheet glass-solid" id="sheet" role="dialog" aria-modal="true"></div>
+        <div class="emoji-scrim" id="emojiscrim"></div>
+        <div class="emojipanel" id="emojipanel"></div>
+        <div class="banner glass-solid" id="banner" role="status" aria-live="polite"></div>
+        <div class="toast glass-solid" id="toast" role="status" aria-live="polite"></div>
+        <div class="hud glass-solid" id="hud"></div>
+        <div class="dragghost" id="dragghost"></div>
+        <button class="homebar" id="homebar" type="button" aria-label="Home"></button>
+      </div>
+    </div>
+  </div>
+  <!-- The kit lives in sdk.js so the built-in apps and a third-party app draw
+       themselves with the same code. Two copies would drift. -->
+  <script src="sdk.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

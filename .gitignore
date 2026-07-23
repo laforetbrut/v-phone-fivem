@@ -1,0 +1,17 @@
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Test procedure artefacts (local QA only - never push)
+test-procedures/
+TEST_PROCEDURE_*.html
+
+# Generated phone preview (rebuilt from source on demand)
+preview/
+
+# OS and editor noise
+Thumbs.db
+.DS_Store
+*.swp
+.vscode/
+.idea/

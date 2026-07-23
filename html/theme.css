@@ -1,0 +1,311 @@
+/* ============================================================
+   v-ui — Projet R design system · "EMBER"
+   Concept: a modern dark-glass HUD — deep warm-graphite panels,
+   generous rounded cards, soft layered shadows, and one dominant
+   brand orange that glows: gradient fills, edge light-streaks,
+   hover auras.
+
+   Load in any NUI page with:
+     <link rel="stylesheet" href="https://cfx-nui-v-ui/theme.css">
+
+   CEF safe: no backdrop-filter — FiveM's CEF renders it as an
+   opaque black box. Still no color-mix(), no container queries,
+   no CSS nesting, no @import, no external fonts/CDN.
+   ============================================================ */
+
+:root {
+  /* ── Surfaces (deep warm graphite, never neutral black) ── */
+  --v-bg-900: #0B0A08;
+  --v-bg-800: #100E0C;
+  --v-bg-700: #161310;
+  --v-bg-600: #1C1814;
+  --v-bg-500: #241F1A;
+  --v-bg-sunk:#0D0B09;            /* recessed wells: inputs, tracks */
+
+  /* Translucent panel fills — high alpha so they read fine even
+     when backdrop-filter is unavailable. */
+  --v-panel:   rgba(24, 20, 16, .88);
+  --v-panel-2: rgba(37, 31, 25, .78);
+  --v-panel-3: rgba(54, 45, 36, .60);
+
+  /* ── Lines (warm hairlines) ── */
+  --v-line:   rgba(255, 221, 194, .08);
+  --v-line-2: rgba(255, 221, 194, .15);
+
+  /* ── Text (every value >= 4.5:1 on the panel fills) ── */
+  --v-text:       #F5EEE6;
+  --v-text-dim:   #B8AFA5;
+  --v-text-faint: #948B81;        /* floor — never use below 10px */
+  --v-ink:        #1A0D03;        /* dark ink on orange/light fills */
+
+  /* ── Brand orange — DOMINANT: gradients, glows, edge streaks ── */
+  --v-accent:      #FF7A1A;
+  --v-accent-300:  #FFA85C;
+  --v-accent-600:  #E14E00;
+  --v-accent-700:  #B23C00;
+  --v-accent-soft: var(--v-accent-glow);
+  --v-accent-line: var(--v-accent-glow);
+  --v-accent-glow: 0 0 24px -6px var(--v-accent-glow);
+  --v-grad-accent: linear-gradient(135deg, #FFB25C 0%, #FF7A1A 48%, #F04E00 100%);
+  --v-grad-soft:   linear-gradient(135deg, var(--v-accent-glow), var(--v-accent-glow));
+
+  /* ── Status (modern but quieter than the brand orange) ── */
+  --v-success: #3FA663;
+  --v-danger:  #E5484D;
+  --v-warning: #E8A33D;
+  --v-info:    #4C8DCC;
+  /* -300 variants: for text/icons; base tokens for fills and borders. */
+  --v-success-300: #6FD598;
+  --v-danger-300:  #F07575;
+  --v-warning-300: #F2C078;
+  --v-info-300:    #7FB3E8;
+
+  /* ── Rarity ── */
+  --v-rar-common:    #6E675E;
+  --v-rar-uncommon:  #4E9A62;
+  --v-rar-rare:      #3F7FBF;
+  --v-rar-epic:      #9A5BE0;
+  --v-rar-legendary: #FF7A1A;
+  --v-rar-mythic:    #E5484D;
+
+  /* ── Geometry — modern rounded cards ── */
+  --v-r-sm: 8px;
+  --v-r-md: 12px;
+  --v-r-lg: 16px;
+  --v-r-xl: 22px;
+  /* Legacy chamfer contract kept so older local overrides degrade to
+     a plain rectangle instead of invalid CSS. Prefer border-radius. */
+  --v-cw: 0px;
+  --v-chamfer: none;
+
+  /* ── Shadows — soft, layered; orange glow variant ── */
+  --v-shadow:      drop-shadow(0 20px 40px rgba(0, 0, 0, .60));  /* filter value */
+  --v-shadow-box:  0 24px 48px -12px rgba(0, 0, 0, .65), 0 4px 12px -4px rgba(0, 0, 0, .50);
+  --v-shadow-sm:   0 6px 16px -6px rgba(0, 0, 0, .55);
+  --v-shadow-glow: 0 10px 30px -8px var(--v-accent-glow);
+
+  /* ── Type — clean modern sans; tabular figures for readouts ── */
+  --v-font-display: 'Bahnschrift', 'Segoe UI', 'Inter', system-ui, sans-serif;
+  --v-font-body:    'Segoe UI', 'Inter', system-ui, sans-serif;
+  --v-font-num:     'Segoe UI', 'Inter', system-ui, sans-serif;
+  --v-font-mono:    Consolas, 'Courier New', monospace;
+
+  /* ── Motion — fluid, slightly springy, never cartoonish ── */
+  --v-ease:        cubic-bezier(.22, 1, .36, 1);
+  --v-ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --v-t-fast: .14s;
+  --v-t-base: .22s;
+  --v-t-slow: .38s;
+
+  /* ── z-index scale — never hardcode a z-index ── */
+  --z-below:0; --z-base:1; --z-raised:2; --z-sticky:100;
+  --z-tooltip:400; --z-context:500; --z-overlay:600; --z-toast:700;
+}
+
+/* ── Reset / base ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.v-root {
+  font-family: var(--v-font-body);
+  color: var(--v-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--v-accent-glow); color: var(--v-text); }
+
+/* ── Backdrop: dark vignette + two soft orange aura blobs ── */
+.v-backdrop {
+  background:
+    radial-gradient(55% 45% at 12% 0%,   var(--v-accent-glow), transparent 62%),
+    radial-gradient(48% 42% at 92% 100%, rgba(240, 78, 0, .08),  transparent 60%),
+    radial-gradient(135% 115% at 50% 8%, rgba(11, 10, 8, .42), rgba(11, 10, 8, .82) 72%, rgba(11, 10, 8, .94) 100%);
+}
+/* Static SVG noise tile — cheap in CEF. Put on an overlay child. */
+.v-grain { opacity: var(--v-grain, .04);
+  position: absolute; inset: 0; pointer-events: none; opacity: .04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Rounded glass panel (kept under the legacy .v-chamfer hook) ──
+   One border + layered translucent gradient fill + soft shadow, with
+   an orange light-streak bleeding across the top edge. Pseudo-element
+   based so innerHTML rewrites do not destroy the dressing. */
+.v-chamfer {
+  position: relative;
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-r-lg);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, var(--v-panel-2), var(--v-panel) 55%, var(--v-bg-900));
+  box-shadow: var(--v-shadow-box), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+/* The top light-streak follows the ACCENT, not a fixed orange: on a violet or green
+   theme a hardcoded warm streak is the one thing that gives the reskin away.
+   `--v-streak` (block|none) is the admin switch. */
+.v-chamfer::before {
+  content: ''; display: var(--v-streak, block);
+  position: absolute; top: 0; left: 12%; right: 12%; height: 1px; z-index: 0;
+  background: linear-gradient(90deg, transparent, var(--v-accent-glow), transparent);
+  pointer-events: none;
+}
+.v-chamfer > * { position: relative; z-index: var(--z-raised); }
+
+/* `.v-panel` used to be an empty legacy hook, which meant a page using it ALONE got no
+   panel at all — every module happens to pair it with .v-chamfer, so the gap never showed.
+   It is now a real, self-sufficient surface. */
+.v-panel {
+  background: var(--v-panel);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-r-lg);
+}
+/* Paired with .v-chamfer (as every module does), the chamfer's richer fill wins. */
+.v-panel.v-chamfer { background:
+    linear-gradient(165deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, var(--v-panel-2), var(--v-panel) 55%, var(--v-bg-900)); }
+.v-panel__header { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-bottom: 1px solid var(--v-line); }
+
+/* Section pill riding the top edge — gradient orange, glowing. */
+.v-tab {
+  position: absolute; top: -12px; left: 24px; z-index: 3;
+  height: 24px; padding: 0 14px; display: flex; align-items: center;
+  font-family: var(--v-font-display); font-weight: 700; font-size: 11px;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--v-ink);
+  background: var(--v-grad-accent);
+  border-radius: 99px;
+  box-shadow: 0 6px 18px -4px var(--v-accent-glow), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+
+/* Glowing corner accents on two diagonal corners. */
+.v-brk { display: var(--v-brackets, block); position: absolute; z-index: var(--z-base); width: 18px; height: 18px; opacity: .65; pointer-events: none; }
+.v-brk--tr { top: 9px; right: 9px; border-top: 2px solid var(--v-accent); border-right: 2px solid var(--v-accent); border-top-right-radius: 8px; filter: drop-shadow(0 0 6px var(--v-accent-glow)); }
+.v-brk--bl { bottom: 9px; left: 9px; border-bottom: 2px solid var(--v-accent); border-left: 2px solid var(--v-accent); border-bottom-left-radius: 8px; filter: drop-shadow(0 0 6px var(--v-accent-glow)); }
+
+/* ── Typography ── */
+.v-title  { font-family: var(--v-font-display); font-weight: 700; letter-spacing: .03em; font-size: 20px; }
+.v-title__accent { color: var(--v-accent); }
+.v-header { font-family: var(--v-font-display); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; color: var(--v-text-dim); }
+.v-label  { font-family: var(--v-font-display); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; font-size: 11px; color: var(--v-text-dim); }
+/* Numeric readout — tabular figures, significant figure in <b> (orange). */
+.v-num    { font-family: var(--v-font-num); font-weight: 600; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.v-num b  { color: var(--v-accent-300); font-weight: 700; }
+
+/* ── Buttons ── */
+.v-btn {
+  font-family: var(--v-font-display); font-size: 12px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--v-text); background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--v-line-2); border-radius: 10px;
+  padding: 10px 18px; cursor: pointer;
+  transition: background var(--v-t-base) var(--v-ease), border-color var(--v-t-base) var(--v-ease),
+              color var(--v-t-base) var(--v-ease), transform var(--v-t-fast) var(--v-ease),
+              box-shadow var(--v-t-base) var(--v-ease), filter var(--v-t-base) var(--v-ease);
+}
+.v-btn:hover  { background: rgba(255, 255, 255, .09); border-color: var(--v-accent-line); color: var(--v-accent-300); transform: translateY(-1px); box-shadow: var(--v-shadow-sm); }
+.v-btn:active { transform: translateY(0) scale(.98); }
+.v-btn--accent {
+  background: var(--v-grad-accent); border-color: rgba(255, 150, 60, .6);
+  color: var(--v-ink); font-weight: 700;
+  box-shadow: 0 8px 22px -6px var(--v-accent-glow), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+.v-btn--accent:hover { color: var(--v-ink); filter: brightness(1.07); border-color: rgba(255, 150, 60, .8); box-shadow: 0 12px 28px -6px var(--v-accent-glow), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.v-btn--ghost  { background: transparent; }
+.v-btn--danger { background: transparent; border-color: rgba(229, 72, 77, .5); color: var(--v-danger-300); }
+.v-btn--danger:hover { background: rgba(229, 72, 77, .12); border-color: var(--v-danger); color: var(--v-danger-300); }
+
+/* ── Chip / badge ── */
+.v-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--v-font-display); font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: 4px 12px; border-radius: 99px;
+  background: var(--v-accent-soft); border: 1px solid var(--v-accent-line); color: var(--v-accent-300);
+}
+/* Filled badge — dark ink on a light fill (set --v-fill). */
+.v-stencil {
+  display: inline-block; padding: 3px 9px; border-radius: 6px;
+  font-family: var(--v-font-display); font-style: normal; font-weight: 700; font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--v-ink); background: var(--v-fill, var(--v-grad-accent));
+  box-shadow: 0 3px 10px -3px var(--v-accent-glow);
+}
+
+/* ── Inputs ── */
+.v-input {
+  background: rgba(0, 0, 0, .32); border: 1px solid var(--v-line); border-radius: 10px;
+  color: var(--v-text); font-family: var(--v-font-body); font-size: 13px; padding: 10px 14px;
+  outline: none; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .4);
+  transition: border-color var(--v-t-base) var(--v-ease), box-shadow var(--v-t-base) var(--v-ease), background var(--v-t-base) var(--v-ease);
+}
+.v-input:hover { border-color: var(--v-line-2); }
+.v-input:focus { border-color: var(--v-accent-line); background: rgba(0, 0, 0, .42); box-shadow: inset 0 1px 2px rgba(0,0,0,.4), 0 0 0 3px var(--v-accent-glow); }
+.v-input::placeholder { color: var(--v-text-faint); }
+
+/* ── Slot tile — soft card, lifts and glows orange on hover ── */
+.v-slot {
+  position: relative; border-radius: var(--v-r-md);
+  background: rgba(255, 255, 255, .028); border: 1px solid var(--v-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+  transition: transform var(--v-t-fast) var(--v-ease), border-color var(--v-t-base) var(--v-ease),
+              background var(--v-t-base) var(--v-ease), box-shadow var(--v-t-base) var(--v-ease);
+}
+.v-slot:hover {
+  transform: translateY(-2px);
+  background: var(--v-accent-glow); border-color: var(--v-accent-line);
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, .65), 0 0 0 1px var(--v-accent-glow), 0 0 22px -4px var(--v-accent-glow);
+}
+
+/* ── Segmented gauge — rounded track, glowing gradient notches ── */
+.v-gauge { display: flex; gap: 2px; height: 10px; padding: 2px; border-radius: 99px;
+  background: rgba(0, 0, 0, .38); border: 1px solid var(--v-line); }
+.v-gauge__seg { flex: 1; border-radius: 99px; background: rgba(255, 255, 255, .05); transition: background var(--v-t-base) var(--v-ease), box-shadow var(--v-t-base) var(--v-ease); }
+.v-gauge__seg.is-on { background: var(--v-grad-accent); box-shadow: 0 0 8px var(--v-accent-glow); }
+.v-gauge.is-over .v-gauge__seg.is-on { background: linear-gradient(180deg, var(--v-danger-300), var(--v-danger)); box-shadow: 0 0 8px rgba(229, 72, 77, .5); }
+
+/* ── Smooth progress bar (continuous fill counterpart of .v-gauge) ── */
+.v-progress { height: 8px; border-radius: 99px; background: rgba(0, 0, 0, .38); border: 1px solid var(--v-line); overflow: hidden; }
+.v-progress__fill { display: block; height: 100%; border-radius: 99px; background: var(--v-grad-accent); box-shadow: 0 0 12px var(--v-accent-glow); transition: width var(--v-t-slow) var(--v-ease); }
+
+/* ── Glass float — small translucent surface (menus, tooltips) ── */
+.v-glass {
+  background: var(--v-panel-2); border: 1px solid var(--v-line);
+  border-radius: var(--v-r-md); box-shadow: var(--v-shadow-sm);
+}
+
+/* ── Divider ── */
+.v-divider { height: 1px; border: 0; background: linear-gradient(90deg, transparent, var(--v-line-2), transparent); }
+
+/* ── Scrollbar ── */
+.v-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.v-scroll::-webkit-scrollbar-track { background: transparent; }
+.v-scroll::-webkit-scrollbar-thumb { background: rgba(255, 221, 194, .14); border-radius: 99px; }
+.v-scroll::-webkit-scrollbar-thumb:hover { background: var(--v-accent-glow); }
+
+/* ── Keyboard focus ── */
+.v-btn:focus-visible, .v-input:focus-visible, [tabindex]:focus-visible,
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--v-accent); outline-offset: 2px;
+}
+
+/* ── Motion — one orchestrated open sequence. Stagger with --i. ── */
+@keyframes v-case-open { from { opacity: 0; transform: translateY(16px) scale(.965); } }
+@keyframes v-seat      { from { opacity: 0; transform: translateY(8px) scale(.9); } }
+@keyframes v-pop       { from { opacity: 0; transform: scale(.94); } }
+@keyframes v-fade      { from { opacity: 0; } }
+@keyframes v-fade-up   { from { opacity: 0; transform: translateY(10px); } }
+@keyframes v-flash-up   { 0% { color: var(--v-success); } 100% { color: var(--v-text); } }
+@keyframes v-flash-down { 0% { color: var(--v-danger); }  100% { color: var(--v-text); } }
+
+/* Use animation-fill-mode:backwards, NOT both — `both` keeps forcing the
+   final keyframe's opacity and would override .is-hidden / filter states. */
+.is-open .v-panel { animation: v-case-open .42s var(--v-ease) backwards; animation-delay: calc(var(--i, 0) * 60ms); }
+.is-open .v-slot  { animation: v-seat .34s var(--v-ease-spring) backwards; animation-delay: calc(160ms + var(--i, 0) * 10ms); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .v-slot:hover, .v-btn:hover { transform: none !important; }
+}

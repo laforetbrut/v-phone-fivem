@@ -1,0 +1,58 @@
+/* v-ui — generated from config.lua, admin settings and the per-module overrides
+   (Admin -> Editor -> Module themes). Do not edit by hand: it is rewritten on
+   every theme change. */
+:root {
+  --v-bg-900: #0b0a08;
+  --v-bg-800: #12110f;
+  --v-bg-700: #1a1917;
+  --v-bg-600: #232321;
+  --v-bg-500: #2d2c2b;
+  --v-bg-sunk: #070705;
+  --v-panel: rgba(22, 19, 15, 0.94);
+  --v-panel-2: rgba(34, 31, 27, 0.94);
+  --v-panel-3: rgba(45, 43, 39, 0.94);
+  --v-line: rgba(104, 102, 99, 0.55);
+  --v-line-2: rgba(139, 137, 135, 0.4);
+  --v-text: #f4efe8;
+  --v-text-dim: rgba(244, 239, 232, 0.72);
+  --v-text-faint: rgba(244, 239, 232, 0.46);
+  --v-ink: #060504;
+  --v-accent: #ff7a1a;
+  --v-accent-300: #ff9f5a;
+  --v-accent-600: #f04e00;
+  --v-accent-700: #b43b00;
+  --v-accent-soft: rgba(255, 122, 26, 0.12);
+  --v-accent-line: rgba(255, 122, 26, 0.42);
+  --v-accent-glow: rgba(255, 122, 26, 0.5);
+  --v-grad-accent: linear-gradient(135deg, #ff7a1a 0%, #f04e00 100%);
+  --v-grad-soft: linear-gradient(135deg, rgba(255, 122, 26, 0.16) 0%, rgba(240, 78, 0, 0.1) 100%);
+  --v-success: #5aa06a;
+  --v-success-300: #88bb94;
+  --v-danger: #d04a4a;
+  --v-danger-300: #dd7d7d;
+  --v-warning: #e0a05a;
+  --v-warning-300: #e9bb88;
+  --v-info: #4a9fe0;
+  --v-info-300: #7dbae9;
+  --v-rar-rare: #4a9fe0;
+  --v-rar-common: #9aa0a6;
+  --v-rar-legendary: #e0a05a;
+  --v-rar-uncommon: #5aa06a;
+  --v-rar-mythic: #e0505a;
+  --v-rar-epic: #a45ad8;
+  --v-r-sm: 8px;
+  --v-r-md: 12px;
+  --v-r-lg: 16px;
+  --v-r-xl: 22px;
+  --v-t-fast: 120ms;
+  --v-t-base: 200ms;
+  --v-t-slow: 360ms;
+  --v-fs: 1.000;
+  --v-backdrop-a: 0.820;
+  --v-font-display: 'Bebas Neue', 'Oswald', 'Arial Narrow', sans-serif;
+  --v-font-body: 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --v-density: 1.000;
+  --v-brackets: block;
+  --v-streak: block;
+  --v-grain: 0.04;
+}
