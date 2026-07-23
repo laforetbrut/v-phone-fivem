@@ -774,8 +774,8 @@ stopSelfie = function()
     ClearPedTasks(PlayerPedId())
 end
 
-RegisterNUICallback('camFacing', function(data, cb)
-    if data and data.front == true then
+local function setSelfie(on)
+    if on then
         if not selfieCam then
             local ped = PlayerPedId()
             local head = GetPedBoneCoords(ped, 31086, 0.0, 0.0, 0.0)   -- SKEL_Head
@@ -790,8 +790,14 @@ RegisterNUICallback('camFacing', function(data, cb)
     else
         stopSelfie()
     end
+end
+
+-- The camera app flips it; a FaceTime call raises it for the duration.
+RegisterNUICallback('camFacing', function(data, cb)
+    setSelfie(data and data.front == true)
     cb('ok')
 end)
+AddEventHandler('v-phone:internal:selfie', function(on) setSelfie(on == true) end)
 
 -- The camera closing (or the phone closing) drops the selfie cam whatever state it is in.
 AddEventHandler('onResourceStop', function(res)
@@ -1017,12 +1023,70 @@ RegisterNetEvent('v-phone:client:callIn', function(data)
     if not isOpen then openPhone() end
 end)
 
+-- ── FaceTime live picture ──────────────────────────────────────
+-- Experimental and opt-in. While a video call is active, the front camera is put up and
+-- the screen is captured a few times a second. The raw capture is far too big to relay,
+-- so the PAGE shrinks and crops it to a thumbnail first (see app.js), and only that tiny
+-- frame goes to the server, which relays it to the other phone.
+local faceLoop = 0
+
+local function stopFaceFeed()
+    faceLoop = faceLoop + 1                    -- invalidates any running loop
+    SendNUIMessage({ action = 'facePeer', data = nil })
+end
+
+local function startFaceFeed()
+    local ft = Config.FaceTime or {}
+    if not ft.videoFeed then return end
+    if GetResourceState('screenshot-basic') ~= 'started' then return end
+
+    faceLoop = faceLoop + 1
+    local mine = faceLoop
+    local fps = math.max(1, math.min(12, math.floor(tonumber(ft.fps) or 6)))
+    local gap = math.floor(1000 / fps)
+
+    CreateThread(function()
+        while faceLoop == mine and call and call.state == 'active' and call.video do
+            -- The capture is asynchronous; the page answers with the shrunk frame through
+            -- the `faceFrame` callback below.
+            pcall(function()
+                exports['screenshot-basic']:requestScreenshot(
+                    { encoding = 'jpg', quality = 0.5 },
+                    function(data)
+                        if faceLoop ~= mine then return end
+                        SendNUIMessage({ action = 'faceShrink', data = data })
+                    end)
+            end)
+            Wait(gap)
+        end
+    end)
+end
+
+-- The page hands back the shrunk frame; this is the only thing that reaches the network.
+RegisterNUICallback('faceFrame', function(data, cb)
+    if call and call.state == 'active' and call.video and type(data) == 'table' and data.frame then
+        TriggerServerEvent('v-phone:server:faceFrame', data.frame)
+    end
+    cb('ok')
+end)
+
+-- The other side's frame, straight to the page.
+RegisterNetEvent('v-phone:client:faceFrame', function(frame)
+    SendNUIMessage({ action = 'facePeer', data = frame })
+end)
+
 RegisterNetEvent('v-phone:client:callActive', function(data)
     call = { id = data.id, state = 'active', number = call and call.number or nil,
              video = call and call.video or false }
     stopRinging()
     joinCallAudio()
     refreshPose()
+    -- A video call turns the front camera on and starts the picture feed. Focus is left
+    -- exactly as it was: an answered call must not steal the cursor.
+    if call.video then
+        TriggerEvent('v-phone:internal:selfie', true)
+        startFaceFeed()
+    end
     SendNUIMessage({ action = 'call', call = call })
 end)
 
@@ -1031,6 +1095,9 @@ RegisterNetEvent('v-phone:client:callEnd', function(reason)
     -- release the channel leaves the player audible to strangers across the map.
     leaveCallAudio()
     stopRinging()
+    -- And put the front camera and the picture feed away with it.
+    stopFaceFeed()
+    TriggerEvent('v-phone:internal:selfie', false)
     call = nil
     refreshPose()
     SendNUIMessage({ action = 'call', call = nil })

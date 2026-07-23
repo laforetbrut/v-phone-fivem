@@ -1263,6 +1263,12 @@ V.Callback('v-phone:open', function(src, resolve)
         mediaVideo = Bridge.MediaVideoEnabled and Bridge.MediaVideoEnabled() or false,
         mediaVideoMax = math.max(1, math.min(30, tonumber(Config.Media and Config.Media.video
             and Config.Media.video.maxSeconds) or 15)),
+        -- The FaceTime picture feed's shape, so the page knows how hard to shrink a frame
+        -- before it sends one. Absent when the feed is off, and then nothing is captured.
+        facetime = (Config.FaceTime and Config.FaceTime.videoFeed) and {
+            width = Config.FaceTime.width, height = Config.FaceTime.height,
+            quality = Config.FaceTime.quality, fps = Config.FaceTime.fps,
+        } or nil,
         -- The operator's automatic-dark policy, so the page can resolve 'auto' itself
         -- against the in-game clock rather than asking on every tick.
         theme = {
@@ -2719,6 +2725,41 @@ V.Callback('v-phone:call', function(src, resolve, data)
     resolve({ ok = true, id = id })
 end)
 
+-- ── FaceTime live picture relay ────────────────────────────────
+-- One frame from one side of a video call to the other. Everything about it is checked
+-- here, because a relay a client can drive is a relay a client can abuse:
+--
+--   * the sender must be in an ACTIVE call flagged video,
+--   * the frame goes only to the other party in that same call, never anywhere else,
+--   * a frame larger than the configured ceiling is dropped, not forwarded,
+--   * a sender exceeding the configured rate is dropped, so the loop cannot be sped up
+--     by a modified client.
+local FrameLast = {}
+
+RegisterNetEvent('v-phone:server:faceFrame', function(frame)
+    local src = source
+    local ft = Config.FaceTime or {}
+    if not ft.videoFeed then return end
+
+    local id = CallOf[src]
+    local c = id and Calls[id]
+    if not c or c.state ~= 'active' or not c.video then return end
+
+    -- Rate: the client's own loop runs at `fps`; anything meaningfully faster is refused.
+    local fps = math.max(1, math.min(12, math.floor(num(ft.fps, 6))))
+    local minGap = math.floor(1000 / fps * 0.7)
+    local now = GetGameTimer()
+    if FrameLast[src] and now - FrameLast[src] < minGap then return end
+    FrameLast[src] = now
+
+    -- Size: a data URI far bigger than a thumbnail is not a thumbnail.
+    if type(frame) ~= 'string' then return end
+    if #frame > math.floor(num(ft.maxFrameKb, 24)) * 1024 then return end
+
+    local other = (c.a == src) and c.b or c.a
+    if other then TriggerClientEvent('v-phone:client:faceFrame', other, frame) end
+end)
+
 V.Callback('v-phone:answer', function(src, resolve)
     resolve({ ok = answerCall(src) })
 end)
@@ -2823,6 +2864,7 @@ AddEventHandler('playerDropped', function()
     if p and Battery[src] then p.SetMetadata('battery', math.floor(Battery[src])) end
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
     ExternalCharge[src] = nil
+    FrameLast[src] = nil
     MessageLastSend[src], MessageBusy[src] = nil, nil
     CipherUnlocked[src], CipherAttempts[src], CipherLastSend[src] = nil, nil, nil
     AirLastSend[src] = nil
