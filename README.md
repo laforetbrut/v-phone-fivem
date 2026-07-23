@@ -79,7 +79,9 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 
 **Standalone works.** With no framework the phone falls back to the licence identifier, and apps that need a job or a bank simply are not offered.
 
-**The phone owns its own storage.** Preferences, layouts and photo lists live in `phone_kv`, keyed by character. Nothing is written into your framework's metadata column, so a framework update cannot break the phone.
+**The phone owns its own storage.** Preferences, layouts and photo lists live in `vphone_kv`, keyed by character. Nothing is written into your framework's metadata column, so a framework update cannot break the phone.
+
+**Every table it creates begins with `vphone_`,** so it can never collide with another script's table. A server upgraded from an older build has its data moved to the new names automatically at boot.
 
 ## Installation
 
@@ -198,7 +200,7 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 
 **Le mode autonome fonctionne.** Sans framework, le téléphone se rabat sur l'identifiant de licence, et les applications qui ont besoin d'un métier ou d'une banque ne sont simplement pas proposées.
 
-**Le téléphone possède son propre stockage.** Préférences, dispositions et listes de photos vivent dans `phone_kv`, par personnage. Rien n'est écrit dans la colonne metadata de votre framework, donc une mise à jour de celui-ci ne peut pas casser le téléphone.
+**Le téléphone possède son propre stockage.** Préférences, dispositions et listes de photos vivent dans `vphone_kv`, par personnage. Rien n'est écrit dans la colonne metadata de votre framework, donc une mise à jour de celui-ci ne peut pas casser le téléphone.
 
 ## Installation
 

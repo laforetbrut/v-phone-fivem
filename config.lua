@@ -6,6 +6,10 @@
 -- already owns its data: the bank app calls v-banking, it does not keep a balance. The
 -- moment an app holds its own copy of anything there are two sources of truth, and one of
 -- them is wrong. Messages and contacts are the only things v-phone owns outright.
+--
+-- **Every table this resource creates begins with `vphone_`,** so it can never collide
+-- with a table another script owns. A server upgraded from an older build has its data
+-- moved to the new names automatically at boot (see bridge/server/migrate.lua).
 Config = {}
 
 -- ══════════════════════════════════════════════════════════════

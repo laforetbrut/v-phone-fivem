@@ -8,14 +8,14 @@
 -- column names, ESX has `users`, and a standalone server has none.
 --
 -- Rather than write four dialects of every query, the bridge keeps ONE table -
--- `phone_characters` - and refreshes a row each time somebody loads in. It is a
+-- `vphone_characters` - and refreshes a row each time somebody loads in. It is a
 -- projection, not a source of truth: nothing here is authoritative except the phone
 -- number, which is the phone's own business anyway.
 
 Bridge = Bridge or {}
 
 function Bridge.CharactersBoot()
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_characters` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_characters` (
         `citizenid` VARCHAR(64) NOT NULL,
         `firstname` VARCHAR(40) NOT NULL DEFAULT '',
         `lastname`  VARCHAR(40) NOT NULL DEFAULT '',
@@ -68,7 +68,7 @@ function Bridge.SyncCharacter(src, citizenid)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return end
     local first, last, dob = identityOf(src, citizenid)
-    MySQL.query([[INSERT INTO phone_characters (citizenid, firstname, lastname, dob)
+    MySQL.query([[INSERT INTO vphone_characters (citizenid, firstname, lastname, dob)
                   VALUES (?,?,?,?)
                   ON DUPLICATE KEY UPDATE firstname = VALUES(firstname),
                                           lastname = VALUES(lastname),
@@ -105,7 +105,7 @@ end)
 function Bridge.EnsureCharacter(src)
     local p = Core.GetPlayer(src)
     if not p then return nil end
-    local known = MySQL.scalar.await('SELECT 1 FROM phone_characters WHERE citizenid = ?', { p.citizenid })
+    local known = MySQL.scalar.await('SELECT 1 FROM vphone_characters WHERE citizenid = ?', { p.citizenid })
     if not known then Bridge.SyncCharacter(src, p.citizenid) end
     return p
 end
