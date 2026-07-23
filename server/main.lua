@@ -725,6 +725,11 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
             kind = kind, attachment = attachment, hasItem = requireItem(target),
         })
     end
+
+    -- Announced for anything integrating with the phone: a dispatch mirror, a log, a
+    -- bot. Citizen ids rather than sources, so a listener survives a reconnect.
+    TriggerEvent('v-phone:messageSent', fromCid, toCid, body, kind)
+
     return { id = id, body = body, kind = kind, attachment = attachment }, nil
 end
 
@@ -2697,8 +2702,18 @@ CreateThread(function()
 end)
 
 RegisterNetEvent('v-phone:server:screen', function(on)
-    Open[source] = on and true or nil
-    if not on then CipherUnlocked[source] = nil end
+    local src = source
+    Open[src] = on and true or nil
+    if not on then CipherUnlocked[src] = nil end
+
+    -- Replicated, so another RESOURCE can ask whether the phone is up without going
+    -- through an export and a round trip. `IsPhoneOpen` in api.lua reads this.
+    local state = Player(src) and Player(src).state
+    if state then state:set('phoneOpen', on and true or false, true) end
+
+    -- And announced, so a script can react rather than poll.
+    local p = Core.GetPlayer(src)
+    TriggerEvent(on and 'v-phone:phoneOpened' or 'v-phone:phoneClosed', src, p and p.citizenid or nil)
 end)
 
 V.Callback('v-phone:callState', function(src, resolve)

@@ -4,6 +4,48 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.0.2] - 2026-07-23
+
+### Added (English first)
+
+- **A documented integration API** - `server/api.lua` gathers everything another resource is meant to call into one file, and [API.md](API.md) documents all of it in both languages. Fifteen new server exports on top of the seventeen that existed: `IsPhoneOpen`, `GetOnlineNumbers`, `CitizenOfNumber`, `SetNumber`, `SendServiceMessage`, `UnreadCount`, `AddContact`, `RemoveContact`, `GetContacts`, `SetBattery`, `InstallApp`, `UninstallApp`, `NotifyCitizen`, `NotifyAll`, `SendMail`, `GetPhoneInfo`.
+- **Three server events** - `v-phone:messageSent`, `v-phone:phoneOpened` and `v-phone:phoneClosed`, all carrying citizen ids so a listener survives a reconnect. There are deliberately not more: an event nobody fires is worse than no event at all.
+- **A replicated state bag** - `Player(src).state.phoneOpen`, so another resource can ask whether the phone is up without a round trip.
+- **`GetPhoneInfo`** - What the phone decided at boot: version, framework, inventory, number format, the app list. The first question when an integration misbehaves.
+
+### Changed
+
+- **Every screenshot is the same size.** They were ten different shapes between 407x809 and 437x825, so the README tables stepped. All ten are now 420x816 on one canvas, scaled and never stretched.
+- **Documentation split by job** - README to decide, [COMPATIBILITY.md](COMPATIBILITY.md) to install, [API.md](API.md) to integrate, [DEVELOPERS.md](DEVELOPERS.md) to write an app.
+
+### Fixed
+
+- **`SendMail` wrote to columns that do not exist** and threw instead of returning. Mail is addressed to an address and needs two rows, the letter and the recipient's box line, which is what it does now. Caught by calling all thirty two exports on a live server rather than by reading them.
+- **Two owners for one state bag key** - The client and the server both wrote `phoneOpen` with different replication. The server owns it now.
+
+---
+
+## [1.0.2] - 2026-07-23
+
+### Ajouts (miroir français)
+
+- **Une API d'intégration documentée** - `server/api.lua` rassemble en un fichier tout ce qu'une autre ressource peut appeler, et [API.md](API.md) documente l'ensemble dans les deux langues. Quinze nouveaux exports serveur en plus des dix-sept existants : `IsPhoneOpen`, `GetOnlineNumbers`, `CitizenOfNumber`, `SetNumber`, `SendServiceMessage`, `UnreadCount`, `AddContact`, `RemoveContact`, `GetContacts`, `SetBattery`, `InstallApp`, `UninstallApp`, `NotifyCitizen`, `NotifyAll`, `SendMail`, `GetPhoneInfo`.
+- **Trois événements serveur** - `v-phone:messageSent`, `v-phone:phoneOpened` et `v-phone:phoneClosed`, tous porteurs d'identifiants de personnage : une écoute survit à une reconnexion. Il n'y en a volontairement pas plus, un événement que personne n'émet est pire que pas d'événement.
+- **Un state bag répliqué** - `Player(src).state.phoneOpen`, pour qu'une autre ressource sache si le téléphone est ouvert sans aller-retour.
+- **`GetPhoneInfo`** - Ce que le téléphone a décidé au démarrage : version, framework, inventaire, format de numéro, liste des applications. La première question quand une intégration se comporte mal.
+
+### Modifications
+
+- **Toutes les captures font la même taille.** Elles avaient dix formats différents, de 407x809 à 437x825, et les tableaux du README marchaient en escalier. Les dix sont désormais en 420x816 sur un canevas commun, mises à l'échelle sans jamais être déformées.
+- **Documentation séparée par usage** - README pour choisir, [COMPATIBILITY.md](COMPATIBILITY.md) pour installer, [API.md](API.md) pour intégrer, [DEVELOPERS.md](DEVELOPERS.md) pour écrire une application.
+
+### Correctifs
+
+- **`SendMail` écrivait dans des colonnes inexistantes** et levait une erreur au lieu de renvoyer un résultat. Un mail s'adresse à une adresse et demande deux lignes, la lettre et la ligne de boîte du destinataire : c'est ce qu'il fait maintenant. Trouvé en appelant les trente-deux exports sur un serveur vivant, pas en les relisant.
+- **Deux propriétaires pour une clé de state bag** - Le client et le serveur écrivaient tous deux `phoneOpen` avec des réplications différentes. Le serveur en est désormais le seul propriétaire.
+
+---
+
 ## [1.0.1] - 2026-07-23
 
 ### Added (English first)
