@@ -815,7 +815,7 @@ local function allocateCallId()
     return nil
 end
 
-local function startCall(src, p, toNumber, anonymous)
+local function startCall(src, p, toNumber, anonymous, video)
     if CallOf[src] then return nil, 'busy' end
     if not requireItem(src) then return nil, 'nophone' end
     if V.SettingBool('battery', true) and batteryOf(src) <= 0 then return nil, 'flat' end
@@ -843,14 +843,19 @@ local function startCall(src, p, toNumber, anonymous)
         a = src, b = target, state = 'ringing', at = os.time(),
         aNum = numberOfCid(p.citizenid), bNum = toNumber,
         anonymous = anonymous and V.SettingBool('anonymous', false) or false,
+        -- FaceTime: a normal voice call, presented as a video call on both phones. The
+        -- game cannot stream a live face, so there is no video stream - the flag only
+        -- changes how the call is drawn. Both ends see it, so it reads as a real call.
+        video = video == true,
     }
     Calls[id] = callRecord
     CallOf[src], CallOf[target] = id, id
 
-    TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber })
+    TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber, video = callRecord.video })
     TriggerClientEvent('v-phone:client:callIn', target, {
         id = id,
         number = Calls[id].anonymous and '' or Calls[id].aNum,
+        video = callRecord.video,
     })
 
     -- Give up rather than ring for ever: an unanswered call that never clears leaves both
@@ -1252,6 +1257,12 @@ V.Callback('v-phone:open', function(src, resolve)
         -- Whether Cipher should hand a plaintext copy to the server for lawful intercept.
         -- Off unless the operator turned it on, so E2E stays E2E by default.
         cipherIntercept = (Config.Police and Config.Police.cipher and Config.Police.cipher.intercept) == true,
+        -- Media hosting: whether the camera uploads to a CDN, and whether video recording
+        -- is offered, and the clip length cap the record UI should honour.
+        media = Bridge.MediaEnabled and Bridge.MediaEnabled() or false,
+        mediaVideo = Bridge.MediaVideoEnabled and Bridge.MediaVideoEnabled() or false,
+        mediaVideoMax = math.max(1, math.min(30, tonumber(Config.Media and Config.Media.video
+            and Config.Media.video.maxSeconds) or 15)),
         -- The operator's automatic-dark policy, so the page can resolve 'auto' itself
         -- against the in-game clock rather than asking on every tick.
         theme = {
@@ -2702,7 +2713,8 @@ end)
 V.Callback('v-phone:call', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
-    local id, err = startCall(src, p, tostring((data and data.number) or ''), data and data.anonymous)
+    local id, err = startCall(src, p, tostring((data and data.number) or ''),
+        data and data.anonymous, data and data.video == true)
     if not id then resolve({ error = err }) return end
     resolve({ ok = true, id = id })
 end)
@@ -2854,6 +2866,9 @@ CreateThread(function()
     -- whoever the framework says these characters are.
     Bridge.KvBoot()
     Bridge.CharactersBoot()
+    -- Media hosting (photos/video on a CDN) with its own expiry sweep. A no-op table
+    -- and no sweep when Config.Media is off, so it costs nothing unused.
+    if Bridge.MediaBoot then Bridge.MediaBoot() end
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_contacts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,

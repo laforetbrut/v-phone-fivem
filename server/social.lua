@@ -336,9 +336,13 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
     if not socOn() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
-    local kind = (data and data.kind == 'photo') and 'photo' or 'text'
+    local photo = (data and data.kind == 'photo')
+    local app = appOfKind(photo and 'photo' or 'text')
 
-    local app = appOfKind(kind)
+    -- The photo feed (Snapmatic) shows photos AND videos; the text feed (Bleeter) shows
+    -- text. A clip lives with the pictures.
+    local kindWhere = photo and 's.kind IN (?, ?)' or 's.kind = ?'
+
     -- Two feeds, one query: everything, or only the accounts you follow plus your own.
     -- A "following" tab that quietly showed strangers would not be worth having.
     local following = (data and data.scope) == 'following'
@@ -348,7 +352,9 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
                    AND f.from_cid = ? AND f.to_cid = s.citizenid))]]
         or ''
 
-    local args = { p.citizenid, p.citizenid, p.citizenid, p.citizenid, app, kind }
+    local args = { p.citizenid, p.citizenid, p.citizenid, p.citizenid, app }
+    if photo then args[#args + 1] = 'photo'; args[#args + 1] = 'video'
+    else args[#args + 1] = 'text' end
     if following then
         args[#args + 1] = p.citizenid
         args[#args + 1] = p.citizenid
@@ -359,9 +365,9 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
         SELECT %s
         FROM vphone_social_posts s
         JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
-        WHERE s.kind = ?%s
+        WHERE %s%s
         ORDER BY s.id DESC LIMIT ?
-    ]]):format(POST_COLUMNS, where), args) or {}
+    ]]):format(POST_COLUMNS, kindWhere, where), args) or {}
 
     resolve({ ok = true, posts = cleanPosts(rows) })
 end)
@@ -369,15 +375,23 @@ end)
 V.Callback('v-phone:soc:post', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
-    local kind = (data and data.kind == 'photo') and 'photo' or 'text'
-    if not accountOf(p.citizenid, appOfKind(kind)) then resolve({ error = 'noaccount' }) return end
+    -- text -> Bleeter, photo/video -> the app the client named (Bleeter or Snapmatic), or
+    -- Snapmatic by default for media. A clip is a photo that moves; it shares the account,
+    -- the host gate and the feed, with its media URL in `image`.
+    local raw = (data and data.kind) or 'text'
+    local kind = (raw == 'photo' or raw == 'video') and raw or 'text'
+    local wantApp = tostring((data and data.app) or '')
+    local mediaApp = (kind == 'text') and 'bleeter'
+        or ((wantApp == 'bleeter' or wantApp == 'snap') and wantApp)
+        or appOfKind('photo')
+    if not accountOf(p.citizenid, mediaApp) then resolve({ error = 'noaccount' }) return end
     local body = tostring((data and data.body) or '')
         :sub(1, math.floor(num(V.Setting('socialMaxLength', SOC.postMax), 280)))
     local image = tostring((data and data.image) or ''):sub(1, 300)
 
-    if kind == 'photo' then
-        -- A photo post is the photo; a caption is optional. And the URL faces every
-        -- client that opens the feed, so it goes through the host gate.
+    if kind == 'photo' or kind == 'video' then
+        -- The media is the post; a caption is optional. The URL faces every client that
+        -- opens the feed, so it goes through the host gate.
         if image == '' then resolve({ error = 'noimage' }) return end
         if not imageAllowed(image) then resolve({ error = 'badhost' }) return end
     else

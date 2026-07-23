@@ -149,6 +149,7 @@ end
 -- and plays a one-handed animation; a call raises it to the ear. The NUI takes cursor
 -- focus but keeps game input flowing, and a guard thread disables only aiming, shooting
 -- and camera-look - so a tap on the screen does not fire a gun, but movement survives.
+local stopSelfie = function() end   -- assigned below; forward-declared so closePhone can call it
 local phoneProp = nil
 local phoneAnim = nil        -- which clip is playing, so we do not restart it every frame
 
@@ -314,6 +315,7 @@ local function closePhone()
     phoneTorch = false
     activeSdkApp = nil
     if not call then stopRinging() end
+    stopSelfie()
     SetNuiFocusKeepInput(false)
     SetNuiFocus(false, false)
     clearHand()
@@ -697,6 +699,27 @@ RegisterNUICallback('shoot', function(_, cb)
         cb(result)
     end
 
+    -- The media backend (screencapture + a CDN, key server-side) is preferred when the
+    -- operator turned it on: the server does the capture and the upload, so the phone only
+    -- has to get out of the shot. It falls through to screenshot-basic when media is off.
+    local useMedia = Config.Media and Config.Media.enabled == true
+        and GetResourceState('screencapture') == 'started'
+
+    if useMedia then
+        SendNUIMessage({ action = 'shutter' })
+        focusReleased = true
+        SetNuiFocus(false, false)
+        Wait(120)
+        SetTimeout(20000, function() finish({ error = 'upload' }) end)
+        V.Request('v-phone:media:photo', function(r)
+            if not r or not r.ok then finish(r or { error = 'upload' }) return end
+            -- The URL is stored in the gallery the same way a pasted one is.
+            V.Request('v-phone:photo', function(res) finish(res or { error = 'x' }) end,
+                { op = 'add', url = r.url })
+        end, {})
+        return
+    end
+
     if GetResourceState('screenshot-basic') ~= 'started' then
         finish({ error = 'nocam' })
         return
@@ -737,6 +760,70 @@ RegisterNUICallback('shoot', function(_, cb)
         )
     end)
     if not called then finish({ error = 'upload' }) end
+end)
+
+-- Selfie: a game camera placed in front of the ped's head, looking back, so a photo or a
+-- clip is of the player. screencapture / screenshot-basic capture whatever is rendered, so
+-- the same shot path works front or back - only the camera moves.
+local selfieCam = nil
+stopSelfie = function()
+    if not selfieCam then return end
+    RenderScriptCams(false, false, 0, true, true)
+    DestroyCam(selfieCam, false)
+    selfieCam = nil
+    ClearPedTasks(PlayerPedId())
+end
+
+RegisterNUICallback('camFacing', function(data, cb)
+    if data and data.front == true then
+        if not selfieCam then
+            local ped = PlayerPedId()
+            local head = GetPedBoneCoords(ped, 31086, 0.0, 0.0, 0.0)   -- SKEL_Head
+            local fwd = GetEntityForwardVector(ped)
+            local eye = vector3(head.x + fwd.x * 0.9, head.y + fwd.y * 0.9, head.z + 0.05)
+            selfieCam = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA',
+                eye.x, eye.y, eye.z, 0.0, 0.0, 0.0, 45.0, false, 0)
+            PointCamAtPedBone(selfieCam, ped, 31086, 0.0, 0.0, 0.0, true)
+            SetCamActive(selfieCam, true)
+            RenderScriptCams(true, false, 0, true, true)
+        end
+    else
+        stopSelfie()
+    end
+    cb('ok')
+end)
+
+-- The camera closing (or the phone closing) drops the selfie cam whatever state it is in.
+AddEventHandler('onResourceStop', function(res)
+    if res == GetCurrentResourceName() then stopSelfie() end
+end)
+
+-- Record a clip. The server (through screencapture) records the player's view for the
+-- requested seconds, uploads it, and answers with the URL. The phone hides for the shot
+-- and comes back when it is done.
+RegisterNUICallback('record', function(data, cb)
+    if not (Config.Media and Config.Media.enabled == true)
+        or GetResourceState('screencapture') ~= 'started' then
+        cb({ error = 'off' }) return
+    end
+    local finished = false
+    local captureRequest = openRequest
+    local function finish(result)
+        if finished then return end
+        finished = true
+        if isOpen and openRequest == captureRequest then
+            SetNuiFocus(true, true)
+            SetNuiFocusKeepInput(true)
+        end
+        SendNUIMessage({ action = 'recordDone', ok = (result or {}).ok == true })
+        cb(result or { error = 'x' })
+    end
+
+    -- Hide the phone for the whole recording, then restore.
+    SendNUIMessage({ action = 'recording' })
+    SetNuiFocus(false, false)
+    V.Request('v-phone:media:video', function(r) finish(r or { error = 'x' }) end,
+        { seconds = tonumber(data and data.seconds) })
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -917,12 +1004,12 @@ RegisterNUICallback('hangup', function(_, cb)
 end)
 
 RegisterNetEvent('v-phone:client:callOut', function(data)
-    call = { id = data.id, state = 'out', number = data.number }
+    call = { id = data.id, state = 'out', number = data.number, video = data.video == true }
     SendNUIMessage({ action = 'call', call = call })
 end)
 
 RegisterNetEvent('v-phone:client:callIn', function(data)
-    call = { id = data.id, state = 'in', number = data.number }
+    call = { id = data.id, state = 'in', number = data.number, video = data.video == true }
     startRinging()
     -- An incoming call opens the phone if it is closed: a ringing phone the player cannot
     -- see is a missed call they never had the chance to take.
@@ -931,7 +1018,8 @@ RegisterNetEvent('v-phone:client:callIn', function(data)
 end)
 
 RegisterNetEvent('v-phone:client:callActive', function(data)
-    call = { id = data.id, state = 'active', number = call and call.number or nil }
+    call = { id = data.id, state = 'active', number = call and call.number or nil,
+             video = call and call.video or false }
     stopRinging()
     joinCallAudio()
     refreshPose()

@@ -874,6 +874,11 @@ local T = {
     ['ph.hush_active_hint'] = 'Turned off, your profile leaves the deck. Your matches stay.',
     -- Social, server side: what the phone writes on a player's behalf
     ['soc.match_line'] = 'We matched on Hush!',
-    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reset.',
+    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reset.',    ['ph.cam_video'] = 'VIDEO',
+    ['ph.clip_ready'] = 'Clip ready',
+    ['ph.clip_posted'] = 'Clip posted',
+    ['ph.facetime'] = 'FaceTime',
+    ['ph.facetime_video'] = 'Video call',
+    ['ph.facetime_hint'] = 'Live video is not shown; the call is voice.',    ['ph.cam_selfie'] = 'Flip camera',
 }
 for k, v in pairs(T) do Locales.en[k] = v end

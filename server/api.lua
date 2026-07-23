@@ -373,6 +373,7 @@ exports('WipePhone', function(citizenid)
         'vphone_social_accounts', 'vphone_social_posts', 'vphone_social_likes',
         'vphone_social_comments', 'vphone_social_reposts', 'vphone_social_stories',
         'vphone_social_story_seen', 'vphone_hush_profiles', 'vphone_group_members',
+        'vphone_media',
     }
     local removed = 0
     for _, tbl in ipairs(byCitizen) do

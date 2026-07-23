@@ -110,6 +110,31 @@ the terminal can crack the content, slowly (`crackSeconds`) and not always
 (`successChance`). Leaving it off keeps Cipher a true secret, which is the app's promise
 to players.
 
+## Media hosting
+
+Off by default. Turn on `Config.Media.enabled` and install
+[screencapture](https://github.com/itschip/screencapture) to capture photos and video
+clips in game and upload them to a CDN. The upload runs on the server, so the API key
+never reaches a client:
+
+```
+set phone_media_key "fm_xxxxxxxx"
+```
+
+| Setting | What |
+|---|---|
+| `provider` | `fivemanage` (wired), or `custom` for any multipart-file host |
+| `endpoint` | the upload URL (Fivemanage v3 file API by default) |
+| `video.maxSeconds` | clip length ceiling, 1..30 |
+| `autoDeleteDays` | the phone drops each file after this many days, and deletes it from the host if `deleteEndpoint` is set |
+
+**What FiveM can and cannot do, honestly:**
+
+- **Photos** are real screen captures, uploaded and stored.
+- **Video clips** are real WebM recordings through screencapture, capped and uploaded, and post to Bleeter and Snapmatic.
+- **The front camera** (selfie) is a real game camera placed in front of the ped, so a photo or clip is of the player.
+- **FaceTime** is a real voice call presented as a video call. FiveM cannot stream a player's live face to another player, so there is no video feed - the FaceTime layout is the difference. The audio is the normal call.
+
 ## Integrations
 
 | Kind | Detected, in order |

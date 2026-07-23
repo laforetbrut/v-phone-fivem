@@ -1139,6 +1139,8 @@ function clearAppVisualState() {
   app.classList.remove('black', 'camfull');
   byId('screen').classList.remove('appblack', 'cipher-open');
   byId('navbar').classList.remove('hidden');
+  // Leaving the camera drops the selfie camera, or it would follow the player out.
+  if (camFront) { camFront = false; post('camFacing', { front: false }); }
 }
 
 function enterApp(a, tile) {
@@ -2269,10 +2271,12 @@ function contactSheet(c) {
       '</div>' +
       UI.group(details) +
       UI.button(L('ph.call'), 'ccall', 'tinted') +
+      UI.button(L('ph.facetime'), 'cface', 'plain') +
       UI.button(L('ph.message'), 'cmsg', 'plain') +
       UI.button(L('ph.airdrop_share'), 'cshare', 'plain'),
       () => {
         byId('ccall').addEventListener('click', () => { closeSheet(); post('call', { number: c.number }); });
+        byId('cface').addEventListener('click', () => { closeSheet(); post('call', { number: c.number, video: true }); });
         byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
         byId('cshare').addEventListener('click', () =>
           airdropShare('contact', { name: c.name, number: c.number }));
@@ -4474,6 +4478,53 @@ RENDER.reminders = async () => {
 // is nowhere for a photo to go, and the app says so rather than pretending to save one.
 // The camera, drawn like the iOS one: a black viewfinder with framing marks, a shutter
 // ring, the last shot as a roll thumbnail, and a control to lay the phone on its side.
+let camMode = 'photo';     // 'photo' | 'video' (video only when the server hosts media)
+let camRecording = false;
+let camFront = false;      // selfie: a game camera in front of the ped
+
+// Record a clip. The client relay hides the phone, the server records and uploads through
+// screencapture, and the URL comes back. The countdown is cosmetic - the server owns the
+// real clock and the cap.
+async function cameraRecord() {
+  if (camRecording) return;
+  camRecording = true;
+  const seconds = Math.max(1, Math.min(30, Number(state.mediaVideoMax) || 15));
+  const rec = byId('camrec');
+  if (rec) rec.classList.remove('hidden');
+  let n = 0;
+  const tick = setInterval(() => {
+    n += 1;
+    if (byId('camrectime')) byId('camrectime').textContent = String(n);
+    if (n >= seconds) clearInterval(tick);
+  }, 1000);
+
+  const res = await post('record', { seconds });
+  clearInterval(tick);
+  camRecording = false;
+  if (rec) rec.classList.add('hidden');
+  if (!res || !res.ok || !res.url) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+  // A clip is a media item: offer to post it, and keep it on the roll.
+  clipShareSheet(res.url);
+}
+
+// After a clip, ask where it goes. Straight to Bleeter or Snapmatic, or just kept.
+function clipShareSheet(url) {
+  sheet(L('ph.clip_ready'),
+    UI.row({ icon: 'bleet', title: L('app.bleeter'), data: { to: 'bleeter' } }) +
+    UI.row({ icon: 'snap', title: L('app.snap'), data: { to: 'snap' } }) +
+    '<video class="clippreview" src="' + esc(url) + '" muted loop autoplay playsinline></video>',
+    () => {
+      [...byId('sheet').querySelectorAll('[data-to]')].forEach((el) =>
+        el.addEventListener('click', async () => {
+          const app = el.dataset.to;
+          const epoch = sheetEpoch;
+          const r = await post('social', { op: 'post', kind: 'video', image: url, body: '', app });
+          if (!closeSheet(false, epoch)) return;
+          toast(r && r.ok ? L('ph.clip_posted') : L('ph.err_' + ((r && r.error) || 'x')));
+        }));
+    });
+}
+
 RENDER.camera = async () => {
   if (!state.camera) { body(UI.empty(L('ph.camera_off'), 'camera')); return; }
   const d = await post('photos', { op: 'list' });
@@ -4500,19 +4551,30 @@ RENDER.camera = async () => {
         '<div class="camgrid"></div>' +
         '<div class="camhint">' + esc(L('ph.vf_hint')) + '</div>' +
       '</div>' +
-      '<div class="cammode"><span class="on">' + esc(L('ph.cam_photo')) + '</span></div>' +
+      // Photo, and - when the server has video hosting on - a Video mode toggle.
+      '<div class="cammode">' +
+        '<span class="' + (camMode === 'photo' ? 'on' : '') + '" data-mode="photo">' + esc(L('ph.cam_photo')) + '</span>' +
+        (state.mediaVideo ? '<span class="' + (camMode === 'video' ? 'on' : '') + '" data-mode="video">' +
+          esc(L('ph.cam_video')) + '</span>' : '') +
+      '</div>' +
       '<div class="camctl">' +
         (last ? '<button class="camroll" id="camroll" type="button" style="' + photoStyle(last) + '"></button>'
               : '<span class="camroll empty"></span>') +
-        '<button class="camshutter" id="shoot" type="button" aria-label="' +
+        '<button class="camshutter' + (camMode === 'video' ? ' video' : '') + '" id="shoot" type="button" aria-label="' +
           esc(L('ph.shooting')) + '"><span></span></button>' +
-        '<button class="camflip" id="camland2" type="button" aria-label="' +
-          esc(L('ph.landscape')) + '">' + svg('landscape') + '</button>' +
+        '<button class="camflip' + (camFront ? ' on' : '') + '" id="camselfie" type="button" aria-label="' +
+          esc(L('ph.cam_selfie')) + '">' + svg('camrotate') + '</button>' +
       '</div>' +
+      '<div class="camrec hidden" id="camrec"><span class="camrecdot"></span><span id="camrectime">0</span>s</div>' +
     '</div>'
   );
 
+  rows('.cammode span[data-mode]', (el) => el.addEventListener('click', () => {
+    camMode = el.dataset.mode; RENDER.camera();
+  }));
+
   byId('shoot').addEventListener('click', async () => {
+    if (camMode === 'video') { cameraRecord(); return; }
     toast(L('ph.shooting'));
     const res = await post('shoot');
     if (!res || res.error) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
@@ -4521,7 +4583,13 @@ RENDER.camera = async () => {
   byId('camback').addEventListener('click', () => closeApp());
   const toggle = () => { setLandscape(!landscape); RENDER.camera(); };
   byId('camland').addEventListener('click', toggle);
-  byId('camland2').addEventListener('click', toggle);
+  // Flip to the front camera: a game camera in front of the ped, facing back, so a photo
+  // or clip is of the player. The client sets it up and tears it down.
+  byId('camselfie').addEventListener('click', () => {
+    camFront = !camFront;
+    post('camFacing', { front: camFront });
+    RENDER.camera();
+  });
   const roll = byId('camroll');
   if (roll) roll.addEventListener('click', () => {
     const a = (state.apps || []).find((x) => x.id === 'gallery');
@@ -5619,7 +5687,11 @@ function postCard(pst, appId) {
         '<span class="ph">@' + esc(pst.handle) + '</span></span>' +
       '<span class="pt">' + esc(socWhen(pst.at)) + '</span></button>';
 
-  const image = pst.image ? '<img class="pimg" src="' + esc(pst.image) + '" alt="" />' : '';
+  // A clip renders as a looping muted video; a photo as an image. Both fill the card.
+  const image = !pst.image ? ''
+    : (pst.kind === 'video'
+        ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
+        : '<img class="pimg" src="' + esc(pst.image) + '" alt="" />');
   const text = pst.body ? '<div class="pbody">' + esc(pst.body) + '</div>' : '';
 
   const actions =
@@ -6911,11 +6983,15 @@ function renderCall() {
     return;
   }
   ui.classList.add('on');
+  // FaceTime: a real voice call presented as a video call. FiveM cannot stream a live
+  // face, so the layout is the difference, not a video feed - honest, and it reads right.
+  ui.classList.toggle('facetime', !!call.video);
   const name = call.number ? nameOfNumber(call.number) : L('ph.unknown');
   byId('callav').textContent = name.slice(0, 1).toUpperCase();
   byId('callnum').textContent = name;
-  byId('callstate').textContent =
-    call.state === 'in' ? L('ph.incoming') : call.state === 'out' ? L('ph.calling') : '';
+  byId('callstate').textContent = call.video
+    ? L('ph.facetime_video')
+    : (call.state === 'in' ? L('ph.incoming') : call.state === 'out' ? L('ph.calling') : '');
 
   // Live activity in the island, which is what a modern iPhone does with a call.
   setIslandMode('live');
@@ -7485,10 +7561,54 @@ async function refresh() {
 
 // ══ Wiring ═════════════════════════════════════════════════════
 byId('lock').addEventListener('click', unlock);
-byId('homebar').addEventListener('click', (e) => {
-  e.currentTarget.blur();
-  goHome();
-});
+// The home indicator answers to a tap AND a swipe up, the way an iPhone does. It used to
+// be a bare click, which missed when the bar is thin and a gesture started a few pixels
+// above it or moved as it landed. This tracks a pointer from anywhere in the bottom band,
+// fires on a quick upward flick or a clean tap, and never double-fires.
+(function wireHome() {
+  const bar = byId('homebar');
+  let start = null;
+  let fired = false;
+
+  const trigger = () => {
+    if (fired) return;
+    fired = true;
+    bar.blur();
+    goHome();
+  };
+
+  const down = (e) => {
+    start = { x: e.clientX, y: e.clientY, t: Date.now() };
+    fired = false;
+  };
+  const move = (e) => {
+    if (!start) return;
+    // A decisive upward flick fires immediately, so a swipe never has to also be a tap.
+    if (start.y - e.clientY > 26) { start = null; trigger(); }
+  };
+  const up = (e) => {
+    if (!start) return;
+    const dy = start.y - e.clientY;
+    const dx = Math.abs(e.clientX - start.x);
+    const quick = Date.now() - start.t < 400;
+    start = null;
+    // A short press that did not wander, or a small upward move: treat as "go home".
+    if (dy > 8 || (quick && dx < 14 && Math.abs(dy) < 14)) trigger();
+  };
+
+  bar.addEventListener('pointerdown', down);
+  bar.addEventListener('pointermove', move);
+  bar.addEventListener('pointerup', up);
+  bar.addEventListener('pointercancel', () => { start = null; });
+  // A plain click is the fallback for input methods that emit no pointer events. If a
+  // pointer sequence handled this interaction `fired` is still set, so it no-ops; then it
+  // clears so the NEXT click still works on a click-only device.
+  bar.addEventListener('click', () => {
+    if (fired) { fired = false; return; }
+    trigger();
+    fired = false;
+  });
+})();
 
 // Chromium can expose its desktop focus ring after a touch in some CEF builds. Keep
 // focus visible for keyboard users, but never leave that coloured rectangle behind
