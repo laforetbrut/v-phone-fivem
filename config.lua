@@ -27,6 +27,21 @@ Config = {}
 --- Standalone works: the phone falls back to the licence identifier and has no job.
 Config.Framework = 'auto'
 
+-- Moving an earlier build's data to the `vphone_` prefix at boot.
+--
+-- **Off by default, on purpose.** A fresh install has no legacy tables and needs none of
+-- this, and nothing surprising should happen to your database the first time you start a
+-- resource. Turn it on ONLY if you are upgrading a server that ran v-phone 1.0.0 to 1.0.4.
+--
+--   false   (default) never migrate. Fresh installs, and anyone who would rather move
+--           their own data, want this. The phone creates its `vphone_` tables and starts.
+--   'auto'  rename a legacy table ONLY if its columns match this resource's own schema.
+--           A table that merely shares a name - another script's `phone_contacts` - fails
+--           the check and is never touched. Safe to leave on while upgrading.
+--   true    trust the names and rename without the column check. Only if you are certain
+--           every legacy-named table on the server is this phone's.
+Config.MigrateLegacyTables = false
+
 --- The inventory item a player must carry, when `Config.Settings.requireItem` is on.
 Config.PhoneItem = 'phone'
 
@@ -664,4 +679,53 @@ Config.DeadZones = {
     { id = 'dz_senora',    label = 'Grand Senora Desert',    x = 1400.0,  y = 2800.0,  z = 60.0,  radius = 800.0, bars = 1 },
     { id = 'dz_tunnel_ls', label = 'Los Santos tunnels',     x = 800.0,   y = -1300.0, z = -40.0, radius = 260.0, bars = 0 },
     { id = 'dz_mine',      label = 'Davis Quartz',           x = 2900.0,  y = 2800.0,  z = 40.0,  radius = 350.0, bars = 1 },
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  ADMIN
+-- ══════════════════════════════════════════════════════════════
+-- Staff actions on a player's phone, from the console, an ACE-gated command, or the
+-- qb-core admin menu. Every one of them is also an export (see API.md), so an admin menu
+-- of any framework can drive them.
+Config.Admin = {
+    -- The ACE permission a command or menu action is checked against. `command.PLAYERID`
+    -- style aces and qb-core's `qbadmin.menu` / god group are both accepted; this is the
+    -- one the phone registers its own commands under.
+    ace = 'vphone.admin',
+
+    -- Register the `/phoneadmin` command set. Off leaves only the exports, for a server
+    -- that drives everything from its own menu.
+    commands = true,
+
+    -- Add phone actions to the qb-core admin menu (qb-adminmenu), when it is running.
+    -- Gives staff "Open / Wipe / Charge / Set number" on a selected player without a
+    -- command. No effect on ox or ESX, which have no such menu to extend.
+    qbAdminMenu = true,
+
+    -- What staff may do. Turn any of these off to hide it from the command and the menu.
+    actions = {
+        openRemote   = true,   -- open a player's phone on their screen (support)
+        setBattery   = true,
+        setNumber    = true,
+        wipe         = true,   -- delete every trace of a character's phone data
+        sendMessage  = true,   -- send them a service message
+        readInfo     = true,   -- number, battery, unread count, social handles
+    },
+
+    -- Wiping is destructive. Require a second confirmation in the command flow.
+    confirmWipe = true,
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  EXTERNAL CHARGING
+-- ══════════════════════════════════════════════════════════════
+-- Another script can charge the phone: an electric car, a solar backpack, a wall socket
+-- prop. It calls `exports['v-phone']:SetCharging(src, on, rate)` and the phone treats the
+-- player as if they were at a charger for as long as `on` is true. See API.md.
+Config.ExternalCharging = {
+    -- The default rate an external charger applies when it does not name one. 1.0 is the
+    -- same speed as a wall charger; 2.0 is twice as fast.
+    defaultRate = 1.0,
+    -- A ceiling, so a misbehaving script cannot charge a phone in one tick.
+    maxRate = 4.0,
 }

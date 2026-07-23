@@ -328,6 +328,12 @@ end
 RegisterCommand('vphone', function() if isOpen then closePhone() else openPhone() end end, false)
 RegisterKeyMapping('vphone', 'Open the phone', 'keyboard', Config.Key or 'F1')
 
+-- The server can open or close the phone from an admin action or an API call. Close is
+-- also how a number change, a wipe or an import make the phone reload rather than show
+-- what was just changed underneath it.
+RegisterNetEvent('v-phone:client:open', function() if not isOpen then openPhone() end end)
+RegisterNetEvent('v-phone:client:close', function() if isOpen then closePhone() end end)
+
 local function sendWhenOpen(message)
     if isOpen then
         SendNUIMessage(message)

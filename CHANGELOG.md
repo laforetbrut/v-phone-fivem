@@ -4,6 +4,44 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.1.0] - 2026-07-23
+
+### Added (English first)
+
+- **Import / export a character's whole phone** - `ExportPhone(citizenid)` returns a plain table of contacts, notes, app data, preferences and the mailbox; `ImportPhone(citizenid, data, replace)` writes it back. For a character transfer, a backup, or a support restore. The number is not carried: it belongs to the server that minted it.
+- **An admin toolkit** - `/phoneadmin info | open | battery | number | message | wipe`, gated by `Config.Admin.ace`, plus a matching set of exports (`AdminReadPhone`, `OpenPhoneFor`, `WipePhone`) so an admin menu of any framework can drive them. `WipePhone` deletes every trace of a character across all twenty seven tables. The qb-core admin menu is detected and pointed at the command.
+- **External charging** - `SetCharging(src, on, rate)` lets an electric car, a solar pack or a socket prop charge the phone. It wins over the built-in charger detection while it is on, capped by `Config.ExternalCharging.maxRate`.
+- **A lot more config** - `Config.Admin` (permission, which actions staff may take, wipe confirmation, the qb-core menu), `Config.ExternalCharging`, and `Config.MigrateLegacyTables`.
+
+### Changed
+
+- **Table migration is off by default and verifies the schema before it touches anything.** A fresh install never rewrites its database on first boot. When turned on (config or `set phone_migrate auto`), a legacy table is renamed only if its columns match this resource's own - so another script's table that merely shares a name is left completely alone. Verified live: a foreign `social_posts` with different columns survived untouched while a genuine `phone_contacts` migrated.
+
+### Fixed
+
+- **`WipePhone` ran a `citizenid` delete against `vphone_messages`**, which is keyed by from_cid / to_cid and has no such column, so it threw. The conversation tables are cleared by their own keys now. Found by calling the export on a live server.
+
+---
+
+## [1.1.0] - 2026-07-23
+
+### Ajouts (miroir français)
+
+- **Import / export du téléphone entier d'un personnage** - `ExportPhone(citizenid)` renvoie une table simple des contacts, notes, données d'app, préférences et boîte mail ; `ImportPhone(citizenid, data, replace)` la réécrit. Pour un transfert de personnage, une sauvegarde, une restauration. Le numéro n'est pas emporté : il appartient au serveur qui l'a créé.
+- **Une boîte à outils admin** - `/phoneadmin info | open | battery | number | message | wipe`, protégée par `Config.Admin.ace`, plus les exports correspondants (`AdminReadPhone`, `OpenPhoneFor`, `WipePhone`) pour qu'un menu admin de n'importe quel framework les pilote. `WipePhone` supprime toute trace d'un personnage sur les vingt-sept tables. Le menu admin qb-core est détecté et pointé sur la commande.
+- **Recharge externe** - `SetCharging(src, on, rate)` permet à une voiture électrique, un sac solaire ou une prise de recharger le téléphone. Elle l'emporte sur la détection de borne intégrée tant qu'elle est active, plafonnée par `Config.ExternalCharging.maxRate`.
+- **Beaucoup plus de config** - `Config.Admin` (permission, actions permises, confirmation du wipe, menu qb-core), `Config.ExternalCharging`, et `Config.MigrateLegacyTables`.
+
+### Modifications
+
+- **La migration des tables est désactivée par défaut et vérifie le schéma avant de toucher quoi que ce soit.** Une installation neuve ne réécrit jamais sa base au premier démarrage. Une fois activée (config ou `set phone_migrate auto`), une table héritée n'est renommée que si ses colonnes correspondent à celles de cette ressource - la table d'un autre script qui partage simplement un nom est laissée totalement intacte. Vérifié en réel : une `social_posts` étrangère aux colonnes différentes a survécu sans être touchée pendant qu'une vraie `phone_contacts` migrait.
+
+### Correctifs
+
+- **`WipePhone` lançait une suppression par `citizenid` sur `vphone_messages`**, qui est clé par from_cid / to_cid et n'a pas cette colonne : il levait une erreur. Les tables de conversation sont maintenant nettoyées par leurs propres clés. Trouvé en appelant l'export sur un serveur vivant.
+
+---
+
 ## [1.0.4] - 2026-07-23
 
 ### Added (English first)
