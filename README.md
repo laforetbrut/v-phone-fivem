@@ -4,6 +4,36 @@ An iOS 27 style phone for FiveM that runs on **your** framework. qb-core, qbx_co
 
 Twenty apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face ID.
 
+## Screenshots
+
+### First run
+
+A phone opened for the first time is activated, not just switched on: a name, an appearance, a wallpaper with the Clear Glass slider, a six digit passcode, and Face ID if the player wants it.
+
+| Hello | Wallpaper and transparency | Face ID |
+|---|---|---|
+| ![First run](docs/images/01-setup-hello.png) | ![Wallpaper](docs/images/02-setup-wallpaper.png) | ![Face ID](docs/images/03-setup-faceid.png) |
+
+### Every day
+
+| Home screen | Lock screen | Dynamic Island |
+|---|---|---|
+| ![Home](docs/images/04-home.png) | ![Lock screen](docs/images/10-lock-screen.png) | ![Dynamic Island](docs/images/08-dynamic-island.png) |
+
+The Dynamic Island is not decoration: a message arrives out of it, a call lives in it, and locking pinches it around a padlock.
+
+### Apps
+
+| Settings | Bank | Messages |
+|---|---|---|
+| ![Settings](docs/images/05-settings.png) | ![Bank](docs/images/06-bank.png) | ![Messages](docs/images/09-messages.png) |
+
+### Control centre
+
+Pull down from the top right for the toggles, the brightness and volume slabs, and what is playing.
+
+![Control centre](docs/images/07-control-centre.png)
+
 ## Features
 
 ### The phone
@@ -68,6 +98,12 @@ set phone_battery false      # any Config.Settings key, prefixed with phone_
 set phone_requireItem true   # the player must carry the phone item
 ```
 
+## Licence
+
+[MIT with an attribution requirement](LICENSE). Use it, change it, sell your server with it.
+
+The one thing you may not do is remove the credit the phone shows the player in **Settings > About**. Restyle it, translate it, put your own credits next to it. Do not take it away.
+
 ## Credits
 
 Author: vyrriox
@@ -81,6 +117,36 @@ Bleeter, Snapmatic and Hush are brands from Grand Theft Auto V.
 Un téléphone au style iOS 27 pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
 
 Vingt applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face ID.
+
+## Captures d'écran
+
+### Premier démarrage
+
+Un téléphone ouvert pour la première fois est activé, pas seulement allumé : un nom, une apparence, un fond d'écran avec le curseur Clear Glass, un code à six chiffres, et Face ID si le joueur le souhaite.
+
+| Bonjour | Fond et transparence | Face ID |
+|---|---|---|
+| ![Premier démarrage](docs/images/01-setup-hello.png) | ![Fond d'écran](docs/images/02-setup-wallpaper.png) | ![Face ID](docs/images/03-setup-faceid.png) |
+
+### Au quotidien
+
+| Écran d'accueil | Écran de verrouillage | Dynamic Island |
+|---|---|---|
+| ![Accueil](docs/images/04-home.png) | ![Verrouillage](docs/images/10-lock-screen.png) | ![Dynamic Island](docs/images/08-dynamic-island.png) |
+
+La Dynamic Island n'est pas décorative : un message en sort, un appel y vit, et le verrouillage la pince autour d'un cadenas.
+
+### Applications
+
+| Réglages | Banque | Messages |
+|---|---|---|
+| ![Réglages](docs/images/05-settings.png) | ![Banque](docs/images/06-bank.png) | ![Messages](docs/images/09-messages.png) |
+
+### Centre de contrôle
+
+Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosité et de volume, et ce qui est en lecture.
+
+![Centre de contrôle](docs/images/07-control-centre.png)
 
 ## Caractéristiques
 
@@ -145,6 +211,12 @@ set phone_locale "fr"
 set phone_battery false      # n'importe quelle clé de Config.Settings, préfixée par phone_
 set phone_requireItem true   # le joueur doit porter l'objet téléphone
 ```
+
+## Licence
+
+[MIT avec obligation d'attribution](LICENSE). Utilisez-le, modifiez-le, vendez votre serveur avec.
+
+La seule chose que vous ne pouvez pas faire, c'est retirer le crédit que le téléphone montre au joueur dans **Réglages > À propos**. Habillez-le, traduisez-le, mettez vos propres crédits à côté. Ne le supprimez pas.
 
 ## Credits
 
