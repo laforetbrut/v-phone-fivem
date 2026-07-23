@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Example phone app</title>
+  <!-- The phone's own stylesheet, so the app looks like the phone rather than like a
+       page that happens to be inside it. -->
+  <link rel="stylesheet" href="../../html/style.css">
+  <!-- The kit and the bridge: PhoneUI draws, Phone talks to the phone. -->
+  <script src="../../html/sdk.js"></script>
+  <style>
+    body { margin: 0; min-height: 100vh; background: transparent; color: var(--app-label);
+           font-family: var(--ios-font); }
+    .wrap { padding: 14px; }
+  </style>
+</head>
+<body>
+  <main class="wrap" id="app"></main>
+
+  <script>
+    const UI = PhoneUI;
+
+    // AppKit is optional: plain Phone.ready() still works. Phone.mount() removes the
+    // repetitive state/render/loading/event wiring for apps that want it.
+    Phone.mount({
+      host: 'app',
+      title: 'AppKit Lab',
+      state: { count: 0, contact: null, location: null },
+
+      async load() {
+        Phone.navigation.action('Add', 'add', () => {
+          document.querySelector('[data-action="increment"]')?.click();
+        });
+        return { count: Number(await Phone.storage.getJSON('count', 0)) };
+      },
+
+      render({ state, context, busy }) {
+        return UI.hero({
+          appicon: 'check',
+          eyebrow: 'iFruit AppKit 2',
+          title: context.deviceName,
+          value: String(state.count),
+          subtitle: busy ? 'Saving…' : 'State persisted for this character',
+        }) +
+        UI.grid([
+          UI.tile({ icon: 'contacts', title: 'Contact', value: state.contact ? state.contact.name : 'Pick', data: { action: 'contact' } }),
+          UI.tile({ icon: 'location', title: 'Position', value: state.location ? 'Ready' : 'Locate', data: { action: 'location' } }),
+          UI.tile({ icon: 'add', title: 'Counter', value: state.count, data: { action: 'increment' } }),
+          UI.tile({ icon: 'share', title: 'System', value: 'Share', data: { action: 'share' } }),
+        ]) +
+        UI.notice({
+          icon: 'sparkles',
+          tone: 'success',
+          title: 'Native by default',
+          body: 'Pickers, sheets, notifications, storage and navigation belong to iFruit.',
+        }) +
+        UI.progress(state.count % 11, 10, 'Example progress') +
+        UI.group([
+          UI.row({ icon: 'images', tint: '#AF52DE', title: 'Pick a photo', chevron: true, data: { action: 'photo' } }),
+          UI.row({ icon: 'messages', tint: '#34C759', title: 'Open Messages', chevron: true, data: { action: 'messages' } }),
+          UI.row({ icon: 'trash', tint: '#FF3B30', title: 'Reset app data', data: { action: 'reset' } }),
+        ], { header: 'System actions' });
+      },
+
+      actions: {
+        increment: async ({ app, state }) => {
+          const count = state.count + 1;
+          await app.run(() => Phone.storage.setJSON('count', count));
+          app.setState({ count });
+          Phone.haptic('light');
+        },
+        contact: async ({ app }) => {
+          const result = await Phone.pick.contact();
+          if (result && result.ok) app.setState({ contact: result.contact });
+        },
+        photo: async () => {
+          const result = await Phone.pick.photo();
+          if (result && result.ok) Phone.toast('Photo selected');
+        },
+        location: async ({ app }) => {
+          const result = await Phone.location();
+          if (result && result.ok) app.setState({ location: result });
+        },
+        share: () => Phone.share({ title: 'AppKit Lab', text: 'Sent from an iFruit app.' }),
+        messages: () => Phone.open('messages', { draft: 'Hello from AppKit Lab' }),
+        reset: async ({ app }) => {
+          const result = await Phone.confirm({
+            title: 'Reset AppKit Lab?',
+            message: 'The data stored by this app will be removed.',
+            confirmLabel: 'Reset',
+            destructive: true,
+          });
+          if (result && result.confirmed) {
+            await Phone.storage.clear();
+            app.setState({ count: 0, contact: null, location: null });
+            Phone.haptic('success');
+          }
+        },
+      },
+    });
+  </script>
+</body>
+</html>
