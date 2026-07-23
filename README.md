@@ -46,6 +46,9 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning.
 - **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
 - **`/refreshphone`**: a get-out-of-jail command for a phone stuck to the hand or a frozen animation.
+- **Media hosting**: photos and short video clips captured in game and uploaded to a CDN (Fivemanage), with a per-file auto-delete clock. Clips post to Bleeter and Snapmatic.
+- **Front camera**: a selfie mode - a game camera in front of you - for photos and clips of yourself.
+- **FaceTime**: a video-call presentation over a real voice call (FiveM cannot stream a live face, so the layout is the difference, not a feed).
 
 ### The apps
 Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
@@ -96,6 +99,7 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 | Resource | Unlocks | Link |
 |---|---|---|
 | [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | the Camera app uploading photos | citizenfx/screenshot-basic |
+| [screencapture](https://github.com/itschip/screencapture) | photos and **video clips** to a CDN (Fivemanage) | itschip/screencapture |
 | [pma-voice](https://github.com/AvarianKnight/pma-voice) | phone call voice | AvarianKnight/pma-voice |
 | [ox_lib](https://github.com/overextended/ox_lib) | nicer notifications | overextended/ox_lib |
 | [ox_target](https://github.com/overextended/ox_target) | targeting the police forensics terminal | overextended/ox_target |
@@ -187,6 +191,9 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible.
 - **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.
 - **`/refreshphone`** : une commande de secours quand le téléphone reste collé à la main ou qu'une animation se fige.
+- **Hébergement média** : photos et courts clips vidéo capturés en jeu et envoyés vers un CDN (Fivemanage), avec une horloge de suppression automatique par fichier. Les clips se publient sur Bleeter et Snapmatic.
+- **Caméra frontale** : un mode selfie - une caméra de jeu devant vous - pour se photographier et se filmer.
+- **FaceTime** : une présentation d'appel vidéo par-dessus un vrai appel vocal (FiveM ne peut pas diffuser un visage en direct, la mise en page fait la différence, pas un flux).
 
 ### Les applications
 Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.
@@ -235,6 +242,7 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 | Ressource | Débloque | Lien |
 |---|---|---|
 | [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | l'upload de photos de l'app Appareil photo | citizenfx/screenshot-basic |
+| [screencapture](https://github.com/itschip/screencapture) | photos et **clips vidéo** vers un CDN (Fivemanage) | itschip/screencapture |
 | [pma-voice](https://github.com/AvarianKnight/pma-voice) | la voix des appels | AvarianKnight/pma-voice |
 | [ox_lib](https://github.com/overextended/ox_lib) | de plus belles notifications | overextended/ox_lib |
 | [ox_target](https://github.com/overextended/ox_target) | le ciblage du terminal d'enquête police | overextended/ox_target |

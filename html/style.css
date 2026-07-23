@@ -252,7 +252,13 @@ input { font: inherit; }
 /* ══ Home indicator ═══════════════════════════════════════════ */
 .homebar { position: absolute; left: 50%; bottom: 9px; z-index: 60;
   width: 140px; height: 5px; margin-left: -70px; border-radius: 99px;
-  background: rgba(255,255,255,.55); cursor: pointer; }
+  background: rgba(255,255,255,.55); cursor: pointer;
+  /* The visible pill is thin, but the gesture needs a real target: a tall, wide,
+     invisible hit area under it catches a swipe that starts a little off the pill or a
+     tap that lands beside it - which is what made the bar miss "sometimes". */
+  touch-action: none; }
+.homebar::before { content: ''; position: absolute; left: -40px; right: -40px;
+  top: -26px; bottom: -14px; }
 
 /* ══ Lock screen ══════════════════════════════════════════════ */
 .lock { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;
@@ -8554,4 +8560,51 @@ body.inframe.dark .uisearch {
 .fcracked {
   display: block; padding: 8px 10px; border-radius: 8px;
   color: #cffbe0; background: rgba(20, 60, 40, .55); font-size: 14px;
+}
+
+/* ══ Media: camera video, selfie, clips, FaceTime ══════════════ */
+/* The Video mode toggle sits beside Photo. */
+.cammode span { cursor: pointer; }
+.cammode span.on { color: #ffd60a; }
+.camshutter.video span { border-radius: 6px; background: #ff3b30; }
+.camflip.on { color: #ffd60a; }
+
+/* The recording indicator, top of the viewfinder. */
+.camrec {
+  position: absolute; top: 66px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 7px; z-index: 4;
+  padding: 5px 12px; border-radius: 20px; color: #fff; font-size: 13px;
+  font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, .55);
+}
+.camrec.hidden { display: none; }
+.camrecdot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; animation: camrecpulse 1s infinite; }
+@keyframes camrecpulse { 50% { opacity: .3; } }
+
+/* The clip-share sheet preview. */
+.clippreview {
+  width: 100%; margin-top: 12px; border-radius: 14px;
+  background: #000; aspect-ratio: 16 / 9; object-fit: cover;
+}
+
+/* A video post plays inline, framed like a photo. */
+.post video.pimg { background: #000; }
+
+/* FaceTime: the call screen presented as a video call. No live feed - FiveM cannot
+   stream a face - so it is a full, dark video-call layout with the peer front and centre
+   and a self-view placeholder, which reads as FaceTime without pretending to show video. */
+.callui.facetime {
+  background:
+    radial-gradient(120% 90% at 50% 12%, rgba(40, 60, 90, .5), transparent 60%),
+    linear-gradient(180deg, #0c1118, #05070b);
+}
+.callui.facetime .callav {
+  width: 128px; height: 128px; font-size: 52px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .12);
+}
+.callui.facetime::after {
+  content: '';
+  position: absolute; right: 16px; top: 74px;
+  width: 96px; height: 132px; border-radius: 14px;
+  background: linear-gradient(180deg, #1a2534, #0d141d);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
 }

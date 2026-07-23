@@ -876,6 +876,11 @@ local T = {
     ['ph.hush_active_hint'] = 'Desactive, votre profil quitte le paquet. Vos matchs restent.',
     -- Social, cote serveur : ce que le telephone ecrit pour le joueur
     ['soc.match_line'] = 'On a matche sur Hush !',
-    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reinitialise.',
+    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reinitialise.',    ['ph.cam_video'] = 'VIDEO',
+    ['ph.clip_ready'] = 'Clip pret',
+    ['ph.clip_posted'] = 'Clip publie',
+    ['ph.facetime'] = 'FaceTime',
+    ['ph.facetime_video'] = 'Appel video',
+    ['ph.facetime_hint'] = 'La video en direct n est pas affichee ; l appel est vocal.',    ['ph.cam_selfie'] = 'Camera avant',
 }
 for k, v in pairs(T) do Locales.fr[k] = v end

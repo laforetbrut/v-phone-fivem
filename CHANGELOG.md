@@ -4,6 +4,38 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.1.2] - 2026-07-23
+
+### Added (English first)
+
+- **Media hosting on a CDN.** With `Config.Media` on and [screencapture](https://github.com/itschip/screencapture) installed, the camera's photos and the social apps' video clips are captured in game and uploaded to Fivemanage (or any host, via `provider = 'custom'`). The upload runs on the server, so the API key never reaches a client - set it with `set phone_media_key`. Every file is tracked in `vphone_media` and **auto-deleted after `autoDeleteDays`**, dropped from the host too when `deleteEndpoint` is set.
+- **Video clips.** A Video mode in the camera records a real WebM clip, capped at `Config.Media.video.maxSeconds` (1..30), and posts it to Bleeter or Snapmatic. Video posts play inline in the feed.
+- **Front camera (selfie).** A flip control puts a game camera in front of the ped, so a photo or a clip is of the player. It is torn down when the camera or the phone closes.
+- **FaceTime.** A FaceTime button on a contact starts a real voice call presented as a video call on both phones. FiveM cannot stream a live face, so there is no video feed - the layout is the difference, and it is documented as such.
+- **A fivemanage/screencapture dependency row** in the README, with the git link.
+
+### Changed
+
+- **The home indicator is fixed.** It answered to a bare click on a thin pill, which missed when a swipe started a little off it or moved as it landed. It now tracks a pointer across a tall, wide hit area and fires on a quick upward flick or a clean tap, without double-firing.
+
+---
+
+## [1.1.2] - 2026-07-23
+
+### Ajouts (miroir français)
+
+- **Hébergement média sur un CDN.** Avec `Config.Media` activé et [screencapture](https://github.com/itschip/screencapture) installé, les photos de l'appareil photo et les clips vidéo des réseaux sociaux sont capturés en jeu et envoyés vers Fivemanage (ou n'importe quel hôte, via `provider = 'custom'`). L'upload tourne sur le serveur, la clé d'API n'atteint jamais un client - définissez-la avec `set phone_media_key`. Chaque fichier est suivi dans `vphone_media` et **supprimé automatiquement après `autoDeleteDays`**, retiré de l'hôte aussi quand `deleteEndpoint` est défini.
+- **Clips vidéo.** Un mode Vidéo dans l'appareil photo enregistre un vrai clip WebM, plafonné à `Config.Media.video.maxSeconds` (1..30), et le publie sur Bleeter ou Snapmatic. Les posts vidéo se lisent dans le fil.
+- **Caméra frontale (selfie).** Un bouton place une caméra de jeu devant le ped, pour se photographier ou se filmer. Elle est démontée quand l'appareil photo ou le téléphone se ferme.
+- **FaceTime.** Un bouton FaceTime sur un contact démarre un vrai appel vocal présenté comme un appel vidéo sur les deux téléphones. FiveM ne peut pas diffuser un visage en direct : il n'y a pas de flux vidéo, la mise en page fait la différence, et c'est documenté ainsi.
+- **Une ligne de dépendance fivemanage/screencapture** dans le README, avec le lien git.
+
+### Modifications
+
+- **La barre d'accueil est corrigée.** Elle ne répondait qu'à un clic sur une pastille fine, qui ratait quand un swipe démarrait un peu à côté ou bougeait à l'arrivée. Elle suit maintenant un pointeur sur une grande zone de détection et se déclenche sur un coup vers le haut ou un tap net, sans double déclenchement.
+
+---
+
 ## [1.1.1] - 2026-07-23
 
 ### Added (English first)

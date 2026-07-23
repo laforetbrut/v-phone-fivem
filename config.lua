@@ -786,3 +786,62 @@ Config.Police = {
         successChance = 0.6,     -- and it can still fail, so it is never a sure thing
     },
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  MEDIA  (photos and video hosting)
+-- ══════════════════════════════════════════════════════════════
+-- Where the camera's photos and the social apps' videos are hosted. By default the phone
+-- keeps photo URLs a player pastes and nothing else; turn this on to capture and upload
+-- to a CDN so a photo taken in game has a real link.
+--
+-- The upload runs on the SERVER through the `screencapture` resource, so the API key
+-- never reaches a client. Install it: https://github.com/itschip/screencapture
+Config.Media = {
+    -- Off leaves the camera taking local gallery photos only, and hides video recording.
+    enabled = false,
+
+    -- 'fivemanage' is the one wired here. 'custom' posts to `endpoint` with `headers`,
+    -- for any host that takes a multipart file and answers with a URL.
+    provider = 'fivemanage',
+
+    -- The upload endpoint. Fivemanage's v3 file API takes both images and video.
+    endpoint = 'https://api.fivemanage.com/api/v3/file',
+
+    -- Your API key. Prefer the convar so it stays out of the repo:
+    --     set phone_media_key "fm_xxxxxxxx"
+    -- A value here is used only when the convar is unset.
+    apiKey = '',
+
+    -- The multipart field name the endpoint expects. Fivemanage uses `file`.
+    formField = 'file',
+
+    -- Image encoding for photos: 'webp' (small), 'jpg', or 'png'.
+    imageEncoding = 'webp',
+
+    video = {
+        -- Recording is capped here, and the player-facing limit is the smaller of this
+        -- and what the record UI offers. Fivemanage and the game both dislike long clips.
+        maxSeconds = 15,       -- hard ceiling, 1..30
+        maxWidth = 1280,
+        maxHeight = 720,
+    },
+
+    -- ── Auto-deletion ──────────────────────────────────────────
+    -- The phone tracks every file it uploaded in `vphone_media` and removes it after this
+    -- many days: the row goes, and the file is deleted from the host if `deleteEndpoint`
+    -- is set. 0 keeps everything for ever.
+    --
+    -- Fivemanage also has its own retention; this is the phone's own clock on top of it,
+    -- so a server keeps control even if it changes host.
+    autoDeleteDays = 30,
+
+    -- How the host deletes a file, if it can. `{id}` and `{url}` are filled in. Left
+    -- empty, the phone only forgets the file (drops the row) and leaves the host to its
+    -- own retention. Fivemanage v3 deletes by id.
+    deleteEndpoint = 'https://api.fivemanage.com/api/v3/file/{id}',
+    deleteMethod = 'DELETE',
+
+    -- Extra headers for a 'custom' provider. For Fivemanage the Authorization header is
+    -- added from the key automatically.
+    headers = {},
+}
