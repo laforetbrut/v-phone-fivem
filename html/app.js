@@ -6367,24 +6367,52 @@ function stopTone() {
   clearInterval(ringTimer); ringTimer = null;
 }
 
-// Play one pass of a tone: a custom URL if there is one, otherwise the synthesised score.
+// The tones the resource ships as real files. They are GENERATED, not sampled - see
+// tools/make-sounds.py - and they sound better than a bare oscillator because they carry
+// harmonics and a real envelope. Anything that fails to load falls back to the
+// synthesised score, so a server that deleted the folder still has a phone that rings.
+const SOUND_BASE = 'https://cfx-nui-v-phone/sounds/';
+const SOUND_FILES = {
+  ring: { classic: 1, chime: 1, pulse: 1, radar: 1, signal: 1 },
+  alert: { ping: 1, pop: 1, tick: 1, note: 1 },
+  ui: { unlock: 1, lock: 1, success: 1, error: 1, shutter: 1 },
+};
+let soundsOff = false;   // set once a file has failed, so we stop asking every ring
+
+function soundUrl(kind, name) {
+  if (soundsOff || state.soundFiles === false) return null;
+  return (SOUND_FILES[kind] || {})[name] ? SOUND_BASE + kind + '_' + name + '.wav' : null;
+}
+
+function synth(name, gain) {
+  const score = TONES[name] || TONES.classic;
+  score.forEach(([f, t, d]) => note(f, t, d, gain, 'sine'));
+}
+
+// Play one pass of a tone. A player's own link wins, then the shipped file, then the
+// synthesised score. `loop` keeps the element so a ringtone can be stopped.
 function playTone(name, url, vol, loop) {
   const p = state.prefs || {};
   const v = vol == null ? (p.ringVolume ?? 0.7) : vol;
   if (v <= 0 || name === 'none') return;
 
-  if (url) {
+  const src = url || soundUrl('ring', name) || soundUrl('alert', name);
+  if (src) {
     try {
-      const el = new Audio(url);
+      const el = new Audio(src);
       el.volume = Math.max(0, Math.min(1, v));
       el.loop = !!loop;
+      // A missing or blocked file must not leave the phone silent.
+      el.addEventListener('error', () => {
+        if (!url) soundsOff = true;
+        synth(name, 0.12 * v);
+      }, { once: true });
       el.play().catch(() => {});
       if (loop) ringEl = el;
       return;
     } catch { /* fall through to the built-in */ }
   }
-  const score = TONES[name] || TONES.classic;
-  score.forEach(([f, t, d]) => note(f, t, d, 0.12 * v, 'sine'));
+  synth(name, 0.12 * v);
 }
 
 // A call rings until it is answered or gives up.
@@ -6438,11 +6466,25 @@ const UI_TONES = {
 // UI feedback sits well below a ringtone: it accompanies an action the player just
 // took, so it only has to be heard, not answered.
 function ui(name) {
-  const score = UI_TONES[name];
-  if (!score) return;
   const v = (state.prefs || {}).ringVolume;
   const vol = v == null ? 0.7 : v;
   if (vol <= 0) return;
+
+  // The five that ship as files use them; the rest are a click or two of oscillator,
+  // which is cheaper than a fetch and indistinguishable at that length.
+  const src = soundUrl('ui', name);
+  if (src) {
+    try {
+      const el = new Audio(src);
+      el.volume = Math.max(0, Math.min(1, vol * 0.55));
+      el.addEventListener('error', () => { soundsOff = true; }, { once: true });
+      el.play().catch(() => {});
+      return;
+    } catch { /* fall through */ }
+  }
+
+  const score = UI_TONES[name];
+  if (!score) return;
   score.forEach(([f, t, d]) => note(f, t, d, 0.045 * vol, 'sine'));
 }
 

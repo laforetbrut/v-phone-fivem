@@ -72,6 +72,8 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 | Voice | pma-voice, saltychat, mumble-voip |
 | Notifications | ox_lib, qb-core, ESX, chat, or your own event |
 
+**Every app is audited per ecosystem.** [COMPATIBILITY.md](COMPATIBILITY.md) lists what each app needs, what it reads on qb, ox, ESX and Quasar, and how to point it at your own script in one function.
+
 **Standalone works.** With no framework the phone falls back to the licence identifier, and apps that need a job or a bank simply are not offered.
 
 **The phone owns its own storage.** Preferences, layouts and photo lists live in `phone_kv`, keyed by character. Nothing is written into your framework's metadata column, so a framework update cannot break the phone.
@@ -185,6 +187,8 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 | Banque | Renewed-Banking, qb-banking, okokBanking, qs-banking, esx_banking |
 | Voix | pma-voice, saltychat, mumble-voip |
 | Notifications | ox_lib, qb-core, ESX, chat, ou votre propre événement |
+
+**Chaque application est auditée par écosystème.** [COMPATIBILITY.md](COMPATIBILITY.md) liste ce dont chaque application a besoin, ce qu'elle lit sur qb, ox, ESX et Quasar, et comment la brancher sur votre propre script en une fonction.
 
 **Le mode autonome fonctionne.** Sans framework, le téléphone se rabat sur l'identifiant de licence, et les applications qui ont besoin d'un métier ou d'une banque ne sont simplement pas proposées.
 

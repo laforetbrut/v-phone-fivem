@@ -30,7 +30,9 @@ Config.Compat = {
     -- ── Which script answers what ──────────────────────────────
     -- Each of these is `auto`, `off`, or the exact resource name to use.
     inventory = 'auto',   -- ox_inventory, qs-inventory, ps-inventory, qb-inventory, origen_inventory, codem-inventory
-    banking   = 'auto',   -- Renewed-Banking, qb-banking, okokBanking, qs-banking, esx_banking
+    banking   = 'auto',   -- qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking
+    garage    = 'auto',   -- qs-advancedgarages, jg-advancedgarages, qb-garages, cd_garage, okokGarage
+    housing   = 'auto',   -- qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property
     voice     = 'auto',   -- pma-voice, saltychat, mumble-voip
     notify    = 'auto',   -- ox_lib, qb, esx, chat, custom
     numbers   = 'auto',   -- auto | framework (keep the number in the framework) | phone (keep it here)
@@ -63,12 +65,19 @@ Config.Compat = {
     ignoredGroups = { admin = true, mod = true, support = true, group = true },
 
     -- ── Tables to read ─────────────────────────────────────────
-    -- The phone reads these directly when no export offers the same data. Set one to
-    -- false if your server has no such table; the app hides rather than erroring.
+    -- The phone reads these directly when no export offers the same data.
+    --
+    -- `auto` picks the right name for the framework that is running:
+    --   qb   player_vehicles / properties
+    --   ox   vehicles / ox_property / character_licenses
+    --   ESX  owned_vehicles / owned_properties / user_licenses
+    --
+    -- Name one to override it. Set one to `false` if your server has no such table: the
+    -- app hides rather than erroring.
     tables = {
-        vehicles   = 'player_vehicles',   -- qb / ESX. ox_core uses `vehicles`
-        properties = 'properties',
-        licences   = 'user_licenses',     -- ESX
+        vehicles   = 'auto',
+        properties = 'auto',
+        licences   = 'auto',
     },
 
     -- ── Your own wiring ────────────────────────────────────────
@@ -576,8 +585,19 @@ Config.Mail = {
 -- A custom tone is a URL a client will fetch, so the hosts are an operator decision, the
 -- same rule as wallpapers and avatars.
 Config.Sounds = {
-    ringtones = { 'classic', 'chime', 'pulse', 'radar', 'none' },
-    alerts    = { 'ping', 'pop', 'tick', 'none' },
+    -- `signal` and `note` are the two that only exist as shipped files; everything else
+    -- has a synthesised fallback of the same name.
+    ringtones = { 'classic', 'chime', 'pulse', 'radar', 'signal', 'none' },
+    alerts    = { 'ping', 'pop', 'tick', 'note', 'none' },
+
+    -- Use the WAV files in `sounds/` rather than synthesising the tones in the browser.
+    -- They are generated, not sampled: `python tools/make-sounds.py` rebuilds all of
+    -- them, so changing a melody is changing a table in that script.
+    --
+    -- Off falls back to the oscillators, which is also what happens automatically if a
+    -- file is missing. A phone always rings.
+    files = true,
+
     allowCustom = true,
     hosts = {
         'cdn.discordapp.com', 'media.discordapp.net',

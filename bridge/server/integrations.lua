@@ -209,6 +209,29 @@ function Bridge.Banking.Balances(src)
         if ok and type(result) == 'table' then return result end
     end
 
+    -- A dedicated banking script is the truth when there is one: qb's own money table
+    -- can lag behind a script that keeps its accounts elsewhere.
+    local bank = choose('banking', BANKS)
+    if bank == 'qs-banking' then
+        local p = Core.GetPlayer(src)
+        local balance = p and callExport(bank, 'GetAccountBalance', p.citizenid)
+        if balance ~= nil then
+            local cash = 0
+            if Bridge.framework == 'qb' then
+                local ok, QB = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
+                local player = ok and QB and QB.Functions.GetPlayer(src)
+                cash = player and (tonumber((player.PlayerData.money or {}).cash) or 0) or 0
+            end
+            return { cash = cash, bank = tonumber(balance) or 0 }
+        end
+    elseif bank == 'Renewed-Banking' then
+        local p = Core.GetPlayer(src)
+        local account = p and callExport(bank, 'getAccount', p.citizenid)
+        if type(account) == 'table' and account.amount then
+            return { cash = 0, bank = tonumber(account.amount) or 0 }
+        end
+    end
+
     if Bridge.framework == 'qb' then
         local ok, QB = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
         local player = ok and QB and QB.Functions.GetPlayer(src)
@@ -256,6 +279,16 @@ function Bridge.Banking.Transactions(src, citizenid)
         local rows = callExport(bank, 'getAccountTransactions', citizenid)
         if type(rows) == 'table' then return rows end
     end
+    if bank == 'qs-banking' then
+        -- Quasar keeps statements in its own table; the export set is write-side only,
+        -- so the history is read straight from it when it is there.
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT reason AS label, amount, date AS at
+                FROM bank_statements WHERE citizenid = ? ORDER BY id DESC LIMIT 25]],
+                { citizenid })
+        end)
+        if ok and type(rows) == 'table' then return rows end
+    end
     return nil
 end
 
@@ -264,44 +297,115 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- Each of these reads a table the ecosystem agrees on. A server whose script uses a
 -- different one points `Config.Compat.tables` at it rather than editing this file.
-local T = function(name) return Config.Compat.tables[name] end
+-- The default table names differ per framework, so `auto` resolves them once the
+-- framework is known rather than making the config file wrong for three servers out of
+-- four. Naming one in `Config.Compat.tables` always wins.
+local AUTO_TABLES = {
+    qb  = { vehicles = 'player_vehicles', properties = 'properties',       licences = nil },
+    ox  = { vehicles = 'vehicles',        properties = 'ox_property',      licences = 'character_licenses' },
+    esx = { vehicles = 'owned_vehicles',  properties = 'owned_properties', licences = 'user_licenses' },
+}
+
+local function T(name)
+    local configured = Config.Compat.tables[name]
+    if configured == false then return nil end
+    if configured and configured ~= 'auto' then return configured end
+    return (AUTO_TABLES[Bridge.framework] or AUTO_TABLES.qb)[name]
+end
+
+-- ── The garage app ─────────────────────────────────────────────
+-- Every garage script keeps the same handful of facts in a table of its own name. The
+-- phone only shows them, so reading the table is enough and no export is required - but
+-- a script with an export is asked first, because a table can lie about what is stored.
+local GARAGES = { 'qs-advancedgarages', 'jg-advancedgarages', 'qb-garages', 'cd_garage', 'okokGarage' }
 
 Bridge.Vehicles = {}
 
-function Bridge.Vehicles.Owned(citizenid)
+function Bridge.Vehicles.Owned(citizenid, src)
     local custom = Config.Compat.hooks.vehicles
     if custom then
-        local ok, rows = pcall(custom, citizenid)
+        local ok, rows = pcall(custom, citizenid, src)
         if ok and type(rows) == 'table' then return rows end
+    end
+
+    -- Quasar's garage answers for the player rather than for the character id.
+    local garage = choose('garage', GARAGES)
+    if garage == 'qs-advancedgarages' and src then
+        local rows = callExport(garage, 'GetPlayerVehicles', src)
+        if type(rows) == 'table' and #rows > 0 then return rows end
     end
 
     local tbl = T('vehicles')
     if not tbl then return nil end
+
+    -- Three schemas, one per ecosystem, all shaped into { plate, model, garage, state }.
     local ok, rows = pcall(function()
         if Bridge.framework == 'ox' then
-            return MySQL.query.await(
-                ('SELECT plate, model, stored FROM %s WHERE owner = ?'):format(tbl), { citizenid })
+            return MySQL.query.await(([[SELECT plate, model, stored, `owner`
+                FROM %s WHERE `owner` = ?]]):format(tbl), { citizenid })
         end
-        return MySQL.query.await(
-            ('SELECT plate, vehicle AS model, garage, state, fuel, engine, body FROM %s WHERE citizenid = ?')
-            :format(tbl), { citizenid })
+        if Bridge.framework == 'esx' then
+            return MySQL.query.await(([[SELECT plate, vehicle AS model, stored, `type`
+                FROM %s WHERE owner = ?]]):format(tbl), { citizenid })
+        end
+        return MySQL.query.await(([[SELECT plate, vehicle AS model, garage, state, fuel, engine, body
+            FROM %s WHERE citizenid = ?]]):format(tbl), { citizenid })
     end)
-    return ok and rows or nil
+    if not ok or type(rows) ~= 'table' then return nil end
+
+    -- ESX stores the model inside a JSON blob rather than in a column.
+    if Bridge.framework == 'esx' then
+        for _, r in ipairs(rows) do
+            if type(r.model) == 'string' and r.model:sub(1, 1) == '{' then
+                local decoded, data = pcall(json.decode, r.model)
+                r.model = (decoded and data and (data.model or data.modelName)) or '?'
+            end
+        end
+    end
+    return rows
 end
+
+-- ── The property app ───────────────────────────────────────────
+local HOUSING = { 'qs-housing', 'ps-housing', 'qb-houses', 'ox_property', 'loaf_housing', 'esx_property' }
 
 Bridge.Properties = {}
 
-function Bridge.Properties.Owned(citizenid)
+function Bridge.Properties.Owned(citizenid, src)
     local custom = Config.Compat.hooks.properties
     if custom then
-        local ok, rows = pcall(custom, citizenid)
+        local ok, rows = pcall(custom, citizenid, src)
         if ok and type(rows) == 'table' then return rows end
     end
 
-    -- Quasar's housing keeps an export for exactly this; everything else is a table.
-    if started('qs-housing') then
-        local rows = callExport('qs-housing', 'GetPlayerHouses', citizenid)
-        if type(rows) == 'table' then return rows end
+    local housing = choose('housing', HOUSING)
+
+    -- Quasar: GetPlayerHouses takes the SOURCE and returns house ids, not rows. The
+    -- phone wants something to show, so each id is turned into a labelled entry.
+    if housing == 'qs-housing' and src then
+        local ids = callExport(housing, 'GetPlayerHouses', src)
+        if type(ids) == 'table' then
+            local out = {}
+            for _, id in ipairs(ids) do
+                out[#out + 1] = { label = tostring(id), address = tostring(id), owned = true }
+            end
+            if #out > 0 then return out end
+        end
+    end
+
+    if housing == 'ps-housing' then
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT property_id AS id, street AS address, owner
+                FROM properties WHERE owner = ?]], { citizenid })
+        end)
+        if ok and type(rows) == 'table' and #rows > 0 then return rows end
+    end
+
+    if housing == 'esx_property' then
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT name AS label, name AS address
+                FROM owned_properties WHERE owner = ?]], { citizenid })
+        end)
+        if ok and type(rows) == 'table' and #rows > 0 then return rows end
     end
 
     local tbl = T('properties')
@@ -313,6 +417,7 @@ function Bridge.Properties.Owned(citizenid)
     return ok and rows or nil
 end
 
+-- ── The wallet app ─────────────────────────────────────────────
 Bridge.Licences = {}
 
 function Bridge.Licences.Held(src, citizenid)
@@ -323,19 +428,36 @@ function Bridge.Licences.Held(src, citizenid)
     end
 
     if Bridge.framework == 'qb' then
-        local player = Core.GetPlayer(src)
-        if player then
-            local held = player.GetMetadata('licences') or player.GetMetadata('licenses')
-            if type(held) == 'table' then return held end
-        end
+        -- qb keeps them as a map of name -> true in the character's metadata, under
+        -- either spelling depending on the fork.
         local raw = MySQL.scalar.await('SELECT metadata FROM players WHERE citizenid = ?', { citizenid })
         local ok, meta = pcall(json.decode, raw or '{}')
-        if ok and meta then return meta.licences or meta.licenses end
+        if ok and type(meta) == 'table' then
+            local held = meta.licences or meta.licenses
+            if type(held) == 'table' then
+                local out = {}
+                for name, has in pairs(held) do
+                    if has then out[#out + 1] = { type = name, label = name } end
+                end
+                return out
+            end
+        end
+
+    elseif Bridge.framework == 'ox' then
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT cl.name AS type, ol.label
+                FROM character_licenses cl
+                LEFT JOIN ox_licenses ol ON ol.name = cl.name
+                WHERE cl.charId = ?]], { citizenid })
+        end)
+        if ok and type(rows) == 'table' then return rows end
+
     elseif Bridge.framework == 'esx' then
         local tbl = T('licences')
         if tbl then
             local ok, rows = pcall(function()
-                return MySQL.query.await(('SELECT type FROM %s WHERE owner = ?'):format(tbl), { citizenid })
+                return MySQL.query.await(('SELECT type, type AS label FROM %s WHERE owner = ?')
+                    :format(tbl), { citizenid })
             end)
             if ok then return rows end
         end
@@ -417,7 +539,11 @@ CreateThread(function()
         GetTransactions = Bridge.Banking.Transactions,
     })
     V.RegisterProvider('v-vehicles', { GetOwned = Bridge.Vehicles.Owned })
-    V.RegisterProvider('v-housing', { GetOwned = Bridge.Properties.Owned })
+    V.RegisterProvider('v-housing', {
+        GetOwned = Bridge.Properties.Owned,
+        -- Upstream's housing module names this differently; both reach the same place.
+        GetProperties = Bridge.Properties.Owned,
+    })
     V.RegisterProvider('v-licenses', { GetHeld = Bridge.Licences.Held })
     V.RegisterProvider('v-cityhall', { GetJobs = Bridge.Jobs.All })
     V.RegisterProvider('v-status', { Get = Bridge.Status.Get })
