@@ -888,6 +888,10 @@ end
 local Battery = {}       -- [source] = level 0..100
 Signal = {}             -- [source] = bars 0..4
 local Charging = {}      -- [source] = true while in reach of something that charges
+-- [source] = rate, set by another resource through the SetCharging export: an electric
+-- car, a solar pack, a wall socket prop. Global so server/api.lua can write it. Read by
+-- chargeRateAt below, cleared when the player drops.
+ExternalCharge = {}
 
 batteryOf = function(src)
     return math.max(0, math.min(100, math.floor(Battery[src] or 100)))
@@ -948,6 +952,11 @@ end
 --- holds a key to. The last two follow the player rather than a coordinate, which is
 --- why they are code and not rows.
 local function chargeRateAt(src, ped, coords)
+    -- Another resource driving the charge wins over everything: an electric car it put
+    -- you in, a socket you plugged into. It named the rate; trust it, within the ceiling.
+    local ext = ExternalCharge[src]
+    if ext and ext > 0 then return ext end
+
     if IsPedInAnyVehicle(ped) then return 1.0 end
 
     -- Inside a property is decided on the CLIENT, because only the housing script knows,
@@ -2738,6 +2747,7 @@ AddEventHandler('playerDropped', function()
     local p = Core.GetPlayer(src)
     if p and Battery[src] then p.SetMetadata('battery', math.floor(Battery[src])) end
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
+    ExternalCharge[src] = nil
     MessageLastSend[src], MessageBusy[src] = nil, nil
     CipherUnlocked[src], CipherAttempts[src], CipherLastSend[src] = nil, nil, nil
     AirLastSend[src] = nil

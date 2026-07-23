@@ -69,6 +69,23 @@ works it out and reports it up a state bag the server reads.
 
 `Config.Compat.chargeAtProperty = false` leaves only vehicles and public chargers.
 
+An external script can also charge the phone - an electric car, a solar pack - with
+`exports['v-phone']:SetCharging(src, true, rate)`. See API.md.
+
+## Admin
+
+Staff actions on a player's phone, gated by `Config.Admin.ace` (default `vphone.admin`).
+qb-core's own admin group and `command` aces are accepted too.
+
+```
+add_ace group.admin vphone.admin allow
+```
+
+`/phoneadmin info | open | battery | number | message | wipe`, and the same set as exports
+(`AdminReadPhone`, `OpenPhoneFor`, `WipePhone`) for any framework's admin menu. On qb-core
+the admin menu is detected and pointed at the command. `Config.Admin.actions` turns any
+one off; `Config.Admin.confirmWipe` guards the destructive one.
+
 ## Integrations
 
 | Kind | Detected, in order |

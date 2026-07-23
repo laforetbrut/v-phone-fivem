@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.0.4'
+version '1.1.0'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -52,9 +52,11 @@ server_scripts {
     -- Bleeter, Snapmatic and Hush. Player-shared data, which the rest of the phone
     -- avoids, so it keeps its own file.
     'server/social.lua',
-    -- Everything another resource is meant to call. Loaded last, so every export it
-    -- builds on already exists. See API.md.
+    -- Everything another resource is meant to call. Loaded after the app it wraps, so
+    -- every export it builds on already exists. See API.md.
     'server/api.lua',
+    -- Staff actions and the /phoneadmin command, wrappers over the exports above.
+    'server/admin.lua',
     'apps/*/server.lua',      -- optional, per app folder
 }
 

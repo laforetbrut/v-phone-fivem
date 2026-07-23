@@ -123,6 +123,40 @@ phone:GetPhoneInfo()
 Useful in a `/phonedebug` command: it says what the phone decided at boot, which is the
 first question when an integration is not behaving.
 
+### External charging
+
+For a vehicle script (an electric car), a solar backpack, a wall socket prop. While it is
+on, the phone charges as if at a charger. `rate` is a multiplier: 1.0 is a wall charger,
+2.0 twice as fast, capped by `Config.ExternalCharging.maxRate`.
+
+```lua
+phone:SetCharging(src, true, 1.5)   -- plugged in
+phone:SetCharging(src, false)       -- unplugged
+phone:IsCharging(src)               --> boolean
+```
+
+### Admin
+
+Every action is also behind `/phoneadmin` and the qb-core admin menu, gated by
+`Config.Admin.ace`. Call them from your own admin menu on any framework.
+
+```lua
+phone:AdminReadPhone(citizenid)     --> { name, number, battery, unread, online, open, handles }
+phone:OpenPhoneFor(src)             --> true | false, 'offline'   (support: see their screen)
+phone:WipePhone(citizenid)          --> true, rowsRemoved        (IRREVERSIBLE)
+```
+
+### Import / export
+
+For a character transfer, a backup, or a support restore. Export is a plain table; import
+writes it back under a citizen id. Contacts, notes, app data, preferences and the mailbox
+travel; the phone number does not, because a number belongs to the server that minted it.
+
+```lua
+local data = phone:ExportPhone(citizenid)          -- a table you can store as JSON
+phone:ImportPhone(otherCitizenid, data, true)      -- true replaces existing rows first
+```
+
 ## Client exports
 
 ```lua
@@ -307,6 +341,40 @@ phone:GetPhoneInfo()
 
 Utile dans une commande `/phonedebug` : il dit ce que le telephone a decide au
 demarrage, ce qui est la premiere question quand une integration se comporte mal.
+
+### Recharge externe
+
+Pour un script de vehicule (voiture electrique), un sac solaire, une prise murale. Tant
+que c'est actif, le telephone se recharge comme a une borne. `rate` est un multiplicateur :
+1.0 est une borne murale, 2.0 deux fois plus vite, plafonne par `Config.ExternalCharging.maxRate`.
+
+```lua
+phone:SetCharging(src, true, 1.5)   -- branche
+phone:SetCharging(src, false)       -- debranche
+phone:IsCharging(src)               --> booleen
+```
+
+### Admin
+
+Chaque action est aussi derriere `/phoneadmin` et le menu admin qb-core, protegee par
+`Config.Admin.ace`. Appelez-les depuis votre propre menu admin sur n'importe quel framework.
+
+```lua
+phone:AdminReadPhone(citizenid)     --> { name, number, battery, unread, online, open, handles }
+phone:OpenPhoneFor(src)             --> true | false, 'offline'   (support : voir son ecran)
+phone:WipePhone(citizenid)          --> true, rowsRemoved        (IRREVERSIBLE)
+```
+
+### Import / export
+
+Pour un transfert de personnage, une sauvegarde, une restauration. L'export est une table
+simple ; l'import la reecrit sous un citizen id. Contacts, notes, donnees d'app, preferences
+et boite mail voyagent ; le numero non, car un numero appartient au serveur qui l'a cree.
+
+```lua
+local data = phone:ExportPhone(citizenid)          -- une table stockable en JSON
+phone:ImportPhone(autreCitizenid, data, true)      -- true remplace les lignes existantes
+```
 
 ## Exports client
 

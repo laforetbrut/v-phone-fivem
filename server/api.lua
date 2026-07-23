@@ -300,3 +300,162 @@ exports('GetPhoneInfo', function()
         social = V.SettingBool('social', true),
     }
 end)
+
+-- ══════════════════════════════════════════════════════════════
+-- External charging
+-- ══════════════════════════════════════════════════════════════
+-- Another resource charges the phone: an electric car, a solar backpack, a socket prop.
+-- It calls this while the player is plugged in and calls it again with `on = false` when
+-- they unplug. The phone treats them as if they were at a charger for as long as it is on.
+--
+--     -- an electric vehicle script, on enter with charge to spare:
+--     exports['v-phone']:SetCharging(src, true, 1.5)
+--     -- on leave, or when the car runs flat:
+--     exports['v-phone']:SetCharging(src, false)
+exports('SetCharging', function(src, on, rate)
+    src = tonumber(src)
+    if not src then return false, 'args' end
+    if not on then
+        ExternalCharge[src] = nil
+        return true
+    end
+    local cfg = Config.ExternalCharging or {}
+    local wanted = tonumber(rate) or cfg.defaultRate or 1.0
+    ExternalCharge[src] = math.max(0.1, math.min(tonumber(cfg.maxRate) or 4.0, wanted))
+    return true
+end)
+
+--- Is another resource charging this phone right now? For a car dashboard.
+exports('IsCharging', function(src)
+    src = tonumber(src)
+    return src ~= nil and (ExternalCharge[src] or 0) > 0
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Admin: acting on a character's phone
+-- ══════════════════════════════════════════════════════════════
+
+--- Everything about a character's phone, for a support tool: number, battery, unread
+--- count, and their social handles. Reads only; changes nothing.
+exports('AdminReadPhone', function(citizenid)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' then return nil end
+    local self = exports[GetCurrentResourceName()]
+    local target = Core.GetPlayerByCitizenId(citizenid)
+    return {
+        citizenid = citizenid,
+        name = Bridge.NameOfCitizen(citizenid),
+        number = self:GetNumber(citizenid),
+        online = target ~= nil,
+        battery = target and self:GetBattery(target.source) or nil,
+        open = target and self:IsPhoneOpen(target.source) or false,
+        unread = self:UnreadCount(citizenid),
+        handles = {
+            bleeter = self:SocialHandle(citizenid, 'bleeter'),
+            snap    = self:SocialHandle(citizenid, 'snap'),
+            hush    = self:SocialHandle(citizenid, 'hush'),
+        },
+    }
+end)
+
+--- Delete every trace of a character's phone data: a character reset, a ban cleanup, a
+--- data request. Returns how many rows went. IRREVERSIBLE - that is the point of a wipe.
+exports('WipePhone', function(citizenid)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' then return false, 'args' end
+
+    -- Keyed by `citizenid`. Messages and the DM / like / follow tables are keyed by the
+    -- two ends of a conversation instead, so they are handled separately below.
+    local byCitizen = {
+        'vphone_kv', 'vphone_characters', 'vphone_contacts',
+        'vphone_calls', 'vphone_voicemail', 'vphone_notes', 'vphone_mail_accounts',
+        'vphone_app_data', 'vphone_cipher_profiles', 'vphone_cipher_clears',
+        'vphone_social_accounts', 'vphone_social_posts', 'vphone_social_likes',
+        'vphone_social_comments', 'vphone_social_reposts', 'vphone_social_stories',
+        'vphone_social_story_seen', 'vphone_hush_profiles', 'vphone_group_members',
+    }
+    local removed = 0
+    for _, tbl in ipairs(byCitizen) do
+        local n = MySQL.update.await(('DELETE FROM %s WHERE citizenid = ?'):format(tbl), { citizenid })
+        removed = removed + (tonumber(n) or 0)
+    end
+
+    -- Keyed by from_cid / to_cid.
+    for _, tbl in ipairs({ 'vphone_messages', 'vphone_hush_likes', 'vphone_social_follows',
+                           'vphone_social_dm', 'vphone_cipher_messages' }) do
+        local n = MySQL.update.await(
+            ('DELETE FROM %s WHERE from_cid = ? OR to_cid = ?'):format(tbl), { citizenid, citizenid })
+        removed = removed + (tonumber(n) or 0)
+    end
+
+    local target = Core.GetPlayerByCitizenId(citizenid)
+    if target and target.source then TriggerClientEvent('v-phone:client:close', target.source) end
+    return true, removed
+end)
+
+--- Open a player's phone on their own screen. For support: "let me see what you see".
+exports('OpenPhoneFor', function(src)
+    src = tonumber(src)
+    if not src or not Core.GetPlayer(src) then return false, 'offline' end
+    TriggerClientEvent('v-phone:client:open', src)
+    return true
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Import / export: a character's whole phone, as one table
+-- ══════════════════════════════════════════════════════════════
+-- For a character transfer, a backup, or a support restore. Export gives you a plain
+-- table; import writes it back under a citizen id. The number is deliberately NOT carried:
+-- a number belongs to the server that minted it.
+local EXPORT_TABLES = {
+    contacts = { t = 'vphone_contacts',      key = 'citizenid' },
+    notes    = { t = 'vphone_notes',         key = 'citizenid' },
+    appdata  = { t = 'vphone_app_data',      key = 'citizenid' },
+    prefs    = { t = 'vphone_kv',            key = 'citizenid' },
+    mailbox  = { t = 'vphone_mail_accounts', key = 'citizenid' },
+}
+
+exports('ExportPhone', function(citizenid)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' then return nil end
+    local out = { citizenid = citizenid, version = 1 }
+    for name, spec in pairs(EXPORT_TABLES) do
+        out[name] = MySQL.query.await(
+            ('SELECT * FROM %s WHERE %s = ?'):format(spec.t, spec.key), { citizenid }) or {}
+    end
+    return out
+end)
+
+--- Write an exported phone back. `replace` clears the character's current rows first, so
+--- a restore does not double up. Rows are re-keyed to the target citizen id.
+exports('ImportPhone', function(citizenid, data, replace)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' or type(data) ~= 'table' then return false, 'args' end
+
+    for name, spec in pairs(EXPORT_TABLES) do
+        local rows = data[name]
+        if type(rows) == 'table' then
+            if replace then
+                MySQL.query.await(('DELETE FROM %s WHERE %s = ?'):format(spec.t, spec.key), { citizenid })
+            end
+            for _, row in ipairs(rows) do
+                row[spec.key] = citizenid
+                row.id = nil
+                local cols, marks, vals = {}, {}, {}
+                for col, value in pairs(row) do
+                    cols[#cols + 1] = '`' .. col .. '`'
+                    marks[#marks + 1] = '?'
+                    vals[#vals + 1] = value
+                end
+                if #cols > 0 then
+                    MySQL.insert.await(('INSERT INTO %s (%s) VALUES (%s)')
+                        :format(spec.t, table.concat(cols, ','), table.concat(marks, ',')), vals)
+                end
+            end
+        end
+    end
+
+    local target = Core.GetPlayerByCitizenId(citizenid)
+    if target and target.source then TriggerClientEvent('v-phone:client:close', target.source) end
+    return true
+end)
