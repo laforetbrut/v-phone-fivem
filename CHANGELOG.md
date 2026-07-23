@@ -4,6 +4,44 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.0.4] - 2026-07-23
+
+### Added (English first)
+
+- **The phone charges inside a property you have a key to** - detected per housing script and reported up a replicated state bag the server reads. qs-housing (Quasar) via `getCurrentHouse()`, ps-housing, qb-houses, ox_property and loaf_housing each read their own way, and `Config.Compat.hooks.atHome` handles anything else. `Config.Compat.chargeAtProperty = false` turns it off.
+- **Chargers and dead zones read straight from the config** - `Config.Chargers` and `Config.DeadZones` are the content now, so charging at a public charger and losing signal in a dead zone work without the map editor this build does not ship.
+
+### Changed
+
+- **qbx_core is reached the way qbx wants.** It ships no shared object, so `GetCoreObject` returns nothing on it - the player, the usable item and the job list came back empty. The bridge now uses qbx's direct exports (`GetPlayer`, `CreateUseableItem`, `GetJobs`) and classic qb-core's shared object, decided in one place so nothing else has to know the difference.
+- **Every qb access goes through two helpers** - `Bridge.QBGetPlayer` and `Bridge.QBUsable` - so a future qb variant is one edit, not a dozen.
+- **The repository is `v-phone-fivem`** - keeps the `v-phone` name people look for, findable by the framework.
+
+### Fixed
+
+- **A leftover seed call against v-world's editor tables** at boot. There is no editor and no v-world here; the config lists are the content, read straight from `Config`.
+
+---
+
+## [1.0.4] - 2026-07-23
+
+### Ajouts (miroir français)
+
+- **Le téléphone se charge à l'intérieur d'un logement dont vous avez la clé** - détecté par script de logement et remonté via un state bag répliqué que le serveur lit. qs-housing (Quasar) via `getCurrentHouse()`, ps-housing, qb-houses, ox_property et loaf_housing lisent chacun à leur façon, et `Config.Compat.hooks.atHome` gère le reste. `Config.Compat.chargeAtProperty = false` le désactive.
+- **Bornes et zones blanches lues directement depuis la config** - `Config.Chargers` et `Config.DeadZones` sont désormais le contenu : recharger à une borne publique et perdre le réseau dans une zone blanche fonctionnent sans l'éditeur de carte que cette version ne livre pas.
+
+### Modifications
+
+- **qbx_core est atteint comme qbx le veut.** Il ne livre aucun objet partagé, donc `GetCoreObject` ne renvoie rien dessus : le joueur, l'objet utilisable et la liste des métiers revenaient vides. Le pont utilise maintenant les exports directs de qbx (`GetPlayer`, `CreateUseableItem`, `GetJobs`) et l'objet partagé du qb-core classique, décidé en un seul endroit pour que rien d'autre n'ait à connaître la différence.
+- **Tout accès qb passe par deux helpers** - `Bridge.QBGetPlayer` et `Bridge.QBUsable` - pour qu'une future variante qb soit une modification, pas une douzaine.
+- **Le dépôt est `v-phone-fivem`** - il garde le nom `v-phone` que les gens cherchent, trouvable par le framework.
+
+### Correctifs
+
+- **Un appel de seed résiduel vers les tables d'éditeur de v-world** au démarrage. Il n'y a ni éditeur ni v-world ici ; les listes de config sont le contenu, lues directement depuis `Config`.
+
+---
+
 ## [1.0.3] - 2026-07-23
 
 ### Changed (English first)

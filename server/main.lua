@@ -950,17 +950,17 @@ end
 local function chargeRateAt(src, ped, coords)
     if IsPedInAnyVehicle(ped) then return 1.0 end
 
-    if GetResourceState('v-housing') == 'started' then
-        local inside = V.Use('v-housing').IsInside(src)
-        if inside then return 1.0 end
-    end
+    -- Inside a property is decided on the CLIENT, because only the housing script knows,
+    -- and reported up a replicated state bag. See bridge/client/charging.lua, which knows
+    -- how to ask qs-housing, ps-housing, qb-houses and the rest.
+    local state = Player(src) and Player(src).state
+    if state and state.phoneAtHome == true then return 1.0 end
 
-    if GetResourceState('v-world') == 'started' then
-        for _, c in ipairs(V.Use('v-world').GetChargers() or {}) do
-            if c.enabled ~= false and c.enabled ~= 0 then
-                if #(coords - vector3(c.x + 0.0, c.y + 0.0, c.z + 0.0)) <= (c.radius or 3.0) then
-                    return math.max(0.1, (tonumber(c.rate) or 20) / 20.0)
-                end
+    -- Public chargers, from Config.Chargers.
+    for _, c in ipairs(Config.Chargers or {}) do
+        if c.enabled ~= false and c.enabled ~= 0 then
+            if #(coords - vector3(c.x + 0.0, c.y + 0.0, c.z + 0.0)) <= (c.radius or 3.0) then
+                return math.max(0.1, (tonumber(c.rate) or 20) / 20.0)
             end
         end
     end
@@ -2983,15 +2983,9 @@ CreateThread(function()
 
     for _, a in ipairs(Config.Apps) do registerApp(a.id, a, a.owner) end
 
-    -- Seed the operator's rows from the config, exactly like every other content list: the
-    -- config holds the defaults, the database holds the edits.
-    local tries = 0
-    while not exports['v-world']:IsReady() and tries < 150 do Wait(100); tries = tries + 1 end
-    if exports['v-world']:IsReady() then
-        exports['v-world']:SeedApps(Config.Apps)
-        exports['v-world']:SeedChargers(Config.Chargers)
-        exports['v-world']:SeedDeadZones(Config.DeadZones)
-    end
+    -- Upstream seeded chargers, dead zones and the app list into v-world's editable
+    -- tables here. There is no editor and no v-world in this build: the config lists ARE
+    -- the content, read straight from Config wherever they are needed. Nothing to seed.
     loadWorldApps()
 
     -- Drop-in apps: whatever an `apps/<id>/app.lua` declared. They go through the same

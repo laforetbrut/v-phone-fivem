@@ -41,6 +41,11 @@ Config.Compat = {
     notify    = 'auto',   -- ox_lib, qb, esx, chat, custom
     numbers   = 'auto',   -- auto | framework (keep the number in the framework) | phone (keep it here)
 
+    -- The phone charges inside a property you have a key to, decided per housing script
+    -- (Quasar included) in bridge/client/charging.lua. Off leaves only vehicles and the
+    -- public chargers in Config.Chargers.
+    chargeAtProperty = true,
+
     -- With `notify = 'custom'`, the client event the phone fires instead. It receives
     -- (message, kind) where kind is inform | success | error.
     notifyEvent = 'myserver:notify',
@@ -99,6 +104,9 @@ Config.Compat = {
         licences = nil,       -- (src, citizenid) -> { { type, label }, ... }
         jobs = nil,           -- () -> { { name, label, grades }, ... }
         status = nil,         -- (src) -> { hunger, thirst, ... }
+        -- CLIENT side: true when the local player is inside a property they can charge
+        -- in. Only fill this if your housing script is none of the supported ones.
+        atHome = nil,         -- () -> boolean, runs on the client
     },
 
     -- Print what the phone decided at boot, and log every social/phone write. Useful

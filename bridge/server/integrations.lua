@@ -172,14 +172,9 @@ function Bridge.HasItem(src, item)
 
     -- No inventory script: ask the framework itself.
     if Bridge.framework == 'qb' then
-        local player = Core.GetPlayer(src)
-        if not player then return false end
-        local ok, QB = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
-        if ok and QB then
-            local qbp = QB.Functions.GetPlayer(src)
-            local found = qbp and qbp.Functions.GetItemByName(item)
-            return found ~= nil and (tonumber(found.amount) or 0) > 0
-        end
+        local qbp = Bridge.QBGetPlayer(src)
+        local found = qbp and qbp.Functions and qbp.Functions.GetItemByName(item)
+        return found ~= nil and (tonumber(found.amount) or 0) > 0
     elseif Bridge.framework == 'esx' then
         local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
         if ok and ESX then
@@ -218,8 +213,7 @@ function Bridge.Banking.Balances(src)
         if balance ~= nil then
             local cash = 0
             if Bridge.framework == 'qb' then
-                local ok, QB = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
-                local player = ok and QB and QB.Functions.GetPlayer(src)
+                local player = Bridge.QBGetPlayer(src)
                 cash = player and (tonumber((player.PlayerData.money or {}).cash) or 0) or 0
             end
             return { cash = cash, bank = tonumber(balance) or 0 }
@@ -233,8 +227,7 @@ function Bridge.Banking.Balances(src)
     end
 
     if Bridge.framework == 'qb' then
-        local ok, QB = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
-        local player = ok and QB and QB.Functions.GetPlayer(src)
+        local player = Bridge.QBGetPlayer(src)
         if player then
             local money = player.PlayerData.money or {}
             return { cash = tonumber(money.cash) or 0, bank = tonumber(money.bank) or 0 }
@@ -477,10 +470,19 @@ function Bridge.Jobs.All()
     end
 
     if Bridge.framework == 'qb' then
-        local ok, QB = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
-        if ok and QB and QB.Shared and QB.Shared.Jobs then
+        -- qbx exposes the whole job table as an export; classic qb keeps it on the shared
+        -- object. Both end up the same map of name -> { label, grades }.
+        local jobs
+        if Bridge.frameworkResource == 'qbx_core' then
+            local ok, all = pcall(function() return exports.qbx_core:GetJobs() end)
+            jobs = ok and all or nil
+        else
+            local QB = Bridge.QBCore()
+            jobs = QB and QB.Shared and QB.Shared.Jobs or nil
+        end
+        if jobs then
             local out = {}
-            for name, job in pairs(QB.Shared.Jobs) do
+            for name, job in pairs(jobs) do
                 local grades = {}
                 for level, grade in pairs(job.grades or {}) do
                     grades[#grades + 1] = { grade = tonumber(level) or 0,

@@ -57,13 +57,12 @@ local QB, ESX
 local function loadFramework()
     Bridge.framework, Bridge.frameworkResource = detectFramework()
     if Bridge.framework == 'qb' and Bridge.frameworkResource then
+        -- Classic qb-core hands out a shared object. qbx_core deliberately does not:
+        -- it exposes GetPlayer / CreateUseableItem / GetJobs as direct exports instead.
+        -- `QB` stays nil on qbx, and every qb reader below goes through the helpers,
+        -- which know both.
         local ok, core = pcall(function() return exports[Bridge.frameworkResource]:GetCoreObject() end)
         QB = ok and core or nil
-        if not QB then
-            -- qbx_core exposes the same object under a different export name.
-            local ok2, core2 = pcall(function() return exports[Bridge.frameworkResource]:GetSharedObject() end)
-            QB = ok2 and core2 or nil
-        end
     elseif Bridge.framework == 'esx' then
         local ok, obj = pcall(function() return exports['es_extended']:getSharedObject() end)
         ESX = ok and obj or nil
@@ -88,7 +87,35 @@ local function licenceOf(src)
     return tostring(src)
 end
 
-local function qbPlayer(src) return QB and QB.Functions.GetPlayer(src) or nil end
+--- Is qbx running rather than classic qb-core? They share a player SHAPE but not the
+--- way you reach it.
+local function isQbox() return Bridge.frameworkResource == 'qbx_core' end
+
+--- A qb-style player object, from whichever qb variant is running. This is the ONE place
+--- that knows qbx has no shared object, so nothing else has to.
+function Bridge.QBGetPlayer(src)
+    if isQbox() then
+        local ok, p = pcall(function() return exports.qbx_core:GetPlayer(src) end)
+        return ok and p or nil
+    end
+    return QB and QB.Functions.GetPlayer(src) or nil
+end
+
+--- The classic shared object, or nil on qbx. Callers that only need a player use
+--- QBGetPlayer; this exists for the few that read QB.Shared or QB.Functions directly.
+function Bridge.QBCore() return QB end
+
+--- Register a usable item across qb and qbx. Both export CreateUseableItem directly, so
+--- neither needs the shared object.
+function Bridge.QBUsable(item, fn)
+    if not Bridge.frameworkResource then return false end
+    local ok = pcall(function()
+        exports[Bridge.frameworkResource]:CreateUseableItem(item, function(src) fn(src) end)
+    end)
+    return ok
+end
+
+local function qbPlayer(src) return Bridge.QBGetPlayer(src) end
 
 local function oxPlayer(src)
     local ok, player = pcall(function() return exports.ox_core:GetPlayer(src) end)
