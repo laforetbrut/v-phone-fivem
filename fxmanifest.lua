@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.1.0'
+version '1.1.1'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -35,6 +35,8 @@ client_scripts {
     -- has a key to) and reports it up a state bag, per housing script.
     'bridge/client/charging.lua',
     'client/main.lua',
+    -- The police forensics terminal: a point on the map and the NUI relays behind it.
+    'client/police.lua',
     'apps/*/client.lua',      -- optional, per app folder
 }
 
@@ -57,6 +59,8 @@ server_scripts {
     'server/api.lua',
     -- Staff actions and the /phoneadmin command, wrappers over the exports above.
     'server/admin.lua',
+    -- The police forensics terminal: session auth and the read callbacks.
+    'server/police.lua',
     'apps/*/server.lua',      -- optional, per app folder
 }
 

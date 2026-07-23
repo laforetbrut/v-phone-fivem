@@ -86,6 +86,30 @@ add_ace group.admin vphone.admin allow
 the admin menu is detected and pointed at the command. `Config.Admin.actions` turns any
 one off; `Config.Admin.confirmWipe` guards the destructive one.
 
+## Police forensics
+
+A warrant terminal at the points in `Config.Police.points`. Police in a job from
+`Config.Police.jobs`, at or above `minGrade`, read a suspect's phone from the number:
+texts, contacts, calls, social posts and DMs, all in the clear because that is how the
+phone stores them. Every read is re-checked on the server and logged.
+
+The terminal interaction uses a target script when one is running, otherwise a marker
+and the E key:
+
+| Target | How |
+|---|---|
+| ox_target | a box zone with a forensics option |
+| qb-target / qtarget | a box zone with a forensics option |
+| none | a blue marker, `[E]` to open |
+
+**Cipher is end-to-end encrypted and the server holds no key**, so its content cannot be
+read - by the police, or by the operator. The terminal shows the metadata that is
+recoverable (who, when, key fingerprints). `Config.Police.cipher.intercept` (off by
+default) changes that: the phone keeps a server-wrapped copy of each Cipher message so
+the terminal can crack the content, slowly (`crackSeconds`) and not always
+(`successChance`). Leaving it off keeps Cipher a true secret, which is the app's promise
+to players.
+
 ## Integrations
 
 | Kind | Detected, in order |

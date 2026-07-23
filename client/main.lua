@@ -334,6 +334,51 @@ RegisterKeyMapping('vphone', 'Open the phone', 'keyboard', Config.Key or 'F1')
 RegisterNetEvent('v-phone:client:open', function() if not isOpen then openPhone() end end)
 RegisterNetEvent('v-phone:client:close', function() if isOpen then closePhone() end end)
 
+-- A get-out-of-jail command: the phone stuck to the hand, the browse animation frozen,
+-- the cursor captured with nothing on screen. It happens when another resource kills the
+-- ped's tasks mid-open, or a script error leaves the state half-set. This tears every
+-- phone-related thing down unconditionally - prop, animation, NUI focus, control guard -
+-- so the player can move again, whatever state the phone thinks it is in.
+local function forceReset()
+    isOpen = false
+    isOpening = false
+    openRequest = openRequest + 1
+    phoneTorch = false
+    activeSdkApp = nil
+    stopRinging()
+
+    -- Focus back to the game, both kinds, in case only one was cleared.
+    SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
+
+    -- The prop and the pose, unconditionally: clearHand only deletes a prop it is still
+    -- tracking, so also sweep any stray attached phone model and stop the clips by name.
+    clearHand()
+    local ped = PlayerPedId()
+    ClearPedSecondaryTask(ped)
+    if Config.Hold and Config.Hold.dict then
+        StopAnimTask(ped, Config.Hold.dict, Config.Hold.browse or '', 3.0)
+        StopAnimTask(ped, Config.Hold.dict, Config.Hold.call or '', 3.0)
+    end
+
+    -- Hand the menu lock back, or the player can never open anything else.
+    if menuClaimed then
+        menuClaimed = false
+        pcall(function() exports['v-core']:MenuClosed('v-phone') end)
+    end
+
+    TriggerServerEvent('v-phone:server:screen', false)
+    SendNUIMessage({ action = 'close' })
+    V.Notify(L('ph.phone_reset') or 'Phone reset', 'success')
+end
+
+-- Both spellings, because a panicking player types whichever they remember.
+RegisterCommand('refreshphone', forceReset, false)
+RegisterCommand('refresh-phone', forceReset, false)
+
+-- And a server nudge, so an admin can un-stick a player's phone remotely.
+RegisterNetEvent('v-phone:client:forceReset', forceReset)
+
 local function sendWhenOpen(message)
     if isOpen then
         SendNUIMessage(message)

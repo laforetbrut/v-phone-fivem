@@ -181,6 +181,20 @@
       </div>
     </div>
   </div>
+
+  <!-- The warrant terminal. A separate full-screen surface, not part of the phone: an
+       officer opens it at a forensics point to read a suspect's phone. Hidden until the
+       client raises it. -->
+  <div class="forensic hidden" id="forensic">
+    <div class="forensicwrap">
+      <header class="forensichead">
+        <div class="forensictitle"><span class="forensicdot"></span> iFruit Forensic Terminal</div>
+        <button class="forensicx" id="forensicx" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="forensicbody" id="forensicbody"></div>
+    </div>
+  </div>
+
   <!-- The kit lives in sdk.js so the built-in apps and a third-party app draw
        themselves with the same code. Two copies would drift. -->
   <script src="sdk.js"></script>

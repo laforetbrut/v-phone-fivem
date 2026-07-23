@@ -5222,7 +5222,11 @@ async function cipherOpenThread(peer) {
     button.disabled = true;
     try {
       const envelope = await cipherEncrypt(peer, text);
-      const sent = await post('cipher', { op: 'send', handle: peer.handle, envelope, burn: cipherBurn });
+      // Lawful intercept: only when the server has it enabled does the phone hand over a
+      // plaintext copy for the warrant terminal. Off - the default - it never leaves.
+      const payload = { op: 'send', handle: peer.handle, envelope, burn: cipherBurn };
+      if (state.cipherIntercept) payload.intercept_plain = text;
+      const sent = await post('cipher', payload);
       if (!cipherActive() || cipherThread?.handle !== peer.handle) return;
       button.disabled = false;
       if (!sent || !sent.ok) { toast(cipherError(sent)); return; }
@@ -7740,3 +7744,219 @@ window.addEventListener('message', (e) => {
 
 wireSideButtons();
 tick();
+
+// ══ The warrant terminal ═══════════════════════════════════════
+// A full-screen surface separate from the phone. The client raises it when an officer
+// interacts with a forensics point. It drives its own server callbacks through dedicated
+// NUI names, so nothing here can reach a phone read a player would use.
+//
+// It reuses nothing of the phone shell on purpose: a police tool that looked like the
+// suspect's phone would be confusing. It is a terminal - lists, a search, a status line.
+
+let forensicTarget = null;   // { number, name } once a session is open
+
+function fpost(name, data) {
+  return fetch('https://' + RESOURCE_NAME + '/' + name, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify(data || {}),
+  }).then((r) => r.json()).catch(() => ({ error: 'net' }));
+}
+
+const fesc = (s) => esc(String(s == null ? '' : s));
+const fwhen = (at) => fesc(String(at || '').slice(0, 16).replace('T', ' '));
+
+function forensicOpen() {
+  forensicTarget = null;
+  byId('forensic').classList.remove('hidden');
+  forensicSearch();
+}
+
+function forensicClose() {
+  byId('forensic').classList.add('hidden');
+  byId('forensicbody').innerHTML = '';
+  forensicTarget = null;
+  fpost('forensicClose', {});
+}
+
+// ── The search: a number, then a session ───────────────────────
+function forensicSearch() {
+  byId('forensicbody').innerHTML =
+    '<div class="forensicsearch">' +
+      '<h2>Warrant lookup</h2>' +
+      '<p>Enter the suspect\'s phone number. Every read is logged.</p>' +
+      '<div class="forensicfield">' +
+        '<input id="forensicnum" placeholder="555-0000" autocomplete="off" />' +
+        '<button id="forensicgo" type="button">Access</button>' +
+      '</div>' +
+      '<div class="forensicerr" id="forensicerr"></div>' +
+    '</div>';
+  const go = async () => {
+    const number = byId('forensicnum').value.trim();
+    if (!number) return;
+    byId('forensicerr').textContent = 'Authorising...';
+    const r = await fpost('forensicStart', { number });
+    if (!r || !r.ok) {
+      byId('forensicerr').textContent = forensicErr(r);
+      return;
+    }
+    forensicTarget = { number: r.number, name: r.name };
+    forensicView('messages');
+  };
+  byId('forensicgo').addEventListener('click', go);
+  byId('forensicnum').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  setTimeout(() => byId('forensicnum') && byId('forensicnum').focus(), 50);
+}
+
+function forensicErr(r) {
+  const map = {
+    off: 'Forensics is disabled.', unauthorised: 'You are not authorised.',
+    notatterminal: 'Stand at a forensics terminal.', noitem: 'You are missing the forensic kit.',
+    nonumber: 'Enter a number.', unknownnumber: 'No device on that number.',
+    nosession: 'Your warrant has expired. Re-authorise.', net: 'Terminal unreachable.',
+  };
+  return map[r && r.error] || 'Access denied.';
+}
+
+// ── The tabs ───────────────────────────────────────────────────
+const FORENSIC_TABS = [
+  { id: 'messages', label: 'Messages' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'calls', label: 'Calls' },
+  { id: 'social', label: 'Social' },
+  { id: 'cipher', label: 'Cipher' },
+];
+
+function forensicView(tab) {
+  const t = forensicTarget || {};
+  byId('forensicbody').innerHTML =
+    '<div class="forensictarget">' +
+      '<div><b>' + fesc(t.name || t.number) + '</b><span>' + fesc(t.number) + '</span></div>' +
+      '<button id="forensicnew" type="button">New lookup</button>' +
+    '</div>' +
+    '<nav class="forensictabs">' + FORENSIC_TABS.map((x) =>
+      '<button class="forensictab' + (x.id === tab ? ' on' : '') + '" data-tab="' + x.id +
+      '" type="button">' + x.label + '</button>').join('') + '</nav>' +
+    '<div class="forensiclist" id="forensiclist"><div class="forensicloading">Reading device...</div></div>';
+
+  byId('forensicnew').addEventListener('click', forensicSearch);
+  [...byId('forensicbody').querySelectorAll('.forensictab')].forEach((b) =>
+    b.addEventListener('click', () => forensicView(b.dataset.tab)));
+
+  if (tab === 'messages') forensicMessages();
+  else if (tab === 'contacts') forensicContacts();
+  else if (tab === 'calls') forensicCalls();
+  else if (tab === 'social') forensicSocial();
+  else if (tab === 'cipher') forensicCipher();
+}
+
+function forensicList(html) {
+  const host = byId('forensiclist');
+  if (host) host.innerHTML = html;
+}
+function forensicEmpty(text) { return '<div class="forensicempty">' + fesc(text) + '</div>'; }
+
+async function forensicMessages() {
+  const r = await fpost('forensicRead', { what: 'messages' });
+  if (!r || !r.ok) { forensicList(forensicEmpty(forensicErr(r))); return; }
+  const rows = r.rows || [];
+  forensicList(rows.length ? rows.map((m) =>
+    '<div class="frow ' + (m.outgoing ? 'out' : 'in') + '">' +
+      '<div class="fmeta"><span>' + (m.outgoing ? 'Sent to ' : 'From ') +
+        fesc(m.outgoing ? (m.to_num || '?') : (m.from_num || '?')) + '</span>' +
+        '<span class="ft">' + fwhen(m.at) + '</span></div>' +
+      '<div class="fbody">' + fesc(m.body) + '</div></div>').join('')
+    : forensicEmpty('No messages.'));
+}
+
+async function forensicContacts() {
+  const r = await fpost('forensicRead', { what: 'contacts' });
+  if (!r || !r.ok) { forensicList(forensicEmpty(forensicErr(r))); return; }
+  const rows = r.rows || [];
+  forensicList(rows.length ? rows.map((c) =>
+    '<div class="frow"><div class="fbody"><b>' + fesc(c.name) + '</b> ' +
+      fesc(c.number) + (Number(c.favourite) ? ' ★' : '') + '</div></div>').join('')
+    : forensicEmpty('No contacts.'));
+}
+
+async function forensicCalls() {
+  const r = await fpost('forensicRead', { what: 'calls' });
+  if (!r || !r.ok) { forensicList(forensicEmpty(forensicErr(r))); return; }
+  const rows = r.rows || [];
+  forensicList(rows.length ? rows.map((c) =>
+    '<div class="frow"><div class="fmeta"><span>' +
+      fesc(c.direction === 'out' ? 'Outgoing' : 'Incoming') + ' ' + fesc(c.other_num) +
+      (Number(c.answered) ? '' : ' (missed)') + '</span>' +
+      '<span class="ft">' + fwhen(c.at) + '</span></div></div>').join('')
+    : forensicEmpty('No calls.'));
+}
+
+async function forensicSocial() {
+  const r = await fpost('forensicRead', { what: 'social' });
+  if (!r || !r.ok) { forensicList(forensicEmpty(forensicErr(r))); return; }
+  const posts = r.posts || [], dms = r.dms || [];
+  let html = '';
+  if (posts.length) {
+    html += '<div class="fsub">Posts</div>' + posts.map((p) =>
+      '<div class="frow"><div class="fmeta"><span>' + fesc(p.app) + '</span>' +
+      '<span class="ft">' + fwhen(p.at) + '</span></div>' +
+      (p.body ? '<div class="fbody">' + fesc(p.body) + '</div>' : '') +
+      (p.image ? '<div class="fbody"><i>[image]</i></div>' : '') + '</div>').join('');
+  }
+  if (dms.length) {
+    html += '<div class="fsub">Direct messages</div>' + dms.map((d) =>
+      '<div class="frow ' + (d.outgoing ? 'out' : 'in') + '"><div class="fmeta"><span>' +
+      fesc(d.app) + ' ' + (d.outgoing ? '→ @' + fesc(d.to_handle || '?') : 'from @' + fesc(d.from_handle || '?')) +
+      '</span><span class="ft">' + fwhen(d.at) + '</span></div>' +
+      (d.body ? '<div class="fbody">' + fesc(d.body) + '</div>' : '') + '</div>').join('');
+  }
+  forensicList(html || forensicEmpty('No social activity.'));
+}
+
+// ── Cipher: metadata always, content only with a hard crack ─────
+async function forensicCipher() {
+  const r = await fpost('forensicRead', { what: 'cipher' });
+  if (!r || !r.ok) { forensicList(forensicEmpty(forensicErr(r))); return; }
+  const rows = r.rows || [];
+  const banner = r.interceptOn
+    ? '<div class="fcipherbanner warn">End-to-end encrypted. Content recoverable only by a slow, uncertain crack.</div>'
+    : '<div class="fcipherbanner">End-to-end encrypted. The server holds no key: content cannot be recovered, only the metadata below.</div>';
+  forensicList(banner + (rows.length ? rows.map((m) =>
+    '<div class="frow ' + (m.outgoing ? 'out' : 'in') + '" data-cid="' + m.id + '">' +
+      '<div class="fmeta"><span>' +
+        (m.outgoing ? '→ @' + fesc(m.to_handle || '?') : 'from @' + fesc(m.from_handle || '?')) +
+      '</span><span class="ft">' + fwhen(m.at) + '</span></div>' +
+      '<div class="fbody fcipherbody">' +
+        (m.recoverable ? '<button class="fcrack" data-id="' + m.id + '" type="button">Attempt crack</button>'
+                       : '<i class="fenc">🔒 encrypted</i>') +
+      '</div></div>').join('') : forensicEmpty('No Cipher traffic.')));
+
+  [...byId('forensiclist').querySelectorAll('.fcrack')].forEach((b) =>
+    b.addEventListener('click', async () => {
+      const cell = b.parentElement;
+      b.disabled = true;
+      cell.innerHTML = '<i class="fcracking">Cracking, this takes time...</i>';
+      const cr = await fpost('forensicCrack', { id: Number(b.dataset.id) });
+      if (cr && cr.ok && cr.cracked) {
+        cell.innerHTML = '<span class="fcracked">' + fesc(cr.body) + '</span>';
+      } else if (cr && cr.ok) {
+        cell.innerHTML = '<i class="fenc">crack failed, try again</i>' +
+          '<button class="fcrack" data-id="' + b.dataset.id + '" type="button">Retry</button>';
+        forensicCipher();   // rebind
+      } else {
+        cell.innerHTML = '<i class="fenc">' + fesc(forensicErr(cr)) + '</i>';
+      }
+    }));
+}
+
+byId('forensicx').addEventListener('click', forensicClose);
+
+// The client raises and lowers the terminal.
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
+  if (d.action === 'forensic:open') forensicOpen();
+  else if (d.action === 'forensic:close') forensicClose();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !byId('forensic').classList.contains('hidden')) forensicClose();
+});
