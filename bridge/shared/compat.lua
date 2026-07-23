@@ -158,6 +158,11 @@ STUBS['v-world'] = {
     --- Upstream lets an admin add or hide phone apps from an in-game editor. The config
     --- file is that editor here, so there is nothing extra to report.
     GetPhoneApps = function() return {} end,
+    --- Chargers and dead zones were rows an admin placed on a map. Here they are the
+    --- config's own lists, read straight back, so the battery and signal code upstream
+    --- needs no change.
+    GetChargers = function() return (Config and Config.Chargers) or {} end,
+    GetDeadZones = function() return (Config and Config.DeadZones) or {} end,
     SeedApps = function() end,
     SeedChargers = function() end,
     SeedDeadZones = function() end,
@@ -187,15 +192,10 @@ STUBS['v-inventory'] = {
             return
         end
 
-        -- qb and everything modelled on it.
-        if Bridge and Bridge.framework == 'qb' and Bridge.frameworkResource then
-            local ok, QB = pcall(function()
-                return realExports[Bridge.frameworkResource]:GetCoreObject()
-            end)
-            if ok and QB and QB.Functions and QB.Functions.CreateUseableItem then
-                QB.Functions.CreateUseableItem(item, function(src) fn(src) end)
-                return
-            end
+        -- qb-core and qbx both expose CreateUseableItem as a direct export; the helper
+        -- knows which one is running, so this works on either without a shared object.
+        if Bridge and Bridge.framework == 'qb' and Bridge.QBUsable then
+            if Bridge.QBUsable(item, fn) then return end
         end
 
         if Bridge and Bridge.framework == 'esx' then

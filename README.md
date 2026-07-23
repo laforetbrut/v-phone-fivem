@@ -43,7 +43,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **Grid sizes** from 3x3 to 6x7, chosen by the player in Settings.
 - **Sound**: fourteen audio files ship with the phone, five ringtones, four alerts and five interface sounds. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
-- **Battery** with charging, power banks and a low battery warning.
+- **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning.
 
 ### The apps
 Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
@@ -164,7 +164,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Grilles** de 3x3 à 6x7, choisies par le joueur dans les Réglages.
 - **Son** : quatorze fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes et cinq sons d'interface. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
-- **Batterie** avec recharge, batteries externes et alerte de batterie faible.
+- **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible.
 
 ### Les applications
 Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.

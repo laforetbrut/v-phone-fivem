@@ -5,8 +5,8 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.0.3'
-repository 'https://github.com/laforetbrut/fivem-ifruit-phone'
+version '1.0.4'
+repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
 -- detected at runtime and every one of them is optional. See config.lua -> Config.Compat.
@@ -31,6 +31,9 @@ shared_scripts {
 }
 
 client_scripts {
+    -- Works out whether the local player is somewhere the phone charges (a property it
+    -- has a key to) and reports it up a state bag, per housing script.
+    'bridge/client/charging.lua',
     'client/main.lua',
     'apps/*/client.lua',      -- optional, per app folder
 }

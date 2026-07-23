@@ -11,11 +11,17 @@ Everything is detected at boot. `Config.Compat` overrides any of it, and
 
 | | qb-core / qbx_core | ox_core | ESX Legacy | Standalone |
 |---|---|---|---|---|
+| Player object | qb-core: `GetCoreObject`. qbx: `GetPlayer` export | `GetPlayer` / `CallPlayer` | `getSharedObject` | licence identifier |
 | Character id | `citizenid` | `charId` | `identifier` | licence identifier |
 | Name | `charinfo` | `firstName` / `lastName` | `getName()` | Steam / player name |
-| Job | `PlayerData.job` | groups, minus `ignoredGroups` | `getJob()` | none |
+| Job | `PlayerData.job`, qbx via `GetJobs` | groups, minus `ignoredGroups` | `getJob()` | none |
 | Phone number | `charinfo.phone`, reused | `characters.phoneNumber`, reused | minted by the phone | minted by the phone |
+| Usable item | `CreateUseableItem` (both) | `ox_inventory:usedItem` | `RegisterUsableItem` | none |
 | Preferences | `vphone_kv` | `vphone_kv` | `vphone_kv` | `vphone_kv` |
+
+**qbx_core** ships no shared object: it exposes `GetPlayer`, `CreateUseableItem` and
+`GetJobs` as direct exports. The bridge detects it as a qb-family framework and reaches
+it the right way, so it is not a separate configuration.
 
 **Preferences are never written into your framework's metadata.** They live in
 `vphone_kv`, a table this resource owns, so a framework update cannot break the phone and
@@ -45,6 +51,23 @@ uninstalling the phone leaves your character rows untouched.
 | **MDT** | a police job | `Config.Compat.policeJobs` |
 | **Music** | a media script | Hidden unless one is wired through the hooks |
 | **Bleeter / Snapmatic / Hush / Cipher** | nothing | Own tables. Downloads, not shipped |
+
+## Battery charging
+
+The phone charges in a vehicle, at a public charger from `Config.Chargers`, and inside a
+property you have a key to. That last one only the housing script knows, so the client
+works it out and reports it up a state bag the server reads.
+
+| Housing | Read as |
+|---|---|
+| qs-housing (Quasar) | `getCurrentHouse()` is not nil |
+| ps-housing | `state.currentApartment` / `state.property` |
+| qb-houses | `state.inside` |
+| ox_property | `state.inProperty` |
+| loaf_housing | `state.inHouse` |
+| anything else | `Config.Compat.hooks.atHome`, a client function of yours |
+
+`Config.Compat.chargeAtProperty = false` leaves only vehicles and public chargers.
 
 ## Integrations
 
