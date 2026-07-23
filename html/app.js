@@ -8080,3 +8080,72 @@ window.addEventListener('message', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !byId('forensic').classList.contains('hidden')) forensicClose();
 });
+
+// ══ FaceTime live picture ══════════════════════════════════════
+// Experimental, opt-in, and the only reason it is affordable at all: the raw screen
+// capture the client hands over is far too big to relay, so it is shrunk and cropped HERE
+// before anything is sent. What leaves the page is a thumbnail of a few kilobytes.
+//
+// The crop matters. The capture is the whole screen, phone included, so the frame is
+// taken from the side of the screen the phone is NOT on: the player's face fills that
+// half, because a video call puts the front camera up.
+const faceCanvas = document.createElement('canvas');
+
+function faceShrink(dataUri) {
+  const cfg = state.facetime || {};
+  const w = Math.max(80, Math.min(480, Number(cfg.width) || 220));
+  const h = Math.max(80, Math.min(640, Number(cfg.height) || 300));
+  const q = Math.max(0.1, Math.min(0.9, Number(cfg.quality) || 0.4));
+
+  const img = new Image();
+  img.onload = () => {
+    // Take a portrait slice from the half of the screen the phone does not cover.
+    const onRight = ((state.prefs || {}).side || 'right') === 'right';
+    const sliceW = Math.floor(img.width * 0.42);
+    const sliceH = Math.min(img.height, Math.floor(sliceW * (h / w)));
+    const sx = onRight ? Math.floor(img.width * 0.06) : Math.floor(img.width * 0.52);
+    const sy = Math.max(0, Math.floor((img.height - sliceH) / 2));
+
+    faceCanvas.width = w;
+    faceCanvas.height = h;
+    const ctx = faceCanvas.getContext('2d');
+    try {
+      ctx.drawImage(img, sx, sy, sliceW, sliceH, 0, 0, w, h);
+      const small = faceCanvas.toDataURL('image/jpeg', q);
+      // Self view, straight from the canvas: no round trip for your own picture.
+      faceShow('faceself', small);
+      post('faceFrame', { frame: small });
+    } catch (e) { /* a capture that will not draw is simply skipped */ }
+  };
+  img.onerror = () => {};
+  img.src = dataUri;
+}
+
+// Put a frame into one of the two panels, creating it the first time.
+function faceShow(id, dataUri) {
+  const ui = byId('callui');
+  if (!ui) return;
+  let el = byId(id);
+  if (!dataUri) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('img');
+    el.id = id;
+    el.className = id === 'faceself' ? 'faceself' : 'facepeer';
+    el.alt = '';
+    ui.appendChild(el);
+  }
+  el.src = dataUri;
+}
+
+// Leaving a call clears both panels, so a dead frame never lingers on the next one.
+function faceClear() {
+  faceShow('faceself', null);
+  faceShow('facepeer', null);
+}
+
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
+  if (d.action === 'faceShrink' && d.data) faceShrink(d.data);
+  else if (d.action === 'facePeer') faceShow('facepeer', d.data || null);
+  else if (d.action === 'call' && !d.call) faceClear();
+});

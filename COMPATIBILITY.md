@@ -133,7 +133,7 @@ set phone_media_key "fm_xxxxxxxx"
 - **Photos** are real screen captures, uploaded and stored.
 - **Video clips** are real WebM recordings through screencapture, capped and uploaded, and post to Bleeter and Snapmatic.
 - **The front camera** (selfie) is a real game camera placed in front of the ped, so a photo or clip is of the player.
-- **FaceTime** is a real voice call presented as a video call. FiveM cannot stream a player's live face to another player, so there is no video feed - the FaceTime layout is the difference. The audio is the normal call.
+- **FaceTime** is a real voice call with an optional live picture. Turn on `Config.FaceTime.videoFeed` and, with [screenshot-basic](https://github.com/citizenfx/screenshot-basic) installed, each phone raises the front camera, captures a frame at `fps`, shrinks and crops it in the page to `width` x `height` at `quality`, and relays that thumbnail to the other participant only. It is bandwidth you are spending on every frame, so keep `fps` low and `maxFrameKb` tight; the feature is off by default and the call works without it.
 
 ## Integrations
 

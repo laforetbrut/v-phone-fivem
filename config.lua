@@ -845,3 +845,33 @@ Config.Media = {
     -- added from the key automatically.
     headers = {},
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  FACETIME  (experimental live video feed)
+-- ══════════════════════════════════════════════════════════════
+-- A FaceTime call is always a real voice call. With `videoFeed` on, it ALSO streams a
+-- live picture between the two phones: each side captures its front camera a few times a
+-- second, shrinks the frame to something tiny, and relays it to the other phone through
+-- the server. It is the same trick the paid phones use.
+--
+-- **Experimental, and off by default, for good reasons:**
+--   * it needs `screenshot-basic`,
+--   * it moves image data through the network every frame, so it costs bandwidth - the
+--     defaults are deliberately small (a thumbnail, a few frames a second),
+--   * screenshot-basic itself warns against sending screenshots through events, which is
+--     why the frame is shrunk hard in the page before it is ever sent, and why the server
+--     caps the size and the rate and drops anything larger.
+--
+-- Leave it off and FaceTime stays the clean voice-call-with-a-video-layout from 1.1.2.
+Config.FaceTime = {
+    videoFeed = false,     -- opt in to the live picture
+
+    fps = 6,               -- frames per second each side sends, capped at 12
+    width = 220,           -- the frame is scaled to this before sending
+    height = 300,
+    quality = 0.4,         -- JPEG quality 0.1..0.9; lower is smaller and blurrier
+
+    -- The server drops a relayed frame larger than this many KILOBYTES, so a client
+    -- cannot turn the relay into a flood. A 220x300 q0.4 JPEG is well under this.
+    maxFrameKb = 24,
+}

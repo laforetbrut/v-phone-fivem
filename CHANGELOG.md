@@ -4,6 +4,34 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.1.3] - 2026-07-23
+
+### Added (English first)
+
+- **A live FaceTime picture.** Opt in with `Config.FaceTime.videoFeed = true` and a video call carries a real moving picture of the other player, not just the layout. The front camera is raised for the duration of the call, [screenshot-basic](https://github.com/citizenfx/screenshot-basic) grabs a frame a few times a second, and the **page shrinks and crops it to a thumbnail before anything is sent** - only that few-kilobyte frame is relayed, to the one other participant. Off by default, and honestly experimental: `fps`, `width`, `height`, `quality` and `maxFrameKb` are all yours to tune.
+- **A guarded relay.** `v-phone:server:faceFrame` accepts a frame only from a player who is in an *active* call flagged as video, rate-limits per source against the configured fps, drops anything over `maxFrameKb`, and forwards it to the other participant alone. Frame state is cleared on disconnect.
+
+### Changed
+
+- **The selfie camera is shared.** The camera app's flip and a video call now go through one code path, so a FaceTime call raises the front camera and lowers it on hang-up without fighting the camera app.
+- **The 1.1.2 note that FiveM "cannot stream a live face" is retired.** It cannot stream video the way a browser can - but relayed thumbnails do the job, and that is what this release ships.
+
+---
+
+## [1.1.3] - 2026-07-23
+
+### Ajouts (miroir français)
+
+- **Une image FaceTime en direct.** Activez `Config.FaceTime.videoFeed = true` et un appel vidéo transporte une vraie image animée de l'autre joueur, pas seulement la mise en page. La caméra frontale est levée pendant tout l'appel, [screenshot-basic](https://github.com/citizenfx/screenshot-basic) capture une image plusieurs fois par seconde, et **la page la réduit et la recadre en vignette avant tout envoi** : seule cette image de quelques kilo-octets est relayée, au seul autre participant. Désactivé par défaut, et honnêtement expérimental : `fps`, `width`, `height`, `quality` et `maxFrameKb` sont à régler.
+- **Un relais protégé.** `v-phone:server:faceFrame` n'accepte une image que d'un joueur en appel *actif* marqué vidéo, limite le débit par source selon les fps configurés, rejette tout ce qui dépasse `maxFrameKb`, et transmet au seul autre participant. L'état est nettoyé à la déconnexion.
+
+### Modifications
+
+- **La caméra selfie est mutualisée.** Le retournement de l'appareil photo et un appel vidéo passent par le même chemin : un appel FaceTime lève la caméra frontale et la baisse au raccrochage sans entrer en conflit avec l'appareil photo.
+- **La note de la 1.1.2 disant que FiveM « ne peut pas diffuser un visage en direct » est retirée.** Il ne peut pas diffuser de la vidéo comme un navigateur - mais des vignettes relayées font le travail, et c'est ce que livre cette version.
+
+---
+
 ## [1.1.2] - 2026-07-23
 
 ### Added (English first)

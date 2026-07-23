@@ -48,7 +48,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **`/refreshphone`**: a get-out-of-jail command for a phone stuck to the hand or a frozen animation.
 - **Media hosting**: photos and short video clips captured in game and uploaded to a CDN (Fivemanage), with a per-file auto-delete clock. Clips post to Bleeter and Snapmatic.
 - **Front camera**: a selfie mode - a game camera in front of you - for photos and clips of yourself.
-- **FaceTime**: a video-call presentation over a real voice call (FiveM cannot stream a live face, so the layout is the difference, not a feed).
+- **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
 Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
@@ -98,7 +98,7 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 
 | Resource | Unlocks | Link |
 |---|---|---|
-| [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | the Camera app uploading photos | citizenfx/screenshot-basic |
+| [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | the Camera app uploading photos, and the FaceTime live picture | citizenfx/screenshot-basic |
 | [screencapture](https://github.com/itschip/screencapture) | photos and **video clips** to a CDN (Fivemanage) | itschip/screencapture |
 | [pma-voice](https://github.com/AvarianKnight/pma-voice) | phone call voice | AvarianKnight/pma-voice |
 | [ox_lib](https://github.com/overextended/ox_lib) | nicer notifications | overextended/ox_lib |
@@ -193,7 +193,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **`/refreshphone`** : une commande de secours quand le téléphone reste collé à la main ou qu'une animation se fige.
 - **Hébergement média** : photos et courts clips vidéo capturés en jeu et envoyés vers un CDN (Fivemanage), avec une horloge de suppression automatique par fichier. Les clips se publient sur Bleeter et Snapmatic.
 - **Caméra frontale** : un mode selfie - une caméra de jeu devant vous - pour se photographier et se filmer.
-- **FaceTime** : une présentation d'appel vidéo par-dessus un vrai appel vocal (FiveM ne peut pas diffuser un visage en direct, la mise en page fait la différence, pas un flux).
+- **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
 Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.
@@ -241,7 +241,7 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 
 | Ressource | Débloque | Lien |
 |---|---|---|
-| [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | l'upload de photos de l'app Appareil photo | citizenfx/screenshot-basic |
+| [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | l'upload de photos de l'app Appareil photo, et l'image FaceTime en direct | citizenfx/screenshot-basic |
 | [screencapture](https://github.com/itschip/screencapture) | photos et **clips vidéo** vers un CDN (Fivemanage) | itschip/screencapture |
 | [pma-voice](https://github.com/AvarianKnight/pma-voice) | la voix des appels | AvarianKnight/pma-voice |
 | [ox_lib](https://github.com/overextended/ox_lib) | de plus belles notifications | overextended/ox_lib |
