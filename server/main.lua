@@ -184,7 +184,7 @@ local function newNumber()
     local format = tostring(S('numberFormat', Config.NumberFormat))
     for _ = 1, 40 do
         local n = mintNumber(format)
-        local taken = MySQL.scalar.await('SELECT 1 FROM phone_characters WHERE phone = ? LIMIT 1', { n })
+        local taken = MySQL.scalar.await('SELECT 1 FROM vphone_characters WHERE phone = ? LIMIT 1', { n })
         if not taken then return n end
     end
     return nil
@@ -192,13 +192,13 @@ end
 
 local function numberOfCid(cid)
     if Numbers[cid] then return Numbers[cid] end
-    local n = MySQL.scalar.await('SELECT phone FROM phone_characters WHERE citizenid = ?', { cid })
+    local n = MySQL.scalar.await('SELECT phone FROM vphone_characters WHERE citizenid = ?', { cid })
     if n and n ~= '' then Numbers[cid] = n end
     return Numbers[cid]
 end
 
 local function cidOfNumber(number)
-    return MySQL.scalar.await('SELECT citizenid FROM phone_characters WHERE phone = ?', { number })
+    return MySQL.scalar.await('SELECT citizenid FROM vphone_characters WHERE phone = ?', { number })
 end
 
 local function ensureNumber(src, p)
@@ -207,7 +207,7 @@ local function ensureNumber(src, p)
     -- knows how to reach this player still can.
     local fromFramework = Bridge.Numbers.Get(p.citizenid)
     if fromFramework and fromFramework ~= '' and not numberOfCid(p.citizenid) then
-        MySQL.update.await('UPDATE phone_characters SET phone = ? WHERE citizenid = ?',
+        MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?',
             { fromFramework, p.citizenid })
         Numbers[p.citizenid] = fromFramework
     end
@@ -222,7 +222,7 @@ local function ensureNumber(src, p)
         print('[v-phone] could not mint a free number: the format has too few digits for the number of characters on this server')
         return nil
     end
-    MySQL.update.await('UPDATE phone_characters SET phone = ? WHERE citizenid = ?', { n, p.citizenid })
+    MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?', { n, p.citizenid })
     -- And back into the framework, so a script that reads the character's number from
     -- qb or ox agrees with the phone rather than contradicting it.
     Bridge.Numbers.Set(p.citizenid, n)
@@ -299,29 +299,18 @@ local function registerApp(id, info, owner)
 end
 
 exports('RegisterApp', function(id, info)
-    info = info or {}
-    local ok = registerApp(id, info, GetInvokingResource())
-    -- Give the operator a row to edit. Without one, a third-party app is visible but
-    -- ungovernable: to disable or gate it they would have to guess its id and create the
-    -- row by hand. INSERT IGNORE, so an operator's existing edits are never overwritten.
-    if ok and GetResourceState('v-world') == 'started' and exports['v-world']:IsReady() then
-        MySQL.insert.await([[INSERT IGNORE INTO world_apps (id, label, slot, job, job_grade, gang, enabled)
-            VALUES (?,?,?,?,?,?,1)]],
-            { tostring(id), tostring(info.label or id), num(info.slot, 99),
-              info.job or '', num(info.jobGrade, 0), info.gang or '' })
-        loadWorldApps()
-    end
-    return ok
+    -- A third-party app registers itself, and that is all it takes: it is governed by
+    -- `Config.Apps` / `Config.Home` like a shipped one, with no database row to seed.
+    return registerApp(id, info or {}, GetInvokingResource())
 end)
 
 exports('UnregisterApp', function(id) Apps[tostring(id or '')] = nil end)
 
--- v-world owns the table; asking it rather than reading `world_apps` here keeps one
--- module responsible for the content layer, which is the whole point of having one.
+-- Upstream read an admin-edited catalogue from v-world here. There is none in this build,
+-- so this stays empty and the phone's catalogue is `Config.Apps` alone. Kept as a
+-- function because the boot sequence and a couple of call sites still call it.
 function loadWorldApps()  -- assigns the forward-declared local above
     WorldApps = {}
-    if GetResourceState('v-world') ~= 'started' then return end
-    for _, r in ipairs(V.Use('v-world').GetPhoneApps() or {}) do WorldApps[r.id] = r end
 end
 
 --- What this specific player may see. Three gates, and they are not interchangeable:
@@ -567,7 +556,7 @@ local function contactsOf(p)
 
     local personal = MySQL.query.await(
         [[SELECT id, name, number, favourite, photo, email, address, birthday, note
-          FROM phone_contacts WHERE citizenid = ? ORDER BY favourite DESC, name]],
+          FROM vphone_contacts WHERE citizenid = ? ORDER BY favourite DESC, name]],
         { p.citizenid }) or {}
     for _, contact in ipairs(personal) do
         -- The configured version wins, otherwise the same service would be shown twice
@@ -613,16 +602,16 @@ local function conversations(cid)
         SELECT m.id AS last_id, m.body, m.at,
                IF(m.from_cid = ?, m.to_cid, m.from_cid) AS other,
                c.phone AS number
-        FROM phone_messages m
+        FROM vphone_messages m
         INNER JOIN (
             SELECT MAX(id) AS id
-            FROM phone_messages
+            FROM vphone_messages
             WHERE (from_cid = ? OR to_cid = ?) AND group_id IS NULL
             GROUP BY IF(from_cid = ?, to_cid, from_cid)
             ORDER BY id DESC
             LIMIT 100
         ) latest ON latest.id = m.id
-        LEFT JOIN phone_characters c
+        LEFT JOIN vphone_characters c
           ON c.citizenid = IF(m.from_cid = ?, m.to_cid, m.from_cid)
         ORDER BY m.id DESC
     ]], { cid, cid, cid, cid, cid }) or {}
@@ -630,7 +619,7 @@ local function conversations(cid)
 
     local unread = {}
     for _, r in ipairs(MySQL.query.await(
-        'SELECT from_cid AS other, COUNT(*) AS n FROM phone_messages WHERE to_cid = ? AND seen = 0 AND group_id IS NULL GROUP BY from_cid',
+        'SELECT from_cid AS other, COUNT(*) AS n FROM vphone_messages WHERE to_cid = ? AND seen = 0 AND group_id IS NULL GROUP BY from_cid',
         { cid }) or {}) do
         unread[r.other] = num(r.n, 0)
     end
@@ -653,7 +642,7 @@ end
 
 local function conversation(cid, otherCid, limit)
     local rows = MySQL.query.await([[
-        SELECT id, from_cid, body, kind, attachment, at, seen FROM phone_messages
+        SELECT id, from_cid, body, kind, attachment, at, seen FROM vphone_messages
         WHERE ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
           AND group_id IS NULL
         ORDER BY at DESC, id DESC LIMIT ?
@@ -667,7 +656,7 @@ local function conversation(cid, otherCid, limit)
         out[#out + 1] = { id = r.id, mine = (r.from_cid == cid), body = r.body,
             kind = r.kind, attachment = r.attachment, at = r.at }
     end
-    MySQL.update('UPDATE phone_messages SET seen = 1 WHERE to_cid = ? AND from_cid = ? AND seen = 0',
+    MySQL.update('UPDATE vphone_messages SET seen = 1 WHERE to_cid = ? AND from_cid = ? AND seen = 0',
         { cid, otherCid })
     return out
 end
@@ -713,7 +702,7 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
     if toCid == fromCid then return nil, 'self' end
 
     local id = MySQL.insert.await(
-        'INSERT INTO phone_messages (from_cid, to_cid, body, kind, attachment) VALUES (?,?,?,?,?)',
+        'INSERT INTO vphone_messages (from_cid, to_cid, body, kind, attachment) VALUES (?,?,?,?,?)',
         { fromCid, toCid, body, kind, attachment })
 
     -- Delivered live only if they are on: an offline character reads it next time they
@@ -736,7 +725,7 @@ end
 -- ── Groups ─────────────────────────────────────────────────────
 local function isMember(groupId, cid)
     return MySQL.scalar.await(
-        'SELECT 1 FROM phone_group_members WHERE group_id = ? AND citizenid = ?',
+        'SELECT 1 FROM vphone_group_members WHERE group_id = ? AND citizenid = ?',
         { groupId, cid }) ~= nil
 end
 
@@ -750,13 +739,13 @@ local function sendGroup(p, groupId, body, kind, attachment)
     if not isMember(groupId, p.citizenid) then return nil, 'x' end
 
     local id = MySQL.insert.await(
-        'INSERT INTO phone_messages (from_cid, to_cid, group_id, body, kind, attachment) VALUES (?,"",?,?,?,?)',
+        'INSERT INTO vphone_messages (from_cid, to_cid, group_id, body, kind, attachment) VALUES (?,"",?,?,?,?)',
         { p.citizenid, groupId, body, kind, attachment })
 
-    local gname = MySQL.scalar.await('SELECT name FROM phone_groups WHERE id = ?', { groupId })
+    local gname = MySQL.scalar.await('SELECT name FROM vphone_groups WHERE id = ?', { groupId })
     local fromNumber = numberOfCid(p.citizenid)
     for _, m in ipairs(MySQL.query.await(
-        'SELECT citizenid FROM phone_group_members WHERE group_id = ?', { groupId }) or {}) do
+        'SELECT citizenid FROM vphone_group_members WHERE group_id = ?', { groupId }) or {}) do
         if m.citizenid ~= p.citizenid then
             local target = Online[numberOfCid(m.citizenid) or '']
             if target and phoneReachable(target) then
@@ -791,7 +780,7 @@ local function logCall(c, answered)
     }
     for _, r in ipairs(rows) do
         if r.cid then
-            MySQL.insert('INSERT INTO phone_calls (citizenid, other_num, direction, answered) VALUES (?,?,?,?)',
+            MySQL.insert('INSERT INTO vphone_calls (citizenid, other_num, direction, answered) VALUES (?,?,?,?)',
                 { r.cid, r.other or '', r.dir, answered and 1 or 0 })
         end
     end
@@ -1066,7 +1055,7 @@ end
 
 local function cipherProfile(cid)
     local row = MySQL.single.await([[SELECT handle, displayname, public_key, fingerprint, created_at
-        FROM phone_cipher_profiles WHERE citizenid = ?]], { cid })
+        FROM vphone_cipher_profiles WHERE citizenid = ?]], { cid })
     if not row then return nil end
     return {
         handle = row.handle,
@@ -1078,8 +1067,8 @@ local function cipherProfile(cid)
 end
 
 local function cipherUnreadOf(cid)
-    return tonumber(MySQL.scalar.await([[SELECT COUNT(*) FROM phone_cipher_messages m
-        LEFT JOIN phone_cipher_clears c
+    return tonumber(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_cipher_messages m
+        LEFT JOIN vphone_cipher_clears c
           ON c.citizenid = ? AND c.other_cid = m.from_cid
         WHERE m.to_cid = ? AND m.seen = 0
           AND (m.expires_at IS NULL OR m.expires_at > NOW())
@@ -1128,7 +1117,7 @@ local function cipherVerifyPin(src, p, pin)
     pin = tostring(pin or '')
     if not pin:match('^%d%d%d%d%d%d$') then return false, 'badpin', 0 end
     local stored = MySQL.scalar.await(
-        'SELECT pin_hash FROM phone_cipher_profiles WHERE citizenid = ?', { p.citizenid })
+        'SELECT pin_hash FROM vphone_cipher_profiles WHERE citizenid = ?', { p.citizenid })
     if stored and stored == cipherPinHash(p.citizenid, pin) then
         CipherAttempts[src] = nil
         CipherUnlocked[src] = p.citizenid
@@ -1148,7 +1137,7 @@ local function cipherResolvePeer(handle, selfCid)
     handle = cipherCleanHandle(handle)
     if not handle:match('^[a-z0-9_][a-z0-9_][a-z0-9_]+$') then return nil end
     return MySQL.single.await([[SELECT citizenid, handle, displayname, public_key, fingerprint
-        FROM phone_cipher_profiles WHERE handle = ? AND citizenid <> ?]], { handle, selfCid })
+        FROM vphone_cipher_profiles WHERE handle = ? AND citizenid <> ?]], { handle, selfCid })
 end
 
 local function cipherPeerPayload(row)
@@ -1192,8 +1181,8 @@ V.Callback('v-phone:open', function(src, resolve)
         contacts = contactsOf(p),
         conversations = conversations(p.citizenid),
         cipherUnread = cipherUnreadOf(p.citizenid),
-        groups = MySQL.query.await([[SELECT g.id, g.name FROM phone_groups g
-            JOIN phone_group_members m ON m.group_id = g.id
+        groups = MySQL.query.await([[SELECT g.id, g.name FROM vphone_groups g
+            JOIN vphone_group_members m ON m.group_id = g.id
             WHERE m.citizenid = ? ORDER BY g.id DESC]], { p.citizenid }) or {},
         wallpapers = Config.Wallpapers,
         sounds = Config.Sounds,
@@ -1211,7 +1200,7 @@ V.Callback('v-phone:open', function(src, resolve)
         voicemail = V.SettingBool('voicemail', true),
         -- Unread voicemail, so the Phone icon can carry a badge like Messages does.
         vmUnread = tonumber(MySQL.scalar.await(
-            'SELECT COUNT(*) FROM phone_voicemail WHERE citizenid = ? AND seen = 0', { p.citizenid })) or 0,
+            'SELECT COUNT(*) FROM vphone_voicemail WHERE citizenid = ? AND seen = 0', { p.citizenid })) or 0,
         photos     = (function()
             local ph = p.GetMetadata('photos')
             return (type(ph) == 'table') and ph or {}
@@ -1252,10 +1241,10 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
         if displayName == '' then displayName = handle end
         if not pin:match('^%d%d%d%d%d%d$') then resolve({ error = 'pin' }) return end
         if not publicKey then resolve({ error = 'key' }) return end
-        if MySQL.scalar.await('SELECT 1 FROM phone_cipher_profiles WHERE handle = ?', { handle }) then
+        if MySQL.scalar.await('SELECT 1 FROM vphone_cipher_profiles WHERE handle = ?', { handle }) then
             resolve({ error = 'taken' }) return
         end
-        local id = MySQL.insert.await([[INSERT INTO phone_cipher_profiles
+        local id = MySQL.insert.await([[INSERT INTO vphone_cipher_profiles
             (citizenid, handle, displayname, public_key, fingerprint, pin_hash)
             VALUES (?,?,?,?,?,?)]], {
             p.citizenid, handle, displayName, publicKey, fingerprint,
@@ -1284,9 +1273,9 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
         if not publicKey then resolve({ error = 'key' }) return end
         -- A replaced private key cannot open old envelopes. Purging them is safer than
         -- presenting undecryptable history as if it were still recoverable.
-        MySQL.update.await([[DELETE FROM phone_cipher_messages
+        MySQL.update.await([[DELETE FROM vphone_cipher_messages
             WHERE from_cid = ? OR to_cid = ?]], { p.citizenid, p.citizenid })
-        MySQL.update.await([[UPDATE phone_cipher_profiles SET public_key = ?, fingerprint = ?
+        MySQL.update.await([[UPDATE vphone_cipher_profiles SET public_key = ?, fingerprint = ?
             WHERE citizenid = ?]], { publicKey, fingerprint, p.citizenid })
         resolve({ ok = true, profile = cipherProfile(p.citizenid) })
         return
@@ -1295,14 +1284,14 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
     if not cipherRequireSession(src, p, resolve) then return end
 
     if op == 'list' then
-        MySQL.update.await([[DELETE FROM phone_cipher_messages
+        MySQL.update.await([[DELETE FROM vphone_cipher_messages
             WHERE expires_at IS NOT NULL AND expires_at <= NOW()]])
         local clearRows = MySQL.query.await([[SELECT other_cid, before_id
-            FROM phone_cipher_clears WHERE citizenid = ?]], { p.citizenid }) or {}
+            FROM vphone_cipher_clears WHERE citizenid = ?]], { p.citizenid }) or {}
         local clears = {}
         for _, row in ipairs(clearRows) do clears[row.other_cid] = tonumber(row.before_id) or 0 end
         local rows = MySQL.query.await([[SELECT id, from_cid, to_cid, envelope, burn, seen, at
-            FROM phone_cipher_messages
+            FROM vphone_cipher_messages
             WHERE from_cid = ? OR to_cid = ?
             ORDER BY id DESC LIMIT 240]], { p.citizenid, p.citizenid }) or {}
         local conversationsByCid, order = {}, {}
@@ -1337,7 +1326,7 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
             end
             local peerRows = MySQL.query.await(
                 ('SELECT citizenid, handle, displayname, public_key, fingerprint ' ..
-                 'FROM phone_cipher_profiles WHERE citizenid IN (%s)'):format(
+                 'FROM vphone_cipher_profiles WHERE citizenid IN (%s)'):format(
                     table.concat(placeholders, ',')),
                 peers) or {}
             peers = {}
@@ -1361,7 +1350,7 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
         local query = cipherCleanHandle(data and data.query)
         if #query < 2 then resolve({ ok = true, results = {} }) return end
         local rows = MySQL.query.await([[SELECT handle, displayname, public_key, fingerprint
-            FROM phone_cipher_profiles
+            FROM vphone_cipher_profiles
             WHERE citizenid <> ? AND handle LIKE CONCAT(?, '%')
             ORDER BY handle LIMIT 10]], { p.citizenid, query }) or {}
         local out = {}
@@ -1377,12 +1366,12 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
     end
 
     if op == 'thread' then
-        MySQL.update.await([[DELETE FROM phone_cipher_messages
+        MySQL.update.await([[DELETE FROM vphone_cipher_messages
             WHERE expires_at IS NOT NULL AND expires_at <= NOW()]])
-        local before = tonumber(MySQL.scalar.await([[SELECT before_id FROM phone_cipher_clears
+        local before = tonumber(MySQL.scalar.await([[SELECT before_id FROM vphone_cipher_clears
             WHERE citizenid = ? AND other_cid = ?]], { p.citizenid, peer.citizenid })) or 0
         local rows = MySQL.query.await([[SELECT id, from_cid, envelope, burn, seen, at, expires_at
-            FROM phone_cipher_messages
+            FROM vphone_cipher_messages
             WHERE ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
               AND id > ? AND (expires_at IS NULL OR expires_at > NOW())
             ORDER BY id DESC LIMIT ?]], {
@@ -1401,7 +1390,7 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
                 expiresAt = row.expires_at,
             }
         end
-        MySQL.update.await([[UPDATE phone_cipher_messages SET seen = 1
+        MySQL.update.await([[UPDATE vphone_cipher_messages SET seen = 1
             WHERE from_cid = ? AND to_cid = ? AND seen = 0]], { peer.citizenid, p.citizenid })
         resolve({
             ok = true,
@@ -1432,7 +1421,7 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
         end
         local burn = cipherAllowedBurn(data and data.burn)
         local expires = burn > 0 and (os.time() + burn) or 0
-        local id = MySQL.insert.await([[INSERT INTO phone_cipher_messages
+        local id = MySQL.insert.await([[INSERT INTO vphone_cipher_messages
             (from_cid, to_cid, envelope, burn, expires_at)
             VALUES (?,?,?,?,IF(? > 0, FROM_UNIXTIME(?), NULL))]], {
             p.citizenid, peer.citizenid, envelope, burn, expires, expires,
@@ -1461,11 +1450,11 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
     end
 
     if op == 'clear' then
-        local last = tonumber(MySQL.scalar.await([[SELECT MAX(id) FROM phone_cipher_messages
+        local last = tonumber(MySQL.scalar.await([[SELECT MAX(id) FROM vphone_cipher_messages
             WHERE (from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?)]], {
             p.citizenid, peer.citizenid, peer.citizenid, p.citizenid,
         })) or 0
-        MySQL.query.await([[INSERT INTO phone_cipher_clears (citizenid, other_cid, before_id)
+        MySQL.query.await([[INSERT INTO vphone_cipher_clears (citizenid, other_cid, before_id)
             VALUES (?,?,?) ON DUPLICATE KEY UPDATE before_id = GREATEST(before_id, VALUES(before_id))]],
             { p.citizenid, peer.citizenid, last })
         resolve({ ok = true })
@@ -1475,7 +1464,7 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
     if op == 'profile' then
         local displayName = tostring((data and data.displayName) or ''):gsub('[%c]', ''):sub(1, 32)
         if displayName == '' then resolve({ error = 'fields' }) return end
-        MySQL.update.await('UPDATE phone_cipher_profiles SET displayname = ? WHERE citizenid = ?',
+        MySQL.update.await('UPDATE vphone_cipher_profiles SET displayname = ? WHERE citizenid = ?',
             { displayName, p.citizenid })
         resolve({ ok = true, profile = cipherProfile(p.citizenid) })
         return
@@ -1490,15 +1479,15 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
     if op == 'destroy' then
         local pin = tostring((data and data.pin) or '')
         local stored = MySQL.scalar.await(
-            'SELECT pin_hash FROM phone_cipher_profiles WHERE citizenid = ?', { p.citizenid })
+            'SELECT pin_hash FROM vphone_cipher_profiles WHERE citizenid = ?', { p.citizenid })
         if not stored or stored ~= cipherPinHash(p.citizenid, pin) then
             resolve({ error = 'badpin' }) return
         end
-        MySQL.update.await('DELETE FROM phone_cipher_messages WHERE from_cid = ? OR to_cid = ?',
+        MySQL.update.await('DELETE FROM vphone_cipher_messages WHERE from_cid = ? OR to_cid = ?',
             { p.citizenid, p.citizenid })
-        MySQL.update.await('DELETE FROM phone_cipher_clears WHERE citizenid = ? OR other_cid = ?',
+        MySQL.update.await('DELETE FROM vphone_cipher_clears WHERE citizenid = ? OR other_cid = ?',
             { p.citizenid, p.citizenid })
-        MySQL.update.await('DELETE FROM phone_cipher_profiles WHERE citizenid = ?', { p.citizenid })
+        MySQL.update.await('DELETE FROM vphone_cipher_profiles WHERE citizenid = ?', { p.citizenid })
         CipherUnlocked[src], CipherAttempts[src] = nil, nil
         resolve({ ok = true })
         return
@@ -1518,8 +1507,8 @@ V.Callback('v-phone:conversation', function(src, resolve, data)
         local rows = MySQL.query.await([[
             SELECT m.id, m.from_cid, m.body, m.kind, m.attachment, m.at,
                    c.phone AS from_num
-            FROM phone_messages m
-            LEFT JOIN phone_characters c ON c.citizenid = m.from_cid
+            FROM vphone_messages m
+            LEFT JOIN vphone_characters c ON c.citizenid = m.from_cid
             WHERE m.group_id = ? ORDER BY m.at DESC, m.id DESC LIMIT ?
         ]], { groupId, Config.Messages.pageSize }) or {}
         local out = {}
@@ -1590,10 +1579,10 @@ V.Callback('v-phone:groupCreate', function(src, resolve, data)
     if #members < 2 then resolve({ error = 'fields' }) return end
 
     local id = MySQL.insert.await(
-        'INSERT INTO phone_groups (name, owner_cid) VALUES (?,?)', { name, p.citizenid })
+        'INSERT INTO vphone_groups (name, owner_cid) VALUES (?,?)', { name, p.citizenid })
     for _, cid in ipairs(members) do
         MySQL.insert.await(
-            'INSERT IGNORE INTO phone_group_members (group_id, citizenid) VALUES (?,?)', { id, cid })
+            'INSERT IGNORE INTO vphone_group_members (group_id, citizenid) VALUES (?,?)', { id, cid })
     end
     resolve({ ok = true, id = id, name = name })
 end)
@@ -1622,12 +1611,12 @@ V.Callback('v-phone:contactSave', function(src, resolve, data)
     if id then
         -- Scoped to the owner in SQL, not checked afterwards: an UPDATE that trusted the
         -- id alone would let a client rewrite somebody else's contact list.
-        MySQL.update.await([[UPDATE phone_contacts SET name = ?, number = ?, favourite = ?,
+        MySQL.update.await([[UPDATE vphone_contacts SET name = ?, number = ?, favourite = ?,
             photo = ?, email = ?, address = ?, birthday = ?, note = ?
             WHERE id = ? AND citizenid = ?]],
             { name, number, fav, photo, email, address, birthday, note, id, p.citizenid })
     else
-        id = MySQL.insert.await([[INSERT INTO phone_contacts
+        id = MySQL.insert.await([[INSERT INTO vphone_contacts
             (citizenid, name, number, favourite, photo, email, address, birthday, note)
             VALUES (?,?,?,?,?,?,?,?,?)]],
             { p.citizenid, name, number, fav, photo, email, address, birthday, note })
@@ -1642,7 +1631,7 @@ V.Callback('v-phone:contactDelete', function(src, resolve, data)
         resolve({ error = 'required' })
         return
     end
-    MySQL.update.await('DELETE FROM phone_contacts WHERE id = ? AND citizenid = ?',
+    MySQL.update.await('DELETE FROM vphone_contacts WHERE id = ? AND citizenid = ?',
         { tonumber(data and data.id) or 0, p.citizenid })
     resolve({ ok = true })
 end)
@@ -1806,7 +1795,7 @@ V.Callback('v-phone:lookup', function(src, resolve, data)
     -- anyway. It never returns a citizen id.
     local cid = cidOfNumber(tostring((data and data.number) or ''))
     if not cid then resolve({ error = 'nonumber' }) return end
-    local row = MySQL.single.await('SELECT firstname, lastname FROM phone_characters WHERE citizenid = ?', { cid })
+    local row = MySQL.single.await('SELECT firstname, lastname FROM vphone_characters WHERE citizenid = ?', { cid })
     resolve({ ok = true, name = row and (row.firstname .. ' ' .. row.lastname) or nil })
 end)
 
@@ -1875,14 +1864,14 @@ V.Callback('v-phone:storage', function(src, resolve, data)
     if op == 'all' then
         local out = {}
         for _, r in ipairs(MySQL.query.await(
-            'SELECT k, v FROM phone_app_data WHERE citizenid = ? AND app = ?',
+            'SELECT k, v FROM vphone_app_data WHERE citizenid = ? AND app = ?',
             { p.citizenid, app }) or {}) do out[r.k] = r.v end
         resolve({ ok = true, values = out })
         return
     end
 
     if op == 'clear' then
-        MySQL.update.await('DELETE FROM phone_app_data WHERE citizenid = ? AND app = ?',
+        MySQL.update.await('DELETE FROM vphone_app_data WHERE citizenid = ? AND app = ?',
             { p.citizenid, app })
         resolve({ ok = true })
         return
@@ -1892,7 +1881,7 @@ V.Callback('v-phone:storage', function(src, resolve, data)
     if key == '' then resolve({ error = 'key' }) return end
 
     if op == 'remove' then
-        MySQL.update.await('DELETE FROM phone_app_data WHERE citizenid = ? AND app = ? AND k = ?',
+        MySQL.update.await('DELETE FROM vphone_app_data WHERE citizenid = ? AND app = ? AND k = ?',
             { p.citizenid, app, key })
         resolve({ ok = true })
         return
@@ -1902,14 +1891,14 @@ V.Callback('v-phone:storage', function(src, resolve, data)
         local value = data.value
         if type(value) == 'table' then value = json.encode(value) end
         value = tostring(value == nil and '' or value):sub(1, 4000)
-        MySQL.query.await([[INSERT INTO phone_app_data (citizenid, app, k, v) VALUES (?,?,?,?)
+        MySQL.query.await([[INSERT INTO vphone_app_data (citizenid, app, k, v) VALUES (?,?,?,?)
             ON DUPLICATE KEY UPDATE v = VALUES(v)]], { p.citizenid, app, key, value })
         resolve({ ok = true })
         return
     end
 
     resolve({ ok = true, value = MySQL.scalar.await(
-        'SELECT v FROM phone_app_data WHERE citizenid = ? AND app = ? AND k = ?',
+        'SELECT v FROM vphone_app_data WHERE citizenid = ? AND app = ? AND k = ?',
         { p.citizenid, app, key }) })
 end)
 
@@ -1942,7 +1931,7 @@ V.Callback('v-phone:notes', function(src, resolve, data)
 
     if op == 'list' then
         resolve({ ok = true, notes = MySQL.query.await(
-            'SELECT id, title, body, at FROM phone_notes WHERE citizenid = ? ORDER BY id DESC LIMIT 100',
+            'SELECT id, title, body, at FROM vphone_notes WHERE citizenid = ? ORDER BY id DESC LIMIT 100',
             { p.citizenid }) or {} })
         return
     end
@@ -1953,17 +1942,17 @@ V.Callback('v-phone:notes', function(src, resolve, data)
         if title == '' then title = bodyTxt:sub(1, 40) end
         local id = math.floor(num(data and data.id, 0))
         if id > 0 then
-            MySQL.update.await('UPDATE phone_notes SET title = ?, body = ? WHERE id = ? AND citizenid = ?',
+            MySQL.update.await('UPDATE vphone_notes SET title = ?, body = ? WHERE id = ? AND citizenid = ?',
                 { title, bodyTxt, id, p.citizenid })
         else
-            id = MySQL.insert.await('INSERT INTO phone_notes (citizenid, title, body) VALUES (?,?,?)',
+            id = MySQL.insert.await('INSERT INTO vphone_notes (citizenid, title, body) VALUES (?,?,?)',
                 { p.citizenid, title, bodyTxt })
         end
         resolve({ ok = true, id = id })
         return
     end
     if op == 'del' then
-        MySQL.update('DELETE FROM phone_notes WHERE id = ? AND citizenid = ?',
+        MySQL.update('DELETE FROM vphone_notes WHERE id = ? AND citizenid = ?',
             { math.floor(num(data and data.id, 0)), p.citizenid })
         resolve({ ok = true })
         return
@@ -2204,7 +2193,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
     else
         local nm = o.payload.name ~= '' and o.payload.name or o.payload.number
         MySQL.insert.await(
-            'INSERT INTO phone_contacts (citizenid, name, number, favourite) VALUES (?, ?, ?, 0)',
+            'INSERT INTO vphone_contacts (citizenid, name, number, favourite) VALUES (?, ?, ?, 0)',
             { rp.citizenid, nm, o.payload.number })
     end
 
@@ -2276,18 +2265,18 @@ end)
 -- recipient's Inbox and a draft are the same mail seen from different sides. Deleting
 -- your copy never touches anybody else's.
 local function mailAddressOf(cid)
-    return MySQL.scalar.await('SELECT address FROM phone_mail_accounts WHERE citizenid = ?', { cid })
+    return MySQL.scalar.await('SELECT address FROM vphone_mail_accounts WHERE citizenid = ?', { cid })
 end
 
 local function cidOfAddress(addr)
-    return MySQL.scalar.await('SELECT citizenid FROM phone_mail_accounts WHERE address = ?', { addr })
+    return MySQL.scalar.await('SELECT citizenid FROM vphone_mail_accounts WHERE address = ?', { addr })
 end
 
 --- Rows in a folder, newest first, with the mail they point at.
 local function mailbox(addr, folder)
     return MySQL.query.await([[SELECT b.id AS box_id, b.folder, b.seen, b.saved,
                m.id AS mail_id, m.from_addr, m.to_addr, m.subject, m.body, m.at, m.reply_to
-        FROM phone_mail_box b JOIN phone_mail m ON m.id = b.mail_id
+        FROM vphone_mail_box b JOIN vphone_mail m ON m.id = b.mail_id
         WHERE b.address = ? AND b.folder = ? ORDER BY b.id DESC LIMIT 60]], { addr, folder }) or {}
 end
 
@@ -2316,10 +2305,10 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         if not okDomain then resolve({ error = 'domain' }) return end
 
         local addr = localpart .. '@' .. domain
-        if MySQL.scalar.await('SELECT 1 FROM phone_mail_accounts WHERE address = ?', { addr }) then
+        if MySQL.scalar.await('SELECT 1 FROM vphone_mail_accounts WHERE address = ?', { addr }) then
             resolve({ error = 'taken' }) return
         end
-        MySQL.insert.await('INSERT INTO phone_mail_accounts (citizenid, address) VALUES (?,?)',
+        MySQL.insert.await('INSERT INTO vphone_mail_accounts (citizenid, address) VALUES (?,?)',
             { p.citizenid, addr })
         resolve({ ok = true, address = addr })
         return
@@ -2332,7 +2321,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         if folder ~= 'inbox' and folder ~= 'sent' and folder ~= 'draft' then folder = 'inbox' end
         resolve({ ok = true, mail = mailbox(mine, folder),
                   unread = tonumber(MySQL.scalar.await(
-                      'SELECT COUNT(*) FROM phone_mail_box WHERE address = ? AND folder = ? AND seen = 0',
+                      'SELECT COUNT(*) FROM vphone_mail_box WHERE address = ? AND folder = ? AND seen = 0',
                       { mine, 'inbox' })) or 0 })
         return
     end
@@ -2341,20 +2330,20 @@ V.Callback('v-phone:mail', function(src, resolve, data)
     if op == 'saved' then
         resolve({ ok = true, mail = MySQL.query.await([[SELECT b.id AS box_id, b.folder, b.seen, b.saved,
                    m.id AS mail_id, m.from_addr, m.to_addr, m.subject, m.body, m.at, m.reply_to
-            FROM phone_mail_box b JOIN phone_mail m ON m.id = b.mail_id
+            FROM vphone_mail_box b JOIN vphone_mail m ON m.id = b.mail_id
             WHERE b.address = ? AND b.saved = 1 ORDER BY b.id DESC LIMIT 60]], { mine }) or {} })
         return
     end
 
     if op == 'seen' then
-        MySQL.update('UPDATE phone_mail_box SET seen = 1 WHERE id = ? AND address = ?',
+        MySQL.update('UPDATE vphone_mail_box SET seen = 1 WHERE id = ? AND address = ?',
             { math.floor(num(data and data.boxId, 0)), mine })
         resolve({ ok = true })
         return
     end
 
     if op == 'save' then
-        MySQL.update('UPDATE phone_mail_box SET saved = ? WHERE id = ? AND address = ?',
+        MySQL.update('UPDATE vphone_mail_box SET saved = ? WHERE id = ? AND address = ?',
             { (data and data.saved) and 1 or 0, math.floor(num(data and data.boxId, 0)), mine })
         resolve({ ok = true })
         return
@@ -2362,7 +2351,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
 
     -- Only ever your own copy. The mail row itself stays for whoever else holds it.
     if op == 'del' then
-        MySQL.update('DELETE FROM phone_mail_box WHERE id = ? AND address = ?',
+        MySQL.update('DELETE FROM vphone_mail_box WHERE id = ? AND address = ?',
             { math.floor(num(data and data.boxId, 0)), mine })
         resolve({ ok = true })
         return
@@ -2388,19 +2377,19 @@ V.Callback('v-phone:mail', function(src, resolve, data)
             if prev > 0 then
                 -- Replacing the draft you were editing rather than stacking a new one.
                 local mid = MySQL.scalar.await(
-                    'SELECT mail_id FROM phone_mail_box WHERE id = ? AND address = ? AND folder = ?',
+                    'SELECT mail_id FROM vphone_mail_box WHERE id = ? AND address = ? AND folder = ?',
                     { prev, mine, 'draft' })
                 if mid then
-                    MySQL.update.await('UPDATE phone_mail SET to_addr = ?, subject = ?, body = ? WHERE id = ?',
+                    MySQL.update.await('UPDATE vphone_mail SET to_addr = ?, subject = ?, body = ? WHERE id = ?',
                         { table.concat(to, ', '), subject, bodyTxt, mid })
                     resolve({ ok = true }) return
                 end
             end
             local mid = MySQL.insert.await(
-                'INSERT INTO phone_mail (from_addr, to_addr, subject, body, reply_to) VALUES (?,?,?,?,?)',
+                'INSERT INTO vphone_mail (from_addr, to_addr, subject, body, reply_to) VALUES (?,?,?,?,?)',
                 { mine, table.concat(to, ', '), subject, bodyTxt, replyTo > 0 and replyTo or nil })
             MySQL.insert.await(
-                'INSERT INTO phone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,1)',
+                'INSERT INTO vphone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,1)',
                 { mid, mine, 'draft' })
             resolve({ ok = true })
             return
@@ -2419,13 +2408,13 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         end
 
         local mid = MySQL.insert.await(
-            'INSERT INTO phone_mail (from_addr, to_addr, subject, body, reply_to) VALUES (?,?,?,?,?)',
+            'INSERT INTO vphone_mail (from_addr, to_addr, subject, body, reply_to) VALUES (?,?,?,?,?)',
             { mine, table.concat(to, ', '), subject, bodyTxt, replyTo > 0 and replyTo or nil })
 
-        MySQL.insert.await('INSERT INTO phone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,1)',
+        MySQL.insert.await('INSERT INTO vphone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,1)',
             { mid, mine, 'sent' })
         for _, t in ipairs(targets) do
-            MySQL.insert.await('INSERT INTO phone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,0)',
+            MySQL.insert.await('INSERT INTO vphone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,0)',
                 { mid, t.addr, 'inbox' })
             local tnum = numberOfCid(t.cid)
             local online = tnum and Online[tnum]
@@ -2440,7 +2429,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         -- The draft it grew out of has served its purpose.
         local prev = math.floor(num(data and data.boxId, 0))
         if prev > 0 then
-            MySQL.update('DELETE FROM phone_mail_box WHERE id = ? AND address = ? AND folder = ?',
+            MySQL.update('DELETE FROM vphone_mail_box WHERE id = ? AND address = ? AND folder = ?',
                 { prev, mine, 'draft' })
         end
         resolve({ ok = true })
@@ -2463,19 +2452,19 @@ V.Callback('v-phone:voicemail', function(src, resolve, data)
 
     if op == 'list' then
         local rows = MySQL.query.await([[SELECT id, from_num AS number, body, seen, at
-            FROM phone_voicemail WHERE citizenid = ? ORDER BY id DESC LIMIT 40]], { p.citizenid }) or {}
+            FROM vphone_voicemail WHERE citizenid = ? ORDER BY id DESC LIMIT 40]], { p.citizenid }) or {}
         resolve({ ok = true, voicemail = rows })
         return
     end
 
     if op == 'seen' then
-        MySQL.update('UPDATE phone_voicemail SET seen = 1 WHERE citizenid = ? AND seen = 0', { p.citizenid })
+        MySQL.update('UPDATE vphone_voicemail SET seen = 1 WHERE citizenid = ? AND seen = 0', { p.citizenid })
         resolve({ ok = true })
         return
     end
 
     if op == 'del' then
-        MySQL.update('DELETE FROM phone_voicemail WHERE id = ? AND citizenid = ?',
+        MySQL.update('DELETE FROM vphone_voicemail WHERE id = ? AND citizenid = ?',
             { math.floor(num(data and data.id, 0)), p.citizenid })
         resolve({ ok = true })
         return
@@ -2489,7 +2478,7 @@ V.Callback('v-phone:voicemail', function(src, resolve, data)
         local body = tostring((data and data.body) or ''):sub(1, math.floor(num(S('voicemailMax', 200), 200)))
         if body == '' then resolve({ error = 'empty' }) return end
 
-        MySQL.insert.await('INSERT INTO phone_voicemail (citizenid, from_num, body) VALUES (?,?,?)',
+        MySQL.insert.await('INSERT INTO vphone_voicemail (citizenid, from_num, body) VALUES (?,?,?)',
             { toCid, numberOfCid(p.citizenid) or '', body })
 
         -- Tell them now if they are on; otherwise it is waiting when they next look.
@@ -2634,7 +2623,7 @@ V.Callback('v-phone:calls', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
     local rows = MySQL.query.await([[SELECT other_num AS number, direction, answered, at
-        FROM phone_calls WHERE citizenid = ? ORDER BY id DESC LIMIT 60]], { p.citizenid }) or {}
+        FROM vphone_calls WHERE citizenid = ? ORDER BY id DESC LIMIT 60]], { p.citizenid }) or {}
     resolve({ ok = true, calls = rows })
 end)
 
@@ -2784,12 +2773,16 @@ CreateThread(function()
     while not ready do Wait(50) end
     Core = _G.Core
 
+    -- Before a single table is created: move an earlier build's tables to the vphone_
+    -- prefix, so an existing server keeps its data and a fresh one does nothing.
+    Bridge.MigrateTables()
+
     -- The two tables the bridge owns: per-character storage, and the projection of
     -- whoever the framework says these characters are.
     Bridge.KvBoot()
     Bridge.CharactersBoot()
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_contacts` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_contacts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16)  NOT NULL,
         `name`      VARCHAR(40)  NOT NULL,
@@ -2799,7 +2792,7 @@ CreateThread(function()
         KEY `citizenid` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_messages` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_messages` (
         `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `from_cid` VARCHAR(16)  NOT NULL,
         `to_cid`   VARCHAR(16)  NOT NULL,
@@ -2811,7 +2804,7 @@ CreateThread(function()
         KEY `to_cid` (`to_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_app_data` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_app_data` (
         `citizenid` VARCHAR(16) NOT NULL,
         `app`       VARCHAR(40) NOT NULL,
         `k`         VARCHAR(60) NOT NULL,
@@ -2819,7 +2812,7 @@ CreateThread(function()
         PRIMARY KEY (`citizenid`, `app`, `k`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_cipher_profiles` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_cipher_profiles` (
         `citizenid`  VARCHAR(16)  NOT NULL,
         `handle`     VARCHAR(20)  NOT NULL,
         `displayname` VARCHAR(32) NOT NULL,
@@ -2831,7 +2824,7 @@ CreateThread(function()
         UNIQUE KEY `handle` (`handle`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_cipher_messages` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_cipher_messages` (
         `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         `from_cid`   VARCHAR(16) NOT NULL,
         `to_cid`     VARCHAR(16) NOT NULL,
@@ -2846,21 +2839,21 @@ CreateThread(function()
         KEY `cipher_expiry` (`expires_at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_cipher_clears` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_cipher_clears` (
         `citizenid` VARCHAR(16) NOT NULL,
         `other_cid` VARCHAR(16) NOT NULL,
         `before_id` BIGINT UNSIGNED NOT NULL DEFAULT 0,
         PRIMARY KEY (`citizenid`, `other_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_groups` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_groups` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `name`      VARCHAR(40) NOT NULL,
         `owner_cid` VARCHAR(16) NOT NULL,
         PRIMARY KEY (`id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_group_members` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_group_members` (
         `group_id`  INT UNSIGNED NOT NULL,
         `citizenid` VARCHAR(16) NOT NULL,
         PRIMARY KEY (`group_id`, `citizenid`)
@@ -2876,12 +2869,12 @@ CreateThread(function()
         note     = "ADD COLUMN `note` VARCHAR(300) NOT NULL DEFAULT ''",
     }) do
         local has = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'phone_contacts'
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_contacts'
               AND COLUMN_NAME = ? LIMIT 1]], { col })
-        if not has then MySQL.query.await('ALTER TABLE `phone_contacts` ' .. ddl) end
+        if not has then MySQL.query.await('ALTER TABLE `vphone_contacts` ' .. ddl) end
     end
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_notes` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_notes` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
         `title`     VARCHAR(120) NOT NULL DEFAULT '',
@@ -2890,14 +2883,14 @@ CreateThread(function()
         PRIMARY KEY (`id`), KEY `owner_idx` (`citizenid`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_mail_accounts` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail_accounts` (
         `citizenid` VARCHAR(16) NOT NULL,
         `address`   VARCHAR(64) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`citizenid`), UNIQUE KEY `address` (`address`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_mail` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `from_addr` VARCHAR(64) NOT NULL,
         `to_addr`   VARCHAR(400) NOT NULL DEFAULT '',
@@ -2910,7 +2903,7 @@ CreateThread(function()
 
     -- One row per copy: the sender's Sent, each recipient's Inbox, and drafts. Deleting
     -- your copy leaves everyone else's alone, which is what a mailbox means.
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_mail_box` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail_box` (
         `id`      INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `mail_id` INT UNSIGNED NOT NULL,
         `address` VARCHAR(64) NOT NULL,
@@ -2920,7 +2913,7 @@ CreateThread(function()
         PRIMARY KEY (`id`), KEY `box_idx` (`address`, `folder`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_voicemail` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_voicemail` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
         `from_num`  VARCHAR(20) NOT NULL DEFAULT '',
@@ -2930,7 +2923,7 @@ CreateThread(function()
         PRIMARY KEY (`id`), KEY `owner_idx` (`citizenid`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_calls` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_calls` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
         `other_num` VARCHAR(20) NOT NULL DEFAULT '',
@@ -2942,13 +2935,13 @@ CreateThread(function()
     -- Messages grew a kind, an attachment and a group. Idempotent, so an existing
     -- database upgrades without a migration step nobody would run.
     local hasKind = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'phone_messages'
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_messages'
           AND COLUMN_NAME = 'kind' LIMIT 1]])
     if not hasKind then
-        MySQL.query.await("ALTER TABLE `phone_messages` ADD COLUMN `kind` VARCHAR(10) NOT NULL DEFAULT 'text'")
-        MySQL.query.await("ALTER TABLE `phone_messages` ADD COLUMN `attachment` VARCHAR(300) NOT NULL DEFAULT ''")
-        MySQL.query.await("ALTER TABLE `phone_messages` ADD COLUMN `group_id` INT UNSIGNED NULL DEFAULT NULL")
-        MySQL.query.await("ALTER TABLE `phone_messages` ADD KEY `group_idx` (`group_id`, `id`)")
+        MySQL.query.await("ALTER TABLE `vphone_messages` ADD COLUMN `kind` VARCHAR(10) NOT NULL DEFAULT 'text'")
+        MySQL.query.await("ALTER TABLE `vphone_messages` ADD COLUMN `attachment` VARCHAR(300) NOT NULL DEFAULT ''")
+        MySQL.query.await("ALTER TABLE `vphone_messages` ADD COLUMN `group_id` INT UNSIGNED NULL DEFAULT NULL")
+        MySQL.query.await("ALTER TABLE `vphone_messages` ADD KEY `group_idx` (`group_id`, `id`)")
         print('[v-phone] messages migrated: kind, attachment, groups')
     end
 
@@ -2963,29 +2956,29 @@ CreateThread(function()
         MySQL.query.await(('ALTER TABLE `%s` ADD KEY `%s` (%s)'):format(
             tableName, indexName, columns))
     end
-    ensureIndex('phone_messages', 'msg_inbox_idx',
+    ensureIndex('vphone_messages', 'msg_inbox_idx',
         '`to_cid`,`seen`,`group_id`,`from_cid`,`id`')
-    ensureIndex('phone_messages', 'msg_from_idx',
+    ensureIndex('vphone_messages', 'msg_from_idx',
         '`from_cid`,`to_cid`,`group_id`,`id`')
-    ensureIndex('phone_group_members', 'member_cid_idx',
+    ensureIndex('vphone_group_members', 'member_cid_idx',
         '`citizenid`,`group_id`')
-    ensureIndex('phone_mail_box', 'mail_saved_idx',
+    ensureIndex('vphone_mail_box', 'mail_saved_idx',
         '`address`,`saved`,`id`')
-    ensureIndex('phone_voicemail', 'voicemail_unread_idx',
+    ensureIndex('vphone_voicemail', 'voicemail_unread_idx',
         '`citizenid`,`seen`,`id`')
-    ensureIndex('phone_calls', 'calls_at_idx', '`at`')
+    ensureIndex('vphone_calls', 'calls_at_idx', '`at`')
 
     -- A call log is history, not an archive: keep the last while, then let it go.
-    MySQL.query('DELETE FROM phone_calls WHERE at < DATE_SUB(NOW(), INTERVAL 30 DAY)')
+    MySQL.query('DELETE FROM vphone_calls WHERE at < DATE_SUB(NOW(), INTERVAL 30 DAY)')
 
     -- The number lives on the character, not in a table of its own: it identifies the
     -- character the same way their name does. Added idempotently so an existing database
     -- upgrades without a migration step nobody would run.
     local hasCol = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'phone_characters' AND COLUMN_NAME = 'phone' LIMIT 1]])
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_characters' AND COLUMN_NAME = 'phone' LIMIT 1]])
     if not hasCol then
-        MySQL.query.await('ALTER TABLE `phone_characters` ADD COLUMN `phone` VARCHAR(20) DEFAULT NULL')
-        MySQL.query.await('ALTER TABLE `phone_characters` ADD UNIQUE KEY `phone` (`phone`)')
+        MySQL.query.await('ALTER TABLE `vphone_characters` ADD COLUMN `phone` VARCHAR(20) DEFAULT NULL')
+        MySQL.query.await('ALTER TABLE `vphone_characters` ADD UNIQUE KEY `phone` (`phone`)')
     end
 
     for _, a in ipairs(Config.Apps) do registerApp(a.id, a, a.owner) end
@@ -3011,30 +3004,11 @@ CreateThread(function()
     end
     loadWorldApps()
 
-    -- Any app that registered before v-world was ready still needs its editor row.
-    for id, a in pairs(Apps) do
-        if not WorldApps[id] then
-            MySQL.insert.await([[INSERT IGNORE INTO world_apps
-                (id, label, slot, job, job_grade, gang, enabled) VALUES (?,?,?,?,?,?,1)]],
-                { id, a.label or id, a.slot or 99, a.job or '', a.jobGrade or 0, a.gang or '' })
-        end
-    end
-    loadWorldApps()
-
-    -- The shipped order changed, and a database seeded under the old one would keep it for
-    -- ever because the operator's row wins. Re-apply the seed slots exactly once, marked
-    -- so an operator who reorders afterwards is never overwritten again.
-    local seeded = MySQL.scalar.await(
-        "SELECT v FROM phone_app_data WHERE citizenid = '__system' AND app = 'v-phone' AND k = 'slotseed'")
-    if seeded ~= 'v2' then
-        for _, a in ipairs(Config.Apps) do
-            MySQL.update.await('UPDATE world_apps SET slot = ? WHERE id = ?', { a.slot or 99, a.id })
-        end
-        MySQL.query.await([[INSERT INTO phone_app_data (citizenid, app, k, v) VALUES ('__system','v-phone','slotseed','v2')
-            ON DUPLICATE KEY UPDATE v = VALUES(v)]])
-        loadWorldApps()
-        print('[v-phone] home screen order re-seeded')
-    end
+    -- Upstream kept an editable app catalogue in v-world's `world_apps` table, so an admin
+    -- could reorder or gate apps from an in-game panel. There is no panel here and no
+    -- v-world: `Config.Apps` and `Config.Home` ARE the catalogue, read fresh every boot.
+    -- So there is nothing to seed and nothing to re-seed - the two loops that did are
+    -- gone, along with the one table this resource did not own.
 
     -- A resource restart does not replay the framework's player-loaded event. Rebuild
     -- every online index and persisted power state before accepting calls/messages.
@@ -3047,10 +3021,10 @@ CreateThread(function()
     -- for a table that only grows while people are talking.
     local days = math.floor(num(S('retentionDays', Config.Messages.retentionDays), 30))
     if days > 0 then
-        local n = MySQL.update.await('DELETE FROM phone_messages WHERE at < DATE_SUB(NOW(), INTERVAL ? DAY)', { days })
+        local n = MySQL.update.await('DELETE FROM vphone_messages WHERE at < DATE_SUB(NOW(), INTERVAL ? DAY)', { days })
         if n and n > 0 then print(('[v-phone] pruned %d message(s) older than %d days'):format(n, days)) end
     end
-    MySQL.update.await([[DELETE FROM phone_cipher_messages
+    MySQL.update.await([[DELETE FROM vphone_cipher_messages
         WHERE expires_at IS NOT NULL AND expires_at <= NOW()]])
 
     -- The social apps are part of this resource now, so they wait for the same boot

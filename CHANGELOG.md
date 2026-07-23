@@ -4,6 +4,32 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.0.3] - 2026-07-23
+
+### Changed (English first)
+
+- **Every table this resource creates now starts with `vphone_`.** The twenty seven tables were named `phone_`, `social_` and `hush_`, any of which could in principle collide with a table another script on the server owns. They cannot now: the prefix is this resource's and nobody else's.
+- **An automatic migration** moves an earlier build's data to the new names at boot, once. It renames a table only when the old name exists, the new name does not, and the old name is one this resource is known to have created, so it can never touch a table that is not ours. A fresh server does nothing; a server with data keeps every message and contact. Verified on a live server: a legacy `phone_contacts` row survived the rename intact.
+
+### Fixed
+
+- **A leftover query against `world_apps`** - the phone tried to seed an app catalogue into a table that belonged to the framework this build no longer runs. It threw once per app at boot. That whole mechanism is gone: `Config.Apps` and `Config.Home` are the catalogue, read fresh every boot, and the one table this resource did not own is no longer touched.
+
+---
+
+## [1.0.3] - 2026-07-23
+
+### Modifications (miroir français)
+
+- **Toute table créée par cette ressource commence désormais par `vphone_`.** Les vingt-sept tables s'appelaient `phone_`, `social_` et `hush_`, dont chacune pouvait en principe entrer en collision avec la table d'un autre script du serveur. Ce n'est plus possible : le préfixe appartient à cette ressource et à personne d'autre.
+- **Une migration automatique** déplace au démarrage, une seule fois, les données d'une version antérieure vers les nouveaux noms. Elle ne renomme une table que si l'ancien nom existe, que le nouveau n'existe pas, et que l'ancien nom est bien l'un de ceux que cette ressource crée : elle ne peut donc jamais toucher une table qui n'est pas la sienne. Un serveur neuf ne fait rien ; un serveur avec des données conserve chaque message et chaque contact. Vérifié sur un serveur vivant : une ligne héritée de `phone_contacts` a survécu intacte au renommage.
+
+### Correctifs
+
+- **Une requête résiduelle contre `world_apps`** - le téléphone tentait d'écrire un catalogue d'applications dans une table qui appartenait au framework que cette version ne fait plus tourner. Elle levait une erreur par application au démarrage. Tout ce mécanisme est supprimé : `Config.Apps` et `Config.Home` sont le catalogue, relu à chaque démarrage, et la seule table que cette ressource ne possédait pas n'est plus touchée.
+
+---
+
 ## [1.0.2] - 2026-07-23
 
 ### Added (English first)
@@ -90,8 +116,8 @@ All notable changes to v-phone are documented here.
 
 - **Framework agnostic** - The phone detects qb-core, qbx_core, ox_core or es_extended at boot and adapts. With none of them it runs standalone on the licence identifier. `Config.Framework` names one explicitly when the detection is not what you want.
 - **One player object** - A bridge turns every framework's idea of a character into the same four things the phone reads: a stable id, a name, a job and a place to keep preferences.
-- **Storage the phone owns** - Preferences, layouts, health records and photo lists live in `phone_kv`, keyed by character. Nothing is written into a framework's metadata column, so a framework update cannot break the phone.
-- **Character projection** - The phone keeps `phone_characters`, refreshed from whichever framework is running, so a dozen queries that need a name or a date of birth do not have to be written in four dialects.
+- **Storage the phone owns** - Preferences, layouts, health records and photo lists live in `vphone_kv`, keyed by character. Nothing is written into a framework's metadata column, so a framework update cannot break the phone.
+- **Character projection** - The phone keeps `vphone_characters`, refreshed from whichever framework is running, so a dozen queries that need a name or a date of birth do not have to be written in four dialects.
 - **Integrations, detected and overridable** - Inventory (ox_inventory, qs-inventory, ps-inventory, qb-inventory, origen_inventory, codem-inventory), banking (Renewed-Banking, qb-banking, okokBanking, qs-banking, esx_banking), voice (pma-voice, saltychat, mumble-voip) and notifications (ox_lib, qb, ESX, chat, custom). Each is `auto` by default, takes an explicit resource name, or `off`.
 - **Integration hooks** - `Config.Compat.hooks` points any app at your own script in one function, rather than forking the resource.
 - **Numbers meet the framework halfway** - A character who already has a number from qb or ox keeps it, so every script that knows how to reach them still can. A number the phone mints is written back the same way.
@@ -111,8 +137,8 @@ All notable changes to v-phone are documented here.
 
 - **Indépendant du framework** - Le téléphone détecte qb-core, qbx_core, ox_core ou es_extended au démarrage et s'y adapte. Sans aucun d'eux il tourne en autonome sur l'identifiant de licence. `Config.Framework` en nomme un explicitement quand la détection ne convient pas.
 - **Un seul objet joueur** - Un pont transforme l'idée qu'a chaque framework d'un personnage en les quatre mêmes choses que lit le téléphone : un identifiant stable, un nom, un métier et un endroit où garder les préférences.
-- **Un stockage qui appartient au téléphone** - Préférences, dispositions, dossiers de santé et listes de photos vivent dans `phone_kv`, par personnage. Rien n'est écrit dans la colonne metadata d'un framework, donc une mise à jour de celui-ci ne peut pas casser le téléphone.
-- **Projection des personnages** - Le téléphone tient `phone_characters`, rafraîchie depuis le framework qui tourne, pour qu'une douzaine de requêtes ayant besoin d'un nom ou d'une date de naissance n'aient pas à être écrites en quatre dialectes.
+- **Un stockage qui appartient au téléphone** - Préférences, dispositions, dossiers de santé et listes de photos vivent dans `vphone_kv`, par personnage. Rien n'est écrit dans la colonne metadata d'un framework, donc une mise à jour de celui-ci ne peut pas casser le téléphone.
+- **Projection des personnages** - Le téléphone tient `vphone_characters`, rafraîchie depuis le framework qui tourne, pour qu'une douzaine de requêtes ayant besoin d'un nom ou d'une date de naissance n'aient pas à être écrites en quatre dialectes.
 - **Intégrations, détectées et surchargeables** - Inventaire (ox_inventory, qs-inventory, ps-inventory, qb-inventory, origen_inventory, codem-inventory), banque (Renewed-Banking, qb-banking, okokBanking, qs-banking, esx_banking), voix (pma-voice, saltychat, mumble-voip) et notifications (ox_lib, qb, ESX, chat, personnalisé). Chacune est `auto` par défaut, accepte un nom de ressource explicite, ou `off`.
 - **Points d'accroche** - `Config.Compat.hooks` branche n'importe quelle application sur votre propre script en une fonction, plutôt qu'en forkant la ressource.
 - **Les numéros rejoignent le framework** - Un personnage qui a déjà un numéro venu de qb ou d'ox le conserve, pour que tout script sachant le joindre le puisse encore. Un numéro créé par le téléphone est réécrit de la même façon.

@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.0.2'
+version '1.0.3'
 repository 'https://github.com/laforetbrut/fivem-ifruit-phone'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -38,6 +38,8 @@ client_scripts {
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     -- Framework detection, per-character storage and the integrations every app reads.
+    -- migrate.lua runs first: it moves an earlier build's tables to the vphone_ prefix.
+    'bridge/server/migrate.lua',
     'bridge/server/kv.lua',
     'bridge/server/framework.lua',
     'bridge/server/characters.lua',

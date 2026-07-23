@@ -8,7 +8,7 @@
 -- framework changes its schema.
 --
 -- So it does not. Preferences, wallpapers, layouts, health records and photo lists live
--- in `phone_kv`, keyed by citizen id. One table, owned by this resource, portable across
+-- in `vphone_kv`, keyed by citizen id. One table, owned by this resource, portable across
 -- every framework and readable by a server admin without a decoder.
 --
 -- The cache in front of it is per character, not per session: the phone reads its prefs
@@ -43,7 +43,7 @@ function Bridge.KvGet(citizenid, key)
     end
 
     local raw = MySQL.scalar.await(
-        'SELECT value FROM phone_kv WHERE citizenid = ? AND `key` = ?', { citizenid, key })
+        'SELECT value FROM vphone_kv WHERE citizenid = ? AND `key` = ?', { citizenid, key })
     local value = decode(raw)
     cache[citizenid] = cache[citizenid] or {}
     cache[citizenid][key] = value == nil and false or value
@@ -59,10 +59,10 @@ function Bridge.KvSet(citizenid, key, value)
     cache[citizenid][key] = value == nil and false or value
 
     if value == nil then
-        MySQL.query('DELETE FROM phone_kv WHERE citizenid = ? AND `key` = ?', { citizenid, key })
+        MySQL.query('DELETE FROM vphone_kv WHERE citizenid = ? AND `key` = ?', { citizenid, key })
         return true
     end
-    MySQL.query([[INSERT INTO phone_kv (citizenid, `key`, value) VALUES (?,?,?)
+    MySQL.query([[INSERT INTO vphone_kv (citizenid, `key`, value) VALUES (?,?,?)
                   ON DUPLICATE KEY UPDATE value = VALUES(value)]],
         { citizenid, key, encode(value) })
     return true
@@ -77,7 +77,7 @@ AddEventHandler('playerDropped', function()
 end)
 
 function Bridge.KvBoot()
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `phone_kv` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_kv` (
         `citizenid` VARCHAR(64) NOT NULL,
         `key`       VARCHAR(48) NOT NULL,
         `value`     LONGTEXT    NULL,

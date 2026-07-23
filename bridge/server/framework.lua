@@ -14,7 +14,7 @@
 --     standalone             the licence identifier, with everything else defaulted
 --
 -- Nothing below reaches into a framework's database. Phone preferences live in the
--- phone's own `phone_kv` table (see kv.lua): a framework's metadata column is its own
+-- phone's own `vphone_kv` table (see kv.lua): a framework's metadata column is its own
 -- business, and a phone that writes into it is a phone that breaks on the next update.
 
 Bridge = Bridge or {}

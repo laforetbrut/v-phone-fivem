@@ -67,7 +67,7 @@ exports('SetNumber', function(citizenid, number)
     local taken = Bridge.Numbers.Owner(number)
     if taken and taken ~= citizenid then return false, 'taken' end
 
-    MySQL.update.await('UPDATE phone_characters SET phone = ? WHERE citizenid = ?', { number, citizenid })
+    MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?', { number, citizenid })
     Bridge.Numbers.Set(citizenid, number)
     -- The phone caches numbers per session, so a character who is connected is asked to
     -- reload rather than left holding the old one until they reconnect.
@@ -101,7 +101,7 @@ exports('SendServiceMessage', function(toCitizenid, label, body)
 
     -- Stored so it survives a reconnect. The sender id is the label rather than a
     -- number, so nobody calls back a service that cannot answer.
-    MySQL.insert.await('INSERT INTO phone_messages (from_cid, to_cid, body) VALUES (?,?,?)',
+    MySQL.insert.await('INSERT INTO vphone_messages (from_cid, to_cid, body) VALUES (?,?,?)',
         { ('svc:%s'):format(label):sub(1, 16), toCitizenid, body:sub(1, 500) })
     return true
 end)
@@ -112,7 +112,7 @@ exports('UnreadCount', function(citizenid)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return 0 end
     return num(MySQL.scalar.await(
-        'SELECT COUNT(*) FROM phone_messages WHERE to_cid = ? AND seen = 0', { citizenid }), 0)
+        'SELECT COUNT(*) FROM vphone_messages WHERE to_cid = ? AND seen = 0', { citizenid }), 0)
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -128,18 +128,18 @@ exports('AddContact', function(citizenid, name, number, favourite)
     if citizenid == '' or name == '' or number == '' then return false, 'args' end
 
     local exists = MySQL.scalar.await(
-        'SELECT 1 FROM phone_contacts WHERE citizenid = ? AND number = ?', { citizenid, number })
+        'SELECT 1 FROM vphone_contacts WHERE citizenid = ? AND number = ?', { citizenid, number })
     if exists then return false, 'exists' end
 
     MySQL.insert.await(
-        'INSERT INTO phone_contacts (citizenid, name, number, favourite) VALUES (?,?,?,?)',
+        'INSERT INTO vphone_contacts (citizenid, name, number, favourite) VALUES (?,?,?,?)',
         { citizenid, name, number, favourite and 1 or 0 })
     return true
 end)
 
 --- Take one back out, by number.
 exports('RemoveContact', function(citizenid, number)
-    local n = MySQL.update.await('DELETE FROM phone_contacts WHERE citizenid = ? AND number = ?',
+    local n = MySQL.update.await('DELETE FROM vphone_contacts WHERE citizenid = ? AND number = ?',
         { tostring(citizenid or ''), tostring(number or '') })
     return (n or 0) > 0
 end)
@@ -149,7 +149,7 @@ end)
 --- player did not already put in themselves.
 exports('GetContacts', function(citizenid)
     return MySQL.query.await(
-        'SELECT name, number, favourite FROM phone_contacts WHERE citizenid = ? ORDER BY name',
+        'SELECT name, number, favourite FROM vphone_contacts WHERE citizenid = ? ORDER BY name',
         { tostring(citizenid or '') }) or {}
 end)
 
@@ -247,19 +247,19 @@ exports('SendMail', function(toCitizenid, fromAddress, subject, body)
     -- Mail is addressed to an ADDRESS, not to a character: somebody who has never opened
     -- the Mail app has nowhere to receive it.
     local address = MySQL.scalar.await(
-        'SELECT address FROM phone_mail_accounts WHERE citizenid = ? LIMIT 1', { toCitizenid })
+        'SELECT address FROM vphone_mail_accounts WHERE citizenid = ? LIMIT 1', { toCitizenid })
     if not address or address == '' then return false, 'nomailbox' end
 
     -- Two rows, exactly as a mail the app itself sends: the letter, then a line in the
     -- recipient's box pointing at it.
     local mailId = MySQL.insert.await(
-        'INSERT INTO phone_mail (from_addr, to_addr, subject, body) VALUES (?,?,?,?)', {
+        'INSERT INTO vphone_mail (from_addr, to_addr, subject, body) VALUES (?,?,?,?)', {
             tostring(fromAddress or 'noreply@ls.com'):sub(1, 64), address,
             tostring(subject or ''):sub(1, 120), tostring(body or ''),
         })
     if not mailId then return false, 'x' end
     MySQL.insert.await(
-        "INSERT INTO phone_mail_box (mail_id, address, folder) VALUES (?,?,'inbox')",
+        "INSERT INTO vphone_mail_box (mail_id, address, folder) VALUES (?,?,'inbox')",
         { mailId, address })
 
     local target = Core.GetPlayerByCitizenId(toCitizenid)

@@ -103,7 +103,7 @@ function Bridge.Numbers.Owner(number)
     number = tostring(number or '')
     if number == '' then return nil end
 
-    local own = MySQL.scalar.await("SELECT citizenid FROM phone_kv WHERE `key` = 'number' AND value = ?",
+    local own = MySQL.scalar.await("SELECT citizenid FROM vphone_kv WHERE `key` = 'number' AND value = ?",
         { json.encode(number) })
     if own then return own end
 

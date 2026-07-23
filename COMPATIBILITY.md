@@ -15,10 +15,10 @@ Everything is detected at boot. `Config.Compat` overrides any of it, and
 | Name | `charinfo` | `firstName` / `lastName` | `getName()` | Steam / player name |
 | Job | `PlayerData.job` | groups, minus `ignoredGroups` | `getJob()` | none |
 | Phone number | `charinfo.phone`, reused | `characters.phoneNumber`, reused | minted by the phone | minted by the phone |
-| Preferences | `phone_kv` | `phone_kv` | `phone_kv` | `phone_kv` |
+| Preferences | `vphone_kv` | `vphone_kv` | `vphone_kv` | `vphone_kv` |
 
 **Preferences are never written into your framework's metadata.** They live in
-`phone_kv`, a table this resource owns, so a framework update cannot break the phone and
+`vphone_kv`, a table this resource owns, so a framework update cannot break the phone and
 uninstalling the phone leaves your character rows untouched.
 
 ## App by app
@@ -106,10 +106,10 @@ Tout est détecté au démarrage. `Config.Compat` surcharge n'importe quoi, et
 | Nom | `charinfo` | `firstName` / `lastName` | `getName()` | nom du joueur |
 | Métier | `PlayerData.job` | groupes, moins `ignoredGroups` | `getJob()` | aucun |
 | Numéro de téléphone | `charinfo.phone`, réutilisé | `characters.phoneNumber`, réutilisé | créé par le téléphone | créé par le téléphone |
-| Préférences | `phone_kv` | `phone_kv` | `phone_kv` | `phone_kv` |
+| Préférences | `vphone_kv` | `vphone_kv` | `vphone_kv` | `vphone_kv` |
 
 **Les préférences ne sont jamais écrites dans la metadata de votre framework.** Elles
-vivent dans `phone_kv`, une table que cette ressource possède : une mise à jour du
+vivent dans `vphone_kv`, une table que cette ressource possède : une mise à jour du
 framework ne peut pas casser le téléphone, et désinstaller le téléphone laisse vos
 lignes de personnage intactes.
 

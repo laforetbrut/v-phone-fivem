@@ -87,7 +87,7 @@ local function appOfKind(kind) return kind == 'photo' and 'snap' or 'bleeter' en
 
 local function accountOf(cid, app)
     return MySQL.single.await(
-        'SELECT citizenid, handle, displayname, avatar, bio, phone, verified FROM social_accounts WHERE citizenid = ? AND app = ?',
+        'SELECT citizenid, handle, displayname, avatar, bio, phone, verified FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
         { cid, app })
 end
 
@@ -220,10 +220,10 @@ V.Callback('v-phone:soc:register', function(src, resolve, data)
 
     if accountOf(p.citizenid, app) then resolve({ error = 'exists' }) return end
     local taken = MySQL.scalar.await(
-        'SELECT 1 FROM social_accounts WHERE app = ? AND handle = ? LIMIT 1', { app, handle })
+        'SELECT 1 FROM vphone_social_accounts WHERE app = ? AND handle = ? LIMIT 1', { app, handle })
     if taken then resolve({ error = 'taken' }) return end
 
-    MySQL.query.await([[INSERT INTO social_accounts
+    MySQL.query.await([[INSERT INTO vphone_social_accounts
         (citizenid, app, handle, displayname, avatar, bio, phone, password, verified)
         VALUES (?,?,?,?,?,?,?,?,1)]],
         { p.citizenid, app, handle, displayname, avatar, bio, pend.number, hashPw(pw) })
@@ -276,7 +276,7 @@ V.Callback('v-phone:soc:setup', function(src, resolve, data)
     -- The handle is the account's name on the server and does not change here; only the
     -- display name, avatar and bio do.
     MySQL.query.await(
-        'UPDATE social_accounts SET displayname = ?, avatar = ?, bio = ? WHERE citizenid = ? AND app = ?',
+        'UPDATE vphone_social_accounts SET displayname = ?, avatar = ?, bio = ? WHERE citizenid = ? AND app = ?',
         { displayname, avatar, bio, p.citizenid, app })
     resolve({ ok = true, account = { handle = a.handle, displayname = displayname, avatar = avatar, bio = bio } })
 end)
@@ -288,7 +288,7 @@ local function cidOfHandle(app, handle)
     handle = tostring(handle or ''):gsub('^@', ''):sub(1, 20)
     if handle == '' then return nil end
     return MySQL.scalar.await(
-        'SELECT citizenid FROM social_accounts WHERE app = ? AND handle = ?', { app, handle })
+        'SELECT citizenid FROM vphone_social_accounts WHERE app = ? AND handle = ?', { app, handle })
 end
 
 local function appOf(data)
@@ -302,12 +302,12 @@ end
 local POST_COLUMNS = [[
     s.id, s.kind, s.body, s.image, s.at,
     a.handle, a.displayname, a.avatar, a.verified,
-    (SELECT COUNT(*) FROM social_likes l WHERE l.post_id = s.id) AS likes,
-    (SELECT COUNT(*) FROM social_comments c WHERE c.post_id = s.id) AS comments,
-    (SELECT COUNT(*) FROM social_reposts r WHERE r.post_id = s.id) AS reposts,
-    EXISTS(SELECT 1 FROM social_likes l2 WHERE l2.post_id = s.id AND l2.citizenid = ?) AS liked,
-    EXISTS(SELECT 1 FROM social_reposts r2 WHERE r2.post_id = s.id AND r2.citizenid = ?) AS reposted,
-    EXISTS(SELECT 1 FROM social_follows f WHERE f.app = a.app AND f.from_cid = ? AND f.to_cid = s.citizenid) AS following,
+    (SELECT COUNT(*) FROM vphone_social_likes l WHERE l.post_id = s.id) AS likes,
+    (SELECT COUNT(*) FROM vphone_social_comments c WHERE c.post_id = s.id) AS comments,
+    (SELECT COUNT(*) FROM vphone_social_reposts r WHERE r.post_id = s.id) AS reposts,
+    EXISTS(SELECT 1 FROM vphone_social_likes l2 WHERE l2.post_id = s.id AND l2.citizenid = ?) AS liked,
+    EXISTS(SELECT 1 FROM vphone_social_reposts r2 WHERE r2.post_id = s.id AND r2.citizenid = ?) AS reposted,
+    EXISTS(SELECT 1 FROM vphone_social_follows f WHERE f.app = a.app AND f.from_cid = ? AND f.to_cid = s.citizenid) AS following,
     (s.citizenid = ?) AS mine
 ]]
 
@@ -344,7 +344,7 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
     local following = (data and data.scope) == 'following'
     local where = following
         and [[ AND (s.citizenid = ? OR EXISTS(
-                 SELECT 1 FROM social_follows f WHERE f.app = a.app
+                 SELECT 1 FROM vphone_social_follows f WHERE f.app = a.app
                    AND f.from_cid = ? AND f.to_cid = s.citizenid))]]
         or ''
 
@@ -357,8 +357,8 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
 
     local rows = MySQL.query.await(([[
         SELECT %s
-        FROM social_posts s
-        JOIN social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
+        FROM vphone_social_posts s
+        JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
         WHERE s.kind = ?%s
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS, where), args) or {}
@@ -386,7 +386,7 @@ V.Callback('v-phone:soc:post', function(src, resolve, data)
     end
 
     local id = MySQL.insert.await(
-        'INSERT INTO social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
+        'INSERT INTO vphone_social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
         { p.citizenid, kind, body, image })
     Core.Log('social', ('%s posted %s #%d'):format(p.citizenid, kind, id), nil, p.citizenid)
     resolve({ ok = true, id = id })
@@ -402,16 +402,16 @@ V.Callback('v-phone:soc:like', function(src, resolve, data)
     -- can never count twice, whatever order the packets land in.
     local liked
     local exists = MySQL.scalar.await(
-        'SELECT 1 FROM social_likes WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
+        'SELECT 1 FROM vphone_social_likes WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
     if exists then
-        MySQL.query.await('DELETE FROM social_likes WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
+        MySQL.query.await('DELETE FROM vphone_social_likes WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
         liked = false
     else
-        MySQL.insert.await('INSERT IGNORE INTO social_likes (post_id, citizenid) VALUES (?,?)', { id, p.citizenid })
+        MySQL.insert.await('INSERT IGNORE INTO vphone_social_likes (post_id, citizenid) VALUES (?,?)', { id, p.citizenid })
         liked = true
     end
     local count = num(MySQL.scalar.await(
-        'SELECT COUNT(*) FROM social_likes WHERE post_id = ?', { id }), 0)
+        'SELECT COUNT(*) FROM vphone_social_likes WHERE post_id = ?', { id }), 0)
     resolve({ ok = true, liked = liked, likes = count })
 end)
 
@@ -432,7 +432,7 @@ V.Callback('v-phone:soc:hushMe', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
     local row = MySQL.single.await(
-        'SELECT bio, photo, active FROM hush_profiles WHERE citizenid = ?', { p.citizenid })
+        'SELECT bio, photo, active FROM vphone_hush_profiles WHERE citizenid = ?', { p.citizenid })
     resolve({ ok = true, profile = row and { bio = row.bio, photo = row.photo, active = num(row.active, 0) == 1 } or nil })
 end)
 
@@ -445,7 +445,7 @@ V.Callback('v-phone:soc:hushSetup', function(src, resolve, data)
     if photo ~= '' and not imageAllowed(photo) then resolve({ error = 'badhost' }) return end
     local active = (data and data.active == false) and 0 or 1
 
-    MySQL.query.await([[INSERT INTO hush_profiles (citizenid, bio, photo, active)
+    MySQL.query.await([[INSERT INTO vphone_hush_profiles (citizenid, bio, photo, active)
         VALUES (?,?,?,?)
         ON DUPLICATE KEY UPDATE bio=VALUES(bio), photo=VALUES(photo), active=VALUES(active)]],
         { p.citizenid, bio, photo, active })
@@ -466,10 +466,10 @@ V.Callback('v-phone:soc:hushNext', function(src, resolve)
     local passDays = math.max(0, math.floor(num(SOC.hush.passDays, 7)))
     local row = MySQL.single.await(([[
         SELECT h.citizenid, h.bio, h.photo, c.firstname, c.dob
-        FROM hush_profiles h
-        JOIN phone_characters c ON c.citizenid = h.citizenid
+        FROM vphone_hush_profiles h
+        JOIN vphone_characters c ON c.citizenid = h.citizenid
         WHERE h.active = 1 AND h.citizenid <> ?
-          AND NOT EXISTS (SELECT 1 FROM hush_likes l
+          AND NOT EXISTS (SELECT 1 FROM vphone_hush_likes l
                           WHERE l.from_cid = ? AND l.to_cid = h.citizenid
                             AND (l.liked = 1%s))
         ORDER BY RAND() LIMIT 1
@@ -495,23 +495,23 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
     -- A pass is recorded too, or the same face comes back every time the app opens. It
     -- is an UPDATE rather than an IGNORE because a pass expires: seeing somebody again
     -- has to restart their clock, otherwise the second pass never sticks.
-    MySQL.insert.await([[INSERT INTO hush_likes (from_cid, to_cid, liked) VALUES (?,?,?)
+    MySQL.insert.await([[INSERT INTO vphone_hush_likes (from_cid, to_cid, liked) VALUES (?,?,?)
         ON DUPLICATE KEY UPDATE liked = VALUES(liked), at = CURRENT_TIMESTAMP]],
         { p.citizenid, target, liked and 1 or 0 })
 
     if not liked then resolve({ ok = true, match = false }) return end
 
     -- The daily ceiling counts LIKES, not passes: saying no is free.
-    local today = num(MySQL.scalar.await([[SELECT COUNT(*) FROM hush_likes
+    local today = num(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_hush_likes
         WHERE from_cid = ? AND liked = 1 AND at > DATE_SUB(NOW(), INTERVAL 1 DAY)]],
         { p.citizenid }), 0)
     if today > math.floor(num(V.Setting('socialDailyLikes', SOC.hush.dailyLikes), 30)) then
-        MySQL.query.await('DELETE FROM hush_likes WHERE from_cid = ? AND to_cid = ?', { p.citizenid, target })
+        MySQL.query.await('DELETE FROM vphone_hush_likes WHERE from_cid = ? AND to_cid = ?', { p.citizenid, target })
         resolve({ error = 'limit' }) return
     end
 
     local mutual = MySQL.scalar.await(
-        'SELECT 1 FROM hush_likes WHERE from_cid = ? AND to_cid = ? AND liked = 1',
+        'SELECT 1 FROM vphone_hush_likes WHERE from_cid = ? AND to_cid = ? AND liked = 1',
         { target, p.citizenid })
     if not mutual then resolve({ ok = true, match = false }) return end
 
@@ -521,7 +521,7 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
     local phone = V.Use('v-phone')
     local myNumber = phone.GetNumber(p.citizenid)
     local theirNumber = phone.GetNumber(target)
-    local them = MySQL.single.await('SELECT firstname FROM phone_characters WHERE citizenid = ?', { target })
+    local them = MySQL.single.await('SELECT firstname FROM vphone_characters WHERE citizenid = ?', { target })
 
     if myNumber and theirNumber then
         phone.SendMessage(p.citizenid, theirNumber, L(src, 'soc.match_line'))
@@ -541,11 +541,11 @@ V.Callback('v-phone:soc:hushMatches', function(src, resolve)
     local rows = MySQL.query.await([[
         SELECT mine.to_cid AS cid, mine.at,
                c.firstname, c.dob, h.bio, h.photo
-        FROM hush_likes mine
-        JOIN hush_likes theirs
+        FROM vphone_hush_likes mine
+        JOIN vphone_hush_likes theirs
           ON theirs.from_cid = mine.to_cid AND theirs.to_cid = mine.from_cid AND theirs.liked = 1
-        LEFT JOIN phone_characters c ON c.citizenid = mine.to_cid
-        LEFT JOIN hush_profiles h ON h.citizenid = mine.to_cid
+        LEFT JOIN vphone_characters c ON c.citizenid = mine.to_cid
+        LEFT JOIN vphone_hush_profiles h ON h.citizenid = mine.to_cid
         WHERE mine.from_cid = ? AND mine.liked = 1
         ORDER BY mine.at DESC LIMIT 50
     ]], { p.citizenid }) or {}
@@ -591,14 +591,14 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
     if not a then resolve({ error = 'nouser' }) return end
 
     local counts = MySQL.single.await([[
-        SELECT (SELECT COUNT(*) FROM social_posts s WHERE s.citizenid = ? AND s.kind = ?) AS posts,
-               (SELECT COUNT(*) FROM social_follows f WHERE f.app = ? AND f.to_cid = ?) AS followers,
-               (SELECT COUNT(*) FROM social_follows f2 WHERE f2.app = ? AND f2.from_cid = ?) AS following
+        SELECT (SELECT COUNT(*) FROM vphone_social_posts s WHERE s.citizenid = ? AND s.kind = ?) AS posts,
+               (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = ? AND f.to_cid = ?) AS followers,
+               (SELECT COUNT(*) FROM vphone_social_follows f2 WHERE f2.app = ? AND f2.from_cid = ?) AS following
     ]], { cid, kind, app, cid, app, cid }) or {}
 
     local posts = MySQL.query.await(([[
-        SELECT %s FROM social_posts s
-        JOIN social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
+        SELECT %s FROM vphone_social_posts s
+        JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
         WHERE s.citizenid = ? AND s.kind = ?
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS), {
@@ -619,7 +619,7 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
             following = num(counts.following, 0),
         },
         followed = cid ~= p.citizenid and MySQL.scalar.await(
-            'SELECT 1 FROM social_follows WHERE app = ? AND from_cid = ? AND to_cid = ?',
+            'SELECT 1 FROM vphone_social_follows WHERE app = ? AND from_cid = ? AND to_cid = ?',
             { app, p.citizenid, cid }) ~= nil or false,
         posts = cleanPosts(posts),
     })
@@ -638,20 +638,20 @@ V.Callback('v-phone:soc:search', function(src, resolve, data)
     if q:gsub('%s', '') == '' then
         rows = MySQL.query.await([[
             SELECT a.handle, a.displayname, a.avatar, a.bio, a.verified,
-                   (SELECT COUNT(*) FROM social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
-                   EXISTS(SELECT 1 FROM social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
+                   (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
+                   EXISTS(SELECT 1 FROM vphone_social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
                    (a.citizenid = ?) AS me
-            FROM social_accounts a WHERE a.app = ?
+            FROM vphone_social_accounts a WHERE a.app = ?
             ORDER BY followers DESC, a.handle ASC LIMIT 30
         ]], { p.citizenid, p.citizenid, app }) or {}
     else
         local like = '%' .. q .. '%'
         rows = MySQL.query.await([[
             SELECT a.handle, a.displayname, a.avatar, a.bio, a.verified,
-                   (SELECT COUNT(*) FROM social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
-                   EXISTS(SELECT 1 FROM social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
+                   (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
+                   EXISTS(SELECT 1 FROM vphone_social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
                    (a.citizenid = ?) AS me
-            FROM social_accounts a
+            FROM vphone_social_accounts a
             WHERE a.app = ? AND (a.handle LIKE ? OR a.displayname LIKE ?)
             ORDER BY (a.handle = ?) DESC, followers DESC LIMIT 30
         ]], { p.citizenid, p.citizenid, app, like, like, q }) or {}
@@ -676,19 +676,19 @@ V.Callback('v-phone:soc:follow', function(src, resolve, data)
     if cid == p.citizenid then resolve({ error = 'self' }) return end
 
     local exists = MySQL.scalar.await(
-        'SELECT 1 FROM social_follows WHERE app = ? AND from_cid = ? AND to_cid = ?',
+        'SELECT 1 FROM vphone_social_follows WHERE app = ? AND from_cid = ? AND to_cid = ?',
         { app, p.citizenid, cid })
     if exists then
-        MySQL.query.await('DELETE FROM social_follows WHERE app = ? AND from_cid = ? AND to_cid = ?',
+        MySQL.query.await('DELETE FROM vphone_social_follows WHERE app = ? AND from_cid = ? AND to_cid = ?',
             { app, p.citizenid, cid })
     else
-        MySQL.insert.await('INSERT IGNORE INTO social_follows (app, from_cid, to_cid) VALUES (?,?,?)',
+        MySQL.insert.await('INSERT IGNORE INTO vphone_social_follows (app, from_cid, to_cid) VALUES (?,?,?)',
             { app, p.citizenid, cid })
     end
     resolve({
         ok = true, followed = not exists,
         followers = num(MySQL.scalar.await(
-            'SELECT COUNT(*) FROM social_follows WHERE app = ? AND to_cid = ?', { app, cid }), 0),
+            'SELECT COUNT(*) FROM vphone_social_follows WHERE app = ? AND to_cid = ?', { app, cid }), 0),
     })
 end)
 
@@ -705,8 +705,8 @@ V.Callback('v-phone:soc:comments', function(src, resolve, data)
     local rows = MySQL.query.await([[
         SELECT c.id, c.body, c.at, a.handle, a.displayname, a.avatar, a.verified,
                (c.citizenid = ?) AS mine
-        FROM social_comments c
-        JOIN social_accounts a ON a.citizenid = c.citizenid AND a.app = ?
+        FROM vphone_social_comments c
+        JOIN vphone_social_accounts a ON a.citizenid = c.citizenid AND a.app = ?
         WHERE c.post_id = ? ORDER BY c.id ASC LIMIT 200
     ]], { p.citizenid, app, id }) or {}
     for _, r in ipairs(rows) do
@@ -724,14 +724,14 @@ V.Callback('v-phone:soc:comment', function(src, resolve, data)
     local id = math.floor(num(data and data.id, 0))
     local body = tostring((data and data.body) or ''):sub(1, 280)
     if id <= 0 or body:gsub('%s', '') == '' then resolve({ error = 'empty' }) return end
-    if not MySQL.scalar.await('SELECT 1 FROM social_posts WHERE id = ?', { id }) then
+    if not MySQL.scalar.await('SELECT 1 FROM vphone_social_posts WHERE id = ?', { id }) then
         resolve({ error = 'gone' }) return
     end
 
-    MySQL.insert.await('INSERT INTO social_comments (post_id, citizenid, body) VALUES (?,?,?)',
+    MySQL.insert.await('INSERT INTO vphone_social_comments (post_id, citizenid, body) VALUES (?,?,?)',
         { id, p.citizenid, body })
     resolve({ ok = true, comments = num(MySQL.scalar.await(
-        'SELECT COUNT(*) FROM social_comments WHERE post_id = ?', { id }), 0) })
+        'SELECT COUNT(*) FROM vphone_social_comments WHERE post_id = ?', { id }), 0) })
 end)
 
 V.Callback('v-phone:soc:uncomment', function(src, resolve, data)
@@ -740,7 +740,7 @@ V.Callback('v-phone:soc:uncomment', function(src, resolve, data)
     local id = math.floor(num(data and data.id, 0))
     if id <= 0 then resolve(false) return end
     -- Your own comment only. The author check is the WHERE clause, not a branch.
-    MySQL.query.await('DELETE FROM social_comments WHERE id = ? AND citizenid = ?', { id, p.citizenid })
+    MySQL.query.await('DELETE FROM vphone_social_comments WHERE id = ? AND citizenid = ?', { id, p.citizenid })
     resolve({ ok = true })
 end)
 
@@ -753,17 +753,17 @@ V.Callback('v-phone:soc:repost', function(src, resolve, data)
     if id <= 0 then resolve(false) return end
 
     local exists = MySQL.scalar.await(
-        'SELECT 1 FROM social_reposts WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
+        'SELECT 1 FROM vphone_social_reposts WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
     if exists then
-        MySQL.query.await('DELETE FROM social_reposts WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
+        MySQL.query.await('DELETE FROM vphone_social_reposts WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
     else
-        MySQL.insert.await('INSERT IGNORE INTO social_reposts (post_id, citizenid) VALUES (?,?)',
+        MySQL.insert.await('INSERT IGNORE INTO vphone_social_reposts (post_id, citizenid) VALUES (?,?)',
             { id, p.citizenid })
     end
     resolve({
         ok = true, reposted = not exists,
         reposts = num(MySQL.scalar.await(
-            'SELECT COUNT(*) FROM social_reposts WHERE post_id = ?', { id }), 0),
+            'SELECT COUNT(*) FROM vphone_social_reposts WHERE post_id = ?', { id }), 0),
     })
 end)
 
@@ -772,14 +772,14 @@ V.Callback('v-phone:soc:delete', function(src, resolve, data)
     if not p then resolve(false) return end
     local id = math.floor(num(data and data.id, 0))
     if id <= 0 then resolve(false) return end
-    local n = MySQL.update.await('DELETE FROM social_posts WHERE id = ? AND citizenid = ?',
+    local n = MySQL.update.await('DELETE FROM vphone_social_posts WHERE id = ? AND citizenid = ?',
         { id, p.citizenid })
     if not n or n == 0 then resolve({ error = 'notyours' }) return end
     -- The post is gone, so its likes, comments and reposts are noise. Clear them rather
     -- than leaving rows pointing at nothing.
-    MySQL.query.await('DELETE FROM social_likes WHERE post_id = ?', { id })
-    MySQL.query.await('DELETE FROM social_comments WHERE post_id = ?', { id })
-    MySQL.query.await('DELETE FROM social_reposts WHERE post_id = ?', { id })
+    MySQL.query.await('DELETE FROM vphone_social_likes WHERE post_id = ?', { id })
+    MySQL.query.await('DELETE FROM vphone_social_comments WHERE post_id = ?', { id })
+    MySQL.query.await('DELETE FROM vphone_social_reposts WHERE post_id = ?', { id })
     resolve({ ok = true })
 end)
 
@@ -799,13 +799,13 @@ V.Callback('v-phone:soc:stories', function(src, resolve, data)
     local rows = MySQL.query.await([[
         SELECT t.id, t.citizenid, t.image, t.body, t.at,
                a.handle, a.displayname, a.avatar,
-               EXISTS(SELECT 1 FROM social_story_seen v WHERE v.story_id = t.id AND v.citizenid = ?) AS seen,
+               EXISTS(SELECT 1 FROM vphone_social_story_seen v WHERE v.story_id = t.id AND v.citizenid = ?) AS seen,
                (t.citizenid = ?) AS mine
-        FROM social_stories t
-        JOIN social_accounts a ON a.citizenid = t.citizenid AND a.app = t.app
+        FROM vphone_social_stories t
+        JOIN vphone_social_accounts a ON a.citizenid = t.citizenid AND a.app = t.app
         WHERE t.app = ? AND t.at > DATE_SUB(NOW(), INTERVAL ? HOUR)
           AND (t.citizenid = ? OR EXISTS(
-                SELECT 1 FROM social_follows f
+                SELECT 1 FROM vphone_social_follows f
                 WHERE f.app = t.app AND f.from_cid = ? AND f.to_cid = t.citizenid))
         ORDER BY t.id ASC
     ]], { p.citizenid, p.citizenid, app, STORY_HOURS, p.citizenid, p.citizenid }) or {}
@@ -845,7 +845,7 @@ V.Callback('v-phone:soc:story', function(src, resolve, data)
     if image == '' then resolve({ error = 'noimage' }) return end
     if not imageAllowed(image) then resolve({ error = 'badhost' }) return end
 
-    MySQL.insert.await('INSERT INTO social_stories (app, citizenid, image, body) VALUES (?,?,?,?)',
+    MySQL.insert.await('INSERT INTO vphone_social_stories (app, citizenid, image, body) VALUES (?,?,?,?)',
         { app, p.citizenid, image, tostring((data and data.body) or ''):sub(1, 160) })
     resolve({ ok = true })
 end)
@@ -855,7 +855,7 @@ V.Callback('v-phone:soc:storySeen', function(src, resolve, data)
     if not p then resolve(false) return end
     local id = math.floor(num(data and data.id, 0))
     if id <= 0 then resolve(false) return end
-    MySQL.insert.await('INSERT IGNORE INTO social_story_seen (story_id, citizenid) VALUES (?,?)',
+    MySQL.insert.await('INSERT IGNORE INTO vphone_social_story_seen (story_id, citizenid) VALUES (?,?)',
         { id, p.citizenid })
     resolve({ ok = true })
 end)
@@ -874,15 +874,15 @@ V.Callback('v-phone:soc:dmList', function(src, resolve, data)
     local rows = MySQL.query.await([[
         SELECT a.handle, a.displayname, a.avatar,
                m.body, m.image, m.at, (m.from_cid = ?) AS mine,
-               (SELECT COUNT(*) FROM social_dm u
+               (SELECT COUNT(*) FROM vphone_social_dm u
                  WHERE u.app = m.app AND u.to_cid = ? AND u.seen = 0
                    AND u.from_cid = IF(m.from_cid = ?, m.to_cid, m.from_cid)) AS unread
-        FROM social_dm m
-        JOIN social_accounts a
+        FROM vphone_social_dm m
+        JOIN vphone_social_accounts a
           ON a.app = m.app AND a.citizenid = IF(m.from_cid = ?, m.to_cid, m.from_cid)
         WHERE m.app = ? AND (m.from_cid = ? OR m.to_cid = ?)
           AND m.id = (
-            SELECT MAX(m2.id) FROM social_dm m2
+            SELECT MAX(m2.id) FROM vphone_social_dm m2
             WHERE m2.app = m.app
               AND ((m2.from_cid = m.from_cid AND m2.to_cid = m.to_cid)
                 OR (m2.from_cid = m.to_cid AND m2.to_cid = m.from_cid)))
@@ -904,14 +904,14 @@ V.Callback('v-phone:soc:dmThread', function(src, resolve, data)
     if not cid then resolve({ error = 'nouser' }) return end
 
     local rows = MySQL.query.await([[
-        SELECT id, body, image, at, (from_cid = ?) AS mine FROM social_dm
+        SELECT id, body, image, at, (from_cid = ?) AS mine FROM vphone_social_dm
         WHERE app = ? AND ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
         ORDER BY id ASC LIMIT 200
     ]], { p.citizenid, app, p.citizenid, cid, cid, p.citizenid }) or {}
     for _, r in ipairs(rows) do r.mine = num(r.mine, 0) == 1 end
 
     -- Opening the thread is reading it.
-    MySQL.query.await('UPDATE social_dm SET seen = 1 WHERE app = ? AND from_cid = ? AND to_cid = ?',
+    MySQL.query.await('UPDATE vphone_social_dm SET seen = 1 WHERE app = ? AND from_cid = ? AND to_cid = ?',
         { app, cid, p.citizenid })
 
     local a = accountOf(cid, app)
@@ -935,7 +935,7 @@ V.Callback('v-phone:soc:dmSend', function(src, resolve, data)
     if image ~= '' and not imageAllowed(image) then resolve({ error = 'badhost' }) return end
     if body:gsub('%s', '') == '' and image == '' then resolve({ error = 'empty' }) return end
 
-    MySQL.insert.await('INSERT INTO social_dm (app, from_cid, to_cid, body, image) VALUES (?,?,?,?,?)',
+    MySQL.insert.await('INSERT INTO vphone_social_dm (app, from_cid, to_cid, body, image) VALUES (?,?,?,?,?)',
         { app, p.citizenid, cid, body, image })
 
     -- A message they cannot see until they happen to open the app is a message that does
@@ -965,7 +965,7 @@ exports('SocialPostAs', function(cid, kind, body, image)
     cid = tostring(cid or '')
     if not accountOf(cid, appOfKind(kind == 'photo' and 'photo' or 'text')) then return false end
     return MySQL.insert.await(
-        'INSERT INTO social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
+        'INSERT INTO vphone_social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
         { cid, kind == 'photo' and 'photo' or 'text', tostring(body or ''):sub(1, 280),
           tostring(image or ''):sub(1, 300) }) ~= nil
 end)
@@ -980,10 +980,10 @@ end)
 -- per server in the admin panel. A throwaway story and a conversation are not the same
 -- thing, so they are not swept on the same schedule - and 0 anywhere means "keep it".
 local SWEEPS = {
-    { kind = 'stories',  table = 'social_stories', label = 'story',   hours = true },
-    { kind = 'posts',    table = 'social_posts',   label = 'post' },
-    { kind = 'comments', table = 'social_comments', label = 'comment' },
-    { kind = 'messages', table = 'social_dm',      label = 'message' },
+    { kind = 'stories',  table = 'vphone_social_stories', label = 'story',   hours = true },
+    { kind = 'posts',    table = 'vphone_social_posts',   label = 'post' },
+    { kind = 'comments', table = 'vphone_social_comments', label = 'comment' },
+    { kind = 'messages', table = 'vphone_social_dm',      label = 'message' },
 }
 
 function socialSweep(loud)
@@ -1005,10 +1005,10 @@ function socialSweep(loud)
 
     -- Rows that only exist to point at something else. A like on a post that has been
     -- swept is not a like, it is a dangling key.
-    MySQL.query.await('DELETE FROM social_likes WHERE post_id NOT IN (SELECT id FROM social_posts)')
-    MySQL.query.await('DELETE FROM social_reposts WHERE post_id NOT IN (SELECT id FROM social_posts)')
-    MySQL.query.await('DELETE FROM social_comments WHERE post_id NOT IN (SELECT id FROM social_posts)')
-    MySQL.query.await('DELETE FROM social_story_seen WHERE story_id NOT IN (SELECT id FROM social_stories)')
+    MySQL.query.await('DELETE FROM vphone_social_likes WHERE post_id NOT IN (SELECT id FROM vphone_social_posts)')
+    MySQL.query.await('DELETE FROM vphone_social_reposts WHERE post_id NOT IN (SELECT id FROM vphone_social_posts)')
+    MySQL.query.await('DELETE FROM vphone_social_comments WHERE post_id NOT IN (SELECT id FROM vphone_social_posts)')
+    MySQL.query.await('DELETE FROM vphone_social_story_seen WHERE story_id NOT IN (SELECT id FROM vphone_social_stories)')
 end
 
 --- Called by the phone once v-core is up and `Core` is known, because the phone is the
@@ -1016,7 +1016,7 @@ end
 function SocialBoot(core)
     Core = core
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_accounts` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_accounts` (
         `citizenid` VARCHAR(16) NOT NULL,
         `app`       VARCHAR(12) NOT NULL DEFAULT 'bleeter',
         `handle`      VARCHAR(20) NOT NULL,
@@ -1039,27 +1039,27 @@ function SocialBoot(core)
         verified    = "ADD COLUMN `verified` TINYINT(1) NOT NULL DEFAULT 0",
     }) do
         local has = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'social_accounts'
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_accounts'
               AND COLUMN_NAME = ? LIMIT 1]], { col })
-        if not has then MySQL.query.await('ALTER TABLE `social_accounts` ' .. ddl) end
+        if not has then MySQL.query.await('ALTER TABLE `vphone_social_accounts` ' .. ddl) end
     end
-    MySQL.query.await("UPDATE `social_accounts` SET `verified` = 1 WHERE `verified` = 0 AND `password` = ''")
-    MySQL.query.await("UPDATE `social_accounts` SET `displayname` = `handle` WHERE `displayname` = ''")
+    MySQL.query.await("UPDATE `vphone_social_accounts` SET `verified` = 1 WHERE `verified` = 0 AND `password` = ''")
+    MySQL.query.await("UPDATE `vphone_social_accounts` SET `displayname` = `handle` WHERE `displayname` = ''")
 
     -- A database created before accounts were per-app is migrated in place: existing
     -- rows become Bleeter accounts, which is what they were in spirit.
     local hasApp = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'social_accounts'
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_accounts'
           AND COLUMN_NAME = 'app' LIMIT 1]])
     if not hasApp then
-        MySQL.query.await("ALTER TABLE `social_accounts` ADD COLUMN `app` VARCHAR(12) NOT NULL DEFAULT 'bleeter'")
-        MySQL.query.await("ALTER TABLE `social_accounts` DROP PRIMARY KEY, ADD PRIMARY KEY (`citizenid`, `app`)")
-        MySQL.query.await("ALTER TABLE `social_accounts` DROP INDEX `handle`")
-        MySQL.query.await("ALTER TABLE `social_accounts` ADD UNIQUE KEY `handle` (`app`, `handle`)")
+        MySQL.query.await("ALTER TABLE `vphone_social_accounts` ADD COLUMN `app` VARCHAR(12) NOT NULL DEFAULT 'bleeter'")
+        MySQL.query.await("ALTER TABLE `vphone_social_accounts` DROP PRIMARY KEY, ADD PRIMARY KEY (`citizenid`, `app`)")
+        MySQL.query.await("ALTER TABLE `vphone_social_accounts` DROP INDEX `handle`")
+        MySQL.query.await("ALTER TABLE `vphone_social_accounts` ADD UNIQUE KEY `handle` (`app`, `handle`)")
         print('[v-social] accounts migrated to one per app')
     end
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_posts` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_posts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
         `kind`      VARCHAR(8)  NOT NULL DEFAULT 'text',
@@ -1069,13 +1069,13 @@ function SocialBoot(core)
         PRIMARY KEY (`id`), KEY `kind_idx` (`kind`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_likes` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_likes` (
         `post_id`   INT UNSIGNED NOT NULL,
         `citizenid` VARCHAR(16) NOT NULL,
         PRIMARY KEY (`post_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `hush_profiles` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_hush_profiles` (
         `citizenid` VARCHAR(16) NOT NULL,
         `bio`       VARCHAR(160) NOT NULL DEFAULT '',
         `photo`     VARCHAR(300) NOT NULL DEFAULT '',
@@ -1083,7 +1083,7 @@ function SocialBoot(core)
         PRIMARY KEY (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `hush_likes` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_hush_likes` (
         `from_cid` VARCHAR(16) NOT NULL,
         `to_cid`   VARCHAR(16) NOT NULL,
         `liked`    TINYINT(1) NOT NULL DEFAULT 0,
@@ -1091,7 +1091,7 @@ function SocialBoot(core)
         PRIMARY KEY (`from_cid`, `to_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_follows` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_follows` (
         `app`      VARCHAR(12) NOT NULL DEFAULT 'bleeter',
         `from_cid` VARCHAR(16) NOT NULL,
         `to_cid`   VARCHAR(16) NOT NULL,
@@ -1099,7 +1099,7 @@ function SocialBoot(core)
         PRIMARY KEY (`app`, `from_cid`, `to_cid`), KEY `to_idx` (`app`, `to_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_comments` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_comments` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `post_id`   INT UNSIGNED NOT NULL,
         `citizenid` VARCHAR(16) NOT NULL,
@@ -1108,14 +1108,14 @@ function SocialBoot(core)
         PRIMARY KEY (`id`), KEY `post_idx` (`post_id`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_reposts` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_reposts` (
         `post_id`   INT UNSIGNED NOT NULL,
         `citizenid` VARCHAR(16) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`post_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_stories` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_stories` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `app`       VARCHAR(12) NOT NULL DEFAULT 'snap',
         `citizenid` VARCHAR(16) NOT NULL,
@@ -1125,13 +1125,13 @@ function SocialBoot(core)
         PRIMARY KEY (`id`), KEY `live_idx` (`app`, `at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_story_seen` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_story_seen` (
         `story_id`  INT UNSIGNED NOT NULL,
         `citizenid` VARCHAR(16) NOT NULL,
         PRIMARY KEY (`story_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
-    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `social_dm` (
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_dm` (
         `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `app`      VARCHAR(12) NOT NULL DEFAULT 'bleeter',
         `from_cid` VARCHAR(16) NOT NULL,
