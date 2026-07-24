@@ -1,4 +1,4 @@
-name: 📖 Documentation / Documentation
+name: Documentation / Documentation
 description: Something in the README, COMPATIBILITY, API or DEVELOPERS docs is wrong, missing or unclear. / Quelque chose est faux, manquant ou peu clair dans la doc.
 title: "[docs] "
 labels: ["documentation", "needs-triage"]

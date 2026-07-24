@@ -1,4 +1,4 @@
-name: 🐞 Bug report / Rapport de bug
+name: Bug report / Rapport de bug
 description: Something in the phone is broken. / Quelque chose ne fonctionne pas dans le téléphone.
 title: "[bug] "
 labels: ["bug", "needs-triage"]

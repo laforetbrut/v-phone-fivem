@@ -1,17 +1,17 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 📖 Read the docs first / Lisez la doc d'abord
+  - name: Read the docs first / Lisez la doc d'abord
     url: https://github.com/laforetbrut/v-phone-fivem#readme
     about: Installation, configuration and the dependency table. Most questions are answered here. / Installation, configuration et le tableau des dépendances.
 
-  - name: 🔌 Compatibility matrix / Matrice de compatibilité
+  - name: Compatibility matrix / Matrice de compatibilité
     url: https://github.com/laforetbrut/v-phone-fivem/blob/main/COMPATIBILITY.md
     about: What is supported per framework, inventory, banking, housing and garage script. / Ce qui est pris en charge par framework, inventaire, banque, logement et garage.
 
-  - name: 🧩 Developer API / API développeur
+  - name: Developer API / API développeur
     url: https://github.com/laforetbrut/v-phone-fivem/blob/main/API.md
     about: Every export, event and callback another resource can call. / Chaque export, event et callback appelable depuis une autre ressource.
 
-  - name: 💬 Ask a question / Poser une question
+  - name: Ask a question / Poser une question
     url: https://github.com/laforetbrut/v-phone-fivem/discussions
     about: Support, setup help and ideas. Issues are for reproducible bugs and concrete requests. / Support, aide à l'installation et idées.

@@ -1,4 +1,4 @@
-name: 🔌 Compatibility report / Rapport de compatibilité
+name: Compatibility report / Rapport de compatibilité
 description: An app does not read your framework, inventory, banking, housing or garage script. / Une application ne lit pas votre framework, inventaire, banque, logement ou garage.
 title: "[compat] "
 labels: ["compatibility", "needs-triage"]
