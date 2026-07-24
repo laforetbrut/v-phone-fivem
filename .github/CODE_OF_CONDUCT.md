@@ -35,8 +35,14 @@ does not get a clean slate on the tracker.
 
 ## Enforcement
 
-Reports go to **vyrriox@gmail.com**. Include links. Reports are handled privately and the reporter is
-not named without their agreement.
+Report privately through GitHub, never in a public thread:
+**[open a private report](https://github.com/laforetbrut/v-phone-fivem/security/advisories/new)** and
+title it `conduct`. It is the security advisory form, but it is the private channel this repository has,
+and it reaches the maintainer and nobody else. Include links. The reporter is not named without their
+agreement.
+
+For harassment that GitHub itself should act on, use
+[GitHub's abuse reporting](https://github.com/contact/report-abuse).
 
 What happens next depends on what happened:
 
@@ -88,8 +94,14 @@ donne pas droit à une ardoise vierge sur le tracker.
 
 ## Application
 
-Les signalements vont à **vyrriox@gmail.com**. Joignez les liens. Ils sont traités en privé et la
-personne qui signale n'est pas nommée sans son accord.
+Signalez en privé via GitHub, jamais dans un fil public :
+**[ouvrez un signalement privé](https://github.com/laforetbrut/v-phone-fivem/security/advisories/new)**
+et intitulez-le `conduct`. C'est le formulaire d'avis de sécurité, mais c'est le canal privé dont dispose
+ce dépôt, et il n'atteint que le mainteneur. Joignez les liens. La personne qui signale n'est pas nommée
+sans son accord.
+
+Pour du harcèlement sur lequel GitHub lui-même doit agir, utilisez le
+[signalement d'abus de GitHub](https://github.com/contact/report-abuse).
 
 La suite dépend de ce qui s'est passé :
 
