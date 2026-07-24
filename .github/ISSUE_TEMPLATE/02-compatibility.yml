@@ -1,0 +1,93 @@
+name: 🔌 Compatibility report / Rapport de compatibilité
+description: An app does not read your framework, inventory, banking, housing or garage script. / Une application ne lit pas votre framework, inventaire, banque, logement ou garage.
+title: "[compat] "
+labels: ["compatibility", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The phone reads every external script through `Config.Compat`. Before filing, check
+        [COMPATIBILITY.md](https://github.com/laforetbrut/v-phone-fivem/blob/main/COMPATIBILITY.md) —
+        your script may already be supported under a different key, or covered by a `Config.Compat.hooks` entry
+        you can write yourself in a few lines.
+
+        Le téléphone lit chaque script externe via `Config.Compat`. Avant de poster, vérifiez
+        [COMPATIBILITY.md](https://github.com/laforetbrut/v-phone-fivem/blob/main/COMPATIBILITY.md) :
+        votre script est peut-être déjà pris en charge sous une autre clé, ou couvert par un `Config.Compat.hooks`
+        que vous pouvez écrire vous-même en quelques lignes.
+
+  - type: input
+    id: version
+    attributes:
+      label: v-phone version
+      placeholder: "1.1.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of script? / Quel type de script ?
+      options:
+        - Framework / core
+        - Inventory / Inventaire
+        - Banking / Banque
+        - Housing / Logement (property, charging)
+        - Garage
+        - Voice
+        - Notifications
+        - Phone number source / Source du numéro de téléphone
+        - Jobs / MDT
+        - Other / Autre
+    validations:
+      required: true
+
+  - type: input
+    id: script
+    attributes:
+      label: Script name and version / Nom et version du script
+      description: The resource folder name, and a link if it is public. / Le nom du dossier de la ressource, et un lien s'il est public.
+      placeholder: "qs-housing 3.1 — https://..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: paid
+    attributes:
+      label: Is it paid or open? / Payant ou ouvert ?
+      description: "For a paid escrow script the source cannot be read, so exports and documentation are the only way in. / Pour un script payant sous escrow, la source est illisible : seuls les exports et la doc permettent d'avancer."
+      options:
+        - Open source / Ouvert
+        - Paid, but exports are documented / Payant, mais les exports sont documentés
+        - Paid, exports undocumented / Payant, exports non documentés
+    validations:
+      required: true
+
+  - type: textarea
+    id: exports
+    attributes:
+      label: Its exports / Ses exports
+      description: |
+        **This is the part that decides whether the issue can be solved.** Paste the exports, events or callbacks
+        that return what the phone needs (balance, items, houses, vehicles...), from the script's own documentation.
+
+        **C'est la partie qui décide si l'issue est traitable.** Collez les exports, events ou callbacks qui
+        renvoient ce dont le téléphone a besoin (solde, objets, maisons, véhicules...), depuis la documentation du script.
+      render: lua
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What the phone shows instead / Ce que le téléphone affiche à la place
+      description: Empty list, zero balance, an error in F8... / Liste vide, solde à zéro, une erreur en F8...
+    validations:
+      required: true
+
+  - type: textarea
+    id: hook
+    attributes:
+      label: Did you try a hook? / Avez-vous essayé un hook ?
+      description: "If you wrote a `Config.Compat.hooks` entry, paste it — it may become the built-in support. / Si vous avez écrit un `Config.Compat.hooks`, collez-le : il peut devenir la prise en charge native."
+      render: lua

@@ -1,0 +1,138 @@
+name: 🐞 Bug report / Rapport de bug
+description: Something in the phone is broken. / Quelque chose ne fonctionne pas dans le téléphone.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you file / Avant de poster**
+
+        - Update to the latest release first — the bug may already be fixed. / Mettez à jour vers la dernière version : le bug est peut-être déjà corrigé.
+        - Search the existing issues. / Cherchez dans les issues existantes.
+        - A bug with no console output and no reproduction steps usually cannot be fixed. / Un bug sans sortie console ni étapes de reproduction est rarement corrigeable.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks / Vérifications
+      options:
+        - label: I am on the latest release of v-phone. / Je suis sur la dernière version de v-phone.
+          required: true
+        - label: I searched the existing issues. / J'ai cherché dans les issues existantes.
+          required: true
+        - label: I read the relevant part of README.md / COMPATIBILITY.md. / J'ai lu la partie concernée du README / COMPATIBILITY.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: v-phone version
+      description: The `version` line in `fxmanifest.lua`. / La ligne `version` dans `fxmanifest.lua`.
+      placeholder: "1.1.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Framework
+      description: Which core is the server running? / Quel core tourne sur le serveur ?
+      options:
+        - qb-core
+        - qbx_core (Qbox)
+        - ox_core
+        - ESX (es_extended)
+        - Standalone (no framework / aucun framework)
+        - Other / Autre
+    validations:
+      required: true
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app or area? / Quelle application ou zone ?
+      options:
+        - Phone / Calls / FaceTime
+        - Messages
+        - Contacts
+        - Bleeter
+        - Snapmatic
+        - Hush
+        - Cipher (encrypted messages / messages chiffrés)
+        - Camera / Gallery
+        - Bank / Wallet
+        - Garage
+        - Property / Housing
+        - Mail
+        - Maps
+        - Music
+        - Jobs / MDT
+        - Health
+        - Notes / Reminders / Calculator
+        - Store (FruitStore)
+        - Settings / Home screen / Lock screen
+        - Police forensics terminal / Terminal d'enquête police
+        - Media hosting (Fivemanage / CDN)
+        - Database / migration
+        - Developer API
+        - Other / Autre
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens / Ce qui se passe
+      description: Describe the broken behaviour. / Décrivez le comportement cassé.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected / Ce qui était attendu
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Étapes de reproduction
+      description: Numbered, from a fresh connection. / Numérotées, depuis une connexion propre.
+      placeholder: |
+        1. Connect to the server / Se connecter au serveur
+        2. Open the phone / Ouvrir le téléphone
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output / Sortie console
+      description: |
+        **Both** consoles, please: the server console (txAdmin or the terminal) and the client F8 console.
+        **Les deux** consoles s'il vous plaît : la console serveur (txAdmin ou le terminal) et la console client F8.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config / Configuration concernée
+      description: The part of `config.lua` you changed, if any. Never paste API keys or your database password. / La partie de `config.lua` que vous avez modifiée. Ne collez jamais de clé d'API ni votre mot de passe de base de données.
+      render: lua
+
+  - type: input
+    id: resources
+    attributes:
+      label: Related resources / Ressources liées
+      description: Inventory, banking, housing, garage, voice — with versions if you know them. / Inventaire, banque, logement, garage, voice — avec les versions si vous les connaissez.
+      placeholder: "qs-inventory 2.4, qs-banking, qs-housing, pma-voice"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else / Captures d'écran ou autre

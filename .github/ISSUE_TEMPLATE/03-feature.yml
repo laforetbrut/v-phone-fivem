@@ -1,0 +1,63 @@
+name: ✨ Feature request / Demande de fonctionnalité
+description: An idea for the phone — a new app, a new option, a better flow. / Une idée pour le téléphone — une app, une option, un meilleur parcours.
+title: "[feat] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The phone ships apps as **drop-in folders** (`apps/<name>/`) and exposes a
+        [developer API](https://github.com/laforetbrut/v-phone-fivem/blob/main/API.md).
+        If what you want is your server's own feature rather than everybody's, you can very likely build it
+        without waiting — see [DEVELOPERS.md](https://github.com/laforetbrut/v-phone-fivem/blob/main/DEVELOPERS.md).
+
+        Le téléphone livre ses apps en **dossiers autonomes** (`apps/<nom>/`) et expose une
+        [API développeur](https://github.com/laforetbrut/v-phone-fivem/blob/main/API.md).
+        Si votre besoin est propre à votre serveur, vous pouvez très probablement le construire sans attendre —
+        voir [DEVELOPERS.md](https://github.com/laforetbrut/v-phone-fivem/blob/main/DEVELOPERS.md).
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What are you asking for? / Que demandez-vous ?
+      options:
+        - A new app / Une nouvelle application
+        - A feature inside an existing app / Une fonctionnalité dans une app existante
+        - A configuration option / Une option de configuration
+        - Support for another script / La prise en charge d'un autre script
+        - A developer export, event or callback / Un export, event ou callback développeur
+        - A design or UX change / Un changement de design ou d'UX
+        - Other / Autre
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem / Le problème
+      description: What can't you do today, and what do you do instead? / Que ne pouvez-vous pas faire aujourd'hui, et que faites-vous à la place ?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like / Ce que vous souhaitez
+      description: Describe it from the player's side first, then the admin's. / Décrivez-le du point de vue du joueur d'abord, puis de l'admin.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered / Alternatives envisagées
+      description: Another script, a hook, a drop-in app of your own. / Un autre script, un hook, une app autonome à vous.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope / Portée
+      options:
+        - label: This should work on every framework (qb-core, qbx, ox_core, ESX, standalone), not just mine. / Cela doit fonctionner sur tous les frameworks, pas seulement le mien.
+        - label: This should respect GTA V lore — real in-game brands, no invented ones. / Cela doit respecter le lore de GTA V — de vraies marques du jeu, pas d'inventions.
+        - label: I am willing to open a pull request for it. / Je suis prêt·e à ouvrir une pull request.

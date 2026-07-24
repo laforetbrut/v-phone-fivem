@@ -129,6 +129,20 @@ set phone_battery false      # any Config.Settings key, prefixed with phone_
 set phone_requireItem true   # the player must carry the phone item
 ```
 
+## Support
+
+| You want to... | Go to |
+| --- | --- |
+| Report something broken | [Bug report](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=01-bug.yml) |
+| An app does not read your inventory / banking / housing script | [Compatibility report](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=02-compatibility.yml) |
+| Suggest a feature | [Feature request](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=03-feature.yml) |
+| Fix the docs | [Documentation](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=04-docs.yml) |
+| Ask a question, get setup help | [Discussions](https://github.com/laforetbrut/v-phone-fivem/discussions) |
+| Report a vulnerability | [Privately](https://github.com/laforetbrut/v-phone-fivem/security/advisories/new) — never a public issue |
+
+A bug report needs **both** consoles (server and client F8) and steps from a fresh connection.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
 ## Licence
 
 [MIT with an attribution requirement](LICENSE). Use it, change it, sell your server with it.
@@ -271,6 +285,20 @@ set phone_locale "fr"
 set phone_battery false      # n'importe quelle clé de Config.Settings, préfixée par phone_
 set phone_requireItem true   # le joueur doit porter l'objet téléphone
 ```
+
+## Support
+
+| Vous voulez... | Allez à |
+| --- | --- |
+| Signaler un dysfonctionnement | [Rapport de bug](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=01-bug.yml) |
+| Une app ne lit pas votre inventaire / banque / logement | [Rapport de compatibilité](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=02-compatibility.yml) |
+| Proposer une fonctionnalité | [Demande de fonctionnalité](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=03-feature.yml) |
+| Corriger la documentation | [Documentation](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=04-docs.yml) |
+| Poser une question, être aidé à l'installation | [Discussions](https://github.com/laforetbrut/v-phone-fivem/discussions) |
+| Signaler une vulnérabilité | [En privé](https://github.com/laforetbrut/v-phone-fivem/security/advisories/new) — jamais une issue publique |
+
+Un rapport de bug a besoin des **deux** consoles (serveur et client F8) et d'étapes depuis une connexion propre.
+Lisez [CONTRIBUTING.md](CONTRIBUTING.md) avant d'ouvrir une pull request.
 
 ## Licence
 

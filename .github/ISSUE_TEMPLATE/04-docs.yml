@@ -1,0 +1,41 @@
+name: 📖 Documentation / Documentation
+description: Something in the README, COMPATIBILITY, API or DEVELOPERS docs is wrong, missing or unclear. / Quelque chose est faux, manquant ou peu clair dans la doc.
+title: "[docs] "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: dropdown
+    id: file
+    attributes:
+      label: Which document? / Quel document ?
+      options:
+        - README.md
+        - COMPATIBILITY.md
+        - API.md
+        - DEVELOPERS.md
+        - CHANGELOG.md
+        - config.lua comments / commentaires de config.lua
+        - Other / Autre
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Where / Où
+      description: A section title, or a line link. / Un titre de section, ou un lien vers une ligne.
+      placeholder: "README.md > Installation > step 3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing / Ce qui est faux ou manquant
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording / Formulation proposée
+      description: Both languages if you can — the docs are bilingual EN/FR. / Dans les deux langues si possible — la doc est bilingue EN/FR.
