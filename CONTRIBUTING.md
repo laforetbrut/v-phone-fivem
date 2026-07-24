@@ -13,6 +13,8 @@ Thanks for taking the time. This page is short on purpose — read it once and y
 | Ask a question, get setup help | [Discussions](https://github.com/laforetbrut/v-phone-fivem/discussions) |
 | Report a vulnerability | [Privately](https://github.com/laforetbrut/v-phone-fivem/security/advisories/new) — never a public issue |
 
+One rule for everything below: the [Code of Conduct](.github/CODE_OF_CONDUCT.md). It is short.
+
 ## Before you build your own thing
 
 A lot of what people request is already possible without touching this repository:
@@ -76,6 +78,8 @@ le projet fonctionne.
 | Corriger la documentation | [Documentation](https://github.com/laforetbrut/v-phone-fivem/issues/new?template=04-docs.yml) |
 | Poser une question, être aidé à l'installation | [Discussions](https://github.com/laforetbrut/v-phone-fivem/discussions) |
 | Signaler une vulnérabilité | [En privé](https://github.com/laforetbrut/v-phone-fivem/security/advisories/new) — jamais une issue publique |
+
+Une règle vaut pour tout ce qui suit : le [Code de conduite](.github/CODE_OF_CONDUCT.md). Il est court.
 
 ## Avant de construire votre propre chose
 
