@@ -93,7 +93,7 @@ local function atBooth(src, data)
     local x, y, z = num(data and data.x), num(data and data.y), num(data and data.z)
     if x == 0 and y == 0 and z == 0 then return nil end
 
-    local reach = num(BOOTH.radius, 1.6) + 2.5
+    local reach = num(BOOTH.radius, 1.6) + num(BOOTH.reachTolerance, 2.5)
     if #(coords - vector3(x + 0.0, y + 0.0, z + 0.0)) > reach then return nil end
 
     -- The number is computed HERE, from the position the server just accepted.
@@ -125,6 +125,7 @@ V.Callback('v-phone:booth:open', function(src, resolve, data)
         cardItem = cardItem(),
         cardSeconds = cardSeconds(),
         freeNumbers = BOOTH.freeNumbers or {},
+        maxDialLength = math.floor(num(BOOTH.maxDialLength, 20)),
     })
 end)
 
@@ -200,6 +201,10 @@ end)
 -- ended, and the next call placed inside that second would never be billed at all.
 local Metering = {}
 
+-- [src] = os.time() when this player's last booth call ended. Only used when
+-- `Config.Booth.cooldownSeconds` is set.
+local Cooldown = {}
+
 local function startMeter(src, cid, callId)
     if Metering[src] == callId then return end
     Metering[src] = callId
@@ -254,6 +259,20 @@ local function startMeter(src, cid, callId)
     end)
 end
 
+--- Stamp the cooldown when the call ENDS, not when it starts, so a long conversation does not
+--- earn a free immediate redial. Only runs at all when the option is on.
+local function watchForCooldown(src, callId)
+    if math.floor(num(BOOTH.cooldownSeconds, 0)) <= 0 then return end
+    CreateThread(function()
+        while true do
+            Wait(1000)
+            local call, id = BoothCallOf(src)
+            if not call or id ~= callId then break end
+        end
+        Cooldown[src] = os.time()
+    end)
+end
+
 V.Callback('v-phone:booth:call', function(src, resolve, data)
     if not enabled() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
@@ -264,6 +283,18 @@ V.Callback('v-phone:booth:call', function(src, resolve, data)
 
     local to = tostring((data and data.number) or ''):gsub('%s', '')
     if to == '' then resolve({ error = 'nonumber' }) return end
+    if #to > math.floor(num(BOOTH.maxDialLength, 20)) then resolve({ error = 'nonumber' }) return end
+
+    -- Anti-spam. Counted from when the LAST call ended, so a long conversation does not earn
+    -- somebody a free immediate redial. Off by default.
+    local wait = math.floor(num(BOOTH.cooldownSeconds, 0))
+    if wait > 0 then
+        local last = Cooldown[src]
+        if last and os.time() - last < wait then
+            resolve({ error = 'cooldown', seconds = wait - (os.time() - last) })
+            return
+        end
+    end
 
     -- Paying for it. An emergency number is free and needs no card; everything else needs
     -- enough credit on the character to be worth connecting.
@@ -286,6 +317,7 @@ V.Callback('v-phone:booth:call', function(src, resolve, data)
 
     log(src, ('called %s from the box at %s (%s)'):format(to, booth.key, booth.number))
     if not free then startMeter(src, p.citizenid, id) end
+    watchForCooldown(src, id)
 
     resolve({ ok = true, id = id, number = booth.number, to = to, free = free,
               credit = creditOf(p.citizenid) })
@@ -309,6 +341,7 @@ end)
 
 AddEventHandler('playerDropped', function()
     Metering[source] = nil
+    Cooldown[source] = nil
 end)
 
 -- ══════════════════════════════════════════════════════════════

@@ -16,8 +16,19 @@
 -- the player to the handset; the server decides everything else.
 
 local BOOTH = Config.Booth or {}
+local INTERACT = BOOTH.interact or {}
+local MARKER = INTERACT.marker or {}
+local BLIP = BOOTH.blip or {}
 
 local function num(v, d) return tonumber(v) or d or 0 end
+
+--- The label on the prompt or the target option. A server may override it outright; nil
+--- falls back to the translation, which is what almost everyone wants.
+local function useLabel()
+    local custom = INTERACT.label
+    if type(custom) == 'string' and custom ~= '' then return custom end
+    return L('ph.booth_use')
+end
 
 local isOpen = false
 local current = nil          -- { x, y, z, number } while the box is open or in use
@@ -104,7 +115,7 @@ local function openBooth()
     if isOpen or not enabled() then return end
 
     local ped = PlayerPedId()
-    if IsPedInAnyVehicle(ped, false) then
+    if BOOTH.allowInVehicle ~= true and IsPedInAnyVehicle(ped, false) then
         V.Notify(L('ph.booth_invehicle'), 'error')
         return
     end
@@ -227,9 +238,24 @@ CreateThread(function()
         return
     end
 
+    -- `auto` takes whichever target script is running, a name forces one, `off` ignores them
+    -- all and falls through to the marker - which some servers prefer even when they do run
+    -- a target script.
+    local wanted = tostring(INTERACT.target or 'auto'):lower()
     local targetRes = nil
-    for _, res in ipairs({ 'ox_target', 'qb-target', 'qtarget' }) do
-        if GetResourceState(res) == 'started' then targetRes = res break end
+    if wanted ~= 'off' then
+        if wanted ~= 'auto' then
+            if GetResourceState(wanted) == 'started' then
+                targetRes = wanted
+            else
+                print(('[v-phone] Config.Booth.interact.target names "%s", which is not started; falling back to the marker')
+                    :format(wanted))
+            end
+        else
+            for _, res in ipairs({ 'ox_target', 'qb-target', 'qtarget' }) do
+                if GetResourceState(res) == 'started' then targetRes = res break end
+            end
+        end
     end
 
     -- A MODEL target: registered once, and every box on the map answers to it. This is why
@@ -244,8 +270,8 @@ CreateThread(function()
             {
                 {
                     name = 'vphone_booth',
-                    icon = 'fas fa-phone',
-                    label = L('ph.booth_use'),
+                    icon = tostring(INTERACT.icon or 'fas fa-phone'),
+                    label = useLabel(),
                     distance = num(BOOTH.radius, 1.6) + 0.9,
                     onSelect = openBooth,
                 },
@@ -257,7 +283,8 @@ CreateThread(function()
         local names = {}
         for _, m in ipairs(modelList()) do names[#names + 1] = m.name end
         exports[targetRes]:AddTargetModel(names, {
-            options = { { label = L('ph.booth_use'), icon = 'fas fa-phone', action = openBooth } },
+            options = { { label = useLabel(), icon = tostring(INTERACT.icon or 'fas fa-phone'),
+                          action = openBooth } },
             distance = num(BOOTH.radius, 1.6) + 0.9,
         })
         return
@@ -273,33 +300,91 @@ CreateThread(function()
     -- phone box, and it buys nothing: the props do not move.
     CreateThread(function()
         local reach = num(BOOTH.radius, 1.6)
+        local interval = math.max(50, math.floor(num(INTERACT.scanInterval, 500)))
+        local scanDist = num(INTERACT.scanDistance, 12.0)
+        local key = math.floor(num(INTERACT.key, 38))
+        local drawMarker = MARKER.enabled ~= false
+        local mType = math.floor(num(MARKER.type, 2))
+        local mHeight = num(MARKER.height, 1.35)
+        local col = MARKER.colour or {}
+        local mr, mg, mb, ma = math.floor(num(col.r, 60)), math.floor(num(col.g, 130)),
+                               math.floor(num(col.b, 200)), math.floor(num(col.a, 140))
+        local sc = MARKER.scale or {}
+        local sx, sy, sz = num(sc.x, 0.18), num(sc.y, 0.18), num(sc.z, 0.12)
+        local bob = MARKER.bob == true
         local nearby, nextScan = nil, 0
 
         while true do
-            local sleep = 500
+            local sleep = interval
             if not isOpen then
                 local coords = GetEntityCoords(PlayerPedId())
                 local now = GetGameTimer()
                 if now >= nextScan then
-                    nearby = nearestBooth(coords, 12.0)
-                    nextScan = now + 500
+                    nearby = nearestBooth(coords, scanDist)
+                    nextScan = now + interval
                 end
 
                 if nearby then
                     sleep = 0
-                    DrawMarker(2, nearby.x, nearby.y, nearby.z + 1.35, 0, 0, 0, 0, 180.0, 0,
-                        0.18, 0.18, 0.12, 60, 130, 200, 140, false, true, 2, nil, nil, false)
+                    if drawMarker then
+                        DrawMarker(mType, nearby.x, nearby.y, nearby.z + mHeight, 0, 0, 0, 0, 180.0, 0,
+                            sx, sy, sz, mr, mg, mb, ma, bob, true, 2, nil, nil, false)
+                    end
                     if #(coords - vector3(nearby.x, nearby.y, nearby.z)) < reach + 0.9 then
                         SetTextComponentFormat('STRING')
-                        AddTextComponentString('[E] ' .. L('ph.booth_use'))
+                        AddTextComponentString('[E] ' .. useLabel())
                         DisplayHelpTextFromStringLabel(0, 0, 1, -1)
-                        if IsControlJustReleased(0, 38) then openBooth() end   -- E
+                        if IsControlJustReleased(0, key) then openBooth() end
                     end
                 end
             end
             Wait(sleep)
         end
     end)
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Blips
+-- ══════════════════════════════════════════════════════════════
+-- Off by default: there are around a hundred payphones in Los Santos and blipping all of
+-- them at once turns the map into confetti.
+--
+-- This runs on its own slow thread rather than inside the marker loop, because the marker
+-- loop does not exist when a target script is running - and a server with ox_target still
+-- wants its blips. Boxes are blipped as the player comes near them and keyed by position,
+-- so passing the same one twice does not stack two blips on it.
+CreateThread(function()
+    if not enabled() or BLIP.enabled ~= true then return end
+    if #(BOOTH.models or {}) == 0 then return end
+
+    local seen = {}
+    local sprite = math.floor(num(BLIP.sprite, 64))
+    local colour = math.floor(num(BLIP.colour, 3))
+    local scale = num(BLIP.scale, 0.6)
+    local shortRange = BLIP.shortRange ~= false
+    local label = (type(BLIP.label) == 'string' and BLIP.label ~= '') and BLIP.label or L('ph.booth_title')
+    local scanDist = num(INTERACT.scanDistance, 12.0)
+
+    while true do
+        -- Wider than the interaction scan and far slower: this is discovery, not interaction,
+        -- and a blip that appears a second late costs nobody anything.
+        local booth = nearestBooth(GetEntityCoords(PlayerPedId()), math.max(scanDist, 60.0))
+        if booth then
+            local key = Booth.Key(booth.x, booth.y, booth.z)
+            if not seen[key] then
+                local blip = AddBlipForCoord(booth.x, booth.y, booth.z)
+                SetBlipSprite(blip, sprite)
+                SetBlipColour(blip, colour)
+                SetBlipScale(blip, scale + 0.0)
+                SetBlipAsShortRange(blip, shortRange)
+                BeginTextCommandSetBlipName('STRING')
+                AddTextComponentString(label)
+                EndTextCommandSetBlipName(blip)
+                seen[key] = blip
+            end
+        end
+        Wait(3000)
+    end
 end)
 
 -- A resource stop with the screen up would leave the player without a cursor and stuck in

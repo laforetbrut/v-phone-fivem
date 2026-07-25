@@ -158,7 +158,14 @@ what counts as a booth, and a box in a new MLO works with no config change.
 |---|---|
 | ox_target | `addModel` on every booth model, registered once, covering the whole map |
 | qb-target / qtarget | `AddTargetModel` on the same list |
-| none | a blue marker on the nearest box, `[E]` to use |
+| none | a marker on the nearest box, `[E]` to use |
+
+`Config.Booth.interact.target` overrides the detection: name a script to force it, or set it
+to `off` to ignore target scripts entirely and always use the marker and key — which some
+servers prefer even when they do run a target. The key, icon, label, marker type, colour,
+scale, height and scan cadence are all configurable there too, and
+`Config.Booth.blip` puts the boxes on the map (off by default: there are around a hundred
+payphones in Los Santos).
 
 A booth **places calls and never receives them**. That is enforced on the server three
 independent ways, not left to the interface: a booth number never enters the online table,
@@ -317,7 +324,14 @@ fonctionne sans changer la config.
 |---|---|
 | ox_target | `addModel` sur chaque modèle de cabine, enregistré une fois, couvrant toute la map |
 | qb-target / qtarget | `AddTargetModel` sur la même liste |
-| aucun | un marqueur bleu sur la borne la plus proche, `[E]` pour utiliser |
+| aucun | un marqueur sur la borne la plus proche, `[E]` pour utiliser |
+
+`Config.Booth.interact.target` court-circuite la détection : nommez un script pour le forcer,
+ou mettez `off` pour ignorer les target et toujours utiliser le marqueur et la touche — ce que
+certains serveurs préfèrent même en faisant tourner un target. La touche, l'icône, le libellé,
+le type de marqueur, sa couleur, son échelle, sa hauteur et la cadence de scan y sont aussi
+configurables, et `Config.Booth.blip` place les bornes sur la carte (désactivé par défaut : il
+y a une centaine de cabines à Los Santos).
 
 Une cabine **passe des appels et n'en reçoit jamais**. C'est garanti côté serveur de trois
 façons indépendantes, et non laissé à l'interface : un numéro de cabine n'entre jamais dans

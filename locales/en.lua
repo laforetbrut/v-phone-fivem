@@ -920,6 +920,7 @@ local T = {
     ['ph.booth_err_nocredit'] = 'Insert a prepaid card first.',
     ['ph.booth_err_lowcredit'] = 'Not enough talk time for a call.',
     ['ph.booth_err_capacity'] = 'Every line is busy. Try again shortly.',
+    ['ph.booth_err_cooldown'] = 'Wait a moment before calling again.',
     ['ph.booth_err_x'] = 'The box did not respond.',
 
     -- Prepaid card, used from the inventory

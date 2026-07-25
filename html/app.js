@@ -8265,7 +8265,8 @@ function boothDialFace(s) {
     // A recessed amber readout behind glass, not a text box. The input is still a real
     // input so a keyboard works; it is only dressed as a segment display.
     '<div class="boothlcd">' +
-    '<input id="boothinput" inputmode="numeric" autocomplete="off" maxlength="20" ' +
+    '<input id="boothinput" inputmode="numeric" autocomplete="off" maxlength="' +
+    esc(String(bnum(s.maxDialLength, 20))) + '" ' +
     'placeholder="' + esc(L('ph.booth_dial')) + '" value="' + esc(boothDialled) + '" />' +
     '</div>' +
     '<div class="boothkeys">' + BOOTH_KEYS.map(([k, letters]) =>
@@ -8308,8 +8309,9 @@ function boothWireDial(s) {
   [...byId('boothbody').querySelectorAll('.boothkeys button')].forEach((b) =>
     b.addEventListener('click', () => {
       const del = b.dataset.key === 'del';
+      const cap = bnum((boothState || {}).maxDialLength, 20);
       if (del) boothDialled = boothDialled.slice(0, -1);
-      else if (boothDialled.length < 20) boothDialled += b.dataset.key;
+      else if (boothDialled.length < cap) boothDialled += b.dataset.key;
       input.value = boothDialled;
       boothKeyPress(b.dataset.key);
     }));

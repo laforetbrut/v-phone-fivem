@@ -937,10 +937,11 @@ function BoothCall(src, boothNumber, toNumber)
     local callRecord = {
         a = src, b = target, state = 'ringing', at = os.time(),
         aNum = boothNumber, bNum = toNumber,
-        -- Never anonymous. A payphone already hides who you are; withholding the box's
-        -- number too would leave the recipient with nothing at all to go on, and it is
-        -- the number that makes a payphone call interesting to receive.
-        anonymous = false,
+        -- Off by default. A payphone already hides who you are; withholding the box's number
+        -- too would leave the recipient with nothing at all to go on, and it is the number
+        -- that makes a payphone call interesting to receive. A server that wants the call to
+        -- show as withheld sets Config.Booth.anonymous.
+        anonymous = (Config.Booth and Config.Booth.anonymous) == true,
         video = false,
         -- Read by the client handlers, so the caller's own phone stays in his pocket, and
         -- by booth.lua's ticker to find its own calls.

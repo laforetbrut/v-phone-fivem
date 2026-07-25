@@ -962,4 +962,70 @@ Config.Booth = {
     -- Log every booth call to the server console, the way the forensics terminal logs a
     -- lookup. A payphone is the classic untraceable call, so an admin trail is worth having.
     log = false,
+
+    -- ── Rules of the box ───────────────────────────────────────
+    -- Let a player use a box from the driver's seat. Off is the honest default: you cannot
+    -- reach a handset on a cord through a car window.
+    allowInVehicle = false,
+
+    -- The longest number the keypad will accept. Raise it if your server uses long numbers
+    -- or extensions.
+    maxDialLength = 20,
+
+    -- Seconds a player must wait between calls from a box, counted from when the last one
+    -- ENDED. 0 is no limit. Useful against someone using a payphone to spam a number they
+    -- cannot be traced on.
+    cooldownSeconds = 0,
+
+    -- Hide the box's number from the person being called, so the call shows as withheld.
+    -- OFF by default: the number is what makes a payphone call interesting to receive, and
+    -- with it hidden the recipient has nothing at all to go on.
+    anonymous = false,
+
+    -- Slack, in metres, on the SERVER's check that the player is really at the box they
+    -- claim to be at. It exists because the prop's origin is not where a player stands to
+    -- use it. Tighten it to be strict, raise it only if a map edit puts the prop origin
+    -- oddly far from its front.
+    reachTolerance = 2.5,
+
+    -- ── How the player reaches the box ─────────────────────────
+    interact = {
+        -- `auto` uses whichever target script is running. Name one to force it, or `off` to
+        -- ignore target scripts entirely and always use the marker and key below - which
+        -- some servers prefer even when they do run a target.
+        target = 'auto',          -- auto | ox_target | qb-target | qtarget | off
+
+        key = 38,                 -- the control id for the prompt. 38 is E.
+        icon = 'fas fa-phone',    -- the target script's icon
+        label = nil,              -- override the prompt text; nil uses the translation
+
+        scanDistance = 12.0,      -- how far out the marker mode looks for a box
+        -- How often the marker mode re-runs its spatial search, in milliseconds. Finding a
+        -- box costs one query per model, so this is deliberately not every frame; the props
+        -- do not move. Drawing stays on the frame, which is what it has to be.
+        scanInterval = 500,
+
+        marker = {
+            enabled = true,
+            type = 2,             -- 2 is the small downward chevron
+            colour = { r = 60, g = 130, b = 200, a = 140 },
+            scale = { x = 0.18, y = 0.18, z = 0.12 },
+            height = 1.35,        -- metres above the prop's origin
+            bob = false,          -- float it up and down
+        },
+    },
+
+    -- ── On the map ─────────────────────────────────────────────
+    -- Blips for the boxes, added as the player comes near them. OFF by default and on
+    -- purpose: there are around a hundred payphones in Los Santos and blipping all of them
+    -- turns the map into confetti. `shortRange` keeps them off the main map and on the
+    -- minimap only, which is the version most servers actually want.
+    blip = {
+        enabled = false,
+        sprite = 64,              -- 64 is the telephone icon
+        colour = 3,
+        scale = 0.6,
+        shortRange = true,
+        label = nil,              -- nil uses the translation
+    },
 }

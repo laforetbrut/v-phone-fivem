@@ -922,6 +922,7 @@ local T = {
     ['ph.booth_err_nocredit'] = 'Inserez d abord une carte prepayee.',
     ['ph.booth_err_lowcredit'] = 'Credit insuffisant pour un appel.',
     ['ph.booth_err_capacity'] = 'Toutes les lignes sont occupees. Reessayez dans un instant.',
+    ['ph.booth_err_cooldown'] = 'Patientez un instant avant de rappeler.',
     ['ph.booth_err_x'] = 'La cabine n a pas repondu.',
 
     -- Carte prepayee, utilisee depuis l inventaire
