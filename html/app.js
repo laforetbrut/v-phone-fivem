@@ -31,18 +31,49 @@ const RESOURCE_NAME = typeof GetParentResourceName === 'function'
   ? GetParentResourceName()
   : 'v-phone';
 
+// Replace the if statement with a switch statement to handle different view names and their corresponding read operations. This allows for more flexibility and easier maintenance in the future.
+
 function isViewRead(name, payload) {
   const op = payload && payload.op;
-  if (['ambient', 'calls', 'conversation', 'app', 'card', 'places', 'airdropScan'].includes(name)) return true;
-  if (name === 'health') return op == null || op === 'get';
-  if (name === 'notes') return op === 'list';
-  if (name === 'mail') return op === 'me' || op === 'list' || op === 'saved';
-  if (name === 'photos' || name === 'voicemail') return op === 'list';
-  if (name === 'appStorage') return op === 'get';
-  if (name === 'mdt') return op === 'lookup' || op === 'warrants';
-  if (name === 'social') return ['me', 'feed', 'hushMe', 'hushNext'].includes(op);
-  if (name === 'cipher') return ['me', 'list', 'lookup', 'thread'].includes(op);
-  return false;
+
+  switch (name) {
+    case 'ambient':
+    case 'calls':
+    case 'conversation':
+    case 'app':
+    case 'card':
+    case 'places':
+    case 'airdropScan':
+      return true;
+
+    case 'health':
+      return op == null || op === 'get';
+
+    case 'notes':
+      return op === 'list';
+
+    case 'mail':
+      return op === 'me' || op === 'list' || op === 'saved';
+
+    case 'photos':
+    case 'voicemail':
+      return op === 'list';
+
+    case 'appStorage':
+      return op === 'get';
+
+    case 'mdt':
+      return op === 'lookup' || op === 'warrants';
+
+    case 'social':
+      return ['me', 'feed', 'hushMe', 'hushNext'].includes(op);
+
+    case 'cipher':
+      return ['me', 'list', 'lookup', 'thread'].includes(op);
+
+    default:
+      return false;
+  }
 }
 
 const post = (n, b) => {
@@ -66,7 +97,7 @@ const post = (n, b) => {
       if (error && error.name === 'AbortError') {
         // Keep the abandoned async renderer suspended so it cannot paint an error state
         // over the view that replaced it.
-        return new Promise(() => {});
+        return new Promise(() => { });
       }
       return { error: 'x' };
     });
@@ -172,7 +203,7 @@ function pinDotsHTML(id, value) {
 
 function pinPadHTML() {
   return '<div class="pinpad">' +
-    ['1','2','3','4','5','6','7','8','9','','0','del'].map((digit) => {
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((digit) => {
       if (!digit) return '<span></span>';
       return '<button type="button" data-pin="' + digit + '" aria-label="' +
         esc(digit === 'del' ? L('ph.delete_digit') : digit) + '">' +
@@ -234,15 +265,15 @@ function renderAuthCode(message) {
   const host = byId('authstage');
   host.innerHTML =
     '<div class="authcode">' +
-      '<button class="authcancel" id="authcancel" type="button">' + esc(L('ph.cancel')) + '</button>' +
-      '<div class="authlockicon">' + svg('lockshut') + '</div>' +
-      '<h2>' + esc(L('ph.enter_passcode')) + '</h2>' +
-      '<p class="authmessage' + (message ? ' error' : '') + '" id="authmessage">' +
-        esc(message || L('ph.passcode_unlock_hint')) + '</p>' +
-      pinDotsHTML('authdots', authCode) + pinPadHTML() +
-      ((state.prefs || {}).faceId
-        ? '<button class="authswitch" id="authface" type="button">' +
-          svg('faceid') + esc(L('ph.use_faceid')) + '</button>' : '') +
+    '<button class="authcancel" id="authcancel" type="button">' + esc(L('ph.cancel')) + '</button>' +
+    '<div class="authlockicon">' + svg('lockshut') + '</div>' +
+    '<h2>' + esc(L('ph.enter_passcode')) + '</h2>' +
+    '<p class="authmessage' + (message ? ' error' : '') + '" id="authmessage">' +
+    esc(message || L('ph.passcode_unlock_hint')) + '</p>' +
+    pinDotsHTML('authdots', authCode) + pinPadHTML() +
+    ((state.prefs || {}).faceId
+      ? '<button class="authswitch" id="authface" type="button">' +
+      svg('faceid') + esc(L('ph.use_faceid')) + '</button>' : '') +
     '</div>';
   byId('authcancel').addEventListener('click', hideAuth);
   const face = byId('authface');
@@ -284,12 +315,12 @@ async function renderAuthFace() {
   const host = byId('authstage');
   host.innerHTML =
     '<div class="authface">' +
-      '<button class="authcancel" id="authcancel" type="button">' + esc(L('ph.cancel')) + '</button>' +
-      '<div class="facescan scanning">' + svg('faceid') + '<i></i></div>' +
-      '<h2>' + esc(L('ph.faceid')) + '</h2>' +
-      '<p id="facestatus">' + esc(L('ph.faceid_recognising')) + '</p>' +
-      '<button class="authswitch" id="authpass" type="button">' +
-        svg('keypad') + esc(L('ph.use_passcode')) + '</button>' +
+    '<button class="authcancel" id="authcancel" type="button">' + esc(L('ph.cancel')) + '</button>' +
+    '<div class="facescan scanning">' + svg('faceid') + '<i></i></div>' +
+    '<h2>' + esc(L('ph.faceid')) + '</h2>' +
+    '<p id="facestatus">' + esc(L('ph.faceid_recognising')) + '</p>' +
+    '<button class="authswitch" id="authpass" type="button">' +
+    svg('keypad') + esc(L('ph.use_passcode')) + '</button>' +
     '</div>';
   byId('authcancel').addEventListener('click', hideAuth);
   byId('authpass').addEventListener('click', () => renderAuthCode());
@@ -387,14 +418,14 @@ function setupProgress() {
   const max = 7;
   return '<div class="setupprogress" aria-hidden="true">' +
     [...Array(max)].map((_, i) => '<i class="' + (i < setupStep ? 'on' : '') + '"></i>').join('') +
-  '</div>';
+    '</div>';
 }
 
 function setupHeader(title, subtitle) {
   return '<div class="setupnav">' +
-      (setupStep > 0 ? '<button id="setupback" type="button" aria-label="' + esc(L('ph.back')) + '">' +
-        svg('chevron') + '</button>' : '<span></span>') +
-      setupProgress() + '<span></span>' +
+    (setupStep > 0 ? '<button id="setupback" type="button" aria-label="' + esc(L('ph.back')) + '">' +
+      svg('chevron') + '</button>' : '<span></span>') +
+    setupProgress() + '<span></span>' +
     '</div>' +
     '<div class="setuptitle">' + esc(title) + '</div>' +
     '<div class="setupsubtitle">' + esc(subtitle) + '</div>';
@@ -408,25 +439,25 @@ function renderSetup() {
   if (setupStep === 0) {
     host.innerHTML =
       '<div class="setuphello">' +
-        '<div class="setuphalo"><span>' + svg('fruit') + '</span></div>' +
-        '<div class="setupbonjour">' + esc(L('ph.setup_hello')) + '</div>' +
-        '<div class="setupintro">' + esc(L('ph.setup_intro')) + '</div>' +
-        '<button class="setupprimary" id="setupnext" type="button">' +
-          esc(L('ph.setup_start')) + svg('chevron') + '</button>' +
+      '<div class="setuphalo"><span>' + svg('fruit') + '</span></div>' +
+      '<div class="setupbonjour">' + esc(L('ph.setup_hello')) + '</div>' +
+      '<div class="setupintro">' + esc(L('ph.setup_intro')) + '</div>' +
+      '<button class="setupprimary" id="setupnext" type="button">' +
+      esc(L('ph.setup_start')) + svg('chevron') + '</button>' +
       '</div>';
   } else if (setupStep === 1) {
     host.innerHTML = setupHeader(L('ph.setup_identity'), L('ph.setup_identity_hint')) +
       '<div class="setupform">' +
-        '<label><span>' + esc(L('ph.setup_your_name')) + '</span>' +
-          '<input id="setupowner" maxlength="40" autocomplete="off" value="' +
-            esc(setupDraft.ownerName) + '" placeholder="' + esc(L('ph.setup_name_placeholder')) + '"></label>' +
-        '<label><span>' + esc(L('ph.setup_phone_name')) + '</span>' +
-          '<input id="setupname" maxlength="32" autocomplete="off" value="' +
-            esc(setupDraft.deviceName) + '" placeholder="' + esc(L('ph.setup_default_device')) + '"></label>' +
-        '<div class="setuperror hidden" id="setuperror">' + esc(L('ph.setup_name_required')) + '</div>' +
+      '<label><span>' + esc(L('ph.setup_your_name')) + '</span>' +
+      '<input id="setupowner" maxlength="40" autocomplete="off" value="' +
+      esc(setupDraft.ownerName) + '" placeholder="' + esc(L('ph.setup_name_placeholder')) + '"></label>' +
+      '<label><span>' + esc(L('ph.setup_phone_name')) + '</span>' +
+      '<input id="setupname" maxlength="32" autocomplete="off" value="' +
+      esc(setupDraft.deviceName) + '" placeholder="' + esc(L('ph.setup_default_device')) + '"></label>' +
+      '<div class="setuperror hidden" id="setuperror">' + esc(L('ph.setup_name_required')) + '</div>' +
       '</div>' +
       '<button class="setupprimary setupbottom" id="setupnext" type="button">' +
-        esc(L('ph.continue')) + '</button>';
+      esc(L('ph.continue')) + '</button>';
   } else if (setupStep === 2) {
     const themes = [
       ['light', 'sun', 'ph.theme_light'],
@@ -436,27 +467,27 @@ function renderSetup() {
     host.innerHTML = setupHeader(L('ph.setup_appearance'), L('ph.setup_appearance_hint')) +
       '<div class="setupthemes">' + themes.map(([id, icon, label]) =>
         '<button class="' + (setupDraft.darkMode === id ? 'on' : '') +
-          '" data-setup-theme="' + id + '" type="button">' +
-          '<span class="themedemo ' + id + '">' + svg(icon) + '</span>' +
-          '<strong>' + esc(L(label)) + '</strong><i>' + svg('check') + '</i></button>').join('') +
+        '" data-setup-theme="' + id + '" type="button">' +
+        '<span class="themedemo ' + id + '">' + svg(icon) + '</span>' +
+        '<strong>' + esc(L(label)) + '</strong><i>' + svg('check') + '</i></button>').join('') +
       '</div>' +
       '<button class="setupprimary setupbottom" id="setupnext" type="button">' +
-        esc(L('ph.continue')) + '</button>';
+      esc(L('ph.continue')) + '</button>';
   } else if (setupStep === 3) {
     const walls = state.wallpapers || ['ifruit'];
     host.innerHTML = setupHeader(L('ph.setup_personalise'), L('ph.setup_personalise_hint')) +
       '<div class="setupwalls">' + walls.map((wall) =>
         '<button class="wall-' + esc(wall) + (setupDraft.wallpaper === wall ? ' on' : '') +
-          '" data-setup-wall="' + esc(wall) + '" type="button"><i>' + svg('check') + '</i>' +
-          '<span>' + esc(L('ph.wall_' + wall)) + '</span></button>').join('') + '</div>' +
+        '" data-setup-wall="' + esc(wall) + '" type="button"><i>' + svg('check') + '</i>' +
+        '<span>' + esc(L('ph.wall_' + wall)) + '</span></button>').join('') + '</div>' +
       '<div class="setupglass">' +
-        '<div><span>' + esc(L('ph.glass_clear')) + '</span><strong id="setupglassvalue">' +
-          Math.round(setupDraft.glass) + '%</strong><span>' + esc(L('ph.glass_tinted')) + '</span></div>' +
-        '<input id="setupglass" type="range" min="0" max="100" step="1" aria-label="' +
-          esc(L('ph.transparency')) + '" value="' + Math.round(setupDraft.glass) + '">' +
+      '<div><span>' + esc(L('ph.glass_clear')) + '</span><strong id="setupglassvalue">' +
+      Math.round(setupDraft.glass) + '%</strong><span>' + esc(L('ph.glass_tinted')) + '</span></div>' +
+      '<input id="setupglass" type="range" min="0" max="100" step="1" aria-label="' +
+      esc(L('ph.transparency')) + '" value="' + Math.round(setupDraft.glass) + '">' +
       '</div>' +
       '<button class="setupprimary setupbottom" id="setupnext" type="button">' +
-        esc(L('ph.continue')) + '</button>';
+      esc(L('ph.continue')) + '</button>';
   } else if (setupStep === 4 || setupStep === 5) {
     const confirming = setupStep === 5;
     const value = confirming ? setupDraft.passcodeConfirm : setupDraft.passcode;
@@ -465,41 +496,41 @@ function renderSetup() {
       L(confirming ? 'ph.setup_passcode_confirm_hint' : 'ph.setup_passcode_hint')
     ) +
       '<div class="setuppasscode">' +
-        '<div class="setupshield">' + svg('lockshut') + '</div>' +
-        pinDotsHTML('setupdots', value) +
-        '<div class="setuperror hidden" id="setuperror"></div>' +
-        pinPadHTML() +
+      '<div class="setupshield">' + svg('lockshut') + '</div>' +
+      pinDotsHTML('setupdots', value) +
+      '<div class="setuperror hidden" id="setuperror"></div>' +
+      pinPadHTML() +
       '</div>' +
       '<button class="setupprimary setupbottom" id="setupnext" type="button" ' +
-        (value.length === 6 ? '' : 'disabled') + '>' + esc(L('ph.continue')) + '</button>';
+      (value.length === 6 ? '' : 'disabled') + '>' + esc(L('ph.continue')) + '</button>';
   } else if (setupStep === 6) {
     host.innerHTML = setupHeader(L('ph.setup_faceid'), L('ph.setup_faceid_hint')) +
       '<div class="setupface">' +
-        '<div class="facescan' + (setupDraft.faceId ? ' recognised' : '') + '" id="setupfacescan">' +
-          svg('faceid') + '<i></i></div>' +
-        '<strong id="setupfacestatus">' +
-          esc(L(setupDraft.faceId ? 'ph.setup_faceid_ready' : 'ph.setup_faceid_private')) + '</strong>' +
-        '<button class="setupfacebutton" id="setupfacebutton" type="button">' +
-          esc(L(setupDraft.faceId ? 'ph.setup_faceid_redo' : 'ph.setup_faceid_enrol')) + '</button>' +
+      '<div class="facescan' + (setupDraft.faceId ? ' recognised' : '') + '" id="setupfacescan">' +
+      svg('faceid') + '<i></i></div>' +
+      '<strong id="setupfacestatus">' +
+      esc(L(setupDraft.faceId ? 'ph.setup_faceid_ready' : 'ph.setup_faceid_private')) + '</strong>' +
+      '<button class="setupfacebutton" id="setupfacebutton" type="button">' +
+      esc(L(setupDraft.faceId ? 'ph.setup_faceid_redo' : 'ph.setup_faceid_enrol')) + '</button>' +
       '</div>' +
       '<button class="setupprimary setupbottom" id="setupnext" type="button">' +
-        esc(L(setupDraft.faceId ? 'ph.continue' : 'ph.setup_code_only')) + '</button>';
+      esc(L(setupDraft.faceId ? 'ph.continue' : 'ph.setup_code_only')) + '</button>';
   } else {
     host.innerHTML =
       '<div class="setupready">' +
-        '<div class="readycheck">' + svg('check') + '</div>' +
-        '<div class="setuptitle">' + esc(L('ph.setup_ready')) + '</div>' +
-        '<div class="setupsubtitle">' +
-          esc(L('ph.setup_ready_hint').replace('{device}', setupDraft.deviceName)) + '</div>' +
-        '<div class="setupsummary">' +
-          '<span>' + svg('phone') + '</span><div><strong>' + esc(setupDraft.deviceName) +
-          '</strong><small>' + esc(setupDraft.ownerName) + '</small></div></div>' +
-        '<div class="setupsummary security">' +
-          '<span>' + svg(setupDraft.faceId ? 'faceid' : 'lockshut') + '</span><div><strong>' +
-          esc(L(setupDraft.faceId ? 'ph.faceid_and_passcode' : 'ph.passcode_enabled')) +
-          '</strong><small>' + esc(L('ph.security_ready')) + '</small></div></div>' +
-        '<button class="setupprimary" id="setupfinish" type="button">' +
-          esc(L('ph.setup_finish')) + '</button>' +
+      '<div class="readycheck">' + svg('check') + '</div>' +
+      '<div class="setuptitle">' + esc(L('ph.setup_ready')) + '</div>' +
+      '<div class="setupsubtitle">' +
+      esc(L('ph.setup_ready_hint').replace('{device}', setupDraft.deviceName)) + '</div>' +
+      '<div class="setupsummary">' +
+      '<span>' + svg('phone') + '</span><div><strong>' + esc(setupDraft.deviceName) +
+      '</strong><small>' + esc(setupDraft.ownerName) + '</small></div></div>' +
+      '<div class="setupsummary security">' +
+      '<span>' + svg(setupDraft.faceId ? 'faceid' : 'lockshut') + '</span><div><strong>' +
+      esc(L(setupDraft.faceId ? 'ph.faceid_and_passcode' : 'ph.passcode_enabled')) +
+      '</strong><small>' + esc(L('ph.security_ready')) + '</small></div></div>' +
+      '<button class="setupprimary" id="setupfinish" type="button">' +
+      esc(L('ph.setup_finish')) + '</button>' +
       '</div>';
   }
 
@@ -698,8 +729,8 @@ function unreadTotal() {
 function tileHTML(a, i) {
   const badge = a.id === 'messages' ? unreadTotal()
     : a.id === 'phone' ? Number(state.vmUnread || 0)
-    : a.id === 'cipher' ? Number(state.cipherUnread || 0)
-    : (a.badge || 0);
+      : a.id === 'cipher' ? Number(state.cipherUnread || 0)
+        : (a.badge || 0);
   return `<button class="tile" type="button" data-app="${esc(a.id)}" style="--i:${i}" ` +
     `aria-label="${esc(L(a.label))}">` +
     `<span class="wrap">${UI.appIcon(a.icon)}` +
@@ -806,7 +837,7 @@ function paintPages(items) {
     '<div class="page">' + pg.map((it, i) => {
       if (it.t === 'gap') return '<div class="tile gap"></div>';
       return it.t === 'folder' ? folderTile(it, i)
-                               : tileHTML(appById(it.id) || { id: it.id, icon: 'dot', label: it.id }, i);
+        : tileHTML(appById(it.id) || { id: it.id, icon: 'dot', label: it.id }, i);
     }).join('') + '</div>').join('') + '</div>';
   // data-idx is the position in `items`, counting only real tiles, so a drop can read it.
   let k = -1;
@@ -936,8 +967,10 @@ function beginDrag(tile, e) {
   const idx = Number(tile.dataset.idx);
   if (Number.isNaN(idx)) return;
   const item = items[idx];
-  arr = { item, items: items.filter((_, i) => i !== idx), insert: idx,
-          hoverEl: null, since: 0, folderIdx: null, folderTimer: null, edgeTimer: null };
+  arr = {
+    item, items: items.filter((_, i) => i !== idx), insert: idx,
+    hoverEl: null, since: 0, folderIdx: null, folderTimer: null, edgeTimer: null
+  };
 
   const g = byId('dragghost');
   const ic = tile.querySelector('.ic, .folder');
@@ -1108,12 +1141,12 @@ async function renderWidgets() {
   const hh = String(d.hours).padStart(2, '0') + ':' + String(d.minutes).padStart(2, '0');
   host.innerHTML =
     '<div class="widget weather"><div class="wtop"><span>' + esc(L('ph.los_santos')) + '</span>' +
-      '<span class="wicon">' + svg(icon) + '</span></div>' +
-      '<div><div class="wbig">' + esc(hh) + '</div>' +
-      '<div class="wsub">' + esc(L('ph.weather_' + icon)) + '</div></div></div>' +
+    '<span class="wicon">' + svg(icon) + '</span></div>' +
+    '<div><div class="wbig">' + esc(hh) + '</div>' +
+    '<div class="wsub">' + esc(L('ph.weather_' + icon)) + '</div></div></div>' +
     '<div class="widget cal"><div class="wday">' + esc(L('ph.month_' + MONTHS[(d.month || 1) - 1])) + '</div>' +
-      '<div class="wnum">' + esc(d.day || 1) + '</div>' +
-      '<div class="wsub">' + esc(L('ph.in_game_date')) + '</div></div>';
+    '<div class="wnum">' + esc(d.day || 1) + '</div>' +
+    '<div class="wsub">' + esc(L('ph.in_game_date')) + '</div></div>';
 }
 
 // ══ App shell ══════════════════════════════════════════════════
@@ -1405,7 +1438,7 @@ byId('appbody').addEventListener('scroll', (e) => {
 let appPull = null;
 byId('appbody').addEventListener('pointerdown', (event) => {
   if (!openApp || openApp.page || byId('appbody').scrollTop > 0 ||
-      (event.target.closest && event.target.closest('input,textarea,button,select'))) {
+    (event.target.closest && event.target.closest('input,textarea,button,select'))) {
     appPull = null;
     return;
   }
@@ -1454,7 +1487,7 @@ const RENDER = new Proxy({}, {
 
 // ── Phone ──────────────────────────────────────────────────────
 const KEYS = [['1', ''], ['2', 'ABC'], ['3', 'DEF'], ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'],
-  ['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ'], ['*', ''], ['0', '+'], ['#', '']];
+['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ'], ['*', ''], ['0', '+'], ['#', '']];
 
 let phoneTab = 'keypad';
 
@@ -1500,8 +1533,8 @@ RENDER.phone = () => {
     const list = (state.contacts || []).filter((c) => phoneTab === 'contacts' || Number(c.favourite) === 1);
     body(list.length
       ? UI.group(list.map((c) => UI.row({
-          avatar: c.name, title: c.name, subtitle: c.number, chevron: true, data: { n: c.number },
-        })))
+        avatar: c.name, title: c.name, subtitle: c.number, chevron: true, data: { n: c.number },
+      })))
       : UI.empty(L(phoneTab === 'contacts' ? 'ph.no_contacts' : 'ph.no_favourites'), 'contacts'));
     rows('.row[data-n]', (r) => r.addEventListener('click', () => post('call', { number: r.dataset.n })));
     return;
@@ -1514,9 +1547,9 @@ RENDER.phone = () => {
     `<div class="keypad">${KEYS.map(([k, l]) =>
       `<button class="key" data-k="${k}" type="button" aria-label="${k}"><b>${k}</b><i>${l}</i></button>`).join('')}</div>` +
     `<div class="dialrow">` +
-      `<span class="dialspace"></span>` +
-      `<button class="callbtn" id="dial" type="button" aria-label="${esc(L('ph.call'))}">${svg('answer')}</button>` +
-      `<button class="delbtn ${dialed ? '' : 'hidden'}" id="delkey" type="button" aria-label="${esc(L('ph.delete_digit'))}">${svg('del')}</button>` +
+    `<span class="dialspace"></span>` +
+    `<button class="callbtn" id="dial" type="button" aria-label="${esc(L('ph.call'))}">${svg('answer')}</button>` +
+    `<button class="delbtn ${dialed ? '' : 'hidden'}" id="delkey" type="button" aria-label="${esc(L('ph.delete_digit'))}">${svg('del')}</button>` +
     `</div>`
   );
   const paint = () => {
@@ -1557,8 +1590,10 @@ function healthRecord() {
       UI.field('hcond', L('ph.conditions'), r.conditions || '', 'maxlength="300"') +
       UI.field('hmeds', L('ph.meds'), r.meds || '', 'maxlength="300"') +
       UI.field('hice', L('ph.ice'), r.ice || '', 'maxlength="60"') +
-      UI.group([UI.row({ icon: 'heart', tint: '#FF2D55', title: L('ph.donor'),
-        toggle: r.donor === true, data: { t: 'donor' } })]) +
+      UI.group([UI.row({
+        icon: 'heart', tint: '#FF2D55', title: L('ph.donor'),
+        toggle: r.donor === true, data: { t: 'donor' }
+      })]) +
       UI.button(L('ph.save'), 'hsave', 'tinted') +
       '<div class="groupfoot">' + esc(L('ph.health_hint')) + '</div>'
     );
@@ -1569,9 +1604,11 @@ function healthRecord() {
       el.setAttribute('aria-checked', donor ? 'true' : 'false');
     }));
     byId('hsave').addEventListener('click', async () => {
-      const res = await post('health', { op: 'set', blood: byId('hblood').value,
+      const res = await post('health', {
+        op: 'set', blood: byId('hblood').value,
         allergies: byId('hallerg').value, conditions: byId('hcond').value,
-        meds: byId('hmeds').value, ice: byId('hice').value, donor });
+        meds: byId('hmeds').value, ice: byId('hice').value, donor
+      });
       toast(res && res.ok ? L('ph.saved') : L('ph.err_x'));
     });
   });
@@ -1604,7 +1641,7 @@ function noteEdit(n) {
   body(
     UI.field('ntitle', L('ph.note_title'), n.title || '', 'maxlength="80"') +
     '<textarea class="mailedit" id="nbody" maxlength="4000" placeholder="' + esc(L('ph.note_body')) + '">' +
-      esc(n.body || '') + '</textarea>' +
+    esc(n.body || '') + '</textarea>' +
     UI.button(L('ph.save'), 'nsave', 'tinted') +
     (n.id ? UI.button(L('ph.delete'), 'ndel', 'destructive') : '')
   );
@@ -1645,8 +1682,8 @@ function mailSignup(domains) {
   let domain = domains[0] || 'eyefind.info';
   body(
     '<div class="accthead">' + UI.appIcon('mail') +
-      '<div class="acctname">' + esc(L('app.mail')) + '</div>' +
-      '<div class="acctsub">' + esc(L('ph.mail_pick_sub')) + '</div></div>' +
+    '<div class="acctname">' + esc(L('app.mail')) + '</div>' +
+    '<div class="acctsub">' + esc(L('ph.mail_pick_sub')) + '</div></div>' +
     UI.field('mlocal', L('ph.mail_localpart'), '', 'maxlength="20"') +
     '<div class="seg scroll" id="mdoms">' + domains.map((d, i) =>
       '<button class="' + (i === 0 ? 'on' : '') + '" data-d="' + esc(d) + '" type="button">@' + esc(d) + '</button>').join('') + '</div>' +
@@ -1720,10 +1757,10 @@ function mailRead(m) {
   }, () => mailList());
   body(
     '<div class="mailhead">' +
-      '<div class="mailsubj">' + esc(m.subject || L('ph.mail_nosubject')) + '</div>' +
-      '<div class="mailmeta"><b>' + esc(m.from_addr) + '</b></div>' +
-      '<div class="mailmeta">' + esc(L('ph.mail_to')) + ' ' + esc(m.to_addr || '') + '</div>' +
-      '<div class="mailmeta">' + esc(String(m.at || '').slice(0, 16)) + '</div>' +
+    '<div class="mailsubj">' + esc(m.subject || L('ph.mail_nosubject')) + '</div>' +
+    '<div class="mailmeta"><b>' + esc(m.from_addr) + '</b></div>' +
+    '<div class="mailmeta">' + esc(L('ph.mail_to')) + ' ' + esc(m.to_addr || '') + '</div>' +
+    '<div class="mailmeta">' + esc(String(m.at || '').slice(0, 16)) + '</div>' +
     '</div>' +
     '<div class="mailbody">' + esc(m.body || '') + '</div>' +
     UI.button(L('ph.mail_reply'), 'mreply', 'tinted') +
@@ -1778,8 +1815,10 @@ function mailCompose(o) {
     '<div class="groupfoot">' + esc(L('ph.mail_group_hint')) + '</div>'
   );
 
-  const payload = (op) => ({ op, to: byId('mto').value, subject: byId('msubj').value,
-    body: byId('mbody').value, replyTo, boxId });
+  const payload = (op) => ({
+    op, to: byId('mto').value, subject: byId('msubj').value,
+    body: byId('mbody').value, replyTo, boxId
+  });
 
   byId('msend').addEventListener('click', async () => {
     const res = await post('mail', payload('send'));
@@ -1800,11 +1839,11 @@ function mailCompose(o) {
 const FILTERS = ['none', 'mono', 'noir', 'fade', 'warm', 'cool', 'vivid'];
 function filterCss(f) {
   return ({
-    mono:  'grayscale(1)',
-    noir:  'grayscale(1) contrast(1.5) brightness(.9)',
-    fade:  'saturate(.7) contrast(.88) brightness(1.08)',
-    warm:  'sepia(.35) saturate(1.25) hue-rotate(-12deg)',
-    cool:  'saturate(1.1) hue-rotate(14deg) brightness(1.03)',
+    mono: 'grayscale(1)',
+    noir: 'grayscale(1) contrast(1.5) brightness(.9)',
+    fade: 'saturate(.7) contrast(.88) brightness(1.08)',
+    warm: 'sepia(.35) saturate(1.25) hue-rotate(-12deg)',
+    cool: 'saturate(1.1) hue-rotate(14deg) brightness(1.03)',
     vivid: 'saturate(1.6) contrast(1.12)',
   })[f] || 'none';
 }
@@ -1878,8 +1917,10 @@ function forwardSms(m) {
       const go = async (number) => {
         if (!number) return;
         const epoch = sheetEpoch;
-        const r = await post('send', { number, body: m.body || '', kind: m.kind || 'text',
-                                       attachment: m.attachment || '' });
+        const r = await post('send', {
+          number, body: m.body || '', kind: m.kind || 'text',
+          attachment: m.attachment || ''
+        });
         if (!closeSheet(false, epoch)) return;
         toast(r && r.ok ? L('ph.forwarded') : L('ph.err_' + ((r && r.error) || 'x')));
       };
@@ -1894,8 +1935,8 @@ function messageActions(m) {
   sheet(L('ph.message_actions'),
     '<div class="msgactionpreview">' + bubbleHtml(Object.assign({}, m, { mine: false })) + '</div>' +
     '<div class="msgactiongrid">' +
-      UI.button(L('ph.copy'), 'msgcopy', 'plain') +
-      UI.button(L('ph.forward'), 'msgforward', 'tinted') +
+    UI.button(L('ph.copy'), 'msgcopy', 'plain') +
+    UI.button(L('ph.forward'), 'msgforward', 'tinted') +
     '</div>' +
     '<div class="sheethint">' + esc(L('ph.message_actions_hint')) + '</div>',
     () => {
@@ -2146,8 +2187,8 @@ function paintThread(messages) {
     sheet(L('ph.attach'),
       (shots.length
         ? '<div class="grouphead">' + esc(L('ph.attach_photo')) + '</div>' +
-          '<div class="shots" style="margin-bottom:12px">' + shots.map((v, i) =>
-            '<div class="shot" data-i="' + i + '" style="' + photoStyle(v) + '"></div>').join('') + '</div>'
+        '<div class="shots" style="margin-bottom:12px">' + shots.map((v, i) =>
+          '<div class="shot" data-i="' + i + '" style="' + photoStyle(v) + '"></div>').join('') + '</div>'
         : '') +
       UI.button(L('ph.pick_photo'), 'atpick', 'plain') +
       UI.field('aturl', L('ph.attach_url'), '', 'maxlength="300"') +
@@ -2212,7 +2253,7 @@ function newGroupSheet() {
     UI.field('gname', L('ph.group_name'), '', 'maxlength="40"') +
     (contacts.length
       ? contacts.map((c) => '<label class="gpick"><input type="checkbox" value="' + esc(c.number) + '" />' +
-          esc(c.name) + '</label>').join('')
+        esc(c.name) + '</label>').join('')
       : UI.empty(L('ph.no_contacts'))) +
     UI.button(L('ph.group_make'), 'ggo'),
     () => byId('ggo').addEventListener('click', async () => {
@@ -2234,10 +2275,10 @@ RENDER.contacts = () => {
     const list = q ? all.filter((c) => (c.name + ' ' + c.number).toLowerCase().includes(q)) : all;
     byId('clist').innerHTML = list.length
       ? UI.group(list.map((c) => UI.row({
-          avatar: c.name, title: c.name, subtitle: c.number, chevron: true,
-          value: c.system ? L('ph.required_contact') : '',
-          data: { id: c.id, n: c.number },
-        })))
+        avatar: c.name, title: c.name, subtitle: c.number, chevron: true,
+        value: c.system ? L('ph.required_contact') : '',
+        data: { id: c.id, n: c.number },
+      })))
       : UI.empty(L('ph.no_contacts'), 'contacts');
     wire();
   };
@@ -2246,11 +2287,15 @@ RENDER.contacts = () => {
     if (c) contactSheet(c);
   }));
   body(searchHtml(L('ph.search_contacts')) +
-    UI.group([UI.row({ icon: 'airdrop', tint: '#0A84FF', title: L('ph.share_my_number'),
-      subtitle: state.number || '', chevron: true, data: { me: '1' } })]) +
+    UI.group([UI.row({
+      icon: 'airdrop', tint: '#0A84FF', title: L('ph.share_my_number'),
+      subtitle: state.number || '', chevron: true, data: { me: '1' }
+    })]) +
     '<div id="clist"></div>');
-  rows('.row', (r) => { if (r.dataset.me) r.addEventListener('click',
-    () => airdropShare('number', { name: '', number: state.number })); });
+  rows('.row', (r) => {
+    if (r.dataset.me) r.addEventListener('click',
+      () => airdropShare('number', { name: '', number: state.number }));
+  });
   draw('');
   onSearch(draw);
 };
@@ -2265,9 +2310,9 @@ function contactSheet(c) {
     ].filter(Boolean);
     sheet(c.name,
       '<div class="requiredcontact">' +
-        '<span class="requiredavatar">' + esc(String(c.name || '?').trim().charAt(0).toUpperCase()) + '</span>' +
-        '<strong>' + esc(c.name) + '</strong>' +
-        '<small>' + svg('lockshut') + esc(L('ph.required_contact_hint')) + '</small>' +
+      '<span class="requiredavatar">' + esc(String(c.name || '?').trim().charAt(0).toUpperCase()) + '</span>' +
+      '<strong>' + esc(c.name) + '</strong>' +
+      '<small>' + svg('lockshut') + esc(L('ph.required_contact_hint')) + '</small>' +
       '</div>' +
       UI.group(details) +
       UI.button(L('ph.call'), 'ccall', 'tinted') +
@@ -2305,10 +2350,12 @@ function contactSheet(c) {
       byId('cpick').addEventListener('click', () => pickPhoto((url) => { byId('cphoto').value = url; }));
       byId('csave').addEventListener('click', async () => {
         const epoch = sheetEpoch;
-        const payload = { id: c.id, name: byId('cname').value, number: byId('cnum').value,
+        const payload = {
+          id: c.id, name: byId('cname').value, number: byId('cnum').value,
           photo: byId('cphoto').value.trim(), email: byId('cmail').value.trim(),
           address: byId('caddr').value.trim(), birthday: byId('cbday').value.trim(),
-          note: byId('cnote').value.trim() };
+          note: byId('cnote').value.trim()
+        };
         const res = await post('contactSave', payload);
         if (res && res.ok) {
           if (closeSheet(false, epoch)) { await refresh(); RENDER.contacts(); }
@@ -2341,9 +2388,9 @@ RENDER.bank = async () => {
     }) +
     (tx.length
       ? UI.group(tx.map((t) => UI.row({
-          title: t.label || t.type || '', subtitle: t.at || '',
-          value: money(t.amount), mono: true, tone: Number(t.amount) < 0 ? 'neg' : 'pos',
-        })), { header: L('ph.history') })
+        title: t.label || t.type || '', subtitle: t.at || '',
+        value: money(t.amount), mono: true, tone: Number(t.amount) < 0 ? 'neg' : 'pos',
+      })), { header: L('ph.history') })
       : UI.empty(L('ph.no_history')))
   );
 };
@@ -2376,9 +2423,9 @@ RENDER.wallet = async () => {
   // than drawing an empty rectangle.
   const cardHtml = (card && card.ok && card.card)
     ? '<div class="bankcard"><div class="brand"><span>FLEECA</span><span class="chip"></span></div>' +
-      '<div class="num">' + esc(card.card || '') + '</div>' +
-      '<div class="foot"><span>' + esc(card.holder || '') + '</span>' +
-      '<span class="bal">' + esc(money(card.bank)) + '</span></div></div>'
+    '<div class="num">' + esc(card.card || '') + '</div>' +
+    '<div class="foot"><span>' + esc(card.holder || '') + '</span>' +
+    '<span class="bal">' + esc(money(card.bank)) + '</span></div></div>'
     : (card && card.ok ? UI.group([UI.row({ icon: 'bank', title: L('ph.no_card'), subtitle: L('ph.no_card_hint') })]) : '');
   if (!list.length) { body(cardHtml + UI.empty(L('ph.no_licenses'), 'wallet')); return; }
   const wireCard = () => {
@@ -2413,10 +2460,10 @@ RENDER.jobs = async () => {
     const list = d.jobs || [];
     body(list.length
       ? UI.group(list.map((j) => UI.row({
-          icon: 'jobs', tint: '#5856D6', title: j.label || j.name,
-          subtitle: (j.grade || '') + (j.ranks ? '  -  ' + j.ranks + ' ' + L('ph.ranks') : ''),
-          value: money(j.salary), mono: true,
-        })), { header: L('ph.openings'), footer: L('ph.jobs_hint') })
+        icon: 'jobs', tint: '#5856D6', title: j.label || j.name,
+        subtitle: (j.grade || '') + (j.ranks ? '  -  ' + j.ranks + ' ' + L('ph.ranks') : ''),
+        value: money(j.salary), mono: true,
+      })), { header: L('ph.openings'), footer: L('ph.jobs_hint') })
       : UI.empty(L('ph.no_jobs'), 'jobs'));
     return;
   }
@@ -2438,14 +2485,16 @@ RENDER.jobs = async () => {
   body(
     // Who you are at work, in the shape a payslip uses.
     '<div class="jobcard">' +
-      '<div class="jobname">' + esc(me.label || me.name) + '</div>' +
-      '<div class="jobgrade">' + esc(me.gradeLabel || (L('ph.grade') + ' ' + me.grade)) + '</div>' +
-      '<div class="jobpay">' + esc(money(me.salary)) + ' <span>' + esc(L('ph.per_pay')) + '</span></div>' +
+    '<div class="jobname">' + esc(me.label || me.name) + '</div>' +
+    '<div class="jobgrade">' + esc(me.gradeLabel || (L('ph.grade') + ' ' + me.grade)) + '</div>' +
+    '<div class="jobpay">' + esc(money(me.salary)) + ' <span>' + esc(L('ph.per_pay')) + '</span></div>' +
     '</div>' +
     UI.group([
       UI.row({ icon: 'jobs', tint: '#5856D6', title: L('ph.employer'), value: me.label || me.name }),
-      UI.row({ icon: 'id', tint: '#8E8E93', title: L('ph.rank'),
-               value: (Number(me.grade) + 1) + ' / ' + (me.ranks || ladder.length || 1) }),
+      UI.row({
+        icon: 'id', tint: '#8E8E93', title: L('ph.rank'),
+        value: (Number(me.grade) + 1) + ' / ' + (me.ranks || ladder.length || 1)
+      }),
       UI.row({ icon: 'bank', tint: '#34C759', title: L('ph.salary'), value: money(me.salary), mono: true }),
     ]) +
     // Progress through the ladder, because a rank means nothing without the rungs.
@@ -2453,12 +2502,12 @@ RENDER.jobs = async () => {
     '<div class="jobbar"><i style="width:' + pct + '%"></i></div>' +
     (ladder.length
       ? UI.group(ladder.map((g) => UI.row({
-          icon: Number(g.grade) === Number(me.grade) ? 'check' : 'chevron',
-          tint: Number(g.grade) === Number(me.grade) ? '#34C759' : '#48484A',
-          title: g.name || (L('ph.grade') + ' ' + g.grade),
-          subtitle: Number(g.grade) === Number(me.grade) ? L('ph.you_are_here') : '',
-          value: money(g.salary), mono: true,
-        })), { header: L('ph.ladder') })
+        icon: Number(g.grade) === Number(me.grade) ? 'check' : 'chevron',
+        tint: Number(g.grade) === Number(me.grade) ? '#34C759' : '#48484A',
+        title: g.name || (L('ph.grade') + ' ' + g.grade),
+        subtitle: Number(g.grade) === Number(me.grade) ? L('ph.you_are_here') : '',
+        value: money(g.salary), mono: true,
+      })), { header: L('ph.ladder') })
       : '')
   );
 };
@@ -2468,30 +2517,44 @@ RENDER.settings = () => {
   const p = state.prefs || {};
   body(
     UI.group([
-      UI.row({ icon: 'phone', tint: '#0A84FF', title: p.deviceName || L('ph.setup_default_device'),
-        subtitle: p.ownerName || '', chevron: true, data: { t: 'device_name' } }),
-      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: state.number || '',
-               data: { copy: state.number || '' } }),
-      UI.row({ icon: 'folder', tint: '#5AC8FA', title: L('ph.grid'),
-        value: (p.gridCols || 4) + ' x ' + (p.gridRows || 4), chevron: true, data: { t: 'grid' } }),
-      UI.row({ icon: 'moon', tint: '#5856D6', title: L('ph.dark_mode'),
-        value: L('ph.theme_' + (p.darkMode || (p.dark ? 'dark' : 'light'))), chevron: true, data: { t: 'theme' } }),
+      UI.row({
+        icon: 'phone', tint: '#0A84FF', title: p.deviceName || L('ph.setup_default_device'),
+        subtitle: p.ownerName || '', chevron: true, data: { t: 'device_name' }
+      }),
+      UI.row({
+        icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: state.number || '',
+        data: { copy: state.number || '' }
+      }),
+      UI.row({
+        icon: 'folder', tint: '#5AC8FA', title: L('ph.grid'),
+        value: (p.gridCols || 4) + ' x ' + (p.gridRows || 4), chevron: true, data: { t: 'grid' }
+      }),
+      UI.row({
+        icon: 'moon', tint: '#5856D6', title: L('ph.dark_mode'),
+        value: L('ph.theme_' + (p.darkMode || (p.dark ? 'dark' : 'light'))), chevron: true, data: { t: 'theme' }
+      }),
       UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.vibrate'), toggle: p.vibrate !== false, data: { t: 'vibrate' } }),
-      UI.row({ icon: 'speaker', tint: '#FF9500', title: L('ph.ringer'),
-        value: Math.round((p.ringVolume ?? 0.7) * 100) + '%', chevron: true, data: { t: 'ringer' } }),
-      UI.row({ icon: 'music', tint: '#FF2D55', title: L('ph.ringtone'),
+      UI.row({
+        icon: 'speaker', tint: '#FF9500', title: L('ph.ringer'),
+        value: Math.round((p.ringVolume ?? 0.7) * 100) + '%', chevron: true, data: { t: 'ringer' }
+      }),
+      UI.row({
+        icon: 'music', tint: '#FF2D55', title: L('ph.ringtone'),
         value: p.ringUrl ? L('ph.tone_custom') : L('ph.tone_' + (p.ringtone || 'classic')),
-        chevron: true, data: { t: 'ringtone' } }),
-      UI.row({ icon: 'bell', tint: '#FF9F0A', title: L('ph.alerttone'),
+        chevron: true, data: { t: 'ringtone' }
+      }),
+      UI.row({
+        icon: 'bell', tint: '#FF9F0A', title: L('ph.alerttone'),
         value: p.alertUrl ? L('ph.tone_custom') : L('ph.tone_' + (p.alertTone || 'ping')),
-        chevron: true, data: { t: 'alerttone' } }),
+        chevron: true, data: { t: 'alerttone' }
+      }),
     ]) +
     (p.wallpaperUrl ? '<div class="wallpreview" style="' + inlineBackground(p.wallpaperUrl) + '"></div>' : '') +
     (state.customWallpaper === false ? '' :
       UI.field('wurl', L('ph.wall_url'), p.wallpaperUrl || '') +
       '<div class="seg">' +
-        '<button class="' + (p.wallFit !== 'contain' ? 'on' : '') + '" data-fit="cover">' + esc(L('ph.fit_cover')) + '</button>' +
-        '<button class="' + (p.wallFit === 'contain' ? 'on' : '') + '" data-fit="contain">' + esc(L('ph.fit_contain')) + '</button>' +
+      '<button class="' + (p.wallFit !== 'contain' ? 'on' : '') + '" data-fit="cover">' + esc(L('ph.fit_cover')) + '</button>' +
+      '<button class="' + (p.wallFit === 'contain' ? 'on' : '') + '" data-fit="contain">' + esc(L('ph.fit_contain')) + '</button>' +
       '</div>' +
       UI.button(L('ph.wall_apply'), 'wapply') +
       (p.wallpaperUrl ? UI.button(L('ph.wall_clear'), 'wclear', 'plain') : '') +
@@ -2504,13 +2567,13 @@ RENDER.settings = () => {
     // The device itself: how big, and which side it sits on.
     '<div class="grouphead">' + esc(L('ph.device')) + '</div>' +
     '<div class="sliderow">' +
-      '<div class="sl"><span>' + esc(L('ph.size')) + '</span><span>' + Math.round((p.size || 1) * 100) + '%</span></div>' +
-      '<input type="range" id="dsize" min="75" max="115" step="1" aria-label="' +
-        esc(L('ph.size')) + '" value="' + Math.round((p.size || 1) * 100) + '" />' +
-      '<div class="seg" style="margin-top:12px">' +
-        '<button class="' + (p.side !== 'left' ? 'on' : '') + '" data-side="right">' + esc(L('ph.side_right')) + '</button>' +
-        '<button class="' + (p.side === 'left' ? 'on' : '') + '" data-side="left">' + esc(L('ph.side_left')) + '</button>' +
-      '</div>' +
+    '<div class="sl"><span>' + esc(L('ph.size')) + '</span><span>' + Math.round((p.size || 1) * 100) + '%</span></div>' +
+    '<input type="range" id="dsize" min="75" max="115" step="1" aria-label="' +
+    esc(L('ph.size')) + '" value="' + Math.round((p.size || 1) * 100) + '" />' +
+    '<div class="seg" style="margin-top:12px">' +
+    '<button class="' + (p.side !== 'left' ? 'on' : '') + '" data-side="right">' + esc(L('ph.side_right')) + '</button>' +
+    '<button class="' + (p.side === 'left' ? 'on' : '') + '" data-side="left">' + esc(L('ph.side_left')) + '</button>' +
+    '</div>' +
     '</div>' +
     UI.group([UI.row({ icon: 'moon', tint: '#5856D6', title: L('ph.dnd'), toggle: !!p.dnd, data: { t: 'dnd' } })],
       { footer: L('ph.dnd_hint') }) +
@@ -2518,10 +2581,10 @@ RENDER.settings = () => {
     // the glass derives from, not a fade on one overlay.
     '<div class="grouphead">' + esc(L('ph.transparency')) + '</div>' +
     '<div class="sliderow">' +
-      '<div class="sl"><span>' + esc(L('ph.glass_clear')) + '</span>' +
-      '<span>' + esc(L('ph.glass_tinted')) + '</span></div>' +
-      '<input type="range" id="glass" min="0" max="100" step="1" aria-label="' +
-        esc(L('ph.transparency')) + '" value="' + (p.glass ?? 55) + '" />' +
+    '<div class="sl"><span>' + esc(L('ph.glass_clear')) + '</span>' +
+    '<span>' + esc(L('ph.glass_tinted')) + '</span></div>' +
+    '<input type="range" id="glass" min="0" max="100" step="1" aria-label="' +
+    esc(L('ph.transparency')) + '" value="' + (p.glass ?? 55) + '" />' +
     '</div>' +
     '<div class="groupfoot">' + esc(L('ph.glass_hint')) + '</div>' +
     UI.group((state.apps || []).map((a) => UI.row({
@@ -2824,7 +2887,7 @@ function darkNow() {
   const from = Number(t.from ?? 20), to = Number(t.to ?? 6);
   // A start later than the end wraps over midnight, which is the normal case.
   return from <= to ? (gameHour >= from && gameHour < to)
-                    : (gameHour >= from || gameHour < to);
+    : (gameHour >= from || gameHour < to);
 }
 
 function applyTheme() {
@@ -2881,14 +2944,14 @@ RENDER.maps = async () => {
 
   body(
     '<div class="seg">' +
-      '<button class="' + (placeFilter === 'all' ? 'on' : '') + '" data-k="all">' + esc(L('ph.all')) + '</button>' +
-      kinds.map((k) => '<button class="' + (placeFilter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(L('ph.place_' + k)) + '</button>').join('') +
+    '<button class="' + (placeFilter === 'all' ? 'on' : '') + '" data-k="all">' + esc(L('ph.all')) + '</button>' +
+    kinds.map((k) => '<button class="' + (placeFilter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(L('ph.place_' + k)) + '</button>').join('') +
     '</div>' +
     (shown.length
       ? UI.group(shown.map((pl, i) => UI.row({
-          icon: pl.icon, title: pl.label, subtitle: L('ph.place_' + pl.kind),
-          chevron: true, data: { i },
-        })), { footer: L('ph.maps_hint') })
+        icon: pl.icon, title: pl.label, subtitle: L('ph.place_' + pl.kind),
+        chevron: true, data: { i },
+      })), { footer: L('ph.maps_hint') })
       : UI.empty(L('ph.no_places'), 'map'))
   );
   [...byId('appbody').querySelectorAll('.seg button')].forEach((b) =>
@@ -3059,13 +3122,13 @@ function musicCard(track, index, wide) {
 function musicTrackRow(track, index, live) {
   return '<div class="musictrackrow' + (live && !track.paused ? ' live' : '') + '">' +
     '<button class="musictrackmain" data-mtrack="' + index + '" type="button">' +
-      musicArt(track, 'rowart') +
-      '<span><b>' + esc(track.title) + '</b><small>' +
-        esc(live ? musicKind(track.kind) : track.artist + ' · ' + track.album) + '</small></span>' +
-      (live ? '<em>' + esc(track.paused ? L('ph.paused') : L('ph.live')) + '</em>' : '') +
+    musicArt(track, 'rowart') +
+    '<span><b>' + esc(track.title) + '</b><small>' +
+    esc(live ? musicKind(track.kind) : track.artist + ' · ' + track.album) + '</small></span>' +
+    (live ? '<em>' + esc(track.paused ? L('ph.paused') : L('ph.live')) + '</em>' : '') +
     '</button>' +
     '<button class="musicmore" data-maction="' + index + '" type="button" aria-label="' + esc(L('ph.more')) + '">' +
-      '<i></i><i></i><i></i></button></div>';
+    '<i></i><i></i><i></i></button></div>';
 }
 
 function musicHero(track) {
@@ -3079,25 +3142,25 @@ function musicHero(track) {
     ';--hero-b:' + MUSIC_PALETTES[musicSeed(track)][1] + '">' +
     '<div class="musicheroart">' + musicArt(track, 'heroart') + '</div>' +
     '<div class="musicherocopy"><span>' + esc(L('ph.music_top_pick')) + '</span>' +
-      '<h2>' + esc(track.title) + '</h2><p>' + esc(track.artist + ' · ' + track.album) + '</p>' +
-      '<div><button id="musicheroplay" type="button">' + svg('play') + esc(L('ph.play')) + '</button>' +
-      '<button id="musicheromore" type="button" aria-label="' + esc(L('ph.more')) + '">•••</button></div></div></div>';
+    '<h2>' + esc(track.title) + '</h2><p>' + esc(track.artist + ' · ' + track.album) + '</p>' +
+    '<div><button id="musicheroplay" type="button">' + svg('play') + esc(L('ph.play')) + '</button>' +
+    '<button id="musicheromore" type="button" aria-label="' + esc(L('ph.more')) + '">•••</button></div></div></div>';
 }
 
 function musicTabHTML(current) {
   return '<div class="tabbar musictabs">' + MUSIC_TABS.map((tab) =>
     '<button class="' + (tab.id === current ? 'on' : '') + '" data-mtab="' + tab.id + '" type="button" ' +
-      'aria-current="' + (tab.id === current ? 'page' : 'false') + '">' +
-      svg(tab.icon) + '<span>' + esc(L(tab.label)) + '</span></button>').join('') + '</div>';
+    'aria-current="' + (tab.id === current ? 'page' : 'false') + '">' +
+    svg(tab.icon) + '<span>' + esc(L(tab.label)) + '</span></button>').join('') + '</div>';
 }
 
 function musicMiniHTML(current) {
   if (!current) return '';
   return '<div class="musicmini">' +
     '<button class="musicminiopen" id="musicminiopen" type="button">' + musicArt(current, 'miniart') +
-      '<span><b>' + esc(current.title) + '</b><small>' + esc(current.artist || musicKind(current.kind)) + '</small></span></button>' +
+    '<span><b>' + esc(current.title) + '</b><small>' + esc(current.artist || musicKind(current.kind)) + '</small></span></button>' +
     '<button id="musicminiplay" type="button" aria-label="' + esc(current.paused ? L('ph.resume') : L('ph.pause')) + '">' +
-      svg(current.paused ? 'play' : 'pause') + '</button>' +
+    svg(current.paused ? 'play' : 'pause') + '</button>' +
     '<button id="musicmininext" type="button" aria-label="' + esc(L('ph.next')) + '">' + svg('chevron') + '</button></div>';
 }
 
@@ -3185,7 +3248,7 @@ function musicAdd(existing, index) {
   const track = existing ? musicNormalise(existing) : null;
   sheet(L(track ? 'ph.track_edit' : 'ph.track_add'),
     '<div class="musicedithead">' + musicArt(track || { title: L('ph.new_track') }, 'editart') +
-      '<div><b>' + esc(track ? track.title : L('ph.new_track')) + '</b><small>' + esc(L('ph.music_metadata')) + '</small></div></div>' +
+    '<div><b>' + esc(track ? track.title : L('ph.new_track')) + '</b><small>' + esc(L('ph.music_metadata')) + '</small></div></div>' +
     UI.field('mtitle', L('ph.track_title'), (track && track.title) || '', 'maxlength="80"') +
     UI.field('martist', L('ph.track_artist'), (track && track.artist) || '', 'maxlength="60"') +
     UI.field('malbum', L('ph.track_album'), (track && track.album) || '', 'maxlength="60"') +
@@ -3218,12 +3281,12 @@ function musicTrackSheet(track, index) {
   const saved = index != null;
   sheet(track.title,
     '<div class="musictrackdetail">' + musicArt(track, 'sheetart') +
-      '<div><h2>' + esc(track.title) + '</h2><p>' + esc(track.artist + ' · ' + track.album) + '</p></div></div>' +
+    '<div><h2>' + esc(track.title) + '</h2><p>' + esc(track.artist + ' · ' + track.album) + '</p></div></div>' +
     '<div class="musicquickactions">' +
-      '<button id="mquickplay" type="button">' + svg('play') + '<span>' + esc(L('ph.play')) + '</span></button>' +
-      '<button id="mquickfav" type="button">' + svg(track.favorite ? 'heart' : 'star') + '<span>' +
-        esc(track.favorite ? L('ph.favorited') : L('ph.favorite')) + '</span></button>' +
-      '<button id="mquickqueue" type="button">' + svg('add') + '<span>' + esc(L('ph.add_queue')) + '</span></button></div>' +
+    '<button id="mquickplay" type="button">' + svg('play') + '<span>' + esc(L('ph.play')) + '</span></button>' +
+    '<button id="mquickfav" type="button">' + svg(track.favorite ? 'heart' : 'star') + '<span>' +
+    esc(track.favorite ? L('ph.favorited') : L('ph.favorite')) + '</span></button>' +
+    '<button id="mquickqueue" type="button">' + svg('add') + '<span>' + esc(L('ph.add_queue')) + '</span></button></div>' +
     UI.button(L('ph.choose_output'), 'moutput', 'plain') +
     (saved ? UI.button(L('ph.track_edit'), 'medit', 'plain') : '') +
     (saved ? UI.button(L('ph.delete'), 'mdelt', 'destructive') : ''),
@@ -3258,8 +3321,8 @@ function musicOutputSheet(track) {
   sheet(L('ph.choose_output'),
     '<div class="musicoutputs">' + outputs.map((output) =>
       '<button data-moutput="' + output.id + '" type="button"><span>' + svg(output.icon) + '</span><div><b>' +
-        esc(output.label) + '</b><small>' + esc(output.hint) + '</small></div>' +
-        (musicOutput === output.id ? svg('check') : '') + '</button>').join('') + '</div>',
+      esc(output.label) + '</b><small>' + esc(output.hint) + '</small></div>' +
+      (musicOutput === output.id ? svg('check') : '') + '</button>').join('') + '</div>',
     () => [...byId('sheet').querySelectorAll('[data-moutput]')].forEach((button) =>
       button.addEventListener('click', () => {
         musicOutput = button.dataset.moutput;
@@ -3274,9 +3337,9 @@ function musicQueueSheet() {
     musicQueue.length
       ? '<div class="musicqueue">' + musicQueue.map((track, index) =>
         '<button data-mqueue="' + index + '" type="button">' + musicArt(track, 'queueart') +
-          '<span><b>' + esc(track.title) + '</b><small>' + esc(track.artist) + '</small></span>' +
-          (index === musicQueueIndex ? '<em>' + svg('speaker') + '</em>' : '<i>≡</i>') + '</button>').join('') + '</div>' +
-        UI.button(L('ph.clear_queue'), 'mclearqueue', 'destructive')
+        '<span><b>' + esc(track.title) + '</b><small>' + esc(track.artist) + '</small></span>' +
+        (index === musicQueueIndex ? '<em>' + svg('speaker') + '</em>' : '<i>≡</i>') + '</button>').join('') + '</div>' +
+      UI.button(L('ph.clear_queue'), 'mclearqueue', 'destructive')
       : UI.empty(L('ph.queue_empty'), 'music'),
     () => {
       [...byId('sheet').querySelectorAll('[data-mqueue]')].forEach((button) =>
@@ -3298,26 +3361,26 @@ function musicRenderPlayer(model) {
   });
   foot('');
   body('<div class="musicplayer" style="--player-a:' + MUSIC_PALETTES[musicSeed(current)][0] +
-      ';--player-b:' + MUSIC_PALETTES[musicSeed(current)][1] + '">' +
+    ';--player-b:' + MUSIC_PALETTES[musicSeed(current)][1] + '">' +
     '<div class="musicplayerglow"></div>' +
     '<div class="musicplayerhead">' + musicArt(current, 'playerart') + '</div>' +
     '<div class="musicplayercopy"><span>' + esc(musicKind(current.kind || musicOutput)) + '</span>' +
-      '<h1>' + esc(current.title) + '</h1><p>' + esc(current.artist) + '</p></div>' +
+    '<h1>' + esc(current.title) + '</h1><p>' + esc(current.artist) + '</p></div>' +
     '<div class="musicactivity"><span><i></i><i></i><i></i><i></i><i></i></span><em>' +
-      esc(current.paused ? L('ph.paused') : L('ph.music_synced')) + '</em></div>' +
+    esc(current.paused ? L('ph.paused') : L('ph.music_synced')) + '</em></div>' +
     '<div class="musiccontrols">' +
-      '<button id="mprevious" type="button" aria-label="' + esc(L('ph.previous')) + '">' +
-        '<span class="musicprevicon">' + svg('play') + '</span></button>' +
-      '<button class="musicplaymain" id="mplaymain" type="button" aria-label="' +
-        esc(current.paused ? L('ph.resume') : L('ph.pause')) + '">' + svg(current.paused ? 'play' : 'pause') + '</button>' +
-      '<button id="mnext" type="button" aria-label="' + esc(L('ph.next')) + '">' + svg('play') + '</button></div>' +
+    '<button id="mprevious" type="button" aria-label="' + esc(L('ph.previous')) + '">' +
+    '<span class="musicprevicon">' + svg('play') + '</span></button>' +
+    '<button class="musicplaymain" id="mplaymain" type="button" aria-label="' +
+    esc(current.paused ? L('ph.resume') : L('ph.pause')) + '">' + svg(current.paused ? 'play' : 'pause') + '</button>' +
+    '<button id="mnext" type="button" aria-label="' + esc(L('ph.next')) + '">' + svg('play') + '</button></div>' +
     '<div class="musicvolume">' + svg('speaker') +
-      '<input id="mvolume" type="range" min="0" max="100" value="' + Math.round(current.volume * 100) +
-        '" aria-label="' + esc(L('ph.volume')) + '" />' + svg('speaker') + '</div>' +
+    '<input id="mvolume" type="range" min="0" max="100" value="' + Math.round(current.volume * 100) +
+    '" aria-label="' + esc(L('ph.volume')) + '" />' + svg('speaker') + '</div>' +
     '<div class="musicplayeractions">' +
-      '<button id="mplayerfav" type="button">' + svg(current.favorite ? 'heart' : 'star') + '<span>' + esc(L('ph.favorite')) + '</span></button>' +
-      '<button id="mplayerout" type="button">' + svg('airdrop') + '<span>' + esc(L('ph.output')) + '</span></button>' +
-      '<button id="mplayerqueue" type="button">' + svg('note') + '<span>' + esc(L('ph.queue')) + '</span></button></div></div>');
+    '<button id="mplayerfav" type="button">' + svg(current.favorite ? 'heart' : 'star') + '<span>' + esc(L('ph.favorite')) + '</span></button>' +
+    '<button id="mplayerout" type="button">' + svg('airdrop') + '<span>' + esc(L('ph.output')) + '</span></button>' +
+    '<button id="mplayerqueue" type="button">' + svg('note') + '<span>' + esc(L('ph.queue')) + '</span></button></div></div>');
   byId('mplaymain').addEventListener('click', () => musicToggle(current));
   byId('mprevious').addEventListener('click', () => musicStep(-1));
   byId('mnext').addEventListener('click', () => musicStep(1));
@@ -3363,16 +3426,16 @@ function musicRenderSearch(model) {
     if (!host) return;
     host.innerHTML = shown.length
       ? musicSection(query ? L('ph.results') : L('ph.recently_played')) +
-        '<div class="musictracklist">' + shown.map((track, index) => musicTrackRow(track, index, !!track.id)).join('') + '</div>'
+      '<div class="musictracklist">' + shown.map((track, index) => musicTrackRow(track, index, !!track.id)).join('') + '</div>'
       : '<div class="musicsearchempty">' + svg('search') + '<b>' +
-        esc(query ? L('ph.no_results') : L('ph.music_search_hint')) + '</b><span>' +
-        esc(query ? L('ph.music_try_search') : L('ph.music_search_everything')) + '</span></div>';
+      esc(query ? L('ph.no_results') : L('ph.music_search_hint')) + '</b><span>' +
+      esc(query ? L('ph.music_try_search') : L('ph.music_search_everything')) + '</span></div>';
     musicWireTracks(shown, model.library);
   };
   body('<div class="musicsearchbox">' + svg('search') +
     '<input id="musicq" value="' + esc(musicSearch) + '" placeholder="' + esc(L('ph.music_search_placeholder')) +
-      '" autocomplete="off" /><button id="musicqclear" type="button" aria-label="' + esc(L('ph.clear')) + '">' +
-      svg('xmark') + '</button></div><div id="musicsearchresults"></div>');
+    '" autocomplete="off" /><button id="musicqclear" type="button" aria-label="' + esc(L('ph.clear')) + '">' +
+    svg('xmark') + '</button></div><div id="musicsearchresults"></div>');
   draw();
   const input = byId('musicq');
   input.addEventListener('input', () => {
@@ -3435,9 +3498,9 @@ RENDER.music = async () => {
       (albums.length ? musicSection(L('ph.albums')) + '<div class="musicalbums">' +
         albums.slice(0, 6).map((track) => musicCard(track, picks.indexOf(track), true)).join('') + '</div>' : '') +
       '<div class="musicgenres">' + musicSection(L('ph.browse_categories')) +
-        ['urban', 'electronic', 'rock', 'chill'].map((genre, index) =>
-          '<button type="button" style="--genre:' + index + '"><span>' + esc(L('ph.genre_' + genre)) +
-          '</span>' + svg('chevron') + '</button>').join('') + '</div>');
+      ['urban', 'electronic', 'rock', 'chill'].map((genre, index) =>
+        '<button type="button" style="--genre:' + index + '"><span>' + esc(L('ph.genre_' + genre)) +
+        '</span>' + svg('chevron') + '</button>').join('') + '</div>');
     musicWireTracks(picks, model.library);
     return;
   }
@@ -3450,7 +3513,7 @@ RENDER.music = async () => {
       (model.sources.length ? '<div class="musictracklist">' +
         model.sources.map((track, index) => musicTrackRow(track, index, true)).join('') + '</div>'
         : '<div class="musicairglass">' + svg('speaker') + '<div><b>' + esc(L('ph.no_music')) +
-          '</b><span>' + esc(L('ph.music_air_hint')) + '</span></div></div>') +
+        '</b><span>' + esc(L('ph.music_air_hint')) + '</span></div></div>') +
       (model.library.length ? musicSection(L('ph.start_station')) +
         '<div class="musicstationcards">' + model.library.slice(0, 3).map((track, index) =>
           '<button data-mstation="' + index + '" type="button">' + musicArt(track, 'stationart') +
@@ -3473,15 +3536,15 @@ RENDER.music = async () => {
   const favourites = model.library.filter((track) => track.favorite);
   body('<div class="musiclibrarytiles">' +
     '<button id="mlibfav" type="button"><span>' + svg('heart') + '</span><div><b>' + esc(L('ph.favourites')) +
-      '</b><small>' + esc(String(favourites.length)) + '</small></div>' + svg('chevron') + '</button>' +
+    '</b><small>' + esc(String(favourites.length)) + '</small></div>' + svg('chevron') + '</button>' +
     '<button id="mlibalbums" type="button"><span>' + svg('music') + '</span><div><b>' + esc(L('ph.albums')) +
-      '</b><small>' + esc(String(new Set(model.library.map((track) => track.album)).size)) + '</small></div>' + svg('chevron') + '</button></div>' +
+    '</b><small>' + esc(String(new Set(model.library.map((track) => track.album)).size)) + '</small></div>' + svg('chevron') + '</button></div>' +
     musicSection(L('ph.songs'), { id: 'add', label: L('ph.add') }) +
     (model.library.length ? '<div class="musictracklist">' +
       model.library.map((track, index) => musicTrackRow(track, index)).join('') + '</div>'
       : '<div class="musiclibraryempty">' + musicArt({ title: 'iFruit Music' }, 'emptyart') +
-        '<h2>' + esc(L('ph.library_empty')) + '</h2><p>' + esc(L('ph.library_hint')) + '</p>' +
-        '<button id="mlibemptyadd" type="button">' + svg('add') + esc(L('ph.track_add')) + '</button></div>'));
+      '<h2>' + esc(L('ph.library_empty')) + '</h2><p>' + esc(L('ph.library_hint')) + '</p>' +
+      '<button id="mlibemptyadd" type="button">' + svg('add') + esc(L('ph.track_add')) + '</button></div>'));
   musicWireTracks(model.library, model.library);
   const add = byId('appbody').querySelector('[data-msection="add"]');
   if (add) add.addEventListener('click', () => musicAdd());
@@ -3541,8 +3604,8 @@ RENDER.mdt = async () => {
   mdtLookupSeq += 1;
   const seg =
     '<div class="seg">' +
-      '<button class="' + (mdtTab === 'warrants' ? 'on' : '') + '" data-t="warrants">' + esc(L('ph.warrants')) + '</button>' +
-      '<button class="' + (mdtTab === 'lookup' ? 'on' : '') + '" data-t="lookup">' + esc(L('ph.lookup')) + '</button>' +
+    '<button class="' + (mdtTab === 'warrants' ? 'on' : '') + '" data-t="warrants">' + esc(L('ph.warrants')) + '</button>' +
+    '<button class="' + (mdtTab === 'lookup' ? 'on' : '') + '" data-t="lookup">' + esc(L('ph.lookup')) + '</button>' +
     '</div>';
   const wire = () => [...byId('appbody').querySelectorAll('.seg button')].forEach((b) =>
     b.addEventListener('click', () => { mdtTab = b.dataset.t; RENDER.mdt(); }));
@@ -3561,9 +3624,9 @@ RENDER.mdt = async () => {
         UI.group([UI.row({ icon: 'id', title: res.name || '', subtitle: res.cid || '' })]) +
         ((res.records || []).length
           ? UI.group(res.records.map((r) => UI.row({
-              title: r.charges || '', subtitle: r.at || '',
-              value: r.paid ? L('ph.paid') : L('ph.unpaid'), tone: r.paid ? 'pos' : 'neg',
-            })), { header: L('ph.record') })
+            title: r.charges || '', subtitle: r.at || '',
+            value: r.paid ? L('ph.paid') : L('ph.unpaid'), tone: r.paid ? 'pos' : 'neg',
+          })), { header: L('ph.record') })
           : UI.empty(L('ph.no_record')));
     });
     return;
@@ -3575,10 +3638,10 @@ RENDER.mdt = async () => {
   const list = d.rows || [];
   body(seg + (list.length
     ? UI.group(list.map((w) => UI.row({
-        icon: 'shield',
-        title: ((w.firstname || '') + ' ' + (w.lastname || '')).trim() || w.citizenid,
-        subtitle: w.reason || '', time: w.at || '',
-      })), { header: L('ph.warrants_active') })
+      icon: 'shield',
+      title: ((w.firstname || '') + ' ' + (w.lastname || '')).trim() || w.citizenid,
+      subtitle: w.reason || '', time: w.at || '',
+    })), { header: L('ph.warrants_active') })
     : UI.empty(L('ph.no_warrants'), 'shield')));
   wire();
 };
@@ -3614,10 +3677,10 @@ RENDER.calc = () => {
   byId('app').classList.add('black');
   byId('screen').classList.add('appblack');
   const K = [['c', 'fn', 'AC'], ['neg', 'fn', '+/-'], ['pct', 'fn', '%'], ['/', 'op', '÷'],
-             ['7', '', '7'], ['8', '', '8'], ['9', '', '9'], ['*', 'op', '×'],
-             ['4', '', '4'], ['5', '', '5'], ['6', '', '6'], ['-', 'op', '−'],
-             ['1', '', '1'], ['2', '', '2'], ['3', '', '3'], ['+', 'op', '+'],
-             ['0', 'wide', '0'], ['.', '', ','], ['=', 'op', '=']];
+  ['7', '', '7'], ['8', '', '8'], ['9', '', '9'], ['*', 'op', '×'],
+  ['4', '', '4'], ['5', '', '5'], ['6', '', '6'], ['-', 'op', '−'],
+  ['1', '', '1'], ['2', '', '2'], ['3', '', '3'], ['+', 'op', '+'],
+  ['0', 'wide', '0'], ['.', '', ','], ['=', 'op', '=']];
   body('<div class="calcout" id="calcout">' + esc(calcVal) + '</div>' +
     '<div class="calcgrid">' + K.map(function (e) {
       return '<button class="ckey ' + e[1] + '" data-k="' + esc(e[0]) + '" type="button">' + e[2] + '</button>';
@@ -3633,7 +3696,7 @@ RENDER.calc = () => {
 // to whatever is on screen.
 const EDGE = 34;          // how deep the bottom edge zone reaches
 const EDGE_TOP = 56;      // the top zone is the whole status bar, or a drag that
-                          // starts on the clock would not count as from the top
+// starts on the clock would not count as from the top
 const SWIPE = 46;         // travel before a drag counts as a swipe
 const PANEL_DISMISS_ZONE = 142;
 const SWITCHER_TRAVEL = 155;
@@ -3732,16 +3795,18 @@ byId('screen').addEventListener('pointerdown', (e) => {
   const interactive = !!(e.target.closest && e.target.closest(
     'button,input,textarea,select,[role="slider"],.ccslider,.ncard,.row'
   ));
-  g = { x0: p.x, y0: p.y, t0: Date.now(), w: p.w, h: p.h,
-         fromBottom: p.y > p.h - EDGE, fromTop: p.y < EDGE_TOP, fromLeft: p.x < 18,
-         insideOverlay: !!(e.target.closest && e.target.closest(
-           '#sheet,#shade,#cc,#switcher,#auth,#folderview,#emojipanel,#setup'
-         )),
-         previewPanel: null,
-         dismissPanel: systemPanel && !interactive && p.y > p.h - PANEL_DISMISS_ZONE
-           ? systemPanel : null };
+  g = {
+    x0: p.x, y0: p.y, t0: Date.now(), w: p.w, h: p.h,
+    fromBottom: p.y > p.h - EDGE, fromTop: p.y < EDGE_TOP, fromLeft: p.x < 18,
+    insideOverlay: !!(e.target.closest && e.target.closest(
+      '#sheet,#shade,#cc,#switcher,#auth,#folderview,#emojipanel,#setup'
+    )),
+    previewPanel: null,
+    dismissPanel: systemPanel && !interactive && p.y > p.h - PANEL_DISMISS_ZONE
+      ? systemPanel : null
+  };
   if ((g.fromTop || g.fromBottom) && e.currentTarget.setPointerCapture) {
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
   }
 });
 
@@ -3874,7 +3939,7 @@ byId('screen').addEventListener('pointerup', (e) => {
   // On the home screen, sideways moves between pages - but never while a tile is being
   // carried, which owns the pointer.
   if (!arr && !byId('home').classList.contains('behind') && !byId('app').classList.contains('on')
-      && Math.abs(dx) > Math.abs(dy)) {
+    && Math.abs(dx) > Math.abs(dy)) {
     flipPage(dx < 0 ? 1 : -1);
     return;
   }
@@ -3899,10 +3964,10 @@ function openSwitcher() {
 
   byId('cards').innerHTML = list.map((a) =>
     '<div class="card glass" data-app="' + esc(a.id) + '">' +
-      '<div class="chead"><span class="ic">' + svg(a.icon) + '</span>' +
-      '<b>' + esc(L(a.label)) + '</b></div><div class="cbody">' +
-      '<div class="cpreview">' + UI.appIcon(a.icon, 'previewicon') +
-      '<b class="previewname">' + esc(L(a.label)) + '</b></div></div></div>').join('') +
+    '<div class="chead"><span class="ic">' + svg(a.icon) + '</span>' +
+    '<b>' + esc(L(a.label)) + '</b></div><div class="cbody">' +
+    '<div class="cpreview">' + UI.appIcon(a.icon, 'previewicon') +
+    '<b class="previewname">' + esc(L(a.label)) + '</b></div></div></div>').join('') +
     '<div class="switchhint">' + esc(L('ph.switch_hint')) + '</div>';
   byId('switcher').classList.add('on');
 
@@ -3954,7 +4019,7 @@ function openShade() {
 // The app a notification belongs to, resolved to something printable.
 function appOf(id) {
   return (state.apps || available || []).find((a) => a.id === id)
-      || (available || []).find((a) => a.id === id) || { id, label: id, icon: id };
+    || (available || []).find((a) => a.id === id) || { id, label: id, icon: id };
 }
 
 function renderShade() {
@@ -3982,12 +4047,12 @@ function renderShade() {
         esc(muted ? L('ph.notif_muted') : L('ph.notif_mute_app')) + '</button>' : '') + '</div>';
     const cards = byApp[appId].map((n) =>
       '<div class="ncard" data-nid="' + n.id + '">' +
-        '<span class="nic">' + UI.appIcon(n.icon) + '</span>' +
-        '<span class="nbody"><span class="nt">' + esc(n.title) + '</span>' +
-        '<span class="nb">' + esc(n.body) + '</span></span>' +
-        '<span class="nw">' + esc(relTime(n.at)) + '</span>' +
-        '<button class="nx" data-x="' + n.id + '" type="button" aria-label="' +
-          esc(L('ph.close')) + '">' + svg('xmark') + '</button></div>').join('');
+      '<span class="nic">' + UI.appIcon(n.icon) + '</span>' +
+      '<span class="nbody"><span class="nt">' + esc(n.title) + '</span>' +
+      '<span class="nb">' + esc(n.body) + '</span></span>' +
+      '<span class="nw">' + esc(relTime(n.at)) + '</span>' +
+      '<button class="nx" data-x="' + n.id + '" type="button" aria-label="' +
+      esc(L('ph.close')) + '">' + svg('xmark') + '</button></div>').join('');
     return '<div class="ngroup">' + head + cards + '</div>';
   }).join('');
 
@@ -4057,8 +4122,8 @@ function hud(icon, label, pct) {
   el.className = 'hud ' + (hasLevel ? 'levelhud' : 'noticehud');
   el.innerHTML = hasLevel
     ? '<span class="hudlabel">' + esc(label) + '</span>' +
-      '<span class="hudtrack"><i style="height:' + Math.round(pct * 100) + '%"></i>' +
-        '<span class="hudglyph">' + svg(icon) + '</span></span>'
+    '<span class="hudtrack"><i style="height:' + Math.round(pct * 100) + '%"></i>' +
+    '<span class="hudglyph">' + svg(icon) + '</span></span>'
     : '<span class="hudnoticeicon">' + svg(icon) + '</span><span>' + esc(label) + '</span>';
   el.classList.add('on');
   clearTimeout(hudTimer);
@@ -4141,12 +4206,12 @@ function storePreview(a, index) {
   if (a.id === 'cipher') {
     const scenes = [
       '<div class="stcipherseal">' + svg('lockshut') + '<span><b>' +
-        esc(L('ph.cipher_e2e')) + '</b><small>' + esc(L('ph.cipher_active')) + '</small></span></div>' +
-        '<div class="stcipherpeople"><i>R</i><span></span><i>Z</i></div>',
+      esc(L('ph.cipher_e2e')) + '</b><small>' + esc(L('ph.cipher_active')) + '</small></span></div>' +
+      '<div class="stcipherpeople"><i>R</i><span></span><i>Z</i></div>',
       '<div class="stcipherchat"><i>' + esc(L('ph.cipher_packet')) + '</i><i></i><i></i>' +
-        '<b>' + svg('lockshut') + esc(L('ph.cipher_secure_session')) + '</b></div>',
+      '<b>' + svg('lockshut') + esc(L('ph.cipher_secure_session')) + '</b></div>',
       '<div class="stcipherprint">' + svg('shield') + '<b>' + esc(L('ph.cipher_safety_number')) +
-        '</b><i>71 2B DC 90<br>44 18 AF 2E</i><small>' + esc(L('ph.cipher_verified')) + '</small></div>',
+      '</b><i>71 2B DC 90<br>44 18 AF 2E</i><small>' + esc(L('ph.cipher_verified')) + '</small></div>',
     ];
     return '<div class="stshot cipherstore">' +
       '<div class="stshotbar"><span>9:41</span><i></i><i></i></div>' +
@@ -4159,10 +4224,10 @@ function storePreview(a, index) {
     '<div class="stshotbar"><span>9:41</span><i></i><i></i></div>' +
     '<div class="stshotapp">' + UI.appIcon(a.icon) + '<b>' + name + '</b></div>' +
     '<div class="stmockhero"><span></span><strong>' + name + '</strong><small>' +
-      esc(L('ph.store_preview_' + (index + 1))) + '</small></div>' +
+    esc(L('ph.store_preview_' + (index + 1))) + '</small></div>' +
     '<div class="stmockrows"><i></i><i></i><i></i></div>' +
     '<div class="stmockdock"><i></i><i></i><i></i></div>' +
-  '</div>';
+    '</div>';
 }
 
 function storeDetail(a) {
@@ -4178,49 +4243,49 @@ function storeDetail(a) {
   const detailStyle = a.accent ? ' style="--app-tint:' + esc(a.accent) + '"' : '';
   body(
     '<div class="stdetail"' + detailStyle + '><div class="stdetailhero"><div class="storb"></div><div class="sthead">' + UI.appIcon(a.icon) +
-      '<div class="stinfo"><div class="stbig">' + esc(L(a.label)) + '</div>' +
-      '<div class="stcat">' + esc(a.developer || (a.owner === 'v-phone' ? 'iFruit Studio' : (a.owner || 'iFruit'))) + '</div>' +
-      '<div class="stact">' +
-        (a.required
-          ? '<span class="stget have">' + esc(L('ph.store_required')) + '</span>'
-          : (has
-              ? '<button class="stget have" id="stopen" type="button">' + esc(L('ph.store_open')) + '</button>' +
-                '<button class="stdel" id="stdel" type="button">' + esc(L('ph.store_delete')) + '</button>'
-              : '<button class="stget" id="stget" type="button">' + esc(L('ph.store_install')) + '</button>')) +
-      '</div></div></div></div>' +
+    '<div class="stinfo"><div class="stbig">' + esc(L(a.label)) + '</div>' +
+    '<div class="stcat">' + esc(a.developer || (a.owner === 'v-phone' ? 'iFruit Studio' : (a.owner || 'iFruit'))) + '</div>' +
+    '<div class="stact">' +
+    (a.required
+      ? '<span class="stget have">' + esc(L('ph.store_required')) + '</span>'
+      : (has
+        ? '<button class="stget have" id="stopen" type="button">' + esc(L('ph.store_open')) + '</button>' +
+        '<button class="stdel" id="stdel" type="button">' + esc(L('ph.store_delete')) + '</button>'
+        : '<button class="stget" id="stget" type="button">' + esc(L('ph.store_install')) + '</button>')) +
+    '</div></div></div></div>' +
     '<div class="stmeta">' +
-      '<div><div class="mv">' + facts.rating + ' ★</div><div class="mk">' +
-        esc(Number(facts.reviews).toLocaleString()) + ' ' + esc(L('ph.store_ratings')) + '</div></div>' +
-      '<div><div class="mv">' + facts.age + '</div><div class="mk">' + esc(L('ph.store_age')) + '</div></div>' +
-      '<div><div class="mv">' + facts.size + '</div><div class="mk">' + esc(L('ph.store_size')) + '</div></div>' +
+    '<div><div class="mv">' + facts.rating + ' ★</div><div class="mk">' +
+    esc(Number(facts.reviews).toLocaleString()) + ' ' + esc(L('ph.store_ratings')) + '</div></div>' +
+    '<div><div class="mv">' + facts.age + '</div><div class="mk">' + esc(L('ph.store_age')) + '</div></div>' +
+    '<div><div class="mv">' + facts.size + '</div><div class="mk">' + esc(L('ph.store_size')) + '</div></div>' +
     '</div>' +
     '<div class="stscreens" aria-label="' + esc(L('ph.store_previews')) + '">' +
-      [0, 1, 2].map((index) => storePreview(a, index)).join('') + '</div>' +
+    [0, 1, 2].map((index) => storePreview(a, index)).join('') + '</div>' +
     '<div class="grouphead">' + esc(L('ph.about')) + '</div>' +
     '<div class="storedesc">' + esc(descOf(a)) + '</div>' +
     (features.length
       ? '<div class="grouphead">' + esc(L('ph.store_features')) + '</div>' +
-        '<div class="stfeatures">' + features.map((feature) =>
-          '<span>' + svg('check') + esc(feature) + '</span>').join('') + '</div>'
+      '<div class="stfeatures">' + features.map((feature) =>
+        '<span>' + svg('check') + esc(feature) + '</span>').join('') + '</div>'
       : '') +
     '<div class="stsectioncard"><div><span class="stcardicon">' + svg('sparkles') + '</span>' +
-      '<span><b>' + esc(L('ph.store_whats_new')) + '</b><small>' +
-        esc(L('ph.store_whats_new_body')) + '</small></span></div><em>v' + esc(facts.version) + '</em></div>' +
+    '<span><b>' + esc(L('ph.store_whats_new')) + '</b><small>' +
+    esc(L('ph.store_whats_new_body')) + '</small></span></div><em>v' + esc(facts.version) + '</em></div>' +
     '<div class="stprivacy"><div class="stprivacyicon">' + svg('lockshut') + '</div>' +
-      '<div><b>' + esc(L('ph.store_privacy')) + '</b><span>' +
-        esc(a.id === 'cipher' ? L('ph.cipher_server_blind') : L('ph.store_privacy_body')) +
-        '</span></div>' + svg('chevron') + '</div>' +
+    '<div><b>' + esc(L('ph.store_privacy')) + '</b><span>' +
+    esc(a.id === 'cipher' ? L('ph.cipher_server_blind') : L('ph.store_privacy_body')) +
+    '</span></div>' + svg('chevron') + '</div>' +
     (permissions.length
       ? '<div class="grouphead">' + esc(L('ph.store_permissions')) + '</div>' +
-        '<div class="stpermissions">' + permissions.map((permission) =>
-          UI.chip(storePermissionLabel(permission), 'permission')).join('') + '</div>'
+      '<div class="stpermissions">' + permissions.map((permission) =>
+        UI.chip(storePermissionLabel(permission), 'permission')).join('') + '</div>'
       : '') +
     '<div class="grouphead">' + esc(L('ph.store_information')) + '</div>' +
     '<div class="group stinfoRows">' +
-      UI.row({ title: L('ph.store_dev'), value: a.developer || (a.owner === 'v-phone' ? 'iFruit Studio' : (a.owner || 'iFruit')) }) +
-      UI.row({ title: L('ph.store_cat'), value: L('ph.cat_' + (a.category || 'utilities')) }) +
-      UI.row({ title: L('ph.store_version'), value: facts.version }) +
-      UI.row({ title: L('ph.store_compatibility'), value: L('ph.store_phone_ready') }) +
+    UI.row({ title: L('ph.store_dev'), value: a.developer || (a.owner === 'v-phone' ? 'iFruit Studio' : (a.owner || 'iFruit')) }) +
+    UI.row({ title: L('ph.store_cat'), value: L('ph.cat_' + (a.category || 'utilities')) }) +
+    UI.row({ title: L('ph.store_version'), value: facts.version }) +
+    UI.row({ title: L('ph.store_compatibility'), value: L('ph.store_phone_ready') }) +
     '</div></div>'
   );
   pushAnim();
@@ -4244,7 +4309,7 @@ function isInstalled(id) { return (state.apps || []).some((x) => x.id === id); }
 // Only the categories that actually have an app in them, in a fixed order so the store
 // does not reshuffle itself every time somebody installs something.
 const CAT_ORDER = ['social', 'finance', 'utilities', 'travel', 'work', 'duty',
-                   'entertainment', 'health', 'essentials'];
+  'entertainment', 'health', 'essentials'];
 
 function storeCats(all) {
   const present = new Set(all.map((a) => a.category || 'utilities'));
@@ -4287,7 +4352,7 @@ function storeRow(a) {
     '<div class="stmid"><div class="stt">' + esc(L(a.label)) + '</div>' +
     '<div class="stc">' + esc(L('ph.cat_' + (a.category || 'utilities'))) + '</div></div>' +
     '<button class="stget ' + (has || a.required ? 'have' : '') + '" data-act="' +
-      (a.required ? 'none' : (has ? 'open' : 'get')) + '" type="button">' + esc(label) + '</button></div>';
+    (a.required ? 'none' : (has ? 'open' : 'get')) + '" type="button">' + esc(label) + '</button></div>';
 }
 
 RENDER.store = () => {
@@ -4308,9 +4373,9 @@ RENDER.store = () => {
   body(
     searchHtml(L('ph.store_search')) +
     '<div class="seg scroll">' +
-      '<button class="' + (storeCat === 'all' ? 'on' : '') + '" data-c="all">' + esc(L('ph.all')) + '</button>' +
-      cats.map((c) => '<button class="' + (storeCat === c ? 'on' : '') + '" data-c="' + esc(c) + '">' +
-        esc(L('ph.cat_' + c)) + '</button>').join('') +
+    '<button class="' + (storeCat === 'all' ? 'on' : '') + '" data-c="all">' + esc(L('ph.all')) + '</button>' +
+    cats.map((c) => '<button class="' + (storeCat === c ? 'on' : '') + '" data-c="' + esc(c) + '">' +
+      esc(L('ph.cat_' + c)) + '</button>').join('') +
     '</div><div id="stbody"></div>'
   );
 
@@ -4346,8 +4411,8 @@ RENDER.store = () => {
     // leave it in the window still offering something you now own. If there is nothing
     // left to get, the window goes away rather than advertising your own apps back at you.
     const feat = all.find((a) => a.optional && !isInstalled(a.id))
-              || all.find((a) => !a.required && !isInstalled(a.id))
-              || null;
+      || all.find((a) => !a.required && !isInstalled(a.id))
+      || null;
     if (!q && storeCat === 'all' && feat) {
       html += '<div class="stfeat" data-app="' + esc(feat.id) + '">' +
         '<div class="stkick">' + esc(L('ph.store_featured')) + '</div>' +
@@ -4412,14 +4477,14 @@ RENDER.health = async () => {
   if (d.sick > 0) rows.push(UI.row({ icon: 'heart', tint: '#FF3B30', title: L('ph.illness'), value: String(d.sick), tone: 'neg' }));
   body(
     '<div class="rings">' +
-      ringHtml(L('ph.vitality'), d.health, 100, '#ff453a') +
-      ringHtml(L('ph.armour'), d.armour, 100, '#0a84ff') +
-      ringHtml(L('ph.hunger'), d.hunger, 100, '#ff9f0a') +
-      ringHtml(L('ph.thirst'), d.thirst, 100, '#64d2ff') +
+    ringHtml(L('ph.vitality'), d.health, 100, '#ff453a') +
+    ringHtml(L('ph.armour'), d.armour, 100, '#0a84ff') +
+    ringHtml(L('ph.hunger'), d.hunger, 100, '#ff9f0a') +
+    ringHtml(L('ph.thirst'), d.thirst, 100, '#64d2ff') +
     '</div>' +
     ringHtml(L('ph.stress'), d.stress, 100, '#bf5af2').replace('class="ring"', 'class="ring" style="margin-bottom:20px"') +
     (rows.length ? UI.group(rows, { header: L('ph.attention') })
-                 : UI.group([UI.row({ icon: 'heart', tint: '#FF3B30', title: L('ph.all_well') })]))
+      : UI.group([UI.row({ icon: 'heart', tint: '#FF3B30', title: L('ph.all_well') })]))
   );
 };
 
@@ -4441,17 +4506,19 @@ function saveReminders() {
 }
 
 RENDER.reminders = async () => {
-  setNav(L('app.reminders'), null, { icon: 'add', onClick: () => {
-    sheet(L('ph.new_reminder'), UI.field('rtext', L('ph.reminder_ph')) + UI.button(L('ph.save'), 'rsave'),
-      () => byId('rsave').addEventListener('click', async () => {
-        const v = byId('rtext').value.trim();
-        if (!v) return;
-        const epoch = sheetEpoch;
-        reminders.unshift({ t: v, done: false });
-        await saveReminders();
-        if (closeSheet(false, epoch)) RENDER.reminders();
-      }));
-  } });
+  setNav(L('app.reminders'), null, {
+    icon: 'add', onClick: () => {
+      sheet(L('ph.new_reminder'), UI.field('rtext', L('ph.reminder_ph')) + UI.button(L('ph.save'), 'rsave'),
+        () => byId('rsave').addEventListener('click', async () => {
+          const v = byId('rtext').value.trim();
+          if (!v) return;
+          const epoch = sheetEpoch;
+          reminders.unshift({ t: v, done: false });
+          await saveReminders();
+          if (closeSheet(false, epoch)) RENDER.reminders();
+        }));
+    }
+  });
   await loadReminders();
   if (!reminders.length) { body(UI.empty(L('ph.no_reminders'), 'check')); return; }
   const open = reminders.filter((r) => !r.done);
@@ -4538,34 +4605,34 @@ RENDER.camera = async () => {
 
   body(
     '<div class="camui">' +
-      '<div class="camtop">' +
-        '<button class="camchip back" id="camback" type="button" aria-label="' + esc(L('ph.back')) + '">' +
-          svg('chevron') + '</button>' +
-        '<button class="camchip ' + (landscape ? 'on' : '') +
-          '" id="camland" type="button" aria-label="' + esc(L('ph.landscape')) + '">' +
-          svg('landscape') + '</button>' +
-      '</div>' +
-      '<div class="camview">' +
-        '<span class="cammark tl"></span><span class="cammark tr"></span>' +
-        '<span class="cammark bl"></span><span class="cammark br"></span>' +
-        '<div class="camgrid"></div>' +
-        '<div class="camhint">' + esc(L('ph.vf_hint')) + '</div>' +
-      '</div>' +
-      // Photo, and - when the server has video hosting on - a Video mode toggle.
-      '<div class="cammode">' +
-        '<span class="' + (camMode === 'photo' ? 'on' : '') + '" data-mode="photo">' + esc(L('ph.cam_photo')) + '</span>' +
-        (state.mediaVideo ? '<span class="' + (camMode === 'video' ? 'on' : '') + '" data-mode="video">' +
-          esc(L('ph.cam_video')) + '</span>' : '') +
-      '</div>' +
-      '<div class="camctl">' +
-        (last ? '<button class="camroll" id="camroll" type="button" style="' + photoStyle(last) + '"></button>'
-              : '<span class="camroll empty"></span>') +
-        '<button class="camshutter' + (camMode === 'video' ? ' video' : '') + '" id="shoot" type="button" aria-label="' +
-          esc(L('ph.shooting')) + '"><span></span></button>' +
-        '<button class="camflip' + (camFront ? ' on' : '') + '" id="camselfie" type="button" aria-label="' +
-          esc(L('ph.cam_selfie')) + '">' + svg('camrotate') + '</button>' +
-      '</div>' +
-      '<div class="camrec hidden" id="camrec"><span class="camrecdot"></span><span id="camrectime">0</span>s</div>' +
+    '<div class="camtop">' +
+    '<button class="camchip back" id="camback" type="button" aria-label="' + esc(L('ph.back')) + '">' +
+    svg('chevron') + '</button>' +
+    '<button class="camchip ' + (landscape ? 'on' : '') +
+    '" id="camland" type="button" aria-label="' + esc(L('ph.landscape')) + '">' +
+    svg('landscape') + '</button>' +
+    '</div>' +
+    '<div class="camview">' +
+    '<span class="cammark tl"></span><span class="cammark tr"></span>' +
+    '<span class="cammark bl"></span><span class="cammark br"></span>' +
+    '<div class="camgrid"></div>' +
+    '<div class="camhint">' + esc(L('ph.vf_hint')) + '</div>' +
+    '</div>' +
+    // Photo, and - when the server has video hosting on - a Video mode toggle.
+    '<div class="cammode">' +
+    '<span class="' + (camMode === 'photo' ? 'on' : '') + '" data-mode="photo">' + esc(L('ph.cam_photo')) + '</span>' +
+    (state.mediaVideo ? '<span class="' + (camMode === 'video' ? 'on' : '') + '" data-mode="video">' +
+      esc(L('ph.cam_video')) + '</span>' : '') +
+    '</div>' +
+    '<div class="camctl">' +
+    (last ? '<button class="camroll" id="camroll" type="button" style="' + photoStyle(last) + '"></button>'
+      : '<span class="camroll empty"></span>') +
+    '<button class="camshutter' + (camMode === 'video' ? ' video' : '') + '" id="shoot" type="button" aria-label="' +
+    esc(L('ph.shooting')) + '"><span></span></button>' +
+    '<button class="camflip' + (camFront ? ' on' : '') + '" id="camselfie" type="button" aria-label="' +
+    esc(L('ph.cam_selfie')) + '">' + svg('camrotate') + '</button>' +
+    '</div>' +
+    '<div class="camrec hidden" id="camrec"><span class="camrecdot"></span><span id="camrectime">0</span>s</div>' +
     '</div>'
   );
 
@@ -4619,7 +4686,7 @@ RENDER.gallery = async () => {
 
   body(strip + (shown.length
     ? '<div class="shots">' + shown.map((x) =>
-        '<div class="shot" data-i="' + x.i + '" style="' + photoStyle(x.v) + '"></div>').join('') + '</div>'
+      '<div class="shot" data-i="' + x.i + '" style="' + photoStyle(x.v) + '"></div>').join('') + '</div>'
     : UI.empty(L('ph.album_empty'), 'images')));
 
   qrows('galbums', 'button', (b) => b.addEventListener('click', () => {
@@ -4967,21 +5034,21 @@ function cipherWelcome() {
   foot('');
   body(
     '<section class="cipherwelcome">' +
-      '<div class="ciphermark">' + UI.appIcon('cipher') + '<i></i></div>' +
-      '<div class="cipherkicker">' + esc(L('ph.cipher_private_network')) + '</div>' +
-      '<h1>' + esc(L('ph.cipher_welcome')) + '</h1>' +
-      '<p>' + esc(L('ph.cipher_welcome_hint')) + '</p>' +
-      '<div class="cipherproof"><span>' + svg('lockshut') + '</span><div><b>' +
-        esc(L('ph.cipher_e2e')) + '</b><small>' + esc(L('ph.cipher_e2e_hint')) +
-      '</small></div></div>' +
+    '<div class="ciphermark">' + UI.appIcon('cipher') + '<i></i></div>' +
+    '<div class="cipherkicker">' + esc(L('ph.cipher_private_network')) + '</div>' +
+    '<h1>' + esc(L('ph.cipher_welcome')) + '</h1>' +
+    '<p>' + esc(L('ph.cipher_welcome_hint')) + '</p>' +
+    '<div class="cipherproof"><span>' + svg('lockshut') + '</span><div><b>' +
+    esc(L('ph.cipher_e2e')) + '</b><small>' + esc(L('ph.cipher_e2e_hint')) +
+    '</small></div></div>' +
     '</section>' +
     '<div class="cipherform">' +
-      UI.field('cipherhandle', L('ph.cipher_handle'), '', 'maxlength="20" autocapitalize="none" spellcheck="false"') +
-      UI.field('ciphername', L('ph.cipher_codename'), '', 'maxlength="32"') +
-      UI.field('cipherpin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric" autocomplete="new-password"') +
-      UI.field('cipherpin2', L('ph.cipher_pin_confirm'), '', 'type="password" maxlength="6" inputmode="numeric" autocomplete="new-password"') +
-      UI.button(L('ph.cipher_create'), 'ciphercreate') +
-      '<div class="cipherfine">' + esc(L('ph.cipher_pin_hint')) + '</div>' +
+    UI.field('cipherhandle', L('ph.cipher_handle'), '', 'maxlength="20" autocapitalize="none" spellcheck="false"') +
+    UI.field('ciphername', L('ph.cipher_codename'), '', 'maxlength="32"') +
+    UI.field('cipherpin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric" autocomplete="new-password"') +
+    UI.field('cipherpin2', L('ph.cipher_pin_confirm'), '', 'type="password" maxlength="6" inputmode="numeric" autocomplete="new-password"') +
+    UI.button(L('ph.cipher_create'), 'ciphercreate') +
+    '<div class="cipherfine">' + esc(L('ph.cipher_pin_hint')) + '</div>' +
     '</div>'
   );
   byId('ciphercreate').addEventListener('click', async () => {
@@ -5038,20 +5105,20 @@ function cipherLockScreen(profile) {
   const hasVault = !!storedVault && storedVault.handle === profile.handle;
   body(
     '<section class="cipherunlock">' +
-      '<div class="cipherring"><span>' + svg('lockshut') + '</span><i></i></div>' +
-      '<div class="cipherkicker">@' + esc(profile.handle) + '</div>' +
-      '<h1>' + esc(L('ph.cipher_locked')) + '</h1>' +
-      '<p>' + esc(hasVault ? L('ph.cipher_unlock_hint') : L('ph.cipher_key_missing')) + '</p>' +
+    '<div class="cipherring"><span>' + svg('lockshut') + '</span><i></i></div>' +
+    '<div class="cipherkicker">@' + esc(profile.handle) + '</div>' +
+    '<h1>' + esc(L('ph.cipher_locked')) + '</h1>' +
+    '<p>' + esc(hasVault ? L('ph.cipher_unlock_hint') : L('ph.cipher_key_missing')) + '</p>' +
     '</section>' +
     (hasVault
       ? '<div class="cipherform">' +
-          UI.field('cipherunlockpin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric" autocomplete="current-password"') +
-          UI.button(L('ph.cipher_unlock'), 'cipherunlock') +
-          '<button class="cipherlink" id="cipherrecover" type="button">' +
-            esc(L('ph.cipher_recover')) + '</button></div>'
+      UI.field('cipherunlockpin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric" autocomplete="current-password"') +
+      UI.button(L('ph.cipher_unlock'), 'cipherunlock') +
+      '<button class="cipherlink" id="cipherrecover" type="button">' +
+      esc(L('ph.cipher_recover')) + '</button></div>'
       : '<div class="cipherform">' +
-          UI.button(L('ph.cipher_recover'), 'cipherrecover', 'tinted') +
-          '<div class="cipherfine">' + esc(L('ph.cipher_recover_hint')) + '</div></div>')
+      UI.button(L('ph.cipher_recover'), 'cipherrecover', 'tinted') +
+      '<div class="cipherfine">' + esc(L('ph.cipher_recover_hint')) + '</div></div>')
   );
   const unlock = byId('cipherunlock');
   if (unlock) {
@@ -5086,12 +5153,12 @@ function cipherRecovery(profile) {
   foot('');
   body(
     '<section class="cipherdangerintro">' +
-      '<span>' + svg('shield') + '</span><h1>' + esc(L('ph.cipher_new_key')) + '</h1>' +
-      '<p>' + esc(L('ph.cipher_new_key_hint')) + '</p>' +
+    '<span>' + svg('shield') + '</span><h1>' + esc(L('ph.cipher_new_key')) + '</h1>' +
+    '<p>' + esc(L('ph.cipher_new_key_hint')) + '</p>' +
     '</section>' +
     '<div class="cipherform">' +
-      UI.field('cipherrotatepin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric"') +
-      UI.button(L('ph.cipher_replace_key'), 'cipherrotate', 'destructive') +
+    UI.field('cipherrotatepin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric"') +
+    UI.button(L('ph.cipher_replace_key'), 'cipherrotate', 'destructive') +
     '</div>'
   );
   byId('cipherrotate').addEventListener('click', async () => {
@@ -5135,11 +5202,11 @@ function cipherConversationRow(conversation, preview) {
   return '<button class="cipherrow" data-handle="' + esc(peer.handle) + '" type="button">' +
     '<span class="cipheravatar">' + cipherInitial(peer) + '<i></i></span>' +
     '<span class="cipherrowmain"><span><b>' + esc(peer.displayName || peer.handle) + '</b>' +
-      '<time>' + esc(cipherTime(conversation.at)) + '</time></span>' +
-      '<small>' + svg('lockshut') + esc(preview) + '</small></span>' +
+    '<time>' + esc(cipherTime(conversation.at)) + '</time></span>' +
+    '<small>' + svg('lockshut') + esc(preview) + '</small></span>' +
     (Number(conversation.unread) > 0
       ? '<span class="cipherbadge">' + Math.min(99, Number(conversation.unread)) + '</span>' : '') +
-  '</button>';
+    '</button>';
 }
 
 async function cipherMain() {
@@ -5159,23 +5226,23 @@ async function cipherMain() {
   if (!cipherActive() || epoch !== viewEpoch) return;
   body(
     '<section class="cipherhomehero">' +
-      '<div class="cipherorb"><span>' + svg('cipher') + '</span><i></i></div>' +
-      '<div><div class="cipheronline"><i></i>' + esc(L('ph.cipher_network_live')) + '</div>' +
-        '<h1>' + esc(cipherProfile.displayName || cipherProfile.handle) + '</h1>' +
-        '<small>@' + esc(cipherProfile.handle) + '</small></div>' +
-      '<button id="ciphersettings" type="button" aria-label="' + esc(L('ph.cipher_security')) + '">' +
-        svg('settings') + '</button>' +
+    '<div class="cipherorb"><span>' + svg('cipher') + '</span><i></i></div>' +
+    '<div><div class="cipheronline"><i></i>' + esc(L('ph.cipher_network_live')) + '</div>' +
+    '<h1>' + esc(cipherProfile.displayName || cipherProfile.handle) + '</h1>' +
+    '<small>@' + esc(cipherProfile.handle) + '</small></div>' +
+    '<button id="ciphersettings" type="button" aria-label="' + esc(L('ph.cipher_security')) + '">' +
+    svg('settings') + '</button>' +
     '</section>' +
     '<div class="cipherseal">' + svg('lockshut') + '<span><b>' + esc(L('ph.cipher_e2e')) +
-      '</b><small>' + esc(L('ph.cipher_server_blind')) + '</small></span><i>' +
-      esc(L('ph.cipher_active')) + '</i></div>' +
+    '</b><small>' + esc(L('ph.cipher_server_blind')) + '</small></span><i>' +
+    esc(L('ph.cipher_active')) + '</i></div>' +
     (conversations.length
       ? '<div class="ciphersectiontitle">' + esc(L('ph.cipher_chats')) + '</div>' +
-        '<div class="cipherlist">' + conversations.map((conversation, index) =>
-          cipherConversationRow(conversation, previews[index])).join('') + '</div>'
+      '<div class="cipherlist">' + conversations.map((conversation, index) =>
+        cipherConversationRow(conversation, previews[index])).join('') + '</div>'
       : '<div class="cipherempty">' + svg('cipher') + '<h2>' + esc(L('ph.cipher_no_chats')) +
-        '</h2><p>' + esc(L('ph.cipher_no_chats_hint')) + '</p>' +
-        '<button id="cipherfirst" type="button">' + esc(L('ph.cipher_start')) + '</button></div>')
+      '</h2><p>' + esc(L('ph.cipher_no_chats_hint')) + '</p>' +
+      '<button id="cipherfirst" type="button">' + esc(L('ph.cipher_start')) + '</button></div>')
   );
   byId('ciphersettings').addEventListener('click', cipherSettings);
   const first = byId('cipherfirst');
@@ -5189,9 +5256,9 @@ async function cipherMain() {
 function cipherNewChat() {
   sheet(L('ph.cipher_new_chat'),
     '<div class="ciphersearchhead"><span>' + svg('search') + '</span>' +
-      UI.field('cipherquery', L('ph.cipher_find_handle'), '', 'maxlength="20" autocapitalize="none" spellcheck="false"') +
+    UI.field('cipherquery', L('ph.cipher_find_handle'), '', 'maxlength="20" autocapitalize="none" spellcheck="false"') +
     '</div><div class="cipherresults" id="cipherresults">' +
-      '<div class="ciphersearchhint">' + esc(L('ph.cipher_find_hint')) + '</div></div>',
+    '<div class="ciphersearchhint">' + esc(L('ph.cipher_find_hint')) + '</div></div>',
     () => {
       let timer = 0;
       const input = byId('cipherquery');
@@ -5207,9 +5274,9 @@ function cipherNewChat() {
         const list = result.results || [];
         byId('cipherresults').innerHTML = list.length
           ? list.map((peer) => '<button class="cipherresult" data-handle="' + esc(peer.handle) +
-              '" type="button"><span>' + cipherInitial(peer) + '</span><div><b>' +
-              esc(peer.displayName || peer.handle) + '</b><small>@' + esc(peer.handle) +
-              '</small></div>' + svg('chevron') + '</button>').join('')
+            '" type="button"><span>' + cipherInitial(peer) + '</span><div><b>' +
+            esc(peer.displayName || peer.handle) + '</b><small>@' + esc(peer.handle) +
+            '</small></div>' + svg('chevron') + '</button>').join('')
           : '<div class="ciphersearchhint">' + esc(L('ph.cipher_no_user')) + '</div>';
         [...byId('cipherresults').querySelectorAll('.cipherresult')].forEach((button) =>
           button.addEventListener('click', () => {
@@ -5230,9 +5297,9 @@ function cipherNewChat() {
 function cipherMessageHtml(message) {
   return '<button class="cipherbubble ' + (message.mine ? 'mine' : 'theirs') +
     '" data-id="' + esc(message.id || '') + '" type="button"><span>' +
-      esc(message.text || L('ph.cipher_unreadable')) + '</span><small>' +
-      svg('lockshut') + esc(cipherTime(message.at)) +
-      (Number(message.burn) > 0 ? ' · ' + esc(cipherBurnLabel(message.burn)) : '') +
+    esc(message.text || L('ph.cipher_unreadable')) + '</span><small>' +
+    svg('lockshut') + esc(cipherTime(message.at)) +
+    (Number(message.burn) > 0 ? ' · ' + esc(cipherBurnLabel(message.burn)) : '') +
     '</small></button>';
 }
 
@@ -5262,21 +5329,21 @@ async function cipherOpenThread(peer) {
   if (!cipherActive() || epoch !== viewEpoch) return;
   body(
     '<div class="cipherhandshake"><span>' + svg('lockshut') + '</span><div><b>' +
-      esc(L('ph.cipher_secure_session')) + '</b><small>' +
-      esc(L('ph.cipher_secure_session_hint')) + '</small></div></div>' +
+    esc(L('ph.cipher_secure_session')) + '</b><small>' +
+    esc(L('ph.cipher_secure_session_hint')) + '</small></div></div>' +
     '<div class="cipherthread" id="cipherthread">' +
-      (messages.length
-        ? messages.map(cipherMessageHtml).join('')
-        : '<div class="cipherthreadempty">' + esc(L('ph.cipher_first_message')) + '</div>') +
+    (messages.length
+      ? messages.map(cipherMessageHtml).join('')
+      : '<div class="cipherthreadempty">' + esc(L('ph.cipher_first_message')) + '</div>') +
     '</div>'
   );
   foot(
     '<div class="ciphercompose">' +
-      '<button class="cipherburn ' + (cipherBurn ? 'on' : '') + '" id="cipherburn" type="button">' +
-        svg('timer') + '<span>' + esc(cipherBurnLabel(cipherBurn)) + '</span></button>' +
-      UI.field('ciphermessage', L('ph.cipher_write'), '', 'maxlength="700" autocomplete="off"') +
-      '<button class="ciphersend" id="ciphersend" type="button" aria-label="' +
-        esc(L('ph.send')) + '">' + svg('send') + '</button>' +
+    '<button class="cipherburn ' + (cipherBurn ? 'on' : '') + '" id="cipherburn" type="button">' +
+    svg('timer') + '<span>' + esc(cipherBurnLabel(cipherBurn)) + '</span></button>' +
+    UI.field('ciphermessage', L('ph.cipher_write'), '', 'maxlength="700" autocomplete="off"') +
+    '<button class="ciphersend" id="ciphersend" type="button" aria-label="' +
+    esc(L('ph.send')) + '">' + svg('send') + '</button>' +
     '</div>'
   );
   const threadHost = byId('cipherthread');
@@ -5321,7 +5388,7 @@ function wireCipherMessageInfo(peer) {
   rows('.cipherbubble', (bubble) => {
     bubble.onclick = () => sheet(L('ph.cipher_message_info'),
       '<div class="ciphermessageinfo"><span>' + svg('lockshut') + '</span><b>' +
-        esc(L('ph.cipher_encrypted')) + '</b><p>' + esc(L('ph.cipher_encrypted_hint')) +
+      esc(L('ph.cipher_encrypted')) + '</b><p>' + esc(L('ph.cipher_encrypted_hint')) +
       '</p></div>' +
       UI.group([
         UI.row({ title: L('ph.cipher_recipient'), value: '@' + peer.handle }),
@@ -5353,9 +5420,9 @@ function cipherBurnSheet(done) {
 function cipherPeerInfo(peer) {
   sheet(L('ph.cipher_verify'),
     '<div class="cipherverify">' +
-      '<div class="cipheravatar large">' + cipherInitial(peer) + '<i></i></div>' +
-      '<h2>' + esc(peer.displayName || peer.handle) + '</h2><small>@' + esc(peer.handle) + '</small>' +
-      '<div class="cipherverified">' + svg('check') + esc(L('ph.cipher_verified')) + '</div>' +
+    '<div class="cipheravatar large">' + cipherInitial(peer) + '<i></i></div>' +
+    '<h2>' + esc(peer.displayName || peer.handle) + '</h2><small>@' + esc(peer.handle) + '</small>' +
+    '<div class="cipherverified">' + svg('check') + esc(L('ph.cipher_verified')) + '</div>' +
     '</div>' +
     '<div class="grouphead">' + esc(L('ph.cipher_safety_number')) + '</div>' +
     '<div class="cipherfingerprint">' + esc(peer.fingerprint || '') + '</div>' +
@@ -5376,20 +5443,20 @@ function cipherPeerInfo(peer) {
 function cipherSettings() {
   sheet(L('ph.cipher_security'),
     '<div class="cipherprofile">' +
-      '<div class="cipheravatar large">' + cipherInitial(cipherProfile) + '<i></i></div>' +
-      '<h2>' + esc(cipherProfile.displayName || cipherProfile.handle) + '</h2>' +
-      '<small>@' + esc(cipherProfile.handle) + '</small></div>' +
+    '<div class="cipheravatar large">' + cipherInitial(cipherProfile) + '<i></i></div>' +
+    '<h2>' + esc(cipherProfile.displayName || cipherProfile.handle) + '</h2>' +
+    '<small>@' + esc(cipherProfile.handle) + '</small></div>' +
     UI.field('cipherdisplay', L('ph.cipher_codename'), cipherProfile.displayName || '', 'maxlength="32"') +
     UI.button(L('ph.save'), 'ciphersave', 'tinted') +
     '<div class="grouphead">' + esc(L('ph.cipher_your_fingerprint')) + '</div>' +
     '<div class="cipherfingerprint">' + esc(cipherProfile.fingerprint || '') + '</div>' +
     '<div class="ciphersecurityactions">' +
-      '<button id="cipherlock" type="button">' + svg('lockshut') + '<span><b>' +
-        esc(L('ph.cipher_lock_now')) + '</b><small>' + esc(L('ph.cipher_lock_now_hint')) +
-      '</small></span>' + svg('chevron') + '</button>' +
-      '<button class="danger" id="cipherdestroy" type="button">' + svg('trash') + '<span><b>' +
-        esc(L('ph.cipher_destroy')) + '</b><small>' + esc(L('ph.cipher_destroy_hint')) +
-      '</small></span>' + svg('chevron') + '</button>' +
+    '<button id="cipherlock" type="button">' + svg('lockshut') + '<span><b>' +
+    esc(L('ph.cipher_lock_now')) + '</b><small>' + esc(L('ph.cipher_lock_now_hint')) +
+    '</small></span>' + svg('chevron') + '</button>' +
+    '<button class="danger" id="cipherdestroy" type="button">' + svg('trash') + '<span><b>' +
+    esc(L('ph.cipher_destroy')) + '</b><small>' + esc(L('ph.cipher_destroy_hint')) +
+    '</small></span>' + svg('chevron') + '</button>' +
     '</div>',
     () => {
       byId('ciphersave').addEventListener('click', async () => {
@@ -5414,8 +5481,8 @@ function cipherDestroy() {
   const priorReturn = sheetReturn;
   sheet(L('ph.cipher_destroy'),
     '<div class="cipherdangerintro compact"><span>' + svg('trash') + '</span><h1>' +
-      esc(L('ph.cipher_destroy_confirm')) + '</h1><p>' +
-      esc(L('ph.cipher_destroy_confirm_hint')) + '</p></div>' +
+    esc(L('ph.cipher_destroy_confirm')) + '</h1><p>' +
+    esc(L('ph.cipher_destroy_confirm_hint')) + '</p></div>' +
     UI.field('cipherdestroypin', L('ph.cipher_pin'), '', 'type="password" maxlength="6" inputmode="numeric"') +
     UI.button(L('ph.cipher_destroy_action'), 'cipherdestroygo', 'destructive'),
     () => {
@@ -5574,8 +5641,10 @@ function socialSignup(app, then) {
     if (st.step === 1) {
       body(
         acctHead(app, L('ph.soc_join_sub')) + prog(1) +
-        UI.group([UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.soc_number'),
-          value: state.number || L('ph.soc_no_number') })]) +
+        UI.group([UI.row({
+          icon: 'phone', tint: '#34C759', title: L('ph.soc_number'),
+          value: state.number || L('ph.soc_no_number')
+        })]) +
         UI.button(L('ph.soc_sendcode'), 'sc1') +
         '<div class="groupfoot">' + esc(L('ph.soc_number_hint')) + '</div>'
       );
@@ -5619,9 +5688,11 @@ function socialSignup(app, then) {
       );
       byId('smake').addEventListener('click', async () => {
         if (byId('spw').value !== byId('spw2').value) { toast(L('ph.soc_pw_mismatch')); return; }
-        const r = await post('social', { op: 'register', app,
+        const r = await post('social', {
+          op: 'register', app,
           handle: byId('shandle').value.trim(), displayname: byId('sdisplay').value.trim(),
-          password: byId('spw').value, avatar: byId('savatar').value.trim(), bio: byId('sbio').value.trim() });
+          password: byId('spw').value, avatar: byId('savatar').value.trim(), bio: byId('sbio').value.trim()
+        });
         if (r && r.ok) socialAcc[app] = r.account;
         if (!socialActive(app, epoch)) return;
         if (r && r.ok) { toast(L('ph.soc_made')); then(); }
@@ -5681,31 +5752,31 @@ function postCard(pst, appId) {
   const photoFirst = appId === 'snap';
   const head =
     '<button class="phead" data-who="' + esc(pst.handle) + '" type="button">' +
-      socAvatar(pst) +
-      '<span class="pnames">' +
-        (pst.displayname ? '<span class="pdn">' + esc(pst.displayname) + socVerified(pst) + '</span>' : '') +
-        '<span class="ph">@' + esc(pst.handle) + '</span></span>' +
-      '<span class="pt">' + esc(socWhen(pst.at)) + '</span></button>';
+    socAvatar(pst) +
+    '<span class="pnames">' +
+    (pst.displayname ? '<span class="pdn">' + esc(pst.displayname) + socVerified(pst) + '</span>' : '') +
+    '<span class="ph">@' + esc(pst.handle) + '</span></span>' +
+    '<span class="pt">' + esc(socWhen(pst.at)) + '</span></button>';
 
   // A clip renders as a looping muted video; a photo as an image. Both fill the card.
   const image = !pst.image ? ''
     : (pst.kind === 'video'
-        ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
-        : '<img class="pimg" src="' + esc(pst.image) + '" alt="" />');
+      ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
+      : '<img class="pimg" src="' + esc(pst.image) + '" alt="" />');
   const text = pst.body ? '<div class="pbody">' + esc(pst.body) + '</div>' : '';
 
   const actions =
     '<div class="pfoot">' +
-      '<button class="pact plike' + (pst.liked ? ' on' : '') + '" type="button" aria-label="' +
-        esc(L('ph.like')) + '">' + svg('heart') + '<span>' + (pst.likes || 0) + '</span></button>' +
-      '<button class="pact pcomment" type="button" aria-label="' +
-        esc(L('ph.soc_comments')) + '">' + svg('messages') + '<span>' + (pst.comments || 0) + '</span></button>' +
-      '<button class="pact prepost' + (pst.reposted ? ' on' : '') + '" type="button" aria-label="' +
-        esc(L('ph.soc_repost')) + '">' + svg('repost') + '<span>' + (pst.reposts || 0) + '</span></button>' +
-      '<span class="pspacer"></span>' +
-      (pst.mine
-        ? '<button class="pact pdel" type="button" aria-label="' + esc(L('ph.delete')) + '">' + svg('trash') + '</button>'
-        : '') +
+    '<button class="pact plike' + (pst.liked ? ' on' : '') + '" type="button" aria-label="' +
+    esc(L('ph.like')) + '">' + svg('heart') + '<span>' + (pst.likes || 0) + '</span></button>' +
+    '<button class="pact pcomment" type="button" aria-label="' +
+    esc(L('ph.soc_comments')) + '">' + svg('messages') + '<span>' + (pst.comments || 0) + '</span></button>' +
+    '<button class="pact prepost' + (pst.reposted ? ' on' : '') + '" type="button" aria-label="' +
+    esc(L('ph.soc_repost')) + '">' + svg('repost') + '<span>' + (pst.reposts || 0) + '</span></button>' +
+    '<span class="pspacer"></span>' +
+    (pst.mine
+      ? '<button class="pact pdel" type="button" aria-label="' + esc(L('ph.delete')) + '">' + svg('trash') + '</button>'
+      : '') +
     '</div>';
 
   return '<article class="post' + (photoFirst ? ' snapstyle' : '') + '" data-id="' + pst.id + '">' +
@@ -5767,9 +5838,9 @@ function commentSheet(appId, id, counter) {
   sheet(L('ph.soc_comments'),
     '<div class="comlist" id="comlist">' + UI.empty(L('ph.loading')) + '</div>' +
     '<div class="comform">' +
-      '<input id="comtext" maxlength="280" placeholder="' + esc(L('ph.soc_comment_ph')) + '" />' +
-      '<button id="comemoji" type="button" aria-label="' + esc(L('ph.emoji')) + '">😊</button>' +
-      '<button id="comgo" type="button" aria-label="' + esc(L('ph.send')) + '">' + svg('send') + '</button>' +
+    '<input id="comtext" maxlength="280" placeholder="' + esc(L('ph.soc_comment_ph')) + '" />' +
+    '<button id="comemoji" type="button" aria-label="' + esc(L('ph.emoji')) + '">😊</button>' +
+    '<button id="comgo" type="button" aria-label="' + esc(L('ph.send')) + '">' + svg('send') + '</button>' +
     '</div>',
     () => {
       const epoch = sheetEpoch;
@@ -5779,11 +5850,11 @@ function commentSheet(appId, id, counter) {
         const list = (r && r.comments) || [];
         byId('comlist').innerHTML = list.length ? list.map((c) =>
           '<div class="com" data-id="' + c.id + '">' + socAvatar(c, 'comav') +
-            '<div class="combody"><span class="comwho">@' + esc(c.handle) + socVerified(c) +
-              '<span class="comt">' + esc(socWhen(c.at)) + '</span></span>' +
-            '<span class="comtext">' + esc(c.body) + '</span></div>' +
-            (c.mine ? '<button class="comdel" type="button" aria-label="' +
-              esc(L('ph.delete')) + '">' + svg('del') + '</button>' : '') +
+          '<div class="combody"><span class="comwho">@' + esc(c.handle) + socVerified(c) +
+          '<span class="comt">' + esc(socWhen(c.at)) + '</span></span>' +
+          '<span class="comtext">' + esc(c.body) + '</span></div>' +
+          (c.mine ? '<button class="comdel" type="button" aria-label="' +
+            esc(L('ph.delete')) + '">' + svg('del') + '</button>' : '') +
           '</div>').join('') : UI.empty(L('ph.soc_no_comments'));
         [...byId('comlist').querySelectorAll('.comdel')].forEach((b) =>
           b.addEventListener('click', async () => {
@@ -5815,9 +5886,9 @@ function commentSheet(appId, id, counter) {
 function socialTabs(appId, tabs) {
   foot('<nav class="soctabs">' + tabs.map((t) =>
     '<button class="soctab' + (SOC.tab[appId] === t.id ? ' on' : '') + '" data-tab="' + t.id +
-      '" type="button" aria-label="' + esc(t.label) + '" aria-pressed="' +
-      (SOC.tab[appId] === t.id ? 'true' : 'false') + '">' + svg(t.icon) +
-      (t.badge ? '<i class="socdot"></i>' : '') + '</button>').join('') + '</nav>');
+    '" type="button" aria-label="' + esc(t.label) + '" aria-pressed="' +
+    (SOC.tab[appId] === t.id ? 'true' : 'false') + '">' + svg(t.icon) +
+    (t.badge ? '<i class="socdot"></i>' : '') + '</button>').join('') + '</nav>');
   qrows('appfoot', '.soctab', (b) => b.addEventListener('click', () => {
     if (SOC.tab[appId] === b.dataset.tab) return;
     SOC.tab[appId] = b.dataset.tab;
@@ -5840,10 +5911,10 @@ async function socialFeed(appId) {
   const list = r.posts || [];
   const switcher =
     '<div class="socscope">' +
-      '<button data-scope="all" class="' + (scope === 'all' ? 'on' : '') + '" type="button">' +
-        esc(L('ph.soc_for_you')) + '</button>' +
-      '<button data-scope="following" class="' + (scope === 'following' ? 'on' : '') + '" type="button">' +
-        esc(L('ph.soc_following')) + '</button>' +
+    '<button data-scope="all" class="' + (scope === 'all' ? 'on' : '') + '" type="button">' +
+    esc(L('ph.soc_for_you')) + '</button>' +
+    '<button data-scope="following" class="' + (scope === 'following' ? 'on' : '') + '" type="button">' +
+    esc(L('ph.soc_following')) + '</button>' +
     '</div>';
 
   // Snapmatic opens on the ring of stories; Bleeter has no stories, it has a timeline.
@@ -5851,7 +5922,7 @@ async function socialFeed(appId) {
   body(switcher + stories + (list.length
     ? list.map((p) => postCard(p, appId)).join('')
     : UI.empty(L(scope === 'following' ? 'ph.soc_follow_none' : (appId === 'snap' ? 'ph.snap_none' : 'ph.bleet_none')),
-               APP_ICON[appId])));
+      APP_ICON[appId])));
 
   rows('.socscope button', (b) => b.addEventListener('click', () => {
     SOC.scope[appId] = b.dataset.scope;
@@ -5874,13 +5945,13 @@ async function drawStories(appId) {
 
   host.innerHTML =
     '<button class="storyadd" id="storyadd" type="button">' +
-      '<span class="storyring add">' + svg('add') + '</span>' +
-      '<span class="storyname">' + esc(L('ph.soc_your_story')) + '</span></button>' +
+    '<span class="storyring add">' + svg('add') + '</span>' +
+    '<span class="storyname">' + esc(L('ph.soc_your_story')) + '</span></button>' +
     groups.map((g, i) =>
       '<button class="storyone" data-i="' + i + '" type="button">' +
-        '<span class="storyring' + (g.unseen ? ' unseen' : '') + '">' +
-          socAvatar(g, 'storyav') + '</span>' +
-        '<span class="storyname">' + esc(g.mine ? L('ph.soc_you') : g.handle) + '</span></button>').join('');
+      '<span class="storyring' + (g.unseen ? ' unseen' : '') + '">' +
+      socAvatar(g, 'storyav') + '</span>' +
+      '<span class="storyname">' + esc(g.mine ? L('ph.soc_you') : g.handle) + '</span></button>').join('');
 
   byId('storyadd').addEventListener('click', () => pickPhoto(async (url) => {
     const r2 = await post('social', { op: 'story', image: url, app: appId });
@@ -5901,15 +5972,15 @@ function storyViewer(appId, group) {
     const item = group.items[index];
     host.innerHTML =
       '<div class="storyview">' +
-        '<div class="storybars">' + group.items.map((_, i) =>
-          '<i class="' + (i < index ? 'done' : (i === index ? 'now' : '')) + '"></i>').join('') + '</div>' +
-        '<div class="storyhead">' + socAvatar(group, 'storyav') +
-          '<span>@' + esc(group.handle) + '</span>' +
-          '<span class="storyt">' + esc(socWhen(item.at)) + '</span>' +
-          '<button class="storyclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
-            svg('xmark') + '</button></div>' +
-        '<div class="storyphoto" style="' + inlineBackground(item.image) + '"></div>' +
-        (item.body ? '<div class="storycap">' + esc(item.body) + '</div>' : '') +
+      '<div class="storybars">' + group.items.map((_, i) =>
+        '<i class="' + (i < index ? 'done' : (i === index ? 'now' : '')) + '"></i>').join('') + '</div>' +
+      '<div class="storyhead">' + socAvatar(group, 'storyav') +
+      '<span>@' + esc(group.handle) + '</span>' +
+      '<span class="storyt">' + esc(socWhen(item.at)) + '</span>' +
+      '<button class="storyclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
+      svg('xmark') + '</button></div>' +
+      '<div class="storyphoto" style="' + inlineBackground(item.image) + '"></div>' +
+      (item.body ? '<div class="storycap">' + esc(item.body) + '</div>' : '') +
       '</div>';
     post('social', { op: 'storySeen', id: item.id });
     host.querySelector('.storyclose').addEventListener('click', (e) => { e.stopPropagation(); close(); });
@@ -5936,13 +6007,13 @@ async function socialSearch(appId, query) {
   const list = (r && r.accounts) || [];
   host.innerHTML = list.length ? UI.group(list.map((a) =>
     '<button class="row lead socfind" data-who="' + esc(a.handle) + '" type="button">' +
-      socAvatar(a, 'socav') +
-      '<span class="rowtext"><span class="rowtitle">' +
-        esc(a.displayname || a.handle) + socVerified(a) + '</span>' +
-      '<span class="rowsub">@' + esc(a.handle) + ' · ' + a.followers + ' ' +
-        esc(L('ph.soc_followers')) + '</span></span>' +
-      (a.me ? '' : '<span class="socfollow' + (a.followed ? ' on' : '') + '" data-follow="' +
-        esc(a.handle) + '">' + esc(L(a.followed ? 'ph.soc_unfollow' : 'ph.soc_follow')) + '</span>') +
+    socAvatar(a, 'socav') +
+    '<span class="rowtext"><span class="rowtitle">' +
+    esc(a.displayname || a.handle) + socVerified(a) + '</span>' +
+    '<span class="rowsub">@' + esc(a.handle) + ' · ' + a.followers + ' ' +
+    esc(L('ph.soc_followers')) + '</span></span>' +
+    (a.me ? '' : '<span class="socfollow' + (a.followed ? ' on' : '') + '" data-follow="' +
+      esc(a.handle) + '">' + esc(L(a.followed ? 'ph.soc_unfollow' : 'ph.soc_follow')) + '</span>') +
     '</button>').join('')) : UI.empty(L('ph.soc_no_user'));
 
   [...host.querySelectorAll('.socfind')].forEach((b) => b.addEventListener('click', (e) => {
@@ -5956,7 +6027,7 @@ async function socialSearch(appId, query) {
 function socialSearchView(appId) {
   body(
     '<div class="socsearch">' + svg('search') +
-      '<input id="socq" autocomplete="off" placeholder="' + esc(L('ph.soc_search_ph')) + '" /></div>' +
+    '<input id="socq" autocomplete="off" placeholder="' + esc(L('ph.soc_search_ph')) + '" /></div>' +
     '<div id="socresults">' + UI.empty(L('ph.loading')) + '</div>'
   );
   let timer = null;
@@ -5996,26 +6067,26 @@ async function socialProfile(appId, handle) {
 
   body(
     '<div class="socprof">' + socAvatar(a, 'socbigav') +
-      '<div class="socname">' + esc(a.displayname || a.handle) + socVerified(a) + '</div>' +
-      '<div class="sochandle">@' + esc(a.handle) + '</div>' +
-      (a.bio ? '<div class="socbio">' + esc(a.bio) + '</div>' : '') +
-      '<div class="soccounts">' +
-        '<span><b>' + (c.posts || 0) + '</b>' + esc(L('ph.soc_posts')) + '</span>' +
-        '<span><b>' + (c.followers || 0) + '</b>' + esc(L('ph.soc_followers')) + '</span>' +
-        '<span><b>' + (c.following || 0) + '</b>' + esc(L('ph.soc_following_count')) + '</span>' +
-      '</div>' +
-      (r.me ? '<button class="socedit" id="socedit" type="button">' + esc(L('ph.soc_edit')) + '</button>'
-            : '<div class="socprofacts">' +
-                '<button class="socbig' + (r.followed ? ' on' : '') + '" id="socfollow" type="button">' +
-                  esc(L(r.followed ? 'ph.soc_unfollow' : 'ph.soc_follow')) + '</button>' +
-                '<button class="socbig plain" id="socdm" type="button">' +
-                  esc(L('ph.soc_message')) + '</button></div>') +
+    '<div class="socname">' + esc(a.displayname || a.handle) + socVerified(a) + '</div>' +
+    '<div class="sochandle">@' + esc(a.handle) + '</div>' +
+    (a.bio ? '<div class="socbio">' + esc(a.bio) + '</div>' : '') +
+    '<div class="soccounts">' +
+    '<span><b>' + (c.posts || 0) + '</b>' + esc(L('ph.soc_posts')) + '</span>' +
+    '<span><b>' + (c.followers || 0) + '</b>' + esc(L('ph.soc_followers')) + '</span>' +
+    '<span><b>' + (c.following || 0) + '</b>' + esc(L('ph.soc_following_count')) + '</span>' +
+    '</div>' +
+    (r.me ? '<button class="socedit" id="socedit" type="button">' + esc(L('ph.soc_edit')) + '</button>'
+      : '<div class="socprofacts">' +
+      '<button class="socbig' + (r.followed ? ' on' : '') + '" id="socfollow" type="button">' +
+      esc(L(r.followed ? 'ph.soc_unfollow' : 'ph.soc_follow')) + '</button>' +
+      '<button class="socbig plain" id="socdm" type="button">' +
+      esc(L('ph.soc_message')) + '</button></div>') +
     '</div>' +
     (posts.length
       ? (grid ? '<div class="socgrid">' + posts.map((p) =>
-            '<button class="socthumb" data-id="' + p.id + '" style="' +
-              inlineBackground(p.image) + '" type="button"></button>').join('') + '</div>'
-          : posts.map((p) => postCard(p, appId)).join(''))
+        '<button class="socthumb" data-id="' + p.id + '" style="' +
+        inlineBackground(p.image) + '" type="button"></button>').join('') + '</div>'
+        : posts.map((p) => postCard(p, appId)).join(''))
       : UI.empty(L('ph.soc_no_posts'), APP_ICON[appId]))
   );
   pushAnim();
@@ -6044,8 +6115,10 @@ function socialEdit(appId, account) {
     () => {
       const epoch = sheetEpoch;
       byId('socsave').addEventListener('click', async () => {
-        const r = await post('social', { op: 'setup', app: appId,
-          displayname: byId('socdn').value, avatar: byId('socav').value, bio: byId('socbio').value });
+        const r = await post('social', {
+          op: 'setup', app: appId,
+          displayname: byId('socdn').value, avatar: byId('socav').value, bio: byId('socbio').value
+        });
         if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
         if (!closeSheet(false, epoch)) return;
         socialAcc[appId] = r.account;
@@ -6064,10 +6137,10 @@ async function socialDmList(appId) {
   const threads = (r && r.threads) || [];
   body(threads.length ? UI.group(threads.map((t) =>
     '<button class="row lead socdmrow" data-who="' + esc(t.handle) + '" type="button">' +
-      socAvatar(t, 'socav') +
-      '<span class="rowtext"><span class="rowtitle">' + esc(t.displayname || t.handle) + '</span>' +
-      '<span class="rowsub">' + esc((t.mine ? L('ph.you') + ' ' : '') + (t.body || L('ph.photo'))) + '</span></span>' +
-      (t.unread ? '<span class="socunread">' + t.unread + '</span>' : '') +
+    socAvatar(t, 'socav') +
+    '<span class="rowtext"><span class="rowtitle">' + esc(t.displayname || t.handle) + '</span>' +
+    '<span class="rowsub">' + esc((t.mine ? L('ph.you') + ' ' : '') + (t.body || L('ph.photo'))) + '</span></span>' +
+    (t.unread ? '<span class="socunread">' + t.unread + '</span>' : '') +
     '</button>').join('')) : UI.empty(L('ph.soc_no_dm'), 'messages'));
   rows('.socdmrow', (b) => b.addEventListener('click', () => socialDmThread(appId, b.dataset.who)));
 }
@@ -6084,15 +6157,15 @@ async function socialDmThread(appId, handle) {
   setNav('@' + handle, L('app.' + appId), null, () => { SOC.tab[appId] = 'dm'; socialRender(appId); });
   const bubbles = (r.messages || []).map((m) =>
     '<div class="bub ' + (m.mine ? 'me' : 'them') + '">' +
-      (m.image ? '<img class="bubimg" src="' + esc(m.image) + '" alt="" />' : '') +
-      (m.body ? '<span>' + esc(m.body) + '</span>' : '') + '</div>').join('');
+    (m.image ? '<img class="bubimg" src="' + esc(m.image) + '" alt="" />' : '') +
+    (m.body ? '<span>' + esc(m.body) + '</span>' : '') + '</div>').join('');
   body('<div class="bubs" id="socbubs">' + (bubbles || UI.empty(L('ph.soc_dm_start'))) + '</div>');
   foot(
     '<div class="comform dmform">' +
-      '<input id="dmtext" maxlength="500" placeholder="' + esc(L('ph.message')) + '" />' +
-      '<button id="dmemoji" type="button" aria-label="' + esc(L('ph.emoji')) + '">😊</button>' +
-      '<button id="dmphoto" type="button" aria-label="' + esc(L('ph.pick_photo')) + '">' + svg('images') + '</button>' +
-      '<button id="dmgo" type="button" aria-label="' + esc(L('ph.send')) + '">' + svg('send') + '</button>' +
+    '<input id="dmtext" maxlength="500" placeholder="' + esc(L('ph.message')) + '" />' +
+    '<button id="dmemoji" type="button" aria-label="' + esc(L('ph.emoji')) + '">😊</button>' +
+    '<button id="dmphoto" type="button" aria-label="' + esc(L('ph.pick_photo')) + '">' + svg('images') + '</button>' +
+    '<button id="dmgo" type="button" aria-label="' + esc(L('ph.send')) + '">' + svg('send') + '</button>' +
     '</div>');
   byId('appbody').scrollTop = byId('appbody').scrollHeight;
 
@@ -6123,12 +6196,12 @@ function socialRender(appId) {
   foot('');
   const tabs = appId === 'hush'
     ? [{ id: 'swipe', icon: 'hush', label: L('app.hush') },
-       { id: 'matches', icon: 'heart', label: L('ph.hush_matches') },
-       { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }]
+    { id: 'matches', icon: 'heart', label: L('ph.hush_matches') },
+    { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }]
     : [{ id: 'feed', icon: 'home', label: L('ph.soc_feed') },
-       { id: 'search', icon: 'search', label: L('ph.soc_search') },
-       { id: 'dm', icon: 'messages', label: L('ph.soc_dm') },
-       { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }];
+    { id: 'search', icon: 'search', label: L('ph.soc_search') },
+    { id: 'dm', icon: 'messages', label: L('ph.soc_dm') },
+    { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }];
 
   const composer = appId === 'bleeter' ? bleetCompose : (appId === 'snap' ? snapCompose : null);
   const wantsAdd = composer && SOC.tab[appId] === 'feed';
@@ -6151,8 +6224,8 @@ function socialRender(appId) {
 function bleetCompose() {
   sheet(L('ph.bleet_new'),
     UI.field('btext', L('ph.bleet_ph'), '', 'maxlength="280"') +
-      UI.button('😊 ' + L('ph.emoji'), 'bemoji', 'plain') +
-      UI.button(L('ph.pick_photo'), 'bpick', 'plain') + UI.button(L('ph.bleet_send'), 'bgo'),
+    UI.button('😊 ' + L('ph.emoji'), 'bemoji', 'plain') +
+    UI.button(L('ph.pick_photo'), 'bpick', 'plain') + UI.button(L('ph.bleet_send'), 'bgo'),
     () => {
       byId('bemoji').addEventListener('click', () => emojiOpen('btext'));
       // A post can carry a photo straight off the phone rather than a pasted link.
@@ -6184,15 +6257,17 @@ function snapCompose() {
     '<div class="shots" style="margin-bottom:10px">' + shots.map((v, i) =>
       '<div class="shot" data-i="' + i + '" style="' + photoStyle(v) + '"></div>').join('') + '</div>' +
     UI.field('scap', L('ph.snap_caption'), '', 'maxlength="140"') +
-      UI.button('😊 ' + L('ph.emoji'), 'semoji', 'plain'),
+    UI.button('😊 ' + L('ph.emoji'), 'semoji', 'plain'),
     () => {
       byId('semoji').addEventListener('click', () => emojiOpen('scap'));
       [...byId('sheet').querySelectorAll('.shot')].forEach((el) =>
         el.addEventListener('click', async () => {
           const bodyText = byId('scap').value;
           const epoch = sheetEpoch;
-          const r = await post('social', { op: 'post', kind: 'photo',
-            image: photoRow(shots[Number(el.dataset.i)]).url, body: bodyText });
+          const r = await post('social', {
+            op: 'post', kind: 'photo',
+            image: photoRow(shots[Number(el.dataset.i)]).url, body: bodyText
+          });
           if (!closeSheet(false, epoch)) return;
           if (r && r.ok) { ui('sent'); socialRender('snap'); }
           else toast(L('ph.err_' + ((r && r.error) || 'x')));
@@ -6223,22 +6298,22 @@ async function hushSwipe() {
 
   body(
     '<div class="hushdeck">' +
-      '<div class="hushcard" id="hcard">' +
-        '<div class="hphoto"' + (pf.photo ? ' style="' + inlineBackground(pf.photo) + '"' : '') + '>' +
-          '<span class="hstamp yes">' + esc(L('ph.like')) + '</span>' +
-          '<span class="hstamp no">' + esc(L('ph.pass')) + '</span>' +
-          '<div class="hmeta">' +
-            '<div class="hname">' + esc(pf.name || '?') + (pf.age ? ', ' + pf.age : '') + '</div>' +
-            (pf.bio ? '<div class="hbio">' + esc(pf.bio) + '</div>' : '') +
-          '</div>' +
-        '</div>' +
-      '</div>' +
+    '<div class="hushcard" id="hcard">' +
+    '<div class="hphoto"' + (pf.photo ? ' style="' + inlineBackground(pf.photo) + '"' : '') + '>' +
+    '<span class="hstamp yes">' + esc(L('ph.like')) + '</span>' +
+    '<span class="hstamp no">' + esc(L('ph.pass')) + '</span>' +
+    '<div class="hmeta">' +
+    '<div class="hname">' + esc(pf.name || '?') + (pf.age ? ', ' + pf.age : '') + '</div>' +
+    (pf.bio ? '<div class="hbio">' + esc(pf.bio) + '</div>' : '') +
+    '</div>' +
+    '</div>' +
+    '</div>' +
     '</div>' +
     '<div class="hushrow">' +
-      '<button class="hushbtn no" id="hno" type="button" aria-label="' +
-        esc(L('ph.pass')) + '">' + svg('xmark') + '</button>' +
-      '<button class="hushbtn yes" id="hyes" type="button" aria-label="' +
-        esc(L('ph.like')) + '">' + svg('heart') + '</button>' +
+    '<button class="hushbtn no" id="hno" type="button" aria-label="' +
+    esc(L('ph.pass')) + '">' + svg('xmark') + '</button>' +
+    '<button class="hushbtn yes" id="hyes" type="button" aria-label="' +
+    esc(L('ph.like')) + '">' + svg('heart') + '</button>' +
     '</div>'
   );
   pushAnim();
@@ -6253,8 +6328,10 @@ async function hushSwipe() {
     if (c && c.error) { toast(L('ph.err_' + ((c && c.error) || 'x'))); return; }
     if (c && c.match) {
       ui('success');
-      banner({ app: 'hush', icon: 'hush', title: L('ph.hush_match'),
-               body: (c.name || '?') + (c.number ? '  ' + c.number : '') });
+      banner({
+        app: 'hush', icon: 'hush', title: L('ph.hush_match'),
+        body: (c.name || '?') + (c.number ? '  ' + c.number : '')
+      });
     }
     setTimeout(() => { if (socialActive('hush', epoch)) hushSwipe(); }, 240);
   };
@@ -6274,7 +6351,7 @@ function wireHushDrag(card, choose) {
   card.addEventListener('pointerdown', (e) => {
     start = { x: e.clientX, id: e.pointerId };
     card.classList.add('dragging');
-    if (card.setPointerCapture) { try { card.setPointerCapture(e.pointerId); } catch {} }
+    if (card.setPointerCapture) { try { card.setPointerCapture(e.pointerId); } catch { } }
   });
   card.addEventListener('pointermove', (e) => {
     if (!start || start.id !== e.pointerId) return;
@@ -6311,8 +6388,10 @@ function hushOnboard() {
   );
   byId('hpick').addEventListener('click', () => pickPhoto((url) => { byId('hphoto').value = url; }));
   byId('hgo').addEventListener('click', async () => {
-    const r = await post('social', { op: 'hushSetup',
-      bio: byId('hbio').value, photo: byId('hphoto').value, active: true });
+    const r = await post('social', {
+      op: 'hushSetup',
+      bio: byId('hbio').value, photo: byId('hphoto').value, active: true
+    });
     if (r && r.ok) { ui('success'); socialRender('hush'); }
     else toast(L('ph.err_' + ((r && r.error) || 'x')));
   });
@@ -6327,12 +6406,12 @@ async function hushMatches() {
   const list = r.matches || [];
   body(list.length ? UI.group(list.map((m, i) =>
     '<button class="row lead hushmatch" data-i="' + i + '" type="button">' +
-      (m.photo ? '<span class="socav" style="' + inlineBackground(m.photo) + '"></span>'
-               : '<span class="socav">' + esc(String(m.name || '?').slice(0, 1)) + '</span>') +
-      '<span class="rowtext"><span class="rowtitle">' +
-        esc(m.name || '?') + (m.age ? ', ' + m.age : '') + '</span>' +
-      '<span class="rowsub">' + esc(m.bio || m.number || '') + '</span></span>' +
-      svg('chevron') +
+    (m.photo ? '<span class="socav" style="' + inlineBackground(m.photo) + '"></span>'
+      : '<span class="socav">' + esc(String(m.name || '?').slice(0, 1)) + '</span>') +
+    '<span class="rowtext"><span class="rowtitle">' +
+    esc(m.name || '?') + (m.age ? ', ' + m.age : '') + '</span>' +
+    '<span class="rowsub">' + esc(m.bio || m.number || '') + '</span></span>' +
+    svg('chevron') +
     '</button>').join('')) : UI.empty(L('ph.hush_no_matches'), 'hush'));
 
   // A match is somebody you already swapped numbers with, so the useful thing to do
@@ -6368,15 +6447,17 @@ async function hushProfile() {
 
   body(
     '<div class="socprof">' +
-      (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
-                : '<span class="socbigav">' + svg('hush') + '</span>') +
-      '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
+    (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
+      : '<span class="socbigav">' + svg('hush') + '</span>') +
+    '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
     '</div>' +
     UI.field('hbio', L('ph.hush_bio'), pf.bio || '', 'maxlength="160"') +
     UI.field('hphoto', L('ph.hush_photo'), pf.photo || '', 'maxlength="300"') +
     UI.button(L('ph.pick_photo'), 'hpick', 'plain') +
-    UI.group(UI.row({ icon: 'hush', title: L('ph.hush_active'),
-                      toggle: pf.active !== false, data: { t: 'active' } })) +
+    UI.group(UI.row({
+      icon: 'hush', title: L('ph.hush_active'),
+      toggle: pf.active !== false, data: { t: 'active' }
+    })) +
     '<div class="groupfoot">' + esc(L('ph.hush_active_hint')) + '</div>' +
     UI.button(L('ph.save'), 'hsave')
   );
@@ -6391,8 +6472,10 @@ async function hushProfile() {
     ui(active ? 'toggleon' : 'toggleoff');
   }));
   byId('hsave').addEventListener('click', async () => {
-    const r = await post('social', { op: 'hushSetup',
-      bio: byId('hbio').value, photo: byId('hphoto').value, active });
+    const r = await post('social', {
+      op: 'hushSetup',
+      bio: byId('hbio').value, photo: byId('hphoto').value, active
+    });
     if (r && r.ok) { ui('success'); toast(L('ph.saved')); }
     else toast(L('ph.err_' + ((r && r.error) || 'x')));
   });
@@ -6427,19 +6510,19 @@ function note(freq, t, dur, gain, type) {
 // Each built-in is a short score: [frequency, start, length].
 const TONES = {
   classic: [[880, 0, .16], [1175, .18, .16], [880, .36, .16], [1175, .54, .26]],
-  chime:   [[1319, 0, .5], [1568, .12, .5], [2093, .24, .7]],
-  pulse:   [[440, 0, .1], [440, .14, .1], [440, .28, .1], [660, .42, .3]],
-  radar:   [[523, 0, .22], [659, .22, .22], [784, .44, .22], [1047, .66, .4]],
-  ping:    [[1568, 0, .18], [2093, .07, .22]],
-  pop:     [[880, 0, .09], [1320, .05, .12]],
-  tick:    [[1200, 0, .05]],
+  chime: [[1319, 0, .5], [1568, .12, .5], [2093, .24, .7]],
+  pulse: [[440, 0, .1], [440, .14, .1], [440, .28, .1], [660, .42, .3]],
+  radar: [[523, 0, .22], [659, .22, .22], [784, .44, .22], [1047, .66, .4]],
+  ping: [[1568, 0, .18], [2093, .07, .22]],
+  pop: [[880, 0, .09], [1320, .05, .12]],
+  tick: [[1200, 0, .05]],
 };
 
 let ringEl = null;      // the <audio> for a custom link, so it can be stopped
 let ringTimer = null;
 
 function stopTone() {
-  if (ringEl) { try { ringEl.pause(); } catch {} ringEl = null; }
+  if (ringEl) { try { ringEl.pause(); } catch { } ringEl = null; }
   clearInterval(ringTimer); ringTimer = null;
 }
 
@@ -6483,7 +6566,7 @@ function playTone(name, url, vol, loop) {
         if (!url) soundsOff = true;
         synth(name, 0.12 * v);
       }, { once: true });
-      el.play().catch(() => {});
+      el.play().catch(() => { });
       if (loop) ringEl = el;
       return;
     } catch { /* fall through to the built-in */ }
@@ -6522,21 +6605,21 @@ function playAlert() {
 // one is deliberately under a fifth of a second: a sound you notice twice is a sound
 // you end up hating.
 const UI_TONES = {
-  unlock:   [[1046, 0, .09], [1568, .05, .14]],
-  lock:     [[784, 0, .07], [523, .05, .13]],
-  key:      [[2200, 0, .022]],
-  keyback:  [[1400, 0, .03]],
+  unlock: [[1046, 0, .09], [1568, .05, .14]],
+  lock: [[784, 0, .07], [523, .05, .13]],
+  key: [[2200, 0, .022]],
+  keyback: [[1400, 0, .03]],
   toggleon: [[1318, 0, .05], [1760, .04, .08]],
-  toggleoff:[[1046, 0, .05], [784, .04, .09]],
-  appopen:  [[1174, 0, .05], [1568, .04, .09]],
+  toggleoff: [[1046, 0, .05], [784, .04, .09]],
+  appopen: [[1174, 0, .05], [1568, .04, .09]],
   appclose: [[1174, 0, .05], [880, .04, .08]],
-  sheet:    [[1046, 0, .06]],
-  sent:     [[1568, 0, .06], [2349, .05, .12]],
+  sheet: [[1046, 0, .06]],
+  sent: [[1568, 0, .06], [2349, .05, .12]],
   received: [[2093, 0, .06], [1568, .06, .12]],
-  shutter:  [[2400, 0, .02], [1200, .03, .05]],
-  success:  [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
-  error:    [[311, 0, .11], [233, .1, .18]],
-  faceid:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
+  shutter: [[2400, 0, .02], [1200, .03, .05]],
+  success: [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
+  error: [[311, 0, .11], [233, .1, .18]],
+  faceid: [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
 };
 
 // UI feedback sits well below a ringtone: it accompanies an action the player just
@@ -6554,7 +6637,7 @@ function ui(name) {
       const el = new Audio(src);
       el.volume = Math.max(0, Math.min(1, vol * 0.55));
       el.addEventListener('error', () => { soundsOff = true; }, { once: true });
-      el.play().catch(() => {});
+      el.play().catch(() => { });
       return;
     } catch { /* fall through */ }
   }
@@ -6657,12 +6740,12 @@ function archivePeek(kind, data) {
 // A picker any composer can raise - Messages and the social apps both point it at their
 // own input. Emoji are ordinary text, so they travel and store like the rest of a message.
 const EMOJI = {
-  faces: ['😀','😃','😄','😁','😅','😂','🤣','🙂','😉','😊','😇','🥰','😍','😘','😗','😋','😜','🤪','🤨','😎','🥳','😏','😒','😌','😔','😴','😪','😜','🤗','🤭','🤫','🤔','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','😌','😛','😳','🥺','😢','😭','😤','😠','😡','🤬','🤯','😱','😨','😰','😥','😓','🤥','🥴','🤢','🤮','🤧','😷'],
-  gestures: ['👍','👎','👌','🤌','✌️','🤞','🤟','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','💪','👏','🙌','👐','🤲','✊','👊','🤛','🤜','💅','👀','👁️','🧠','🫶'],
-  hearts: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️'],
-  things: ['🔥','⭐','🌟','✨','💫','🎉','🎊','💯','✅','❌','❓','❗','💤','💢','💥','💦','💨','🕳️','💣','💬','🗨️','👑','💎','🔔','🎵','🎶','🚗','🏠','💰','💵','💊','🍺','🍻','🥂','🍔','🍕','☕','⚽','🎧','📱','💻','⏰','📅','☀️','🌧️','⛈️','❄️','🌙','⚡','🌈','🎁'],
+  faces: ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '🙂', '😉', '😊', '😇', '🥰', '😍', '😘', '😗', '😋', '😜', '🤪', '🤨', '😎', '🥳', '😏', '😒', '😌', '😔', '😴', '😪', '😜', '🤗', '🤭', '🤫', '🤔', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '😌', '😛', '😳', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😱', '😨', '😰', '😥', '😓', '🤥', '🥴', '🤢', '🤮', '🤧', '😷'],
+  gestures: ['👍', '👎', '👌', '🤌', '✌️', '🤞', '🤟', '🤙', '👈', '👉', '👆', '👇', '☝️', '✋', '🤚', '🖐️', '🖖', '👋', '🤝', '🙏', '💪', '👏', '🙌', '👐', '🤲', '✊', '👊', '🤛', '🤜', '💅', '👀', '👁️', '🧠', '🫶'],
+  hearts: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '♥️'],
+  things: ['🔥', '⭐', '🌟', '✨', '💫', '🎉', '🎊', '💯', '✅', '❌', '❓', '❗', '💤', '💢', '💥', '💦', '💨', '🕳️', '💣', '💬', '🗨️', '👑', '💎', '🔔', '🎵', '🎶', '🚗', '🏠', '💰', '💵', '💊', '🍺', '🍻', '🥂', '🍔', '🍕', '☕', '⚽', '🎧', '📱', '💻', '⏰', '📅', '☀️', '🌧️', '⛈️', '❄️', '🌙', '⚡', '🌈', '🎁'],
 };
-const EMOJI_TABS = [['recent','🕘'],['faces','😀'],['gestures','👍'],['hearts','❤️'],['things','🔥']];
+const EMOJI_TABS = [['recent', '🕘'], ['faces', '😀'], ['gestures', '👍'], ['hearts', '❤️'], ['things', '🔥']];
 let emojiTarget = null, emojiCat = 'faces';
 let emojiRecent = [];
 
@@ -6671,15 +6754,15 @@ function paintEmoji() {
   const list = emojiCat === 'recent' ? emojiRecent : (EMOJI[emojiCat] || []);
   pan.innerHTML =
     '<div class="emojihead"><span>' + esc(L('ph.emoji')) + '</span>' +
-      '<button class="emojidone" id="emojidone" type="button">' + esc(L('ph.done')) + '</button></div>' +
+    '<button class="emojidone" id="emojidone" type="button">' + esc(L('ph.done')) + '</button></div>' +
     '<div class="emojitabs">' + EMOJI_TABS.map(([k, glyph]) =>
       '<button data-c="' + k + '" class="' + (emojiCat === k ? 'on' : '') +
-        '" type="button" aria-label="' + esc(L('ph.emoji_' + k)) + '">' + glyph + '</button>').join('') + '</div>' +
+      '" type="button" aria-label="' + esc(L('ph.emoji_' + k)) + '">' + glyph + '</button>').join('') + '</div>' +
     '<div class="emojigrid">' + (list.length ? list.map((emoji) =>
       '<button data-e="' + emoji + '" type="button">' + emoji + '</button>').join('')
       : '<div class="emojiempty">' + esc(L('ph.emoji_recent_empty')) + '</div>') + '</div>' +
     '<div class="emojifoot"><button id="emojiback" type="button" aria-label="' +
-      esc(L('ph.delete')) + '">⌫</button><span>' + esc(L('ph.emoji_hint')) + '</span></div>';
+    esc(L('ph.delete')) + '">⌫</button><span>' + esc(L('ph.emoji_hint')) + '</span></div>';
 
   byId('emojidone').addEventListener('click', emojiClose);
   byId('emojiback').addEventListener('click', () => {
@@ -6691,7 +6774,7 @@ function paintEmoji() {
     chars.pop();
     const left = chars.join('');
     inp.value = left + inp.value.slice(end);
-    try { inp.setSelectionRange(left.length, left.length); } catch {}
+    try { inp.setSelectionRange(left.length, left.length); } catch { }
     inp.focus();
   });
   [...pan.querySelectorAll('.emojitabs button')].forEach((b) =>
@@ -6705,7 +6788,7 @@ function paintEmoji() {
       inp.value = inp.value.slice(0, at) + b.dataset.e + inp.value.slice(at);
       const pos = at + b.dataset.e.length;
       emojiRecent = [b.dataset.e].concat(emojiRecent.filter((emoji) => emoji !== b.dataset.e)).slice(0, 28);
-      try { inp.setSelectionRange(pos, pos); } catch {}
+      try { inp.setSelectionRange(pos, pos); } catch { }
       inp.focus();
     }));
 }
@@ -6837,7 +6920,7 @@ byId('sheet').addEventListener('pointerdown', (e) => {
   sheetDrag = { y: e.clientY, pointerId: e.pointerId };
   host.classList.add('dragging');
   if (host.setPointerCapture) {
-    try { host.setPointerCapture(e.pointerId); } catch {}
+    try { host.setPointerCapture(e.pointerId); } catch { }
   }
 });
 byId('sheet').addEventListener('pointermove', (e) => {
@@ -6879,8 +6962,10 @@ function banner(b) {
   const app = notifApp(b);
   if (appMuted(app)) return;
 
-  const n = { id: ++notifSeq, app, icon: b.icon || app, title: b.title || '', body: b.body || '',
-              at: Date.now(), onClick: b.onClick || null };
+  const n = {
+    id: ++notifSeq, app, icon: b.icon || app, title: b.title || '', body: b.body || '',
+    at: Date.now(), onClick: b.onClick || null
+  };
   notifs.unshift(n);
   notifs = notifs.slice(0, 40);
   paintNotifs();
@@ -7078,11 +7163,11 @@ function renderCC() {
     `<div class="nowlab">${esc(L('ph.nowplaying'))}</div>` +
     (m
       ? `<div class="nowmid"><span class="nowart">${svg('music')}</span>` +
-          `<span style="min-width:0"><span class="nowt">${esc(m.title || L('ph.untitled'))}</span>` +
-          `<span class="nows">${esc(L('ph.music_' + (m.kind || 'boombox')))}</span></span></div>` +
-        `<div class="nowbtns"><button data-n="toggle" type="button" aria-label="${esc(L(m.paused ? 'ph.resume' : 'ph.pause'))}">${svg(m.paused ? 'play' : 'pause')}</button></div>`
+      `<span style="min-width:0"><span class="nowt">${esc(m.title || L('ph.untitled'))}</span>` +
+      `<span class="nows">${esc(L('ph.music_' + (m.kind || 'boombox')))}</span></span></div>` +
+      `<div class="nowbtns"><button data-n="toggle" type="button" aria-label="${esc(L(m.paused ? 'ph.resume' : 'ph.pause'))}">${svg(m.paused ? 'play' : 'pause')}</button></div>`
       : `<div class="nowmid"><span class="nowart">${svg('music')}</span>` +
-          `<span class="nows">${esc(L('ph.nothing_playing'))}</span></div>`);
+      `<span class="nows">${esc(L('ph.nothing_playing'))}</span></div>`);
   if (m) byId('ccnow').querySelector('[data-n="toggle"]').addEventListener('click', async () => {
     await post('music', { id: m.id, action: m.paused ? 'resume' : 'pause' });
     m.paused = !m.paused; renderCC();
@@ -7301,7 +7386,7 @@ function sdkPhotoPicker(settle) {
   sheet(L('ph.pick_photo'),
     '<div class="shots sdkphotos">' + photos.map((photo, index) =>
       '<button class="shot" type="button" data-sdk-photo="' + index +
-        '" style="' + photoStyle(photo) + '" aria-label="' + esc(L('ph.photo')) + '"></button>'
+      '" style="' + photoStyle(photo) + '" aria-label="' + esc(L('ph.photo')) + '"></button>'
     ).join('') + '</div>',
     () => {
       sheetCancel = () => settle({ ok: false, cancelled: true });
@@ -7334,7 +7419,7 @@ function sdkActionSheet(settle, options, confirmation) {
   }
   sheet(options.title || (confirmation ? L('ph.confirm') : L('ph.app_actions')),
     (options.message ? '<div class="sheethint">' + esc(options.message) + '</div>' : '') +
-      UI.group(rowHtml),
+    UI.group(rowHtml),
     () => {
       sheetCancel = () => settle({ ok: false, cancelled: true });
       [...byId('sheet').querySelectorAll('[data-sdk-action]')].forEach((row) => {
@@ -7362,7 +7447,7 @@ function copySdkText(value) {
   document.body.appendChild(field);
   field.select();
   let copied = false;
-  try { copied = document.execCommand('copy'); } catch {}
+  try { copied = document.execCommand('copy'); } catch { }
   field.remove();
   return Promise.resolve(copied);
 }
@@ -7439,15 +7524,15 @@ function sdkOpenApp(settle, data) {
 }
 
 const SDK_ALLOWED = {
-  request:  (d) => post('sdkRequest', d),         // <appId>:<method>, composed by Lua
-  emit:     (d) => post('sdkEmit', d),            // <appId>:<event>, composed by Lua
-  storage:  (d) => post('sdkStorage', d),         // per app, per character
+  request: (d) => post('sdkRequest', d),         // <appId>:<method>, composed by Lua
+  emit: (d) => post('sdkEmit', d),            // <appId>:<event>, composed by Lua
+  storage: (d) => post('sdkStorage', d),         // per app, per character
   contacts: () => Promise.resolve({ ok: true, contacts: state.contacts || [] }),
-  photos:   () => Promise.resolve({ ok: true, photos: state.photos || [] }),
+  photos: () => Promise.resolve({ ok: true, photos: state.photos || [] }),
   location: () => post('sdkLocation'),
   waypoint: (d) => post('waypoint', d),
-  haptic:   (d) => post('sdkHaptic', d),
-  me:       () => Promise.resolve({
+  haptic: (d) => post('sdkHaptic', d),
+  me: () => Promise.resolve({
     ok: true,
     number: state.number,
     apps: (state.apps || []).map((app) => ({ id: app.id, label: L(app.label), icon: app.icon })),
@@ -7460,8 +7545,8 @@ const SDK_ALLOWED = {
     locale: document.documentElement.lang || 'fr',
     deviceName: (state.prefs || {}).deviceName || 'iFruit',
   }),
-  message:  (d) => post('send', d),
-  call:     (d) => post('call', d),
+  message: (d) => post('send', d),
+  call: (d) => post('call', d),
 };
 
 window.addEventListener('message', async (e) => {
@@ -7469,7 +7554,7 @@ window.addEventListener('message', async (e) => {
   if (d.__phone !== 'sdk') return;
   const frame = byId('appframe');
   if (!frame || !frame.contentWindow || e.source !== frame.contentWindow ||
-      !openApp || !openApp.page) return;
+    !openApp || !openApp.page) return;
   const source = e.source;
   const appId = openApp.id;
   const appIcon = openApp.icon || 'dot';
@@ -7625,13 +7710,13 @@ document.addEventListener('pointerdown', () => {
 byId('spill').addEventListener('click', () => {
   sheet(L('ph.search'),
     '<div class="spothead"><strong>' + esc(L('ph.search')) + '</strong>' +
-      '<button id="spotclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
-        svg('xmark') + '</button></div>' +
+    '<button id="spotclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
+    svg('xmark') + '</button></div>' +
     '<div class="spotsearch">' + svg('search') +
-      '<input id="appq" placeholder="' + esc(L('ph.search_apps')) +
-        '" autocomplete="off" aria-label="' + esc(L('ph.search_apps')) + '" />' +
-      '<button id="appqclear" type="button" aria-label="' + esc(L('ph.clear')) + '">' +
-        svg('xmark') + '</button></div>' +
+    '<input id="appq" placeholder="' + esc(L('ph.search_apps')) +
+    '" autocomplete="off" aria-label="' + esc(L('ph.search_apps')) + '" />' +
+    '<button id="appqclear" type="button" aria-label="' + esc(L('ph.clear')) + '">' +
+    svg('xmark') + '</button></div>' +
     '<div class="spotsuggest" id="spotsuggest"></div><div id="appres"></div>',
     () => {
       const draw = (q) => {
@@ -7639,15 +7724,15 @@ byId('spill').addEventListener('click', () => {
         const recentApps = recents.slice(0, 4).map((id) => (state.apps || []).find((a) => a.id === id)).filter(Boolean);
         byId('spotsuggest').innerHTML = q || !recentApps.length ? '' :
           '<div class="spotlabel">' + esc(L('ph.recent')) + '</div><div class="spoticons">' +
-            recentApps.map((a) => '<button data-app="' + esc(a.id) + '" type="button">' +
-              UI.appIcon(a.icon) + '<span>' + esc(L(a.label)) + '</span></button>').join('') + '</div>';
+          recentApps.map((a) => '<button data-app="' + esc(a.id) + '" type="button">' +
+            UI.appIcon(a.icon) + '<span>' + esc(L(a.label)) + '</span></button>').join('') + '</div>';
         byId('appres').innerHTML = list.length
           ? '<div class="spotlabel">' + esc(q ? L('ph.results') : L('ph.all_apps')) + '</div>' +
-            UI.group(list.map((a) => UI.row({
-              appicon: a.icon, title: L(a.label),
-              subtitle: L('ph.cat_' + (a.category || 'utilities')),
-              chevron: true, data: { app: a.id },
-            })))
+          UI.group(list.map((a) => UI.row({
+            appicon: a.icon, title: L(a.label),
+            subtitle: L('ph.cat_' + (a.category || 'utilities')),
+            chevron: true, data: { app: a.id },
+          })))
           : UI.empty(L('ph.no_app'));
         [...byId('sheet').querySelectorAll('[data-app]')].forEach((r) => r.addEventListener('click', () => {
           const a = (state.apps || []).find((x) => x.id === r.dataset.app);
@@ -7770,7 +7855,7 @@ window.addEventListener('message', (e) => {
     if (!(state.prefs || {}).setupComplete) {
       openSetup(0);
     } else if (Number((state.prefs || {}).setupVersion || 0) < 2
-        && !(state.prefs || {}).securityEnabled) {
+      && !(state.prefs || {}).securityEnabled) {
       // Existing characters see only the new security portion once. Their identity,
       // appearance and layout are preserved.
       openSetup(4);
@@ -7799,8 +7884,8 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'message') {
     const m = d.message || {};
     const inOpenThread = (threadGroup && m.group != null &&
-                          String(m.group) === String(threadGroup.id)) ||
-                         (!m.group && thread && m.from === thread);
+      String(m.group) === String(threadGroup.id)) ||
+      (!m.group && thread && m.from === thread);
     if (inOpenThread) {
       const el = byId('thread');
       if (el) {
@@ -7811,7 +7896,8 @@ window.addEventListener('message', (e) => {
     } else {
       const groupId = m.group;
       const groupName = m.groupName || L('ph.groups');
-      banner({ app: 'messages', icon: 'messages',
+      banner({
+        app: 'messages', icon: 'messages',
         title: groupId ? groupName : nameOfNumber(m.from), body: m.body || L('ph.attach'),
         onClick: () => {
           const a = (state.apps || []).find((x) => x.id === 'messages');
@@ -7819,7 +7905,8 @@ window.addEventListener('message', (e) => {
           enterApp(a, null);
           if (groupId) openGroup(groupId, groupName);
           else openThread(m.from);
-        } });
+        }
+      });
       refresh().then(() => { if (!openApp) renderHome(); });
     }
   } else if (d.action === 'cipher') {
@@ -7903,13 +7990,13 @@ function forensicClose() {
 function forensicSearch() {
   byId('forensicbody').innerHTML =
     '<div class="forensicsearch">' +
-      '<h2>Warrant lookup</h2>' +
-      '<p>Enter the suspect\'s phone number. Every read is logged.</p>' +
-      '<div class="forensicfield">' +
-        '<input id="forensicnum" placeholder="555-0000" autocomplete="off" />' +
-        '<button id="forensicgo" type="button">Access</button>' +
-      '</div>' +
-      '<div class="forensicerr" id="forensicerr"></div>' +
+    '<h2>Warrant lookup</h2>' +
+    '<p>Enter the suspect\'s phone number. Every read is logged.</p>' +
+    '<div class="forensicfield">' +
+    '<input id="forensicnum" placeholder="555-0000" autocomplete="off" />' +
+    '<button id="forensicgo" type="button">Access</button>' +
+    '</div>' +
+    '<div class="forensicerr" id="forensicerr"></div>' +
     '</div>';
   const go = async () => {
     const number = byId('forensicnum').value.trim();
@@ -7951,8 +8038,8 @@ function forensicView(tab) {
   const t = forensicTarget || {};
   byId('forensicbody').innerHTML =
     '<div class="forensictarget">' +
-      '<div><b>' + fesc(t.name || t.number) + '</b><span>' + fesc(t.number) + '</span></div>' +
-      '<button id="forensicnew" type="button">New lookup</button>' +
+    '<div><b>' + fesc(t.name || t.number) + '</b><span>' + fesc(t.number) + '</span></div>' +
+    '<button id="forensicnew" type="button">New lookup</button>' +
     '</div>' +
     '<nav class="forensictabs">' + FORENSIC_TABS.map((x) =>
       '<button class="forensictab' + (x.id === tab ? ' on' : '') + '" data-tab="' + x.id +
@@ -7982,10 +8069,10 @@ async function forensicMessages() {
   const rows = r.rows || [];
   forensicList(rows.length ? rows.map((m) =>
     '<div class="frow ' + (m.outgoing ? 'out' : 'in') + '">' +
-      '<div class="fmeta"><span>' + (m.outgoing ? 'Sent to ' : 'From ') +
-        fesc(m.outgoing ? (m.to_num || '?') : (m.from_num || '?')) + '</span>' +
-        '<span class="ft">' + fwhen(m.at) + '</span></div>' +
-      '<div class="fbody">' + fesc(m.body) + '</div></div>').join('')
+    '<div class="fmeta"><span>' + (m.outgoing ? 'Sent to ' : 'From ') +
+    fesc(m.outgoing ? (m.to_num || '?') : (m.from_num || '?')) + '</span>' +
+    '<span class="ft">' + fwhen(m.at) + '</span></div>' +
+    '<div class="fbody">' + fesc(m.body) + '</div></div>').join('')
     : forensicEmpty('No messages.'));
 }
 
@@ -7995,7 +8082,7 @@ async function forensicContacts() {
   const rows = r.rows || [];
   forensicList(rows.length ? rows.map((c) =>
     '<div class="frow"><div class="fbody"><b>' + fesc(c.name) + '</b> ' +
-      fesc(c.number) + (Number(c.favourite) ? ' ★' : '') + '</div></div>').join('')
+    fesc(c.number) + (Number(c.favourite) ? ' ★' : '') + '</div></div>').join('')
     : forensicEmpty('No contacts.'));
 }
 
@@ -8005,9 +8092,9 @@ async function forensicCalls() {
   const rows = r.rows || [];
   forensicList(rows.length ? rows.map((c) =>
     '<div class="frow"><div class="fmeta"><span>' +
-      fesc(c.direction === 'out' ? 'Outgoing' : 'Incoming') + ' ' + fesc(c.other_num) +
-      (Number(c.answered) ? '' : ' (missed)') + '</span>' +
-      '<span class="ft">' + fwhen(c.at) + '</span></div></div>').join('')
+    fesc(c.direction === 'out' ? 'Outgoing' : 'Incoming') + ' ' + fesc(c.other_num) +
+    (Number(c.answered) ? '' : ' (missed)') + '</span>' +
+    '<span class="ft">' + fwhen(c.at) + '</span></div></div>').join('')
     : forensicEmpty('No calls.'));
 }
 
@@ -8043,13 +8130,13 @@ async function forensicCipher() {
     : '<div class="fcipherbanner">End-to-end encrypted. The server holds no key: content cannot be recovered, only the metadata below.</div>';
   forensicList(banner + (rows.length ? rows.map((m) =>
     '<div class="frow ' + (m.outgoing ? 'out' : 'in') + '" data-cid="' + m.id + '">' +
-      '<div class="fmeta"><span>' +
-        (m.outgoing ? '→ @' + fesc(m.to_handle || '?') : 'from @' + fesc(m.from_handle || '?')) +
-      '</span><span class="ft">' + fwhen(m.at) + '</span></div>' +
-      '<div class="fbody fcipherbody">' +
-        (m.recoverable ? '<button class="fcrack" data-id="' + m.id + '" type="button">Attempt crack</button>'
-                       : '<i class="fenc">🔒 encrypted</i>') +
-      '</div></div>').join('') : forensicEmpty('No Cipher traffic.')));
+    '<div class="fmeta"><span>' +
+    (m.outgoing ? '→ @' + fesc(m.to_handle || '?') : 'from @' + fesc(m.from_handle || '?')) +
+    '</span><span class="ft">' + fwhen(m.at) + '</span></div>' +
+    '<div class="fbody fcipherbody">' +
+    (m.recoverable ? '<button class="fcrack" data-id="' + m.id + '" type="button">Attempt crack</button>'
+      : '<i class="fenc">🔒 encrypted</i>') +
+    '</div></div>').join('') : forensicEmpty('No Cipher traffic.')));
 
   [...byId('forensiclist').querySelectorAll('.fcrack')].forEach((b) =>
     b.addEventListener('click', async () => {
@@ -8117,7 +8204,7 @@ function faceShrink(dataUri) {
       post('faceFrame', { frame: small });
     } catch (e) { /* a capture that will not draw is simply skipped */ }
   };
-  img.onerror = () => {};
+  img.onerror = () => { };
   img.src = dataUri;
 }
 
