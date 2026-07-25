@@ -301,6 +301,62 @@ function Bridge.ItemCount(src, item)
     return 0
 end
 
+--- Take money off a player, and say whether it actually went.
+---
+--- Used where the phone CHARGES for something: a paid app in the store. Like
+--- `Bridge.RemoveItem`, it **fails closed** - a charge that cannot be confirmed grants
+--- nothing, because the alternative is handing out paid apps for free.
+---
+--- `account` is 'bank' or 'cash'. Returns true only when the framework confirmed the debit.
+function Bridge.RemoveMoney(src, amount, account)
+    src = tonumber(src)
+    amount = math.floor(tonumber(amount) or 0)
+    account = (account == 'cash') and 'cash' or 'bank'
+    if not src or amount <= 0 then return false end
+
+    -- The operator's own wiring wins, for a server whose money lives somewhere bespoke.
+    local custom = Config.Compat.hooks.removeMoney
+    if custom then
+        local ok, done = pcall(custom, src, amount, account)
+        if ok then return done == true end
+        return false
+    end
+
+    if Bridge.framework == 'qb' then
+        local qbp = Bridge.QBGetPlayer(src)
+        local remove = qbp and qbp.Functions and qbp.Functions.RemoveMoney
+        -- qb returns false when the balance would go under its own floor, which is exactly
+        -- the answer wanted here.
+        if remove then return remove(account, amount, 'v-phone: app store') == true end
+        return false
+
+    elseif Bridge.framework == 'esx' then
+        local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
+        if not ok or not ESX then return false end
+        local xPlayer = ESX.GetPlayerFromId(src)
+        if not xPlayer then return false end
+        if account == 'cash' then
+            if (tonumber(xPlayer.getMoney and xPlayer.getMoney()) or 0) < amount then return false end
+            xPlayer.removeMoney(amount)
+            return true
+        end
+        local acc = xPlayer.getAccount and xPlayer.getAccount('bank')
+        if not acc or (tonumber(acc.money) or 0) < amount then return false end
+        xPlayer.removeAccountMoney('bank', amount)
+        return true
+
+    elseif Bridge.framework == 'ox' then
+        -- ox keeps money as an inventory item rather than a column, so the inventory is
+        -- what has to be asked.
+        local item = (account == 'cash') and 'money' or 'money'
+        if Bridge.ItemCount(src, item) < amount then return false end
+        return Bridge.RemoveItem(src, item, amount)
+    end
+
+    -- Standalone, or a framework with no money to take. Refuse rather than give it away.
+    return false
+end
+
 -- ══════════════════════════════════════════════════════════════
 -- Money: the bank app
 -- ══════════════════════════════════════════════════════════════

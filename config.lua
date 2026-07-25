@@ -123,6 +123,9 @@ Config.Compat = {
         licences = nil,       -- (src, citizenid) -> { { type, label }, ... }
         jobs = nil,           -- () -> { { name, label, grades }, ... }
         status = nil,         -- (src) -> { hunger, thirst, ... }
+        -- Charge a player. Return true ONLY if the money genuinely left them: the store
+        -- treats false as "not paid" and does not grant the app.
+        removeMoney = nil,    -- (src, amount, account) -> boolean
         -- CLIENT side: true when the local player is inside a property they can charge
         -- in. Only fill this if your housing script is none of the supported ones.
         atHome = nil,         -- () -> boolean, runs on the client
@@ -1120,14 +1123,28 @@ Config.Music = {
     --
     -- `icon` is any icon the phone already ships (music, radio, star, heart, disc...).
     -- Leave `tracks` empty and the playlist is a heading a player can fill from the library.
+    -- **A word on what you put here.** These links get streamed on your server, in public.
+    -- Music that is licence-free stays up; a rip of a commercial radio station is taken down
+    -- sooner or later and the entry quietly stops working. The first two lists below are
+    -- royalty-free on purpose - NoCopyrightSounds is free for streams as long as the artist,
+    -- the track and NCS are credited (https://ncs.io). The third is the in-game sound, and it
+    -- carries the risk that comes with it.
+    --
+    -- Whether a PLAYLIST link works, as opposed to a single video, depends on the deck your
+    -- server runs. Single-video URLs are the safe bet; try a playlist and keep it if it plays.
     defaultPlaylists = {
         {
             id = 'ls_classics',
-            name = 'Los Santos Classics',
+            name = 'Free To Play',
             icon = 'music',
-            tint = '#FF2D55',
+            tint = '#34C759',
             tracks = {
-                -- { title = 'Track name', artist = 'Artist', url = 'https://...' },
+                { title = 'NCS 10 Year Mix (3 hours)', artist = 'NoCopyrightSounds',
+                  url = 'https://www.youtube.com/watch?v=yUXJjIvhZz8' },
+                { title = 'Gaming Music - No Copyright', artist = 'NCS and friends',
+                  url = 'https://www.youtube.com/playlist?list=PL7ya7p5KV7zulnn3d17Qq0PGYLycMHZMx' },
+                { title = 'Gaming, No Copyright', artist = 'Royalty free',
+                  url = 'https://www.youtube.com/playlist?list=PLRPR8uJQx5tHxkGUSqu-Xvesjc0lDbdrX' },
             },
         },
         {
@@ -1135,14 +1152,25 @@ Config.Music = {
             name = 'Late Night Drive',
             icon = 'moon',
             tint = '#5856D6',
-            tracks = {},
+            tracks = {
+                { title = 'NCS 10 Year Mix (3 hours)', artist = 'NoCopyrightSounds',
+                  url = 'https://www.youtube.com/watch?v=yUXJjIvhZz8' },
+            },
         },
         {
-            id = 'the_club',
-            name = 'The Club',
+            id = 'los_santos',
+            name = 'Los Santos Radio',
             icon = 'speaker',
             tint = '#FF9500',
-            tracks = {},
+            -- The in-game stations. Fun, and the entries most likely to go dead one day: these
+            -- are uploads of commercial music, not licence-free tracks. Swap in your own
+            -- mirrors if a link stops playing.
+            tracks = {
+                { title = 'Radio Los Santos', artist = 'GTA V',
+                  url = 'https://www.youtube.com/playlist?list=PLgbI0QcBNn5jsj7Ju1BEgGbT0bn4bLOdS' },
+                { title = 'West Coast Classics', artist = 'GTA V',
+                  url = 'https://www.youtube.com/watch?v=UNzZIIbc0jY' },
+            },
         },
     },
 }
@@ -1214,4 +1242,42 @@ Config.VehicleRemote = {
     -- Log every remote command to the server console. A car that unlocks itself is worth
     -- being able to explain.
     log = false,
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  FRUITSTORE  (apps you add, free or paid)
+-- ══════════════════════════════════════════════════════════════
+-- Your own apps in the store, without writing a resource.
+--
+-- Anything listed here appears in FruitStore alongside the built-in apps. Give it a `page`
+-- and the phone frames that URL as the app; leave it out and it is a listing for something
+-- your own resource draws (see DEVELOPERS.md for a real drop-in app).
+--
+-- **Paid apps.** Set a `price` and the phone charges for it once, the first time it is
+-- installed. What is bought is remembered against the character, so removing the app and
+-- installing it again later is free - a player pays for an app, not for a download.
+--
+-- The charge goes through `Bridge.RemoveMoney`, which handles qb-core, qbx_core and ESX
+-- directly and ox through its money item. **It fails closed:** if the debit cannot be
+-- confirmed, the app is not granted. On any other money script, wire
+-- `Config.Compat.hooks.removeMoney` and it is used instead.
+Config.StoreApps = {
+    -- {
+    --     id = 'taxi_meter',              -- unique, [a-z0-9_-]
+    --     label = 'Taxi Meter',           -- shown as-is, or a locale key like 'app.taxi'
+    --     icon = 'car',                   -- any icon the phone ships
+    --     accent = '#FFD60A',             -- the tint on its store page
+    --     developer = 'Downtown Cab Co.', -- who "made" it, in character
+    --     description = 'Fares, distance and a running total for the shift.',
+    --     category = 'work',              -- one of Config.Categories
+    --
+    --     price = 250,                    -- 0 or nil for a free app
+    --     account = 'bank',               -- 'bank' (default) or 'cash'
+    --
+    --     job = nil,                      -- restrict to one job, or a list: { 'taxi' }
+    --     page = 'https://my-server.tld/taxi/index.html',   -- optional: framed as the app
+    --
+    --     features = { 'Live fare', 'Shift total' },
+    --     permissions = { 'Location' },
+    -- },
 }

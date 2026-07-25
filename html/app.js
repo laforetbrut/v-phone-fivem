@@ -4556,7 +4556,14 @@ async function storeInstall(id, install) {
   const before = layoutItems();
 
   const r = await post('install', { app: id, install });
-  if (!r || r.error) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return false; }
+  if (!r || r.error) {
+    // A refused purchase says what it costs, which is the one thing worth knowing.
+    if (r && r.error === 'nomoney') { toast(L('ph.store_nomoney').replace('{price}', money(r.price))); }
+    else { toast(L('ph.err_' + ((r && r.error) || 'x'))); }
+    return false;
+  }
+  // A paid app was just bought: the catalogue's `purchased` flag has moved on.
+  if (install) await refresh();
   await refresh();
   available = state.available || available;
 
@@ -4577,10 +4584,18 @@ async function storeInstall(id, install) {
   return true;
 }
 
+/** What the button on a store listing says. A paid app the player has not bought yet shows
+ *  its price instead of "Get", the way a store does. */
+function storeLabel(a, has) {
+  if (a.required) return L('ph.store_required');
+  if (has) return L('ph.store_open');
+  if (a.price && !a.purchased) return money(a.price);
+  return L('ph.store_install');
+}
+
 function storeRow(a) {
   const has = isInstalled(a.id);
-  const label = a.required ? L('ph.store_required')
-    : (has ? L('ph.store_open') : L('ph.store_install'));
+  const label = storeLabel(a, has);
   return '<div class="strowitem" data-app="' + esc(a.id) + '">' + UI.appIcon(a.icon) +
     '<div class="stmid"><div class="stt">' + esc(L(a.label)) + '</div>' +
     '<div class="stc">' + esc(L('ph.cat_' + (a.category || 'utilities'))) + '</div></div>' +

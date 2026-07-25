@@ -356,6 +356,48 @@ local function appsFor(src, p)
             }
         end
     end
+    -- ── The operator's own apps ────────────────────────────────
+    -- Added straight from the config, so a server can list an app in FruitStore without
+    -- writing a resource. They are always `optional`: nothing an operator invents should
+    -- appear on a player's home screen uninvited.
+    local prefs = prefsOf(p)
+    local ownedApps = {}
+    for _, id in ipairs(prefs.purchased or {}) do ownedApps[id] = true end
+
+    for _, a in ipairs(Config.StoreApps or {}) do
+        local id = tostring(a.id or '')
+        if id ~= '' and id:match('^[%w_-]+$') and not Apps[id] then
+            -- A job gate, given as a name or a list of them.
+            local gate = a.job
+            local allowed = true
+            if type(gate) == 'string' then
+                allowed = p.job and p.job.name == gate
+            elseif type(gate) == 'table' and #gate > 0 then
+                allowed = false
+                for _, name in ipairs(gate) do
+                    if p.job and p.job.name == name then allowed = true break end
+                end
+            end
+
+            if allowed then
+                local price = math.max(0, math.floor(num(a.price, 0)))
+                out[#out + 1] = {
+                    id = id, label = a.label or id, icon = a.icon or 'dot', page = a.page,
+                    slot = math.floor(num(a.slot, 900)),
+                    optional = true, category = a.category or 'utilities',
+                    desc = a.description or a.desc, owner = 'v-phone',
+                    developer = a.developer, accent = a.accent,
+                    permissions = a.permissions, features = a.features, keywords = a.keywords,
+                    -- What the store needs to draw a price tag and decide what the button says.
+                    price = price > 0 and price or nil,
+                    account = (a.account == 'cash') and 'cash' or 'bank',
+                    purchased = (price == 0) or ownedApps[id] == true,
+                    custom = true,
+                }
+            end
+        end
+    end
+
     table.sort(out, function(x, y)
         if x.slot ~= y.slot then return x.slot < y.slot end
         return x.id < y.id
@@ -543,6 +585,10 @@ local function prefsOf(p, includeSecrets)
         -- Optional apps are tracked by what was ADDED, not by what was left alone:
         -- absent is their starting state, so a missing entry has to mean "not yet".
         added     = stringIdList(m.added, 128),
+        -- Paid apps the character has bought. Kept separately from `added` on purpose: a
+        -- player may remove a paid app and put it back without paying twice, so ownership
+        -- has to outlive installation.
+        purchased = stringIdList(m.purchased, 128),
         actionApp = m.actionApp and tostring(m.actionApp) or nil,
         -- A linked wallpaper, its fit, and the shape of the device itself.
         wallpaperUrl = V.SettingBool('customWallpaper', true)
@@ -2449,6 +2495,28 @@ V.Callback('v-phone:install', function(src, resolve, data)
     if found.required and not want then resolve({ error = 'required' }) return end
 
     local prefs = prefsOf(p)
+
+    -- ── Paying for it ──────────────────────────────────────────
+    -- Only on the way IN, and only once ever. What a player bought is remembered against the
+    -- character, so removing an app and installing it again later is free: you pay for the
+    -- app, not for the download.
+    --
+    -- The debit is confirmed BEFORE the app is granted, and `Bridge.RemoveMoney` fails closed
+    -- - an unconfirmed charge grants nothing rather than handing out a paid app.
+    if want and found.price and found.price > 0 and not found.purchased then
+        if not Bridge.RemoveMoney(src, found.price, found.account) then
+            resolve({ error = 'nomoney', price = found.price }) return
+        end
+        local owned = {}
+        for _, rid in ipairs(prefs.purchased or {}) do
+            if rid ~= id then owned[#owned + 1] = rid end
+        end
+        owned[#owned + 1] = id
+        prefs.purchased = owned
+        if Core.Log then
+            Core.Log('store', ('bought %s for %d'):format(id, found.price), nil, p.citizenid)
+        end
+    end
     -- Two lists because the two kinds start from opposite defaults: a stock app is
     -- recorded when it LEAVES, an optional one when it ARRIVES.
     local key = found.optional and 'added' or 'removed'

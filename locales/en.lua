@@ -947,6 +947,10 @@ local T = {
     ['ph.veh_err_cooldown'] = 'One at a time.',
     ['ph.veh_err_x'] = 'The car did not answer.',
 
+    ['ph.store_nomoney'] = 'You cannot afford this. It costs {price}.',
+    ['ph.store_buy'] = 'Buy',
+    ['ph.store_owned'] = 'Purchased',
+
     -- Payphones
     ['ph.booth_use'] = 'Use payphone',
     ['ph.booth_title'] = 'Payphone',

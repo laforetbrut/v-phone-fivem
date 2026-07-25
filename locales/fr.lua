@@ -949,6 +949,10 @@ local T = {
     ['ph.veh_err_cooldown'] = 'Une commande a la fois.',
     ['ph.veh_err_x'] = 'La voiture n a pas repondu.',
 
+    ['ph.store_nomoney'] = 'Fonds insuffisants. Cette application coute {price}.',
+    ['ph.store_buy'] = 'Acheter',
+    ['ph.store_owned'] = 'Achetee',
+
     -- Cabines telephoniques
     ['ph.booth_use'] = 'Utiliser la cabine',
     ['ph.booth_title'] = 'Cabine telephonique',
