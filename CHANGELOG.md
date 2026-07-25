@@ -19,6 +19,10 @@ All notable changes to v-phone are documented here.
 - **Playlists shipped by the server.** `Config.Music.defaultPlaylists` gives every character a set of station playlists — three empty ones to fill are included as a starting point. They are **read-only**: a player can play them and copy a track out, but not edit or delete them, so a server's own selections survive contact with its players.
 - **New music configuration.** `provider`, `copyUrl`, `hooks`, `maxLibrary`, `maxPlaylists`, `maxTracksPerPlaylist`, `allowCustomUrl` and a `hosts` allowlist for track URLs — the same idea as the wallpaper hosts, an operator decision rather than a player one.
 
+---
+
+## [1.2.0] - 2026-07-25
+
 ### Ajouts (miroir français)
 
 - **Votre voiture, depuis votre poche.** Une télécommande dans l'application Garage : verrouiller et déverrouiller, faire un appel de phares, changer les néons, ouvrir une porte, klaxonner, démarrer le moteur. **Aucune dépendance n'est nécessaire** — néons, feux, portes et verrous sont des natives du moteur : le comportement est donc identique sur qb-core, qbx_core, ox_core, ESX et standalone, avec n'importe quel script de garage ou d'inventaire. Le framework ne décide que de la liste de vos véhicules, lue via le même bridge que l'application Garage utilise déjà.
