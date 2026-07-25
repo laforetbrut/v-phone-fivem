@@ -892,6 +892,26 @@ local T = {
     ['ph.peek'] = 'Raise to show',
     ['ph.previews_hint'] = 'With previews off, a notification shows who it is from and not what it says. Raise to show lifts the handset into view; turn it off to be notified quietly.',
 
+
+    -- Music: playlists and the deck hand-off
+    ['ph.playlists'] = 'Playlists',
+    ['ph.playlist_new'] = 'New playlist',
+    ['ph.playlist_name'] = 'Playlist name',
+    ['ph.playlist_add_track'] = 'Add a track',
+    ['ph.playlist_count'] = '{n} tracks',
+    ['ph.playlist_locked'] = 'from the station',
+    ['ph.playlist_empty'] = 'Nothing in here yet.',
+    ['ph.playlist_none'] = 'No playlists yet.',
+    ['ph.playlist_hint'] = 'Playlists from the station cannot be edited. Your own sit alongside them.',
+    ['ph.playlist_full'] = 'That is as many as this phone holds.',
+    ['ph.playlist_dupe'] = 'Already in this playlist.',
+    ['ph.playlist_nolibrary'] = 'Add a track to your library first.',
+    ['ph.play_all'] = 'Play all',
+    ['ph.music_copied'] = 'Link copied - paste it into the deck',
+    ['ph.music_handoff_hint'] = 'Playing a track opens the radio in your car, or the DJ deck on foot, with the link copied ready to paste.',
+    ['ph.err_nodeck'] = 'No music player is running on this server.',
+    ['ph.err_nohook'] = 'This deck cannot be controlled from the phone.',
+
     -- Payphones
     ['ph.booth_use'] = 'Use payphone',
     ['ph.booth_title'] = 'Payphone',

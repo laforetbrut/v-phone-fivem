@@ -4,6 +4,28 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.0] - 2026-07-25
+
+### Added (English first)
+
+- **The Music app works.** It was hidden on every server: `stubIsLive('v-music')` returned a hardcoded `false`, and the two NUI relays behind it asked for `v-music:play` and `v-music:list` — server callbacks that do not exist in this resource. A complete app, a library, a player, a queue and a search, all unreachable. It is now wired to real music resources and appears whenever there is one to talk to.
+- **rcore integration.** [rcore_radiocar](https://store.rcore.cz/package/4342933) in a vehicle and [xDiskJockey](https://store.rcore.cz/package/4357520) on foot, chosen automatically by where the player is standing, or forced with `Config.Music.provider`. **Be clear about what this can do:** both scripts publish UI-only APIs — `OpenPlayerUI` for the car radio, `OpenDiskjockeyUI` / `HideDiskjockeyUI` for the deck — and neither documents an export that takes a URL and plays it. So the phone opens the right deck and puts the track's link on the clipboard, ready to paste. That is the whole of what those scripts expose, and inventing an export they do not have would only fail at runtime.
+- **`Config.Music.hooks` for a script that CAN be driven.** Fill `hooks.play` and the phone drives your music resource directly — no deck, no paste, the track just plays. The hook wins over any deck, and its presence alone is enough to make the app appear.
+- **Playlists.** A new tab in the app. A player builds their own from their library; they live in the same per-character phone storage as the library, so there is no new table and nothing to migrate. `Config.Music.maxPlaylists` and `maxTracksPerPlaylist` bound them.
+- **Playlists shipped by the server.** `Config.Music.defaultPlaylists` gives every character a set of station playlists — three empty ones to fill are included as a starting point. They are **read-only**: a player can play them and copy a track out, but not edit or delete them, so a server's own selections survive contact with its players.
+- **New music configuration.** `provider`, `copyUrl`, `hooks`, `maxLibrary`, `maxPlaylists`, `maxTracksPerPlaylist`, `allowCustomUrl` and a `hosts` allowlist for track URLs — the same idea as the wallpaper hosts, an operator decision rather than a player one.
+
+### Ajouts (miroir français)
+
+- **L'application Musique fonctionne.** Elle était masquée sur tous les serveurs : `stubIsLive('v-music')` renvoyait `false` en dur, et les deux relais NUI derrière elle demandaient `v-music:play` et `v-music:list` — des callbacks serveur qui n'existent pas dans cette ressource. Une application complète, une bibliothèque, un lecteur, une file d'attente et une recherche, le tout injoignable. Elle est désormais câblée à de vraies ressources musicales et apparaît dès qu'il y en a une.
+- **Intégration rcore.** [rcore_radiocar](https://store.rcore.cz/package/4342933) en véhicule et [xDiskJockey](https://store.rcore.cz/package/4357520) à pied, choisis automatiquement selon l'endroit où se trouve le joueur, ou forcés via `Config.Music.provider`. **Soyons clairs sur ce que cela permet :** les deux scripts ne publient qu'une API d'interface — `OpenPlayerUI` pour l'autoradio, `OpenDiskjockeyUI` / `HideDiskjockeyUI` pour le deck — et aucun ne documente d'export prenant une URL pour la jouer. Le téléphone ouvre donc le bon deck et place le lien du titre dans le presse-papier, prêt à coller. C'est tout ce que ces scripts exposent, et inventer un export qu'ils n'ont pas ne ferait qu'échouer à l'exécution.
+- **`Config.Music.hooks` pour un script pilotable.** Remplissez `hooks.play` et le téléphone pilote directement votre ressource musicale — pas de deck, pas de collage, le titre se lance. Le hook prime sur tout deck, et sa seule présence suffit à faire apparaître l'application.
+- **Playlists.** Un nouvel onglet dans l'application. Le joueur compose les siennes depuis sa bibliothèque ; elles vivent dans le même stockage par personnage que la bibliothèque, donc aucune nouvelle table ni migration. `Config.Music.maxPlaylists` et `maxTracksPerPlaylist` les bornent.
+- **Playlists fournies par le serveur.** `Config.Music.defaultPlaylists` donne à chaque personnage un jeu de playlists de la station — trois vides à remplir sont incluses comme point de départ. Elles sont **en lecture seule** : un joueur peut les écouter et en copier un titre, mais ni les modifier ni les supprimer, afin que les sélections du serveur survivent au contact de ses joueurs.
+- **Nouvelle configuration musique.** `provider`, `copyUrl`, `hooks`, `maxLibrary`, `maxPlaylists`, `maxTracksPerPlaylist`, `allowCustomUrl` et une liste blanche `hosts` pour les URL de titres — la même idée que les hôtes de fonds d'écran : une décision d'opérateur, pas de joueur.
+
+---
+
 ## [1.1.4] - 2026-07-25
 
 ### Added (English first)

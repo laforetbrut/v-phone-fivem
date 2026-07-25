@@ -211,12 +211,112 @@ STUBS['v-cityhall'] = {
 }
 
 -- ── v-music ────────────────────────────────────────────────────
--- The music app plays through whatever media script the server runs. Without one it
--- stays hidden rather than pretending to play.
+-- **The phone is a remote, not an audio engine.**
+--
+-- Nothing in a NUI page can stream a URL into the game world, so the sound always belongs to
+-- a music resource the server already runs. Two are supported out of the box, both from
+-- rcore: the car radio for a player sitting in a vehicle, and the DJ deck for one on foot.
+--
+-- Their public APIs are UI-only. `rcore_radiocar` publishes `OpenPlayerUI` and the
+-- plate-keyed ownership helpers; `xdiskjockey` publishes `OpenDiskjockeyUI` and
+-- `HideDiskjockeyUI`. Neither documents an export that takes a URL and plays it. So the
+-- phone hands off rather than pretending: it opens the right deck and puts the track's URL
+-- on the clipboard, and the player pastes.
+--
+-- A server whose music script CAN be driven fills `Config.Music.hooks.play`, and that wins
+-- outright - no deck, no paste, the track simply plays.
+local MUSIC_DECKS = { 'rcore_radiocar', 'xdiskjockey' }
+
+--- Which deck this server has, or `hooks` when the operator drives playback themselves.
+--- nil means the app has nothing to talk to and stays hidden.
+local function musicProvider()
+    local M = Config.Music or {}
+    if M.enabled == false then return nil end
+
+    local wanted = tostring(M.provider or 'auto'):lower()
+    if wanted == 'off' then return nil end
+    -- A filled play hook is a working integration on its own, whatever else is installed.
+    if type(M.hooks) == 'table' and type(M.hooks.play) == 'function' then return 'hooks' end
+    if wanted == 'hooks' then return nil end
+    if wanted ~= 'auto' then
+        return realGetResourceState(wanted) == 'started' and wanted or nil
+    end
+    return anyStarted(MUSIC_DECKS)
+end
+
+--- `auto` again, but at the moment of playing rather than at boot: the car radio only makes
+--- sense when the player is actually in a car.
+local function musicDeckFor()
+    local wanted = tostring((Config.Music or {}).provider or 'auto'):lower()
+    if wanted ~= 'auto' then return musicProvider() end
+    local inVehicle = not isServer and IsPedInAnyVehicle(PlayerPedId(), false)
+    if inVehicle and realGetResourceState('rcore_radiocar') == 'started' then return 'rcore_radiocar' end
+    if realGetResourceState('xdiskjockey') == 'started' then return 'xdiskjockey' end
+    -- On foot with only a car radio installed: still the honest answer, it just opens in a car.
+    return anyStarted(MUSIC_DECKS)
+end
+
 STUBS['v-music'] = {
-    Play = function(_, ...) return nil end,
-    Stop = function(_, ...) return nil end,
+    --- Hand a track to the deck. Returns what the page needs to finish the job:
+    --- `driven` when a hook played it outright, `copy` when the player has to paste.
+    Play = function(_, track, output)
+        if isServer then return nil end
+        local M = Config.Music or {}
+        track = type(track) == 'table' and track or {}
+
+        if type(M.hooks) == 'table' and type(M.hooks.play) == 'function' then
+            local ok, played = pcall(M.hooks.play, track, output)
+            if ok and played then return { ok = true, driven = true } end
+        end
+
+        local deck = musicDeckFor()
+        if not deck or deck == 'hooks' then return { error = 'nodeck' } end
+
+        if deck == 'rcore_radiocar' then
+            -- The export is the documented route; the event is its published alias, and some
+            -- builds only carry one of the two.
+            if not pcall(function() realExports.rcore_radiocar:OpenPlayerUI() end) then
+                TriggerEvent('rcore_radiocar:API:OpenPlayerUI')
+            end
+        elseif deck == 'xdiskjockey' then
+            if not pcall(function() realExports.xdiskjockey:OpenDiskjockeyUI() end) then
+                TriggerEvent('xdiskjockey:openMixer')
+            end
+        end
+
+        return { ok = true, deck = deck,
+                 -- The page owns the clipboard; Lua has no access to it.
+                 copy = (M.copyUrl ~= false) and tostring(track.url or '') or nil }
+    end,
+
+    Stop = function(_)
+        if isServer then return nil end
+        local M = Config.Music or {}
+        if type(M.hooks) == 'table' and type(M.hooks.stop) == 'function' then
+            local ok, stopped = pcall(M.hooks.stop)
+            if ok and stopped then return { ok = true, driven = true } end
+        end
+        -- The decks own their own transport; the most the phone can do is put the DJ mixer
+        -- away. A car radio has no documented close.
+        pcall(function() realExports.xdiskjockey:HideDiskjockeyUI() end)
+        return { ok = true }
+    end,
+
+    Volume = function(_, level)
+        if isServer then return nil end
+        local M = Config.Music or {}
+        if type(M.hooks) == 'table' and type(M.hooks.volume) == 'function' then
+            local ok, done = pcall(M.hooks.volume, level)
+            return { ok = ok and done == true }
+        end
+        return { error = 'nohook' }
+    end,
+
+    --- Which deck is live, for the app to describe itself accurately.
+    Provider = function() return musicProvider() end,
 }
+
+MusicProvider = musicProvider
 
 -- ── v-inventory ────────────────────────────────────────────────
 -- One thing only: "using" an item runs a function. Every inventory script offers this
@@ -280,7 +380,9 @@ local function stubIsLive(name)
     if name == 'v-status' then return true end
     if name == 'v-inventory' then return true end
     if name == 'v-banking' then return Bridge ~= nil and Bridge.Banking ~= nil end
-    if name == 'v-music' then return false end
+    -- Live when there is a deck to hand a track to, or a hook that plays one. Before 1.2.0
+    -- this was hardcoded false, which hid a complete Music app on every server.
+    if name == 'v-music' then return MusicProvider ~= nil and MusicProvider() ~= nil end
     if name == 'v-police' then
         return (Config.Compat and Config.Compat.policeJobs and #Config.Compat.policeJobs > 0) or false
     end

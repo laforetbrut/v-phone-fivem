@@ -439,8 +439,57 @@ local APP_SOURCE = {
     property = { res = 'v-housing',  callback = 'v-housing:mine' },
 }
 
+--- The music app answers from the CONFIG and the local deck, not from a server callback.
+--- There is no shared library to fetch: a player's tracks live in their own phone storage,
+--- and everything else the app needs - which deck is live, the operator's playlists, the
+--- limits - is decided here.
+local function musicAppData()
+    local M = Config.Music or {}
+    local music = V.Use('v-music')
+    local provider = music.Provider and music.Provider() or nil
+
+    -- The operator's own playlists, cleaned on the way out so a malformed config entry
+    -- cannot reach the page as something it has to defend against.
+    local playlists = {}
+    for _, row in ipairs(M.defaultPlaylists or {}) do
+        if type(row) == 'table' and row.id and row.name then
+            local tracks = {}
+            for _, t in ipairs(row.tracks or {}) do
+                if type(t) == 'table' and t.url and t.url ~= '' then
+                    tracks[#tracks + 1] = { title = tostring(t.title or t.url),
+                                            artist = tostring(t.artist or ''), url = tostring(t.url) }
+                end
+            end
+            playlists[#playlists + 1] = {
+                id = tostring(row.id), name = tostring(row.name),
+                icon = tostring(row.icon or 'music'), tint = row.tint and tostring(row.tint) or nil,
+                tracks = tracks, readonly = true,
+            }
+        end
+    end
+
+    return {
+        ok = true,
+        enabled = provider ~= nil,
+        provider = provider,
+        -- True when the deck cannot be driven and the player has to paste. The app says so
+        -- rather than leaving them wondering why nothing started.
+        handoff = provider ~= nil and provider ~= 'hooks',
+        sources = {},
+        playlists = playlists,
+        allowCustomUrl = M.allowCustomUrl ~= false,
+        hosts = M.hosts or {},
+        limits = {
+            library = math.floor(tonumber(M.maxLibrary) or 120),
+            playlists = math.floor(tonumber(M.maxPlaylists) or 20),
+            tracks = math.floor(tonumber(M.maxTracksPerPlaylist) or 100),
+        },
+    }
+end
+
 RegisterNUICallback('app', function(data, cb)
     local id  = data and tostring(data.app or '')
+    if id == 'music' then cb(musicAppData()) return end
     local src = APP_SOURCE[id]
     if not src then cb({ error = 'unknown' }) return end
     if GetResourceState(src.res) ~= 'started' then cb({ error = 'off' }) return end
@@ -601,11 +650,28 @@ RegisterNUICallback('waypoint', function(data, cb)
     cb({ ok = true })
 end)
 
+-- The music deck is a CLIENT concern: the car radio and the DJ deck are both client-side
+-- UIs, and a hook an operator writes runs where the sound does. So this answers locally
+-- rather than asking a server callback that never existed.
 RegisterNUICallback('music', function(data, cb)
     if GetResourceState('v-music') ~= 'started' then cb({ error = 'off' }) return end
-    -- Starting a track and controlling one already playing are two different calls.
-    local cbName = (data and data.action == 'play') and 'v-music:play' or 'v-music:control'
-    V.Request(cbName, function(res) cb(res or { error = 'x' }) end, data)
+    local action = tostring((data and data.action) or '')
+    local music = V.Use('v-music')
+
+    if action == 'play' then
+        cb(music.Play({
+            url = data and data.url, title = data and data.title,
+            artist = data and data.artist, volume = data and data.volume,
+        }, data and data.kind) or { error = 'x' })
+    elseif action == 'stop' then
+        cb(music.Stop() or { error = 'x' })
+    elseif action == 'volume' then
+        cb(music.Volume(data and data.volume) or { error = 'x' })
+    elseif action == 'provider' then
+        cb({ ok = true, provider = music.Provider() })
+    else
+        cb({ error = 'x' })
+    end
 end)
 
 RegisterNUICallback('payRent', function(data, cb)

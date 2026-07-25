@@ -1047,3 +1047,102 @@ Config.Booth = {
         refresh = 2000,
     },
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  MUSIC  (playback, playlists and the deck the phone hands off to)
+-- ══════════════════════════════════════════════════════════════
+-- The Music app is a library, a playlist manager and a remote. What it is NOT is an audio
+-- engine: FiveM has no way to stream a URL from a phone UI, so the sound itself always comes
+-- from a music resource the server already runs.
+--
+-- **Read this before reporting that a track does not play.**
+--
+-- The two rcore scripts this ships support - the car radio and the DJ deck - expose only UI
+-- exports in their public API. There is no documented export in either that takes a URL and
+-- plays it. So the phone does the honest thing: it keeps your library and playlists, puts the
+-- track's URL on your clipboard, and opens the right deck for where you are standing. You
+-- paste and press play. That is a real, working integration with what those scripts actually
+-- publish, and it is the whole of what they publish.
+--
+--   rcore_radiocar   https://store.rcore.cz/package/4342933   in a vehicle
+--   xDiskJockey      https://store.rcore.cz/package/4357520   on foot
+--
+-- If your music script CAN be driven programmatically, fill in `hooks` below and the phone
+-- will drive it instead - no paste, no deck, the track just plays. That path is the one to
+-- use with a script you wrote yourself or one with a richer API.
+Config.Music = {
+    enabled = true,
+
+    -- Which deck the phone hands a track to.
+    --   auto          the car radio when the player is in a vehicle that has one,
+    --                 the DJ deck otherwise
+    --   rcore_radiocar / xdiskjockey    always that one
+    --   hooks         never open a deck; use the `hooks` below only
+    --   off           the app stays hidden entirely
+    provider = 'auto',
+
+    -- Put the track's URL on the clipboard when handing off to a deck, so it is a paste away
+    -- rather than something to retype. Off if you find it intrusive.
+    copyUrl = true,
+
+    -- Drive a music resource directly, for a script that supports it. Each hook runs on the
+    -- CLIENT. Return true from `play` and the phone treats the track as playing and never
+    -- opens a deck.
+    --
+    --     Config.Music.hooks.play = function(track, output)
+    --         -- track = { url, title, artist, volume }, output = 'headphones' | 'speaker'
+    --         return exports['my-music']:PlayUrl(track.url, track.volume)
+    --     end
+    hooks = {
+        play = nil,      -- function(track, output) -> boolean
+        stop = nil,      -- function() -> boolean
+        volume = nil,    -- function(level 0..1) -> boolean
+    },
+
+    -- ── What a player may add ──────────────────────────────────
+    maxLibrary = 120,          -- saved tracks per character
+    maxPlaylists = 20,         -- playlists per character
+    maxTracksPerPlaylist = 100,
+
+    -- Where a track URL may point. Same idea as the wallpaper hosts: an operator decision,
+    -- not the player's. An empty list allows any host, which is the permissive setting.
+    allowCustomUrl = true,
+    hosts = {
+        'youtube.com', 'www.youtube.com', 'youtu.be', 'music.youtube.com',
+        'soundcloud.com', 'www.soundcloud.com',
+        'open.spotify.com',
+        'files.catbox.moe', 'cdn.discordapp.com', 'media.discordapp.net',
+    },
+
+    -- ── Playlists every character starts with ──────────────────
+    -- Read-only: a player can play them and copy a track out of them, but not edit or delete
+    -- them, so a server's own selections stay intact. Their own playlists sit alongside.
+    --
+    -- `icon` is any icon the phone already ships (music, radio, star, heart, disc...).
+    -- Leave `tracks` empty and the playlist is a heading a player can fill from the library.
+    defaultPlaylists = {
+        {
+            id = 'ls_classics',
+            name = 'Los Santos Classics',
+            icon = 'music',
+            tint = '#FF2D55',
+            tracks = {
+                -- { title = 'Track name', artist = 'Artist', url = 'https://...' },
+            },
+        },
+        {
+            id = 'late_night',
+            name = 'Late Night Drive',
+            icon = 'moon',
+            tint = '#5856D6',
+            tracks = {},
+        },
+        {
+            id = 'the_club',
+            name = 'The Club',
+            icon = 'speaker',
+            tint = '#FF9500',
+            tracks = {},
+        },
+    },
+}

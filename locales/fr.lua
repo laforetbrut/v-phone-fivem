@@ -894,6 +894,26 @@ local T = {
     ['ph.peek'] = 'Sortir le telephone',
     ['ph.previews_hint'] = 'Sans apercu, une notification indique de qui elle vient et non ce qu elle dit. Sortir le telephone le fait apparaitre a l ecran ; desactivez-le pour etre averti discretement.',
 
+
+    -- Musique : playlists et passage de relais au deck
+    ['ph.playlists'] = 'Playlists',
+    ['ph.playlist_new'] = 'Nouvelle playlist',
+    ['ph.playlist_name'] = 'Nom de la playlist',
+    ['ph.playlist_add_track'] = 'Ajouter un titre',
+    ['ph.playlist_count'] = '{n} titres',
+    ['ph.playlist_locked'] = 'de la station',
+    ['ph.playlist_empty'] = 'Rien ici pour le moment.',
+    ['ph.playlist_none'] = 'Aucune playlist.',
+    ['ph.playlist_hint'] = 'Les playlists de la station ne sont pas modifiables. Les votres se placent a cote.',
+    ['ph.playlist_full'] = 'Ce telephone ne peut pas en contenir davantage.',
+    ['ph.playlist_dupe'] = 'Deja dans cette playlist.',
+    ['ph.playlist_nolibrary'] = 'Ajoutez d abord un titre a votre bibliotheque.',
+    ['ph.play_all'] = 'Tout lire',
+    ['ph.music_copied'] = 'Lien copie - collez-le dans le deck',
+    ['ph.music_handoff_hint'] = 'Lancer un titre ouvre la radio de votre voiture, ou le deck DJ a pied, avec le lien copie pret a coller.',
+    ['ph.err_nodeck'] = 'Aucun lecteur de musique ne tourne sur ce serveur.',
+    ['ph.err_nohook'] = 'Ce deck ne peut pas etre pilote depuis le telephone.',
+
     -- Cabines telephoniques
     ['ph.booth_use'] = 'Utiliser la cabine',
     ['ph.booth_title'] = 'Cabine telephonique',

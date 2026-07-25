@@ -2949,11 +2949,47 @@ let musicSearch = '';
 
 const MUSIC_TABS = [
   { id: 'listen', icon: 'play', label: 'ph.music_home' },
-  { id: 'browse', icon: 'sparkles', label: 'ph.music_new' },
+  { id: 'playlists', icon: 'folder', label: 'ph.playlists' },
   { id: 'radio', icon: 'speaker', label: 'ph.music_radio' },
   { id: 'library', icon: 'music', label: 'ph.library' },
   { id: 'search', icon: 'search', label: 'ph.search' },
 ];
+
+// ── Playlists ──────────────────────────────────────────────────
+// Two kinds, shown in one list. The operator's come from Config.Music.defaultPlaylists and
+// are read-only: a player may play them and copy a track out, but not edit or delete them,
+// so a server's own selections survive contact with its players. Theirs live in the same
+// per-character phone storage the library uses, so no new table and no migration.
+let musicPlaylistOpen = null;   // the id being viewed, or null for the list
+
+async function musicPlaylists() {
+  const mine = await musicStorage('playlists', []);
+  return (Array.isArray(mine) ? mine : [])
+    .filter((p) => p && p.id && p.name)
+    .map((p) => ({
+      id: String(p.id), name: String(p.name), icon: p.icon || 'music', tint: p.tint || null,
+      tracks: (Array.isArray(p.tracks) ? p.tracks : []).filter((t) => t && t.url).map(musicNormalise),
+      readonly: false,
+    }));
+}
+
+async function musicSavePlaylists(list, limits) {
+  const cap = bnum((limits || {}).playlists, 20);
+  const perList = bnum((limits || {}).tracks, 100);
+  const clean = list.filter((p) => !p.readonly).slice(0, cap).map((p) => ({
+    id: p.id, name: String(p.name).slice(0, 40), icon: p.icon || 'music', tint: p.tint || null,
+    tracks: p.tracks.slice(0, perList).map((t) => ({
+      title: t.title, artist: t.artist, album: t.album, url: t.url, art: t.art,
+    })),
+  }));
+  await post('appStorage', { app: 'music', op: 'set', key: 'playlists', value: JSON.stringify(clean) });
+  return clean;
+}
+
+/** A playlist id that cannot collide with an operator's. */
+function musicPlaylistId() {
+  return 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+}
 const MUSIC_PALETTES = [
   ['#ff4365', '#811848'], ['#ae63ff', '#45238c'], ['#ff9c45', '#a72841'],
   ['#4fc7ff', '#2450a4'], ['#54d8a0', '#126b68'], ['#f3d45b', '#bf4864'],
@@ -3053,11 +3089,17 @@ function musicKind(kind) {
 }
 
 async function musicModel() {
-  const [library, service, recentKeys] = await Promise.all([
+  const [library, service, recentKeys, mine] = await Promise.all([
     musicLibrary(),
     post('app', { app: 'music' }),
     musicStorage('recent', []),
+    musicPlaylists(),
   ]);
+  // The operator's read-only playlists first, then the player's own.
+  const playlists = ((service && service.playlists) || [])
+    .map((p) => Object.assign({}, p, { tracks: (p.tracks || []).map(musicNormalise), readonly: true }))
+    .concat(mine);
+  const limits = (service && service.limits) || {};
   const sources = ((service && service.sources) || []).map((source, index) => {
     const saved = library.find((track) => track.url && track.url === source.url);
     return musicNormalise(Object.assign({}, saved || {}, source, {
@@ -3073,9 +3115,13 @@ async function musicModel() {
   current = current || sources.find((source) => !source.paused) || sources[0] || musicNow;
   if (current) musicNow = Object.assign({}, musicNow || {}, current);
   return {
-    library, sources, recent,
+    library, sources, recent, playlists, limits,
     current: current ? musicNormalise(current) : null,
     enabled: !service || (!service.error && service.enabled !== false),
+    // True when the deck cannot be driven and the track has to be pasted. The app says so
+    // once, on the playlists screen, rather than leaving the player guessing.
+    handoff: !!(service && service.handoff),
+    provider: (service && service.provider) || null,
   };
 }
 
@@ -3173,6 +3219,12 @@ async function musicPlay(track, queue, output) {
   if (!result || !result.ok) {
     toast(L('ph.err_' + ((result && result.error) || 'x')));
     return;
+  }
+  // A deck that cannot be driven gets the URL on the clipboard and opens itself; the player
+  // pastes. Lua has no clipboard, so the copy has to happen here.
+  if (result.copy) {
+    copySdkText(result.copy);
+    toast(L('ph.music_copied'));
   }
   musicOutput = kind;
   musicQueue = (queue && queue.length ? queue : [track]).map(musicNormalise);
@@ -3422,6 +3474,105 @@ function musicRenderSearch(model) {
   });
 }
 
+/** The playlist list, or one playlist opened. */
+async function musicRenderPlaylists(model) {
+  const open = musicPlaylistOpen
+    && model.playlists.find((p) => p.id === musicPlaylistOpen);
+
+  // ── One playlist ────────────────────────────────────────────
+  if (open) {
+    setNav(open.name, () => { musicPlaylistOpen = null; RENDER.music(); },
+      open.readonly ? null : { icon: 'add', label: L('ph.playlist_add_track'),
+        onClick: () => musicAddToPlaylist(model, open) });
+    body(
+      '<div class="musicplhead">' +
+      '<div class="musicplart" style="--tint:' + esc(open.tint || '#FF2D55') + '">' +
+      svg(open.icon || 'music') + '</div>' +
+      '<div><b>' + esc(open.name) + '</b>' +
+      '<small>' + esc(L('ph.playlist_count').replace('{n}', String(open.tracks.length))) +
+      (open.readonly ? ' · ' + esc(L('ph.playlist_locked')) : '') + '</small></div>' +
+      '</div>' +
+      (open.tracks.length
+        ? UI.button(L('ph.play_all'), 'plplay', 'tinted') +
+          '<div class="musictracklist">' +
+          open.tracks.map((t, i) => musicTrackRow(t, i, true)).join('') + '</div>'
+        : UI.empty(L('ph.playlist_empty'), 'music')));
+
+    const play = byId('plplay');
+    if (play) play.addEventListener('click', () => musicPlay(open.tracks[0], open.tracks));
+    musicWireTracks(open.tracks, model.library);
+    return;
+  }
+
+  // ── The list ────────────────────────────────────────────────
+  musicPlaylistOpen = null;
+  setNav(L('app.music'), null,
+    { icon: 'add', label: L('ph.playlist_new'), onClick: () => musicNewPlaylist(model) });
+  musicFoot(model);
+
+  // NOT `rows`: that is the global row-wiring helper, and shadowing it here would break the
+  // call below in a way only a click would reveal.
+  const items = model.playlists.map((p) => UI.row({
+    icon: p.icon || 'music', tint: p.tint || '#FF2D55', title: p.name,
+    subtitle: L('ph.playlist_count').replace('{n}', String(p.tracks.length)),
+    chevron: true, data: { pl: p.id },
+  }));
+
+  body(
+    // Said once, where it matters: on a server whose deck cannot be driven, playing a track
+    // opens that deck with the URL copied. Better here than as a surprise every time.
+    (model.handoff ? '<div class="groupfoot">' + esc(L('ph.music_handoff_hint')) + '</div>' : '') +
+    (items.length ? UI.group(items, { header: L('ph.playlists') })
+                  : UI.empty(L('ph.playlist_none'), 'folder')) +
+    '<div class="groupfoot">' + esc(L('ph.playlist_hint')) + '</div>');
+
+  rows('.row', (r) => {
+    if (!r.dataset.pl) return;
+    r.addEventListener('click', () => { musicPlaylistOpen = r.dataset.pl; RENDER.music(); });
+  });
+}
+
+/** Create one, from a name the player types. */
+async function musicNewPlaylist(model) {
+  const mine = model.playlists.filter((p) => !p.readonly);
+  if (mine.length >= bnum(model.limits.playlists, 20)) { toast(L('ph.playlist_full')); return; }
+  sheet(L('ph.playlist_new'),
+    UI.field('plname', L('ph.playlist_name'), '', 'maxlength="40"') +
+    UI.button(L('ph.save'), 'plsave', 'tinted'), () => {
+      byId('plsave').addEventListener('click', async () => {
+        const name = String(byId('plname').value || '').trim();
+        if (!name) return;
+        const epoch = sheetEpoch;
+        await musicSavePlaylists(
+          mine.concat([{ id: musicPlaylistId(), name, icon: 'music', tint: null, tracks: [] }]),
+          model.limits);
+        if (closeSheet(false, epoch)) RENDER.music();
+      });
+    });
+}
+
+/** Put a library track into a playlist. */
+async function musicAddToPlaylist(model, playlist) {
+  if (!model.library.length) { toast(L('ph.playlist_nolibrary')); return; }
+  sheet(L('ph.playlist_add_track'),
+    '<div class="musictracklist">' +
+    model.library.map((t, i) => musicTrackRow(t, i, true)).join('') + '</div>', () => {
+      [...byId('sheet').querySelectorAll('[data-mtrack]')].forEach((row, i) =>
+        row.addEventListener('click', async () => {
+          const track = model.library[i];
+          if (!track) return;
+          if (playlist.tracks.some((t) => t.url === track.url)) { toast(L('ph.playlist_dupe')); return; }
+          if (playlist.tracks.length >= bnum(model.limits.tracks, 100)) { toast(L('ph.playlist_full')); return; }
+          const epoch = sheetEpoch;
+          const mine = model.playlists.filter((p) => !p.readonly);
+          const target = mine.find((p) => p.id === playlist.id);
+          if (target) target.tracks = target.tracks.concat([track]);
+          await musicSavePlaylists(mine, model.limits);
+          if (closeSheet(false, epoch)) RENDER.music();
+        }));
+    });
+}
+
 RENDER.music = async () => {
   setNav(L('app.music'), null, musicTab === 'library'
     ? { icon: 'add', label: L('ph.track_add'), onClick: () => musicAdd() } : null);
@@ -3452,6 +3603,11 @@ RENDER.music = async () => {
     musicWireTracks(recent, model.library);
     const mix = byId('musicmixplay');
     if (mix) mix.addEventListener('click', () => musicPlay(favourites[0], favourites));
+    return;
+  }
+
+  if (musicTab === 'playlists') {
+    await musicRenderPlaylists(model);
     return;
   }
 
