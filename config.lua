@@ -1146,3 +1146,72 @@ Config.Music = {
         },
     },
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  VEHICLE REMOTE  (lights, neons, doors and locks from the phone)
+-- ══════════════════════════════════════════════════════════════
+-- Your car, from your pocket. Open the Garage app, pick a vehicle you own that is parked
+-- nearby, and flash the lights, change the underglow, pop a door or lock it.
+--
+-- **This needs no dependency at all.** Neons, lights, doors and locks are engine natives, so
+-- this works identically on qb-core, qbx_core, ox_core, ESX and standalone, with any garage
+-- or inventory script. What the framework decides is only WHICH vehicles are yours, and that
+-- is read through the same bridge the Garage app already uses.
+--
+-- **jim-mechanic.** It ships a "Neon Controller" item that sets underglow and xenon colour.
+-- It publishes no exports, so there is nothing to call into - and nothing to fight over
+-- either: both write the same engine state. Leave `persist` off and the phone is a remote,
+-- with jim-mechanic remaining the thing that SAVES a build. Turn it on and a colour set from
+-- the phone is written to the vehicle's state so it survives a re-spawn, which is what you
+-- want on a server with no mechanic script at all.
+Config.VehicleRemote = {
+    enabled = true,
+
+    -- **How far the phone reaches, in metres.** Checked on the SERVER against the vehicle's
+    -- real position, so a modified client cannot open its car from across the city.
+    distance = 20.0,
+
+    -- Only vehicles the framework says belong to this character. Off lets a player control
+    -- any vehicle in range, which is a very different game - keep it on unless you mean it.
+    requireOwnership = true,
+
+    -- Refuse while the engine is running and somebody is in the driver's seat, so this
+    -- cannot be used to lock a thief in or pop a door on a moving car.
+    refuseWhileDriven = true,
+
+    -- Seconds between commands from one player. Stops the buttons being held down.
+    cooldownSeconds = 1,
+
+    -- Which controls the app offers. Each one hides its own button.
+    controls = {
+        lights   = true,     -- flash / low beam / full beam
+        neon     = true,     -- underglow on/off and colour
+        doors    = true,     -- pop and shut each door
+        locks    = true,     -- lock and unlock
+        engine   = false,    -- remote start. OFF by default: it is the strongest of these
+        horn     = true,     -- a short honk, to find it in a car park
+        alarm    = false,    -- the full alarm, for the same reason and louder
+    },
+
+    -- The underglow palette the app offers. `name` is shown, `rgb` is what is applied.
+    neonColours = {
+        { name = 'White',   rgb = { 255, 255, 255 } },
+        { name = 'Red',     rgb = { 255, 45, 85 } },
+        { name = 'Orange',  rgb = { 255, 149, 0 } },
+        { name = 'Yellow',  rgb = { 255, 214, 10 } },
+        { name = 'Green',   rgb = { 52, 199, 89 } },
+        { name = 'Cyan',    rgb = { 90, 200, 250 } },
+        { name = 'Blue',    rgb = { 10, 132, 255 } },
+        { name = 'Purple',  rgb = { 175, 82, 222 } },
+        { name = 'Pink',    rgb = { 255, 55, 175 } },
+    },
+
+    -- Write a neon change to the vehicle's state bag so it survives the vehicle being
+    -- re-created. Off by default: on a server running a mechanic script, that script owns
+    -- what a build looks like, and two writers of the same value is one too many.
+    persist = false,
+
+    -- Log every remote command to the server console. A car that unlocks itself is worth
+    -- being able to explain.
+    log = false,
+}

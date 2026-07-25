@@ -43,6 +43,8 @@ client_scripts {
     'client/police.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
+    -- The vehicle remote: finds a car by plate and applies what the server allowed.
+    'client/vehicle.lua',
     'apps/*/client.lua',      -- optional, per app folder
 }
 
@@ -60,6 +62,8 @@ server_scripts {
     -- Payphones: prepaid credit, the card, and the metered call. Loaded after main.lua,
     -- whose call machinery it drives.
     'server/booth.lua',
+    -- The vehicle remote: ownership and distance are decided here, never on the client.
+    'server/vehicle.lua',
     -- Bleeter, Snapmatic and Hush. Player-shared data, which the rest of the phone
     -- avoids, so it keeps its own file.
     'server/social.lua',

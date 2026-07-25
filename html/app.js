@@ -2357,11 +2357,118 @@ RENDER.garage = async () => {
   if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'garage')); return; }
   const list = Array.isArray(d) ? d : (d.vehicles || []);
   if (!list.length) { body(UI.empty(L('ph.no_vehicles'), 'garage')); return; }
-  body(UI.group(list.map((v) => UI.row({
+  body(UI.group(list.map((v, i) => UI.row({
     icon: 'garage', tint: '#0A84FF', title: v.model || '', subtitle: `${v.plate || ''}  ${v.garage || L('ph.out')}`,
     value: v.live ? L('ph.veh_out') : L('ph.veh_stored'),
+    chevron: true, data: { veh: String(i) },
   }))));
+  rows('.row', (r) => {
+    if (!r.dataset.veh) return;
+    r.addEventListener('click', () => vehicleRemote(list[Number(r.dataset.veh)]));
+  });
 };
+
+// ── The remote ─────────────────────────────────────────────────
+// Lights, underglow, doors and locks for a car you own and are standing near. Every button
+// is re-checked on the server - ownership, distance and whether the operator enabled that
+// control at all - so this sheet is a convenience, never a permission.
+const VEH_LIGHT_MODES = [
+  { v: 'flash', label: 'ph.veh_flash' },
+  { v: 'on', label: 'ph.veh_lights_on' },
+  { v: 'off', label: 'ph.veh_lights_off' },
+];
+
+async function vehicleSend(plate, action, value) {
+  const r = await post('vehicleControl', { plate, action, value });
+  if (!r || !r.ok) {
+    const key = (r && r.error) || 'x';
+    const message = L('ph.veh_err_' + key);
+    toast(message === 'ph.veh_err_' + key ? L('ph.veh_err_x') : message);
+    return false;
+  }
+  ui('key');
+  return true;
+}
+
+async function vehicleRemote(v) {
+  if (!v || !v.plate) return;
+  const plate = v.plate;
+  // Ask the client where the car is first: a remote for a vehicle three districts away is a
+  // row of buttons that can only fail, and saying so up front is kinder than five refusals.
+  const found = await post('vehicleFind', { plate });
+  const near = !!(found && found.ok);
+  const controls = (state.vehicleControls || {});
+
+  const group = [];
+  if (controls.locks) {
+    group.push(UI.row({ icon: 'lockshut', tint: '#8E8E93', title: L('ph.veh_lock'), data: { a: 'lock' } }));
+    group.push(UI.row({ icon: 'lockopen', tint: '#34C759', title: L('ph.veh_unlock'), data: { a: 'unlock' } }));
+  }
+  if (controls.lights) group.push(UI.row({ icon: 'sun', tint: '#FFD60A', title: L('ph.veh_lights'), chevron: true, data: { a: 'lights' } }));
+  if (controls.neon) group.push(UI.row({ icon: 'sparkles', tint: '#AF52DE', title: L('ph.veh_neon'), chevron: true, data: { a: 'neon' } }));
+  if (controls.doors) group.push(UI.row({ icon: 'garage', tint: '#0A84FF', title: L('ph.veh_doors'), chevron: true, data: { a: 'doors' } }));
+  if (controls.horn) group.push(UI.row({ icon: 'speaker', tint: '#FF9500', title: L('ph.veh_horn'), data: { a: 'horn' } }));
+  if (controls.engine) group.push(UI.row({ icon: 'battery', tint: '#FF453A', title: L('ph.veh_engine'), chevron: true, data: { a: 'engine' } }));
+  if (controls.alarm) group.push(UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.veh_alarm'), data: { a: 'alarm' } }));
+
+  sheet(v.model || plate,
+    '<div class="groupfoot">' + esc(plate) + ' · ' +
+    esc(near ? L('ph.veh_near').replace('{m}', String(found.distance))
+             : L('ph.veh_far')) + '</div>' +
+    (group.length ? UI.group(group) : UI.empty(L('ph.veh_no_controls'), 'garage')),
+    () => {
+      qrows('sheet', '.row', (r) => {
+        const a = r.dataset.a;
+        if (!a) return;
+        r.addEventListener('click', async () => {
+          if (a === 'lock' || a === 'unlock') {
+            await vehicleSend(plate, 'locks', a === 'lock' ? 'lock' : 'unlock');
+          } else if (a === 'horn' || a === 'alarm') {
+            await vehicleSend(plate, a);
+          } else if (a === 'lights') {
+            sheet(L('ph.veh_lights'), UI.group(VEH_LIGHT_MODES.map((m) =>
+              UI.row({ icon: 'sun', tint: '#FFD60A', title: L(m.label), data: { m: m.v } }))), () => {
+                qrows('sheet', '.row', (x) => x.addEventListener('click',
+                  () => vehicleSend(plate, 'lights', x.dataset.m)));
+              });
+          } else if (a === 'doors') {
+            const doors = [0, 1, 2, 3, 4, 5];
+            sheet(L('ph.veh_doors'),
+              UI.button(L('ph.veh_doors_shut'), 'vshut', 'plain') +
+              UI.group(doors.map((d) => UI.row({
+                icon: 'garage', tint: '#0A84FF', title: L('ph.veh_door_' + d), data: { d: String(d) },
+              }))), () => {
+                byId('vshut').addEventListener('click',
+                  () => vehicleSend(plate, 'doors', { door: -1, open: false }));
+                qrows('sheet', '.row', (x) => x.addEventListener('click',
+                  () => vehicleSend(plate, 'doors', { door: Number(x.dataset.d), open: true })));
+              });
+          } else if (a === 'engine') {
+            sheet(L('ph.veh_engine'), UI.group([
+              UI.row({ icon: 'battery', tint: '#34C759', title: L('ph.veh_engine_on'), data: { e: 'on' } }),
+              UI.row({ icon: 'battery', tint: '#FF453A', title: L('ph.veh_engine_off'), data: { e: 'off' } }),
+            ]), () => {
+              qrows('sheet', '.row', (x) => x.addEventListener('click',
+                () => vehicleSend(plate, 'engine', x.dataset.e)));
+            });
+          } else if (a === 'neon') {
+            const palette = state.vehicleNeons || [];
+            sheet(L('ph.veh_neon'),
+              UI.button(L('ph.veh_neon_off'), 'vneonoff', 'plain') +
+              '<div class="neongrid">' + palette.map((c, i) =>
+                '<button type="button" data-n="' + i + '" style="--c:rgb(' +
+                c.rgb.join(',') + ')"><span></span>' + esc(c.name) + '</button>').join('') +
+              '</div>', () => {
+                byId('vneonoff').addEventListener('click', () => vehicleSend(plate, 'neon', false));
+                [...byId('sheet').querySelectorAll('[data-n]')].forEach((b) =>
+                  b.addEventListener('click',
+                    () => vehicleSend(plate, 'neon', palette[Number(b.dataset.n)].rgb)));
+              });
+          }
+        });
+      });
+    });
+}
 
 // ── Wallet ─────────────────────────────────────────────────────
 RENDER.wallet = async () => {

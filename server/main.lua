@@ -1422,6 +1422,11 @@ V.Callback('v-phone:open', function(src, resolve)
         -- row is hidden when they do not, because a control that cannot do anything is worse
         -- than no control - and startCall re-checks the same setting regardless.
         allowAnonymous = V.SettingBool('anonymous', false),
+        -- The vehicle remote: which controls the operator switched on, and the underglow
+        -- palette. The app draws only what is enabled; the server refuses the rest anyway.
+        vehicleControls = (Config.VehicleRemote and Config.VehicleRemote.enabled)
+            and (Config.VehicleRemote.controls or {}) or {},
+        vehicleNeons = (Config.VehicleRemote and Config.VehicleRemote.neonColours) or {},
         call = currentCallFor(src) or false,
     })
 end)

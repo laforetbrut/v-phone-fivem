@@ -9142,3 +9142,19 @@ body.inframe.dark .uisearch {
   color: #6d6960;
   text-shadow: 0 1px 0 rgba(0, 0, 0, .7);
 }
+
+/* The underglow palette: a swatch you pick a colour off, not a list of names. */
+.neongrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 4px 0; }
+.neongrid button {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 4px; border-radius: 12px;
+  font-size: 11px; color: var(--label, #fff);
+  background: var(--fill, rgba(120, 120, 128, .16));
+}
+.neongrid button span {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--c);
+  /* The glow is the point: an underglow swatch that does not glow is a coloured dot. */
+  box-shadow: 0 0 12px var(--c), inset 0 -2px 6px rgba(0, 0, 0, .35);
+}
+.neongrid button:active { transform: scale(.95); }
