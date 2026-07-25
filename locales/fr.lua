@@ -886,6 +886,7 @@ local T = {
     -- Cabines telephoniques
     ['ph.booth_use'] = 'Utiliser la cabine',
     ['ph.booth_title'] = 'Cabine telephonique',
+    ['ph.booth_coin_slot'] = 'Inserez des pieces',
     ['ph.booth_none'] = 'Il n y a pas de cabine ici.',
     ['ph.booth_invehicle'] = 'Sortez du vehicule d abord.',
     ['ph.booth_walked_off'] = 'Vous vous etes eloigne de la cabine.',

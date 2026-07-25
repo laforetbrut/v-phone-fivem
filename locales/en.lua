@@ -884,6 +884,7 @@ local T = {
     -- Payphones
     ['ph.booth_use'] = 'Use payphone',
     ['ph.booth_title'] = 'Payphone',
+    ['ph.booth_coin_slot'] = 'Insert coins',
     ['ph.booth_none'] = 'There is no phone box here.',
     ['ph.booth_invehicle'] = 'Get out of the vehicle first.',
     ['ph.booth_walked_off'] = 'You walked away from the box.',

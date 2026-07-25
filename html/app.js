@@ -8106,6 +8106,7 @@ function boothOpen(data, call) {
   boothState = data || {};
   boothCall = call || null;
   boothDialled = '';
+  byId('boothbrand').textContent = boothState.brand || 'Badger';
   byId('boothname').textContent = L('ph.booth_title');
   byId('booth').classList.remove('hidden');
   boothRender();
@@ -8151,26 +8152,32 @@ function boothErr(r) {
 }
 
 // ── The panel ──────────────────────────────────────────────────
+// Laid out the way a real faceplate is, top to bottom: the operator's identification plate
+// with the box number stamped on it, the coin slot, the readout, the keys, the card reader,
+// then the instruction placard. The orange ID plate is the detail that sells it - every
+// payphone carries one, and it is where the number of the box is printed.
 function boothRender() {
   const s = boothState || {};
   const inCall = boothCall != null;
 
   byId('boothbody').innerHTML =
-    '<div class="boothplate">' +
-    '<div class="boothbox">' +
+    '<div class="boothid">' +
+    '<div class="boothidleft">' +
     '<span>' + esc(L('ph.booth_box_number')) + '</span>' +
     '<strong>' + esc(s.number || '') + '</strong>' +
-    '<small>' + esc(L('ph.booth_incoming_never')) + '</small>' +
     '</div>' +
-    '<div class="boothcredit">' +
+    '<div class="boothidright">' +
     '<span>' + esc(s.free ? '' : L('ph.booth_credit')) + '</span>' +
     '<strong id="boothmeter" class="' +
     (!s.free && bnum(s.credit) <= 0 ? 'empty' : '') + '">' +
     esc(s.free ? L('ph.booth_free_mode') : boothClock(s.credit)) + '</strong>' +
-    (s.free ? '' : '<small>' +
-      esc(L('ph.booth_rate').replace('{seconds}', String(bnum(s.costPerMinute, 60)))) + '</small>') +
     '</div>' +
+    '<em>' + esc(L('ph.booth_incoming_never')) + '</em>' +
     '</div>' +
+    // The coin slot. Nothing goes in it - the card reader below is what takes payment - but
+    // the slot and the return cup are what the eye looks for on a call box.
+    '<div class="boothslot" aria-hidden="true"><i></i><span>' +
+    esc(L('ph.booth_coin_slot')) + '</span><i></i></div>' +
     (inCall ? boothCallFace() : boothDialFace(s));
 
   if (inCall) {
@@ -8182,41 +8189,60 @@ function boothRender() {
   boothWireDial(s);
 }
 
-/** In a call: who, how long the box has been talking, and one way out. */
+/** In a call: the number on the readout, a lamp for the line state, and the hook. */
 function boothCallFace() {
   const c = boothCall || {};
   const label = c.state === 'active' ? L('ph.booth_connected')
     : c.state === 'out' ? L('ph.booth_ringing')
       : L('ph.booth_dialling');
   return '<div class="boothcall">' +
-    '<div class="boothcallnum">' + esc(c.number || '') + '</div>' +
-    '<div class="boothcallstate' + (c.state === 'active' ? ' live' : '') + '">' +
-    esc(label) + '</div>' +
+    '<div class="boothlcd big"><span>' + esc(c.number || '') + '</span></div>' +
+    '<div class="boothlamp' + (c.state === 'active' ? ' live' : '') + '">' +
+    '<i></i>' + esc(label) + '</div>' +
     '<button class="boothend" id="boothend" type="button">' +
     esc(L('ph.booth_hangup')) + '</button>' +
     '</div>';
 }
 
-/** Idle: a keypad, the card slot, and whatever the last attempt had to say. */
+// The letters stamped under the digits. The OLD scheme on purpose: no Q and no Z, and 0 is
+// the operator - which is what a call box of this age would carry.
+const BOOTH_KEYS = [
+  ['1', ''], ['2', 'ABC'], ['3', 'DEF'],
+  ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'],
+  ['7', 'PRS'], ['8', 'TUV'], ['9', 'WXY'],
+  ['*', ''], ['0', 'OPER'], ['#', ''],
+];
+
+/** Idle: the readout, the keys, the card reader, and the instruction placard. */
 function boothDialFace(s) {
-  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
   const canCard = s.cardItem && !s.free;
   return '<div class="boothdial">' +
-    '<div class="boothscreen">' +
+    // A recessed amber readout behind glass, not a text box. The input is still a real
+    // input so a keyboard works; it is only dressed as a segment display.
+    '<div class="boothlcd">' +
     '<input id="boothinput" inputmode="numeric" autocomplete="off" maxlength="20" ' +
     'placeholder="' + esc(L('ph.booth_dial')) + '" value="' + esc(boothDialled) + '" />' +
     '</div>' +
-    '<div class="boothkeys">' + keys.map((k) =>
-      '<button type="button" data-key="' + esc(k) + '">' + esc(k) + '</button>').join('') +
-    '<button type="button" class="wide" data-key="del">&#9003;</button>' +
+    '<div class="boothkeys">' + BOOTH_KEYS.map(([k, letters]) =>
+      '<button type="button" data-key="' + esc(k) + '">' +
+      '<b>' + esc(k) + '</b>' + (letters ? '<i>' + esc(letters) + '</i>' : '') +
+      '</button>').join('') +
+    '<button type="button" class="wide" data-key="del"><b>&#9003;</b></button>' +
     '</div>' +
     '<button class="boothgo" id="boothgo" type="button">' + esc(L('ph.booth_call')) + '</button>' +
+    // The card reader: a milled slot with the direction of travel engraved beside it.
     (canCard ? '<button class="boothcard" id="boothcard" type="button">' +
-      esc(L('ph.booth_insert_card')) + '</button>' +
-      '<div class="boothhint">' +
-      esc(L('ph.booth_insert_hint').replace('{minutes}',
-        String(Math.floor(bnum(s.cardSeconds, 600) / 60)))) + '</div>' : '') +
-    '<div class="boothhint">' + esc(L('ph.booth_emergency_free')) + '</div>' +
+      '<span class="boothcardslot"></span>' +
+      '<span class="boothcardtext">' + esc(L('ph.booth_insert_card')) + '</span>' +
+      '</button>' : '') +
+    // The instruction placard, screwed to the plate. Engraved, not printed.
+    '<div class="boothplacard">' +
+    (canCard ? '<p>' + esc(L('ph.booth_insert_hint').replace('{minutes}',
+      String(Math.floor(bnum(s.cardSeconds, 600) / 60)))) + '</p>' : '') +
+    '<p>' + esc(L('ph.booth_emergency_free')) + '</p>' +
+    (s.free ? '' : '<p>' +
+      esc(L('ph.booth_rate').replace('{seconds}', String(bnum(s.costPerMinute, 60)))) + '</p>') +
+    '</div>' +
     '<div class="bootherr' + (s.notice ? ' show' : '') + '" id="bootherr">' +
     esc(s.notice || '') + '</div>' +
     '</div>';

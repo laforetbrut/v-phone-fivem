@@ -114,6 +114,8 @@ V.Callback('v-phone:booth:open', function(src, resolve, data)
     resolve({
         ok = true,
         number = booth.number,
+        -- The operator's name for the plate at the top of the panel.
+        brand = tostring(BOOTH.brand or 'Badger'),
         credit = creditOf(p.citizenid),
         free = isFree(),
         -- The page needs these to draw the meter and to grey out what it cannot do.

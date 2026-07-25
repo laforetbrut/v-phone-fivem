@@ -936,6 +936,11 @@ Config.Booth = {
     -- phone prop is attached.
     anim = { dict = 'cellphone@', clip = 'cellphone_call_listen_base' },
 
+    -- The operator's name, struck into the plate at the top of the panel. Los Santos has two
+    -- payphone operators, Badger and Whiz, and plenty of unbranded boxes - put your own city's
+    -- telco here if you have one.
+    brand = 'Badger',
+
     -- ── Paying for the call ────────────────────────────────────
     -- Seconds of talk time. `0` makes every booth call free and hides the card entirely,
     -- which is a fine way to run this if you do not want an economy attached to it.

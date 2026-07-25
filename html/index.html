@@ -199,11 +199,23 @@
        call box has no handset in hand, so none is drawn. Hidden until the client raises it. -->
   <div class="booth hidden" id="booth">
     <div class="boothwrap">
+      <!-- The armored handset on its steel lanyard, hanging in the cradle. Decoration: the
+           call is placed on the panel, but a payphone without a receiver on a cord does not
+           read as a payphone. -->
+      <div class="boothhook" aria-hidden="true">
+        <span class="boothreceiver"></span>
+        <span class="boothcord"></span>
+      </div>
       <header class="boothhead">
-        <div class="boothtitle"><span class="boothdot"></span> <span id="boothname">Payphone</span></div>
+        <div class="boothplate2">
+          <span class="boothmaker" id="boothbrand">Badger</span>
+          <span class="boothmodel" id="boothname">Payphone</span>
+        </div>
         <button class="boothx" id="boothx" type="button" aria-label="Close">&times;</button>
       </header>
       <div class="boothbody" id="boothbody"></div>
+      <!-- Coin return, at the bottom where your hand goes. Also decoration. -->
+      <div class="boothreturn" aria-hidden="true"><span></span><i>COIN RETURN</i></div>
     </div>
   </div>
 

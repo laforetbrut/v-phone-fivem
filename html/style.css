@@ -8626,12 +8626,21 @@ body.inframe.dark .uisearch {
 /* The name, timer and buttons stay above the picture. */
 .callui.facetime > *:not(.facepeer):not(.faceself) { position: relative; z-index: 4; }
 
+
+
+
 /* ══ The payphone ═══════════════════════════════════════════════
-   The third surface, and the only one that is not a screen. A player at a call box is
-   looking at painted steel and a chrome keypad, so the panel is drawn as the box: warm
-   metal, an amber LCD for the meter, and physical keys. It shares nothing with the phone
-   shell on purpose - a payphone that looked like iFruit would read as the player's own
-   phone, which is exactly the confusion to avoid. */
+   Built from the anatomy of a real call box, because that is what the player is standing in
+   front of: a brushed stainless faceplate screwed to a steel body, an orange operator's
+   identification plate with the number of the box stamped on it, a chrome coin slot, a
+   recessed amber readout behind glass, milled chrome keys carrying the old letter groups, a
+   card reader, an engraved instruction placard, and the coin return cup at the bottom.
+
+   It shares nothing with the phone shell, deliberately. A payphone that looked like iFruit
+   would read as the player's own handset, which is the one confusion worth avoiding.
+
+   Dark only, like the forensics terminal: there is no light-mode steel. */
+
 .booth {
   position: fixed;
   inset: 0;
@@ -8640,169 +8649,496 @@ body.inframe.dark .uisearch {
   align-items: center;
   justify-content: center;
   font-family: var(--ios-ui, system-ui, sans-serif);
-  background: rgba(6, 8, 12, .82);
+  background: radial-gradient(ellipse at 50% 40%, rgba(30, 26, 20, .55), rgba(4, 5, 7, .9));
 }
 .booth.hidden { display: none; }
 
+/* ── The body: brushed steel ────────────────────────────────────
+   Three layers. Fine vertical striping for the brush marks, a broad diagonal sheen so the
+   plate catches light unevenly the way rolled steel does, and a base gradient for the form.
+   Then four screw heads, drawn as background radials so they cost no DOM. */
 .boothwrap {
+  position: relative;
   display: flex;
-  width: min(420px, 92vw);
-  max-height: min(88vh, 880px);
+  width: min(408px, 94vw);
+  max-height: min(92vh, 940px);
   flex-direction: column;
-  overflow: hidden;
-  border-radius: 18px;
-  color: #e6e2d8;
-  background: linear-gradient(180deg, #2b2a26, #1a1917);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, .65), inset 0 0 0 1px rgba(220, 190, 130, .16);
+  padding: 0 0 4px;
+  border-radius: 12px 12px 8px 8px;
+  color: #e8e4da;
+  background:
+    radial-gradient(circle at 13px 13px, #9c9a92 0 2.1px, #4a4844 2.4px 3.3px, transparent 3.6px),
+    radial-gradient(circle at calc(100% - 13px) 13px, #9c9a92 0 2.1px, #4a4844 2.4px 3.3px, transparent 3.6px),
+    radial-gradient(circle at 13px calc(100% - 13px), #9c9a92 0 2.1px, #4a4844 2.4px 3.3px, transparent 3.6px),
+    radial-gradient(circle at calc(100% - 13px) calc(100% - 13px), #9c9a92 0 2.1px, #4a4844 2.4px 3.3px, transparent 3.6px),
+    repeating-linear-gradient(90deg,
+      rgba(255, 255, 255, .07) 0 1px, rgba(0, 0, 0, .05) 1px 2px, transparent 2px 4px),
+    linear-gradient(112deg,
+      rgba(255, 255, 255, .14) 0%, rgba(255, 255, 255, .03) 26%,
+      rgba(255, 255, 255, .12) 48%, rgba(0, 0, 0, .08) 74%, rgba(255, 255, 255, .07) 100%),
+    /* Light stainless, not gunmetal. A real faceplate is bright rolled steel, which is also
+       what lets the stamped legends read as dark text instead of disappearing into the panel. */
+    linear-gradient(180deg, #a6a49b 0%, #918f87 18%, #83817a 52%, #726f69 82%, #5d5b55 100%);
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, .72),
+    inset 0 1px 0 rgba(255, 255, 255, .30),
+    inset 0 -1px 0 rgba(0, 0, 0, .55),
+    inset 1px 0 0 rgba(255, 255, 255, .09),
+    inset -1px 0 0 rgba(0, 0, 0, .35);
 }
 
+/* ── The handset, on its armored cord ───────────────────────────
+   The receiver sits in the cradle at the top left and the steel lanyard runs down the side of
+   the body. The interlocked look is a repeating gradient, which is what an armored cord is:
+   short steel segments end to end. */
+.boothhook {
+  position: absolute;
+  top: 26px;
+  /* Overlapping the body, not floating beside it: the cradle is bolted to the steel, so the
+     handset has to touch it or it reads as an aerial. */
+  left: -23px;
+  width: 36px;
+  /* Sized to the handset itself, NOT to the body. A cord run down the whole panel reads as an
+     aerial or a thermometer; a real armored cord is a short stub from the receiver into the
+     housing, and that is all that should be drawn. */
+  height: 152px;
+  pointer-events: none;
+}
+/* The cradle bracket the receiver rests in, bolted through to the housing. */
+.boothhook::before {
+  content: '';
+  position: absolute;
+  top: 34px;
+  left: 14px;
+  right: -6px;
+  height: 18px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #9b9890, #6a6761);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 2px 4px rgba(0, 0, 0, .45);
+}
+.boothreceiver {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 88px;
+  border-radius: 12px;
+  background: linear-gradient(96deg, #191817, #403e3a 40%, #201f1d 72%, #0e0d0c);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .2),
+    inset -1px 0 0 rgba(0, 0, 0, .5),
+    -3px 3px 9px rgba(0, 0, 0, .65);
+  z-index: 2;
+}
+/* The earpiece and mouthpiece caps, a little wider than the grip. */
+.boothreceiver::before,
+.boothreceiver::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  width: 29px;
+  height: 21px;
+  border-radius: 9px;
+  background: linear-gradient(96deg, #232220, #4a4842 45%, #151413);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), -2px 2px 5px rgba(0, 0, 0, .5);
+}
+.boothreceiver::before { top: -4px; }
+.boothreceiver::after { bottom: -4px; }
+/* The armored cord: interlocked steel segments, which is why it is a repeating gradient and
+   not a smooth line. It leaves the bottom of the receiver and disappears into the body. */
+.boothcord {
+  position: absolute;
+  top: 92px;
+  left: 9px;
+  width: 9px;
+  height: 58px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(180deg,
+    #a3a099 0 2px, #4f4d47 2px 3px, #7e7b75 3px 5px, #33312c 5px 6px);
+  box-shadow: -2px 0 4px rgba(0, 0, 0, .5), inset 1px 0 0 rgba(255, 255, 255, .22);
+}
+
+/* ── The maker's plate ──────────────────────────────────────────
+   A dark anodised bar across the top with the operator's name struck into it. Badger and Whiz
+   are the two payphone operators in Los Santos; Config.Booth.brand names yours. */
 .boothhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 13px 16px;
-  border-bottom: 1px solid rgba(220, 190, 130, .14);
+  padding: 11px 14px 10px;
+  border-radius: 11px 11px 0 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #33322e, #1e1d1b);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .7), 0 1px 0 rgba(255, 255, 255, .13);
 }
-.boothtitle { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; }
-.boothdot {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: #f0a030; box-shadow: 0 0 10px #f0a030;
+.boothplate2 { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.boothmaker {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: #f0a63a;
+  /* Struck into the metal: a dark edge above, a warm one below. */
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .8), 0 -1px 0 rgba(255, 190, 90, .28);
+}
+.boothmodel {
+  font-size: 9.5px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: #8d887c;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .7);
 }
 .boothx {
-  width: 32px; height: 32px; border-radius: 8px;
-  color: #e6e2d8; font-size: 22px; line-height: 1;
-  background: rgba(220, 190, 130, .12);
+  flex: none;
+  width: 27px;
+  height: 27px;
+  border-radius: 5px;
+  color: #d8d3c7;
+  font-size: 19px;
+  line-height: 1;
+  background: linear-gradient(180deg, #55534c, #35342f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 1px 2px rgba(0, 0, 0, .5);
 }
-.boothx:hover { background: rgba(220, 190, 130, .22); }
+.boothx:hover { background: linear-gradient(180deg, #63615a, #3e3d37); }
+.boothx:active { box-shadow: inset 0 2px 4px rgba(0, 0, 0, .6); }
 
-.boothbody { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
-.boothbody::-webkit-scrollbar { width: 8px; }
-.boothbody::-webkit-scrollbar-thumb { background: rgba(220, 190, 130, .22); border-radius: 4px; }
+.boothbody { flex: 1; min-height: 0; overflow-y: auto; padding: 13px 14px 6px; }
+.boothbody::-webkit-scrollbar { width: 7px; }
+.boothbody::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, .4); border-radius: 4px; }
 
-/* ── The plate: the box's own number, and the meter ──────────── */
-.boothplate {
+/* ── The operator's identification plate ────────────────────────
+   Orange, screwed on, with the number of the box on it. The most recognisable thing on a
+   payphone faceplate, so it leads. */
+.boothid {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, .3);
-  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .12);
+  gap: 4px 10px;
+  padding: 9px 12px 8px;
+  margin-bottom: 13px;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 7px 7px, rgba(0, 0, 0, .5) 0 1.6px, transparent 2px),
+    radial-gradient(circle at calc(100% - 7px) 7px, rgba(0, 0, 0, .5) 0 1.6px, transparent 2px),
+    linear-gradient(180deg, #d98a1c, #b96f11 60%, #9d5c0c);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 225, 170, .5),
+    inset 0 -1px 0 rgba(0, 0, 0, .3),
+    0 2px 5px rgba(0, 0, 0, .45);
 }
-.boothbox span, .boothcredit span {
+.boothidleft span,
+.boothidright span {
   display: block;
-  font-size: 10px;
-  letter-spacing: .09em;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .15em;
   text-transform: uppercase;
-  color: #9a9384;
+  color: #4a2b04;
+  text-shadow: 0 1px 0 rgba(255, 210, 140, .35);
 }
-.boothbox strong {
+.boothidleft strong {
   display: block;
-  margin-top: 3px;
-  font-family: var(--ios-num, monospace);
-  font-size: 19px;
-  letter-spacing: .04em;
-  color: #f2e9d6;
-}
-/* The one thing a player has to understand about a payphone, said on the box itself. */
-.boothbox small {
-  display: block;
-  margin-top: 4px;
-  font-size: 10.5px;
-  line-height: 1.35;
-  color: #8b8578;
-}
-.boothcredit { text-align: right; }
-/* An amber segment readout, because that is what a meter on a call box is. */
-.boothcredit strong {
-  display: block;
-  margin-top: 3px;
-  font-family: var(--ios-num, monospace);
-  font-size: 22px;
-  color: #ffc65c;
-  text-shadow: 0 0 12px rgba(255, 170, 60, .45);
-}
-.boothcredit strong.empty { color: #ff7b6b; text-shadow: 0 0 12px rgba(255, 90, 70, .4); }
-.boothcredit small { display: block; margin-top: 3px; font-size: 10px; color: #8b8578; }
-
-/* ── The keypad face ────────────────────────────────────────── */
-.boothscreen { margin-bottom: 12px; }
-.boothscreen input {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
-  color: #ffc65c;
+  margin-top: 1px;
   font-family: var(--ios-num, monospace);
   font-size: 21px;
-  letter-spacing: .06em;
-  text-align: center;
-  background: rgba(0, 0, 0, .42);
-  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .14);
+  letter-spacing: .05em;
+  color: #241502;
+  text-shadow: 0 1px 0 rgba(255, 215, 150, .42);
 }
-.boothscreen input::placeholder { color: #6d6860; font-size: 14px; letter-spacing: 0; }
-
-.boothkeys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.boothkeys button {
-  padding: 13px 0;
-  border-radius: 10px;
-  color: #f2e9d6;
+.boothidright { text-align: right; }
+.boothidright strong {
+  display: block;
+  margin-top: 1px;
   font-family: var(--ios-num, monospace);
   font-size: 19px;
-  background: linear-gradient(180deg, #423f39, #302e2a);
-  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .1), 0 2px 0 rgba(0, 0, 0, .3);
-  transition: transform .06s ease, background .12s ease;
+  color: #241502;
+  text-shadow: 0 1px 0 rgba(255, 215, 150, .42);
 }
-.boothkeys button:hover { background: linear-gradient(180deg, #4c4841, #37342f); }
-/* Keys travel when pressed. A keypad that does not move does not feel like a keypad. */
-.boothkeys button:active { transform: translateY(2px); box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .1); }
-.boothkeys button.wide { grid-column: span 3; font-size: 16px; }
+.boothidright strong.empty { color: #7d1408; }
+/* The one thing a player must understand about a call box, stamped across the plate. Sized and
+   darkened for legibility first: it is a warning, not a decoration. */
+.boothid em {
+  grid-column: 1 / -1;
+  padding-top: 5px;
+  border-top: 1px solid rgba(70, 38, 4, .45);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #1c1001;
+  text-shadow: 0 1px 0 rgba(255, 214, 150, .38);
+}
 
-.boothgo, .boothcard, .boothend {
+/* ── The coin slot ──────────────────────────────────────────────
+   Chrome, milled into the plate, with the legend beside it. */
+.boothslot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.boothslot i {
+  flex: 1;
+  height: 7px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #100f0e, #2b2a27 55%, #7d7b73);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .95), 0 1px 0 rgba(255, 255, 255, .22);
+}
+.boothslot span {
+  flex: none;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .17em;
+  text-transform: uppercase;
+  /* Stamped: dark ink with a bright lower lip, the way struck lettering catches light. */
+  color: #16150f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .38);
+}
+
+/* ── The readout ────────────────────────────────────────────────
+   Amber segments behind recessed glass. The inner shadow is what makes it read as a window cut
+   into the plate rather than a box drawn on top of it. */
+.boothlcd {
+  padding: 3px;
+  margin-bottom: 13px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #201e1a, #3d3b35);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .8), 0 1px 0 rgba(255, 255, 255, .16);
+}
+.boothlcd input,
+.boothlcd span {
+  display: block;
   width: 100%;
-  margin-top: 10px;
-  padding: 13px 0;
-  border-radius: 11px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.boothgo { color: #fff; background: linear-gradient(180deg, #34c759, #23a344); }
-.boothgo:hover { background: linear-gradient(180deg, #3ed465, #27ae49); }
-.boothcard {
-  color: #f2e9d6;
-  background: linear-gradient(180deg, #47433b, #34312c);
-  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .14);
-}
-.boothcard:hover { background: linear-gradient(180deg, #524d44, #3b3832); }
-
-.boothhint { margin-top: 8px; font-size: 11px; line-height: 1.4; color: #8b8578; text-align: center; }
-.bootherr {
-  margin-top: 10px;
-  min-height: 16px;
-  font-size: 12.5px;
+  padding: 11px 12px;
+  border-radius: 3px;
+  color: #ffb02c;
+  font-family: var(--ios-num, monospace);
+  font-size: 23px;
+  letter-spacing: .13em;
   text-align: center;
-  color: #ff9b8f;
+  text-shadow: 0 0 9px rgba(255, 150, 25, .55);
+  /* A dead-LCD wash, plus faint scanlines. */
+  background:
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #171204 0%, #0c0a04 60%, #120e05 100%);
+  box-shadow: inset 0 0 14px rgba(255, 140, 20, .10), inset 0 1px 3px rgba(0, 0, 0, .9);
+}
+.boothlcd input::placeholder {
+  color: #6c5320;
+  font-size: 13px;
+  letter-spacing: .06em;
+  text-shadow: none;
+}
+.boothlcd.big span { font-size: 27px; padding: 16px 12px; }
+
+/* ── The keys ───────────────────────────────────────────────────
+   Milled chrome, with the old letter groups struck under the digits: no Q, no Z, and 0 is the
+   operator. They travel when pressed, because a keypad that does not move is a picture of a
+   keypad. */
+.boothkeys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.boothkeys button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 9px 0 7px;
+  border-radius: 5px;
+  /* Polished chrome: bright crown, a hard specular break at the shoulder, dark skirt. */
+  background: linear-gradient(180deg, #d7d4ca 0%, #b0ada3 40%, #8b8880 58%, #6e6b64 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .8),
+    inset 0 -1px 0 rgba(0, 0, 0, .4),
+    0 2px 0 #4a4842,
+    0 3px 5px rgba(0, 0, 0, .45);
+  transition: transform .05s ease, box-shadow .05s ease, background .12s ease;
+}
+.boothkeys button b {
+  font-family: var(--ios-num, monospace);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: #0f0e0c;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .6);
+}
+/* The letter group. Small, but it must still be readable - it is the detail that dates the
+   keypad, and an unreadable detail is just noise. */
+.boothkeys button i {
+  font-size: 8.5px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .09em;
+  line-height: 1;
+  color: #2a2822;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .5);
+}
+.boothkeys button:hover {
+  background: linear-gradient(180deg, #e6e3d9, #bcb9ae 40%, #96938a 58%, #78756e 100%);
+}
+.boothkeys button:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, .5),
+    inset 0 1px 0 rgba(255, 255, 255, .2),
+    0 0 0 #2b2a26;
+}
+.boothkeys button.wide { grid-column: span 3; padding: 8px 0; }
+.boothkeys button.wide b { font-size: 15px; }
+
+/* ── The call button, the card reader, the hook ─────────────────
+   Painted steel rather than chrome, so the actions read as actions. */
+.boothgo,
+.boothend {
+  width: 100%;
+  margin-top: 11px;
+  padding: 12px 0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: #f4f2ea;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .32),
+    inset 0 -1px 0 rgba(0, 0, 0, .4),
+    0 2px 0 rgba(0, 0, 0, .45),
+    0 3px 6px rgba(0, 0, 0, .4);
+  transition: transform .05s ease, box-shadow .05s ease, filter .12s ease;
+}
+.boothgo { background: linear-gradient(180deg, #3fa860, #2c8146 55%, #24693a); }
+.boothend { background: linear-gradient(180deg, #c4453a, #9e3229 55%, #83271f); }
+.boothgo:hover,
+.boothend:hover { filter: brightness(1.12); }
+.boothgo:active,
+.boothend:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .5), 0 0 0 rgba(0, 0, 0, .45);
+}
+
+.boothcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 9px;
+  padding: 8px 11px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #56544d, #3a3934);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 2px 4px rgba(0, 0, 0, .4);
+}
+.boothcard:hover { background: linear-gradient(180deg, #635f57, #43423c); }
+.boothcard:active { box-shadow: inset 0 2px 5px rgba(0, 0, 0, .55); }
+/* The reader's mouth: a dark milled slot the card goes into. */
+.boothcardslot {
+  flex: none;
+  width: 46px;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #0a0a09, #1f1e1c 60%, #6b6961);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .95), 0 1px 0 rgba(255, 255, 255, .2);
+}
+.boothcardtext {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: #ded9cd;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+}
+
+/* ── The instruction placard ────────────────────────────────────
+   Engraved into a recessed panel and screwed down at both ends, the way a tariff card is. */
+.boothplacard {
+  margin-top: 11px;
+  padding: 8px 11px;
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 6px 50%, rgba(0, 0, 0, .45) 0 1.5px, transparent 2px),
+    radial-gradient(circle at calc(100% - 6px) 50%, rgba(0, 0, 0, .45) 0 1.5px, transparent 2px),
+    /* A pale enamel card, so the printed tariff actually reads. */
+    linear-gradient(180deg, #cfccc1, #b9b6ab);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .35), 0 1px 0 rgba(255, 255, 255, .2);
+}
+.boothplacard p {
+  margin: 0;
+  padding: 1px 0 1px 12px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #17160f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+.boothplacard p + p { margin-top: 1px; }
+
+.bootherr {
+  margin-top: 9px;
+  min-height: 15px;
+  padding: 0 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  color: #ffb3a6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7);
   opacity: 0;
   transition: opacity .15s ease;
 }
 .bootherr.show { opacity: 1; }
 
-/* ── The call face ──────────────────────────────────────────── */
-.boothcall { padding: 26px 6px 8px; text-align: center; }
-.boothcallnum {
-  font-family: var(--ios-num, monospace);
-  font-size: 27px;
-  letter-spacing: .04em;
-  color: #f2e9d6;
-}
-.boothcallstate {
-  margin-top: 8px;
-  font-size: 13px;
-  letter-spacing: .05em;
+/* ── In a call ──────────────────────────────────────────────────
+   A lamp beside the line state, dark until the call actually connects. */
+.boothcall { padding: 6px 0 2px; }
+.boothlamp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .17em;
   text-transform: uppercase;
-  color: #9a9384;
+  color: #16150f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .38);
 }
-/* Connected is the only state worth colouring: it is the one that costs money. */
-.boothcallstate.live { color: #6ee787; }
-.boothend { color: #fff; background: linear-gradient(180deg, #ff453a, #d32f26); margin-top: 26px; }
-.boothend:hover { background: linear-gradient(180deg, #ff5a50, #e0342b); }
+.boothlamp i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b3a35;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .8);
+}
+.boothlamp.live { color: #1c3a22; }
+.boothlamp.live i {
+  background: #4ee06f;
+  box-shadow: 0 0 8px rgba(70, 220, 100, .85), inset 0 1px 1px rgba(255, 255, 255, .5);
+}
+
+/* ── The coin return ────────────────────────────────────────────
+   The cup at the bottom of every call box, where your hand goes. */
+.boothreturn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 14px 10px;
+  padding: 7px 11px 8px;
+  border-radius: 4px 4px 7px 7px;
+  background: linear-gradient(180deg, #38372f, #23221d);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .75), 0 1px 0 rgba(255, 255, 255, .12);
+}
+.boothreturn span {
+  flex: none;
+  width: 40px;
+  height: 13px;
+  border-radius: 2px 2px 7px 7px;
+  background: linear-gradient(180deg, #050505, #131211);
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, .95), 0 1px 0 rgba(255, 255, 255, .16);
+}
+.boothreturn i {
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: .19em;
+  color: #6d6960;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .7);
+}
