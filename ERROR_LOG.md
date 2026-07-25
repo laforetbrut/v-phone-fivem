@@ -128,3 +128,42 @@ job has no grades at all.
 `V.Use('x').Method` and `exports['x']:Method` in the tree, extract the keys of every `STUBS`
 entry, and diff. Any name reported live by `stubIsLive` must have a stub. Automate it before
 adding another module.
+
+---
+
+## [2026-07-25 04:10] — three qb-core incompatibilities, all from assuming an old API
+
+**Context:** an audit for full qb-core and Quasar compatibility, checked against the real
+qb-core, qb-inventory, qbx_core and Quasar sources rather than from memory.
+
+**Error:** three separate failures, none of which produced a console error:
+
+1. `Bridge.QBUsable` registered usable items through
+   `exports['qb-core']:CreateUseableItem`. That export does not exist. qb-core's complete
+   export list is SetMethod, SetField, the job/gang/item-registry helpers, GetCoreVersion
+   and ExploitBan. The call raised inside a pcall, the pcall swallowed it, and the item was
+   never registered — so the power bank and the prepaid calling card did nothing when used.
+2. `Bridge.HasItem` and `Bridge.RemoveItem` fell back to
+   `Player.Functions.GetItemByName` / `Player.Functions.RemoveItem`. Neither exists on
+   modern qb-core; `GetItemByName` does not appear anywhere in the repository any more.
+   Both raised "attempt to call a nil value".
+3. `Bridge.Numbers.Set` wrote the phone number into `players.charinfo` with a direct UPDATE.
+   qb-core keeps charinfo on the player object and writes it back over the row on every save
+   (`charinfo = json.encode(PlayerData.charinfo)` in `Player:Save`), so the number reverted
+   the moment the character logged out.
+
+**Root cause:** the bridge was written against a qb-core that no longer exists. Item handling
+moved out to qb-inventory, and qbx_core diverged from qb-core on exactly the surface being
+used — qbx exports CreateUseableItem, qb-core only has it on the shared object.
+
+**Fix:** the shared object is tried first for usable items and the export second, which covers
+both. Item reads go through `Bridge.QBItemCount`, which sums `PlayerData.items` — the one
+thing every qb build still has. Removal without an inventory resource now fails closed rather
+than raising. The number is written to the live `PlayerData.charinfo` through `SetPlayerData`
+as well as to the row, so qb-core persists it itself.
+
+**Prevention:** never assume a framework API from memory, and never assume two forks of one
+framework share a surface just because they share a player shape. Read the source. And treat
+a silent pcall as a place a bug can hide: `QBUsable` returned false and nobody looked, for
+however long. Where a pcall guards an integration that is *supposed* to be there, log the
+failure once rather than swallowing it.

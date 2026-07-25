@@ -87,6 +87,25 @@ function Bridge.Numbers.Set(citizenid, number)
     -- character's phone number from the framework agrees with the phone.
     if Config.Compat.numbers ~= 'phone' then
         if Bridge.framework == 'qb' then
+            -- **The in-memory copy has to change too, not just the row.**
+            --
+            -- qb-core holds charinfo on the player object and writes it back over the row on
+            -- every save (`charinfo = json.encode(PlayerData.charinfo)` in Player:Save). An
+            -- UPDATE on its own is therefore undone the moment the character logs out, and the
+            -- number the phone minted quietly reverts. SetPlayerData changes the live copy and
+            -- syncs it to the client, and qb-core then persists it itself.
+            local online = Bridge.GetPlayerByCitizenId(citizenid)
+            local qbp = online and online.source and Bridge.QBGetPlayer(online.source)
+            if qbp and qbp.PlayerData then
+                local info = qbp.PlayerData.charinfo or {}
+                info.phone = number
+                -- qb-core pre-binds `self` when it builds the method table, so these take the
+                -- key and value alone. Both spellings exist across builds.
+                local setter = (qbp.Functions and qbp.Functions.SetPlayerData) or qbp.SetPlayerData
+                if setter then pcall(setter, 'charinfo', info) else qbp.PlayerData.charinfo = info end
+            end
+
+            -- And the row, which is what an OFFLINE character has instead.
             local raw = MySQL.scalar.await('SELECT charinfo FROM players WHERE citizenid = ?', { citizenid })
             local ok, info = pcall(json.decode, raw or '{}')
             info = ok and info or {}
@@ -170,11 +189,11 @@ function Bridge.HasItem(src, item)
         if count ~= nil then return (tonumber(count) or 0) > 0 end
     end
 
-    -- No inventory script: ask the framework itself.
+    -- No inventory script: ask the framework itself. On qb that means reading the player's
+    -- own item table, NOT `Functions.GetItemByName` - modern qb-core does not have it.
     if Bridge.framework == 'qb' then
-        local qbp = Bridge.QBGetPlayer(src)
-        local found = qbp and qbp.Functions and qbp.Functions.GetItemByName(item)
-        return found ~= nil and (tonumber(found.amount) or 0) > 0
+        local count = Bridge.QBItemCount(src, item)
+        if count ~= nil then return count > 0 end
     elseif Bridge.framework == 'esx' then
         local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
         if ok and ESX then
@@ -221,8 +240,12 @@ function Bridge.RemoveItem(src, item, count)
     -- No inventory script: the framework's own player object.
     if Bridge.framework == 'qb' then
         local qbp = Bridge.QBGetPlayer(src)
-        if not qbp or not qbp.Functions then return false end
-        return qbp.Functions.RemoveItem(item, count) == true
+        local remove = qbp and qbp.Functions and qbp.Functions.RemoveItem
+        -- Older qb builds still carry it. Modern qb-core does not, and there is then nothing
+        -- that can safely take an item away - so refuse, rather than report a success that
+        -- would hand out credit for a card still sitting in the player's pocket.
+        if remove then return remove(item, count) == true end
+        return false
     elseif Bridge.framework == 'esx' then
         local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
         if not ok or not ESX then return false end
@@ -265,9 +288,7 @@ function Bridge.ItemCount(src, item)
     end
 
     if Bridge.framework == 'qb' then
-        local qbp = Bridge.QBGetPlayer(src)
-        local found = qbp and qbp.Functions and qbp.Functions.GetItemByName(item)
-        return found and math.floor(tonumber(found.amount) or 0) or 0
+        return Bridge.QBItemCount(src, item) or 0
     elseif Bridge.framework == 'esx' then
         local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
         if ok and ESX then

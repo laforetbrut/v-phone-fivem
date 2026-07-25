@@ -105,14 +105,54 @@ end
 --- QBGetPlayer; this exists for the few that read QB.Shared or QB.Functions directly.
 function Bridge.QBCore() return QB end
 
---- Register a usable item across qb and qbx. Both export CreateUseableItem directly, so
---- neither needs the shared object.
+--- Register a usable item across qb and qbx.
+---
+--- They do NOT agree on this, despite the shared shape. qbx_core exports
+--- `CreateUseableItem`; classic qb-core does not - its full export list is SetMethod,
+--- SetField, the job/gang/item-registry helpers, GetCoreVersion and ExploitBan, and nothing
+--- else. `CreateUseableItem` lives only on the shared object there.
+---
+--- Reaching for the export first was silently wrong on qb-core: the call raised inside a
+--- pcall, the pcall swallowed it, and the item was simply never registered. No error, no
+--- log, just a power bank and a calling card that did nothing when used.
 function Bridge.QBUsable(item, fn)
     if not Bridge.frameworkResource then return false end
-    local ok = pcall(function()
-        exports[Bridge.frameworkResource]:CreateUseableItem(item, function(src) fn(src) end)
+    local handler = function(src) fn(src) end
+
+    -- The shared object: classic qb-core's only route.
+    local QBShared = Bridge.QBCore()
+    if QBShared and QBShared.Functions and QBShared.Functions.CreateUseableItem then
+        if pcall(QBShared.Functions.CreateUseableItem, item, handler) then return true end
+    end
+
+    -- qbx_core deliberately has no shared object and exports it instead.
+    return pcall(function()
+        exports[Bridge.frameworkResource]:CreateUseableItem(item, handler)
     end)
-    return ok
+end
+
+--- How many of an item a qb player carries, read from the player object itself.
+---
+--- Modern qb-core has NO `Functions.GetItemByName` and no `Functions.RemoveItem` - item
+--- handling was moved out to qb-inventory, and `GetItemByName` does not appear anywhere in
+--- the qb-core repository any more. Calling them raised "attempt to call a nil value".
+--- `PlayerData.items` is the one thing every qb build still has.
+---
+--- Returns nil when there is genuinely no way to tell, which callers treat differently from
+--- an answer of zero.
+function Bridge.QBItemCount(src, item)
+    local p = Bridge.QBGetPlayer(src)
+    local items = p and p.PlayerData and p.PlayerData.items
+    if type(items) ~= 'table' then return nil end
+
+    local total, wanted = 0, tostring(item or ''):lower()
+    for _, row in pairs(items) do
+        if type(row) == 'table' and tostring(row.name or ''):lower() == wanted then
+            -- Forks disagree on the field name; both are accepted rather than betting on one.
+            total = total + (tonumber(row.amount) or tonumber(row.count) or 0)
+        end
+    end
+    return total
 end
 
 local function qbPlayer(src) return Bridge.QBGetPlayer(src) end
