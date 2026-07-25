@@ -41,7 +41,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **First run setup**: name, appearance, wallpaper, transparency, a six digit passcode and optional Face ID. The passcode never reaches the page: the server keeps a character salted SHA-256 digest and blocks for thirty seconds after five failures.
 - **Configurable home screen**: choose the dock, which apps ship installed, their order, which cannot be removed and which are hidden, all in one table.
 - **Grid sizes** from 3x3 to 6x7, chosen by the player in Settings.
-- **Sound**: fourteen audio files ship with the phone, five ringtones, four alerts and five interface sounds. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
+- **Sound**: sixteen audio files ship with the phone, five ringtones, four alerts, five interface sounds and the payphone's two struck-metal key clicks. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
 - **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning.
 - **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
@@ -201,7 +201,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Configuration au premier démarrage** : nom, apparence, fond d'écran, transparence, code à six chiffres et Face ID optionnel. Le code n'atteint jamais la page : le serveur garde une empreinte SHA-256 salée par personnage et bloque trente secondes après cinq échecs.
 - **Écran d'accueil configurable** : le dock, les applications livrées, leur ordre, celles qu'on ne peut pas supprimer et celles qui sont masquées, le tout dans une seule table.
 - **Grilles** de 3x3 à 6x7, choisies par le joueur dans les Réglages.
-- **Son** : quatorze fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes et cinq sons d'interface. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
+- **Son** : seize fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes, cinq sons d'interface et les deux clics de touche en métal frappé de la cabine. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
 - **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible.
 - **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.

@@ -6451,7 +6451,7 @@ const SOUND_BASE = 'https://cfx-nui-v-phone/sounds/';
 const SOUND_FILES = {
   ring: { classic: 1, chime: 1, pulse: 1, radar: 1, signal: 1 },
   alert: { ping: 1, pop: 1, tick: 1, note: 1 },
-  ui: { unlock: 1, lock: 1, success: 1, error: 1, shutter: 1 },
+  ui: { unlock: 1, lock: 1, success: 1, error: 1, shutter: 1, boothkey: 1, boothkeyback: 1 },
 };
 let soundsOff = false;   // set once a file has failed, so we stop asking every ring
 
@@ -6537,6 +6537,13 @@ const UI_TONES = {
   success:  [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
   error:    [[311, 0, .11], [233, .1, .18]],
   faceid:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
+  // The payphone's chrome buttons, for a server running with sound files off. The shipped
+  // WAVs are the real thing - noise transient and all - but even the fallback keeps what
+  // matters: the partials are INHARMONIC, at the free-bar ratios 1 : 2.76 : 5.40, which is
+  // what the ear hears as struck metal rather than as a note. A harmonic stack here would
+  // just be a chord.
+  boothkey:     [[1150, 0, .05], [3174, 0, .034], [6210, 0, .019]],
+  boothkeyback: [[900, 0, .062], [2484, 0, .042], [4860, 0, .024]],
 };
 
 // UI feedback sits well below a ringtone: it accompanies an action the player just
@@ -8204,6 +8211,44 @@ function boothCallFace() {
     '</div>';
 }
 
+// ── The keypad's voice ─────────────────────────────────────────
+// A payphone key makes TWO sounds, and both are needed for it to feel like one.
+//
+//   the clack   a milled chrome button bottoming out on a steel chassis. Struck metal, so
+//               its partials are inharmonic - rendered by tools/make-sounds.py as a noise
+//               transient plus the free-bar ratios, with an oscillator fallback in UI_TONES.
+//   the tone    the DTMF pair the line genuinely puts on the wire for that digit. This is
+//               the actual sound of dialling; without it a keypad is just a button.
+//
+// The real frequency table, not an approximation of it: rows 697/770/852/941 against
+// columns 1209/1336/1477.
+const DTMF_ROWS = [697, 770, 852, 941];
+const DTMF_COLS = [1209, 1336, 1477];
+const DTMF_GRID = ['123', '456', '789', '*0#'];
+
+function dtmfPair(key) {
+  for (let r = 0; r < DTMF_GRID.length; r++) {
+    const c = DTMF_GRID[r].indexOf(key);
+    if (c >= 0) return [DTMF_ROWS[r], DTMF_COLS[c]];
+  }
+  return null;
+}
+
+/** One press: the clack, then the pair of tones under it. */
+function boothKeyPress(key) {
+  const del = key === 'del';
+  ui(del ? 'boothkeyback' : 'boothkey');
+
+  const pair = del ? null : dtmfPair(key);
+  if (!pair) return;
+  const v = (state.prefs || {}).ringVolume;
+  const vol = v == null ? 0.7 : v;
+  if (vol <= 0) return;
+  // Quieter than the clack and a touch longer, the way a dial tone sits under the mechanics
+  // of the button rather than on top of it. Both frequencies at equal level, as DTMF is.
+  pair.forEach((f) => note(f, 0.004, 0.075, 0.028 * vol, 'sine'));
+}
+
 // The letters stamped under the digits. The OLD scheme on purpose: no Q and no Z, and 0 is
 // the operator - which is what a call box of this age would carry.
 const BOOTH_KEYS = [
@@ -8266,7 +8311,7 @@ function boothWireDial(s) {
       if (del) boothDialled = boothDialled.slice(0, -1);
       else if (boothDialled.length < 20) boothDialled += b.dataset.key;
       input.value = boothDialled;
-      ui(del ? 'keyback' : 'key');
+      boothKeyPress(b.dataset.key);
     }));
 
   const go = async () => {
