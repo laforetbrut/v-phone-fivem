@@ -4,6 +4,58 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.1.4] - 2026-07-25
+
+### Added (English first)
+
+- **Payphones, on the boxes already standing in Los Santos.** Every phone box prop in the game now works. There is **no coordinate list to maintain**: the client looks for the booth props themselves (`prop_phonebox_01` through `04` and `prop_ld_phonebox`, plus anything you add to `Config.Booth.models`), so a booth in a new MLO works the moment the MLO loads, and one a map edit moved moves with it. With `ox_target`, `qb-target` or `qtarget` running the interaction is registered **once per model** and covers every box on the map at once; without one, the nearest box gets a marker and an `E` prompt.
+- **A booth places calls and can never receive them.** This is enforced three independent ways rather than assumed: a booth number is never entered in the online table, never written to `vphone_characters`, and both the call path and the SMS path refuse a booth-shaped number outright with a message that says why. Dialling a box you read off the street tells you it cannot be called back instead of lying that the number does not exist.
+- **A booth's number is derived from where it stands.** `bridge/shared/booth.lua` turns the prop's coordinates into a stable number through a pure function both the client and the server compute independently, so the box outside the Vanilla Unicorn always shows the same digits and no database row is needed. It also means a modified client that forges its position buys a *different* payphone number, not a chosen one.
+- **Prepaid calling cards.** A `prepaid_card` inventory item, worth `Config.Booth.card.seconds` of talk time. Feed it into the box with the on-screen slot, or use it straight from the inventory anywhere - both go through the same server path. Talk time is held per character in `vphone_kv`, so it survives a reconnect, and it is billed by a **server-side ticker one second at a time**: a client that stops reporting is a client that stops talking.
+- **Emergency numbers are free.** Anything in `Config.Booth.freeNumbers` (911, 112, 999 by default) connects with no card and no credit, because a payphone that will not call an ambulance is a prop rather than a phone.
+- **Walk away and it hangs up.** The handset is on a cord: past `Config.Booth.leashDistance` the call drops, watched on the client and re-checked by the server's own ticker.
+- **New exports.** `GetBoothCredit`, `AddBoothCredit`, `BoothNumberAt` and `IsBoothNumber`, for a shop that sells talk time or a dispatch that wants to name the box a call came from. See `API.md`.
+- **`Bridge.RemoveItem` and `Bridge.ItemCount`.** Item consumption across `ox_inventory`, `qs-inventory`, `ps-inventory`, `qb-inventory`, `origen_inventory`, `codem-inventory`, and the qb and ESX player objects directly. Unlike `Bridge.HasItem`, these **fail closed**: a remove that cannot be confirmed grants nothing, so credit is never paid out for an item that never left the inventory.
+
+### Fixed
+
+- **`Core.Notify` did not exist.** `server/main.lua` calls it, and the bridge never defined it, so using a power bank raised `attempt to call a nil value (field 'Notify')` instead of telling the player their phone had charged. It now forwards to the same notifier as `V.Notify`.
+- **`v-inventory` had no `RemoveItem`.** The power bank tried to consume itself through the compatibility shim, which only published `RegisterUsableItem` and `HasItem`. The shim now offers `RemoveItem` and `ItemCount`, wired to the bridge.
+- **A character could in principle be minted a booth-shaped number.** Only reachable by configuring `Config.NumberFormat` and `Config.Booth.numberFormat` to overlap, but the holder would have been unreachable by call or text. The minter now skips any candidate that reads as a payphone.
+
+### Changed
+
+- **Booth calls reuse the call machinery whole.** The same `v-voice` channels, the same ring and length limits, the same call-log row on the recipient's phone. What is deliberately *not* checked on the caller's side is the phone item, the battery and the signal - the point of a payphone is that it works when your own phone does not.
+- **A call flagged as coming from a booth no longer touches the player's handset.** No phone opens, no prop is attached, and no voicemail is offered on no-answer, since there is no phone open to record into. State survives a resource restart: a resynced booth call is handed back to the box rather than drawn on the handset.
+
+---
+
+## [1.1.4] - 2026-07-25
+
+### Ajouts (miroir français)
+
+- **Des cabines téléphoniques, sur les bornes déjà présentes à Los Santos.** Toutes les cabines du jeu fonctionnent désormais. Il n'y a **aucune liste de coordonnées à maintenir** : le client cherche les props de cabine eux-mêmes (`prop_phonebox_01` à `04` et `prop_ld_phonebox`, plus tout ce que vous ajoutez à `Config.Booth.models`), donc une cabine dans un nouvel MLO fonctionne dès que l'MLO charge, et une cabine déplacée par une édition de map se déplace avec elle. Avec `ox_target`, `qb-target` ou `qtarget`, l'interaction est enregistrée **une fois par modèle** et couvre toutes les cabines de la map d'un coup ; sans eux, la cabine la plus proche reçoit un marqueur et une invite `E`.
+- **Une cabine passe des appels et ne peut jamais en recevoir.** C'est garanti de trois façons indépendantes plutôt que supposé : un numéro de cabine n'entre jamais dans la table des joueurs en ligne, n'est jamais écrit dans `vphone_characters`, et le chemin d'appel comme le chemin SMS refusent explicitement un numéro en forme de cabine avec un message qui l'explique. Composer le numéro lu sur une borne dans la rue vous dit qu'on ne peut pas la rappeler, au lieu de prétendre que le numéro n'existe pas.
+- **Le numéro d'une cabine est dérivé de sa position.** `bridge/shared/booth.lua` transforme les coordonnées du prop en un numéro stable via une fonction pure que le client et le serveur calculent indépendamment : la borne devant le Vanilla Unicorn affiche toujours les mêmes chiffres, et aucune ligne en base n'est nécessaire. Cela signifie aussi qu'un client modifié qui falsifie sa position obtient un *autre* numéro de cabine, pas un numéro choisi.
+- **Cartes prépayées.** Un item d'inventaire `prepaid_card`, valant `Config.Booth.card.seconds` de temps de communication. Insérez-la dans la fente à l'écran, ou utilisez-la directement depuis l'inventaire n'importe où : les deux passent par le même chemin serveur. Le crédit est conservé par personnage dans `vphone_kv`, il survit donc à une reconnexion, et il est décompté par un **compteur serveur seconde par seconde** : un client qui cesse de répondre est un client qui cesse de parler.
+- **Les numéros d'urgence sont gratuits.** Tout ce qui figure dans `Config.Booth.freeNumbers` (911, 112, 999 par défaut) est joignable sans carte et sans crédit, car une cabine qui n'appelle pas une ambulance est un décor, pas un téléphone.
+- **Éloignez-vous et ça raccroche.** Le combiné est au bout d'un fil : au-delà de `Config.Booth.leashDistance`, l'appel tombe, surveillé côté client et revérifié par le compteur du serveur.
+- **Nouveaux exports.** `GetBoothCredit`, `AddBoothCredit`, `BoothNumberAt` et `IsBoothNumber`, pour une boutique qui vend du temps de communication ou un dispatch qui veut nommer la borne d'où vient un appel. Voir `API.md`.
+- **`Bridge.RemoveItem` et `Bridge.ItemCount`.** Consommation d'items sur `ox_inventory`, `qs-inventory`, `ps-inventory`, `qb-inventory`, `origen_inventory`, `codem-inventory`, et directement sur les objets joueur qb et ESX. Contrairement à `Bridge.HasItem`, ces fonctions **échouent en refusant** : un retrait qui ne peut être confirmé n'accorde rien, donc aucun crédit n'est payé pour un item qui n'a jamais quitté l'inventaire.
+
+### Correctifs
+
+- **`Core.Notify` n'existait pas.** `server/main.lua` l'appelle et le bridge ne l'a jamais défini : utiliser une batterie externe levait `attempt to call a nil value (field 'Notify')` au lieu d'annoncer au joueur que son téléphone était rechargé. Elle est désormais redirigée vers le même notificateur que `V.Notify`.
+- **`v-inventory` n'avait pas de `RemoveItem`.** La batterie externe tentait de se consommer via le shim de compatibilité, qui ne publiait que `RegisterUsableItem` et `HasItem`. Le shim expose maintenant `RemoveItem` et `ItemCount`, câblés sur le bridge.
+- **Un personnage pouvait en principe recevoir un numéro en forme de cabine.** Atteignable seulement en configurant `Config.NumberFormat` et `Config.Booth.numberFormat` de façon à se recouvrir, mais le porteur aurait été injoignable par appel comme par SMS. Le générateur écarte désormais tout candidat qui se lit comme une cabine.
+
+### Modifications
+
+- **Les appels de cabine réutilisent la machinerie d'appel entière.** Les mêmes canaux `v-voice`, les mêmes limites de sonnerie et de durée, la même ligne de journal d'appel sur le téléphone du destinataire. Ce qui n'est délibérément *pas* vérifié côté appelant : l'item téléphone, la batterie et le signal — l'intérêt d'une cabine est justement de fonctionner quand votre propre téléphone ne le fait pas.
+- **Un appel marqué comme venant d'une cabine ne touche plus au combiné du joueur.** Aucun téléphone ne s'ouvre, aucun prop n'est attaché, et aucune messagerie vocale n'est proposée en cas de non-réponse, puisqu'aucun téléphone n'est ouvert pour enregistrer. L'état survit à un redémarrage de ressource : un appel de cabine resynchronisé est rendu à la borne plutôt que dessiné sur le combiné.
+
+---
+
 ## [1.1.3] - 2026-07-23
 
 ### Added (English first)

@@ -189,6 +189,97 @@ function Bridge.HasItem(src, item)
     return true
 end
 
+--- Take one of an item away, and say whether it actually went.
+---
+--- Used where the phone CONSUMES something rather than merely checking for it: feeding a
+--- prepaid card into a payphone. Unlike `HasItem`, this one fails CLOSED. HasItem answers
+--- "true" when there is no inventory to ask, because locking everybody out of the phone
+--- over a missing integration is the worse mistake; here the opposite is true, since a
+--- remove that silently did nothing would hand out free credit for ever.
+function Bridge.RemoveItem(src, item, count)
+    src, count = tonumber(src), math.max(1, math.floor(tonumber(count) or 1))
+    if not src or not item or item == '' then return false end
+    local inv = Bridge.InventoryResource()
+
+    if inv == 'ox_inventory' then
+        -- ox answers with a boolean, and refuses rather than going negative.
+        return callExport(inv, 'RemoveItem', src, item, count) == true
+    end
+
+    -- Quasar and the qb-derived inventories all expose RemoveItem, but they disagree on
+    -- what it returns: a boolean on some forks, nil on others. A nil is not a failure
+    -- here, so the count is re-read afterwards to find out what really happened.
+    if inv == 'qs-inventory' or inv == 'ps-inventory' or inv == 'qb-inventory'
+        or inv == 'origen_inventory' or inv == 'codem-inventory' then
+        local before = Bridge.ItemCount(src, item)
+        if before < count then return false end
+        local result = callExport(inv, 'RemoveItem', src, item, count)
+        if result == false then return false end
+        return Bridge.ItemCount(src, item) < before
+    end
+
+    -- No inventory script: the framework's own player object.
+    if Bridge.framework == 'qb' then
+        local qbp = Bridge.QBGetPlayer(src)
+        if not qbp or not qbp.Functions then return false end
+        return qbp.Functions.RemoveItem(item, count) == true
+    elseif Bridge.framework == 'esx' then
+        local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
+        if not ok or not ESX then return false end
+        local xPlayer = ESX.GetPlayerFromId(src)
+        if not xPlayer then return false end
+        local found = xPlayer.getInventoryItem(item)
+        if not found or (tonumber(found.count) or 0) < count then return false end
+        xPlayer.removeInventoryItem(item, count)
+        return true
+    end
+
+    -- Nothing to take it from. Refuse, so credit is never granted for an item that was
+    -- never actually spent.
+    return false
+end
+
+--- How many of an item the player carries. Zero when there is nothing to ask, which keeps
+--- every caller of this on the safe side of the question.
+function Bridge.ItemCount(src, item)
+    src = tonumber(src)
+    if not src or not item or item == '' then return 0 end
+    local inv = Bridge.InventoryResource()
+
+    if inv == 'ox_inventory' then
+        return math.floor(tonumber(callExport(inv, 'GetItemCount', src, item)) or 0)
+    end
+
+    if inv == 'qs-inventory' then
+        local count = callExport(inv, 'GetItemTotalAmount', src, item)
+        if count ~= nil then return math.floor(tonumber(count) or 0) end
+    end
+
+    if inv == 'ps-inventory' or inv == 'qb-inventory'
+        or inv == 'origen_inventory' or inv == 'codem-inventory' then
+        local result = callExport(inv, 'GetItemByName', src, item)
+        if type(result) == 'table' then return math.floor(tonumber(result.amount) or 0) end
+        if type(result) == 'number' then return math.floor(result) end
+        local count = callExport(inv, 'GetItemCount', src, item)
+        if count ~= nil then return math.floor(tonumber(count) or 0) end
+    end
+
+    if Bridge.framework == 'qb' then
+        local qbp = Bridge.QBGetPlayer(src)
+        local found = qbp and qbp.Functions and qbp.Functions.GetItemByName(item)
+        return found and math.floor(tonumber(found.amount) or 0) or 0
+    elseif Bridge.framework == 'esx' then
+        local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
+        if ok and ESX then
+            local xPlayer = ESX.GetPlayerFromId(src)
+            local found = xPlayer and xPlayer.getInventoryItem(item)
+            return found and math.floor(tonumber(found.count) or 0) or 0
+        end
+    end
+
+    return 0
+end
+
 -- ══════════════════════════════════════════════════════════════
 -- Money: the bank app
 -- ══════════════════════════════════════════════════════════════

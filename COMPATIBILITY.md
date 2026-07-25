@@ -148,6 +148,67 @@ set phone_media_key "fm_xxxxxxxx"
 
 Each is `auto`, an exact resource name, or `off`.
 
+## Payphones
+
+The call box props already on the map. There is **no coordinate list**: the client asks the
+engine for the nearest booth prop, so `Config.Booth.models` is the only thing that decides
+what counts as a booth, and a box in a new MLO works with no config change.
+
+| Target | How |
+|---|---|
+| ox_target | `addModel` on every booth model, registered once, covering the whole map |
+| qb-target / qtarget | `AddTargetModel` on the same list |
+| none | a blue marker on the nearest box, `[E]` to use |
+
+A booth **places calls and never receives them**. That is enforced on the server three
+independent ways, not left to the interface: a booth number never enters the online table,
+is never written to `vphone_characters`, and both the call and the SMS paths refuse a
+booth-shaped number outright. The number itself is derived from the prop's coordinates by a
+pure function that the client and the server each compute for themselves, so a modified
+client that forges its position gets a different booth number rather than a chosen one.
+
+Calls run on the ordinary call machinery: the same `v-voice` channel, the same ring and
+length limits, the same call-log row on the recipient's phone. The caller's phone item,
+battery and signal are deliberately **not** checked - a payphone that only works when your
+own phone does is pointless.
+
+### The prepaid card
+
+Talk time is held per character in `vphone_kv`, in seconds, and metered by the server one
+second at a time. `Config.Booth.card.item` is an ordinary inventory item; declare it the way
+your inventory declares any item.
+
+**ox_inventory** — in `ox_inventory/data/items.lua`:
+
+```lua
+['prepaid_card'] = {
+    label = 'Prepaid Calling Card',
+    weight = 5,
+    stack = true,
+    close = true,
+    description = 'Worth ten minutes at any payphone.',
+},
+```
+
+**qb-core / qbx_core** — in `qb-core/shared/items.lua`:
+
+```lua
+prepaid_card = {
+    name = 'prepaid_card', label = 'Prepaid Calling Card', weight = 5,
+    type = 'item', image = 'prepaid_card.png', unique = false, useable = true,
+    shouldClose = true, description = 'Worth ten minutes at any payphone.'
+},
+```
+
+**ESX** — insert a row in the `items` table:
+
+```sql
+INSERT INTO items (name, label, weight, rare, can_remove) VALUES ('prepaid_card', 'Prepaid Calling Card', 1, 0, 1);
+```
+
+Set `Config.Booth.card.item = nil`, or `Config.Booth.costPerMinute = 0`, to run booths on
+free calls with no item at all.
+
 ## Item checks
 
 `Config.Settings.requireItem` decides whether a player must carry `Config.PhoneItem`.
@@ -161,6 +222,11 @@ Each is `auto`, an exact resource name, or `off`.
 
 Using the item is registered with ox_inventory's `usedItem` event, qb's
 `CreateUseableItem`, or ESX's `RegisterUsableItem`, whichever is there.
+
+Consuming one - the power bank, a prepaid card - goes through `Bridge.RemoveItem`, which
+covers the same inventories plus the qb and ESX player objects directly. It **fails closed**,
+unlike the check above: a remove that cannot be confirmed grants nothing, so a card is never
+paid out for an item that never left the inventory.
 
 ## Wiring your own
 
@@ -240,6 +306,70 @@ lignes de personnage intactes.
 
 Chacune vaut `auto`, un nom de ressource exact, ou `off`.
 
+## Cabines téléphoniques
+
+Les props de cabine déjà présents sur la map. Il n'y a **aucune liste de coordonnées** : le
+client demande au moteur le prop de cabine le plus proche, donc `Config.Booth.models` est la
+seule chose qui décide ce qui compte comme une cabine, et une borne dans un nouvel MLO
+fonctionne sans changer la config.
+
+| Target | Comment |
+|---|---|
+| ox_target | `addModel` sur chaque modèle de cabine, enregistré une fois, couvrant toute la map |
+| qb-target / qtarget | `AddTargetModel` sur la même liste |
+| aucun | un marqueur bleu sur la borne la plus proche, `[E]` pour utiliser |
+
+Une cabine **passe des appels et n'en reçoit jamais**. C'est garanti côté serveur de trois
+façons indépendantes, et non laissé à l'interface : un numéro de cabine n'entre jamais dans
+la table des joueurs en ligne, n'est jamais écrit dans `vphone_characters`, et le chemin
+d'appel comme le chemin SMS le refusent explicitement. Le numéro lui-même est dérivé des
+coordonnées du prop par une fonction pure que le client et le serveur calculent chacun de
+leur côté : un client modifié qui falsifie sa position obtient un autre numéro de cabine,
+pas un numéro choisi.
+
+Les appels utilisent la machinerie d'appel ordinaire : le même canal `v-voice`, les mêmes
+limites de sonnerie et de durée, la même ligne de journal sur le téléphone du destinataire.
+L'item téléphone, la batterie et le signal de l'appelant ne sont délibérément **pas**
+vérifiés — une cabine qui ne fonctionne que quand votre propre téléphone fonctionne ne sert
+à rien.
+
+### La carte prépayée
+
+Le temps de communication est conservé par personnage dans `vphone_kv`, en secondes, et
+décompté par le serveur seconde par seconde. `Config.Booth.card.item` est un item
+d'inventaire ordinaire ; déclarez-le comme votre inventaire déclare n'importe quel item.
+
+**ox_inventory** — dans `ox_inventory/data/items.lua` :
+
+```lua
+['prepaid_card'] = {
+    label = 'Carte telephonique prepayee',
+    weight = 5,
+    stack = true,
+    close = true,
+    description = 'Vaut dix minutes dans toute cabine.',
+},
+```
+
+**qb-core / qbx_core** — dans `qb-core/shared/items.lua` :
+
+```lua
+prepaid_card = {
+    name = 'prepaid_card', label = 'Carte telephonique prepayee', weight = 5,
+    type = 'item', image = 'prepaid_card.png', unique = false, useable = true,
+    shouldClose = true, description = 'Vaut dix minutes dans toute cabine.'
+},
+```
+
+**ESX** — insérez une ligne dans la table `items` :
+
+```sql
+INSERT INTO items (name, label, weight, rare, can_remove) VALUES ('prepaid_card', 'Carte telephonique prepayee', 1, 0, 1);
+```
+
+Mettez `Config.Booth.card.item = nil`, ou `Config.Booth.costPerMinute = 0`, pour des cabines
+en appels gratuits sans aucun item.
+
 ## Vérification de l'objet
 
 `Config.Settings.requireItem` décide si un joueur doit porter `Config.PhoneItem`.
@@ -253,6 +383,12 @@ Chacune vaut `auto`, un nom de ressource exact, ou `off`.
 
 L'utilisation de l'objet est enregistrée via l'événement `usedItem` d'ox_inventory, le
 `CreateUseableItem` de qb, ou le `RegisterUsableItem` d'ESX, selon ce qui est présent.
+
+La consommation d'un objet — la batterie externe, une carte prépayée — passe par
+`Bridge.RemoveItem`, qui couvre les mêmes inventaires plus les objets joueur qb et ESX
+directement. Contrairement à la vérification ci-dessus, elle **échoue en refusant** : un
+retrait qui ne peut être confirmé n'accorde rien, donc aucune carte n'est payée pour un objet
+qui n'a jamais quitté l'inventaire.
 
 ## Brancher le vôtre
 

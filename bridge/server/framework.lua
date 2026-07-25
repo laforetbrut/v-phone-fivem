@@ -262,6 +262,10 @@ end
 Core = {
     GetPlayer = function(src) return Bridge.GetPlayer(src) end,
     GetPlayerByCitizenId = function(cid) return Bridge.GetPlayerByCitizenId(cid) end,
+    -- Upstream's core carries a notifier and server/main.lua calls it. It was missing here,
+    -- so every `Core.Notify` reached a nil field: the power bank raised an error instead of
+    -- telling the player it had charged their phone. Same destination as V.Notify.
+    Notify = function(src, message, kind) return Bridge.Notify(src, message, kind) end,
     Log = function(category, message, _, cid)
         if not Config.Compat.log then return end
         print(('[v-phone] %s: %s%s'):format(category, message, cid and (' (' .. cid .. ')') or ''))

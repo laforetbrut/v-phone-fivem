@@ -8081,6 +8081,223 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !byId('forensic').classList.contains('hidden')) forensicClose();
 });
 
+// ══ The payphone ═══════════════════════════════════════════════
+// The third surface, after the phone and the warrant terminal. A player standing at a call
+// box has no handset in hand, so this deliberately looks like the box and not like iFruit:
+// a metal panel, a credit meter and a keypad.
+//
+// It places calls and it never receives them. That is not a rule this page enforces - the
+// server does, three times over - but it is the reason there is no incoming state to draw
+// here, and the panel says so out loud rather than leaving the player to wonder.
+
+let boothState = null;   // the server's answer to `booth:open`, while the panel is up
+let boothCall = null;    // the live call, mirrored from the client
+let boothDialled = '';
+
+const bnum = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : (d || 0));
+
+/** Seconds as m:ss, which is how talk time on a card reads. */
+function boothClock(seconds) {
+  const s = Math.max(0, Math.floor(bnum(seconds)));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function boothOpen(data, call) {
+  boothState = data || {};
+  boothCall = call || null;
+  boothDialled = '';
+  byId('boothname').textContent = L('ph.booth_title');
+  byId('booth').classList.remove('hidden');
+  boothRender();
+}
+
+function boothClose() {
+  byId('booth').classList.add('hidden');
+  byId('boothbody').innerHTML = '';
+  boothState = null;
+  boothDialled = '';
+  fpost('boothClose', {});
+}
+
+/** The meter, pushed by the server's ticker while a call runs. */
+function boothCredit(payload) {
+  if (!boothState) return;
+  if (payload && payload.credit != null) boothState.credit = bnum(payload.credit);
+  if (payload && payload.free != null) boothState.free = payload.free === true;
+  const meter = byId('boothmeter');
+  if (meter) {
+    meter.textContent = boothState.free ? L('ph.booth_free_mode') : boothClock(boothState.credit);
+    meter.classList.toggle('empty', !boothState.free && bnum(boothState.credit) <= 0);
+  } else {
+    boothRender();
+  }
+}
+
+/** The call state changed. Redraw rather than patch: the panel has two whole faces. */
+function boothSetCall(call, reason) {
+  boothCall = call || null;
+  if (!boothState) return;
+  if (!call && reason && reason !== 'hangup') {
+    boothState.notice = L('ph.call_' + reason);
+  }
+  boothRender();
+}
+
+function boothErr(r) {
+  const key = (r && r.error) ? String(r.error) : 'x';
+  const message = L('ph.booth_err_' + key);
+  // An unmapped error code must not surface as a raw key on a player's screen.
+  return message === 'ph.booth_err_' + key ? L('ph.booth_err_x') : message;
+}
+
+// ── The panel ──────────────────────────────────────────────────
+function boothRender() {
+  const s = boothState || {};
+  const inCall = boothCall != null;
+
+  byId('boothbody').innerHTML =
+    '<div class="boothplate">' +
+    '<div class="boothbox">' +
+    '<span>' + esc(L('ph.booth_box_number')) + '</span>' +
+    '<strong>' + esc(s.number || '') + '</strong>' +
+    '<small>' + esc(L('ph.booth_incoming_never')) + '</small>' +
+    '</div>' +
+    '<div class="boothcredit">' +
+    '<span>' + esc(s.free ? '' : L('ph.booth_credit')) + '</span>' +
+    '<strong id="boothmeter" class="' +
+    (!s.free && bnum(s.credit) <= 0 ? 'empty' : '') + '">' +
+    esc(s.free ? L('ph.booth_free_mode') : boothClock(s.credit)) + '</strong>' +
+    (s.free ? '' : '<small>' +
+      esc(L('ph.booth_rate').replace('{seconds}', String(bnum(s.costPerMinute, 60)))) + '</small>') +
+    '</div>' +
+    '</div>' +
+    (inCall ? boothCallFace() : boothDialFace(s));
+
+  if (inCall) {
+    byId('boothend').addEventListener('click', async () => {
+      await fpost('boothHangup', {});
+    });
+    return;
+  }
+  boothWireDial(s);
+}
+
+/** In a call: who, how long the box has been talking, and one way out. */
+function boothCallFace() {
+  const c = boothCall || {};
+  const label = c.state === 'active' ? L('ph.booth_connected')
+    : c.state === 'out' ? L('ph.booth_ringing')
+      : L('ph.booth_dialling');
+  return '<div class="boothcall">' +
+    '<div class="boothcallnum">' + esc(c.number || '') + '</div>' +
+    '<div class="boothcallstate' + (c.state === 'active' ? ' live' : '') + '">' +
+    esc(label) + '</div>' +
+    '<button class="boothend" id="boothend" type="button">' +
+    esc(L('ph.booth_hangup')) + '</button>' +
+    '</div>';
+}
+
+/** Idle: a keypad, the card slot, and whatever the last attempt had to say. */
+function boothDialFace(s) {
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+  const canCard = s.cardItem && !s.free;
+  return '<div class="boothdial">' +
+    '<div class="boothscreen">' +
+    '<input id="boothinput" inputmode="numeric" autocomplete="off" maxlength="20" ' +
+    'placeholder="' + esc(L('ph.booth_dial')) + '" value="' + esc(boothDialled) + '" />' +
+    '</div>' +
+    '<div class="boothkeys">' + keys.map((k) =>
+      '<button type="button" data-key="' + esc(k) + '">' + esc(k) + '</button>').join('') +
+    '<button type="button" class="wide" data-key="del">&#9003;</button>' +
+    '</div>' +
+    '<button class="boothgo" id="boothgo" type="button">' + esc(L('ph.booth_call')) + '</button>' +
+    (canCard ? '<button class="boothcard" id="boothcard" type="button">' +
+      esc(L('ph.booth_insert_card')) + '</button>' +
+      '<div class="boothhint">' +
+      esc(L('ph.booth_insert_hint').replace('{minutes}',
+        String(Math.floor(bnum(s.cardSeconds, 600) / 60)))) + '</div>' : '') +
+    '<div class="boothhint">' + esc(L('ph.booth_emergency_free')) + '</div>' +
+    '<div class="bootherr' + (s.notice ? ' show' : '') + '" id="bootherr">' +
+    esc(s.notice || '') + '</div>' +
+    '</div>';
+}
+
+function boothWireDial(s) {
+  const input = byId('boothinput');
+  const err = byId('bootherr');
+
+  const say = (message) => {
+    if (!err) return;
+    err.textContent = message || '';
+    err.classList.toggle('show', !!message);
+  };
+
+  input.addEventListener('input', () => { boothDialled = input.value; });
+
+  [...byId('boothbody').querySelectorAll('.boothkeys button')].forEach((b) =>
+    b.addEventListener('click', () => {
+      const del = b.dataset.key === 'del';
+      if (del) boothDialled = boothDialled.slice(0, -1);
+      else if (boothDialled.length < 20) boothDialled += b.dataset.key;
+      input.value = boothDialled;
+      ui(del ? 'keyback' : 'key');
+    }));
+
+  const go = async () => {
+    const number = String(input.value || '').trim();
+    if (!number) return;
+    say(L('ph.booth_dialling') + '...');
+    const r = await fpost('boothCall', { number });
+    if (!r || !r.ok) {
+      // `lowcredit` is the one error worth being specific about: it tells the player how
+      // much more talk time the box wants before it will connect anything.
+      say(r && r.error === 'lowcredit'
+        ? L('ph.booth_minimum').replace('{seconds}', String(bnum(r.need, 30)))
+        : boothErr(r));
+      return;
+    }
+    // The call itself arrives through `booth:call` from the client, so nothing is drawn
+    // here: a call the server has not confirmed is a call that is not happening.
+    say('');
+  };
+
+  byId('boothgo').addEventListener('click', go);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+
+  const card = byId('boothcard');
+  if (card) {
+    card.addEventListener('click', async () => {
+      const r = await fpost('boothCard', {});
+      if (!r || !r.ok) { say(boothErr(r)); return; }
+      if (boothState) {
+        boothState.credit = bnum(r.credit);
+        boothState.notice = '';
+      }
+      boothCredit({ credit: r.credit });
+      say(L('ph.booth_card_added').replace('{minutes}',
+        String(Math.floor(bnum(r.added, 0) / 60))));
+      ui('success');
+    });
+  }
+
+  if (s.notice) { say(s.notice); s.notice = ''; }
+  setTimeout(() => byId('boothinput') && byId('boothinput').focus(), 50);
+}
+
+byId('boothx').addEventListener('click', boothClose);
+
+// The client raises and lowers the box, and keeps its meter and its call in step.
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
+  if (d.action === 'booth:open') boothOpen(d.data, d.call);
+  else if (d.action === 'booth:close') boothClose();
+  else if (d.action === 'booth:credit') boothCredit(d.data);
+  else if (d.action === 'booth:call') boothSetCall(d.call, d.reason);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !byId('booth').classList.contains('hidden')) boothClose();
+});
+
 // ══ FaceTime live picture ══════════════════════════════════════
 // Experimental, opt-in, and the only reason it is affordable at all: the raw screen
 // capture the client hands over is far too big to relay, so it is shrunk and cropped HERE

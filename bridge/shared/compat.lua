@@ -212,6 +212,18 @@ STUBS['v-inventory'] = {
     HasItem = function(_, src, item)
         return Bridge and Bridge.HasItem and Bridge.HasItem(src, item) or true
     end,
+    --- Consume an item. Upstream's v-inventory offers this and callers here expect it: the
+    --- power bank spends itself, and a payphone eats a prepaid card. Without it in the stub
+    --- those call sites reach a nil field on a server with no v-inventory resource, which is
+    --- every server this bridge exists for.
+    RemoveItem = function(_, src, item, count)
+        if not isServer then return false end
+        return (Bridge and Bridge.RemoveItem and Bridge.RemoveItem(src, item, count)) or false
+    end,
+    ItemCount = function(_, src, item)
+        if not isServer then return 0 end
+        return (Bridge and Bridge.ItemCount and Bridge.ItemCount(src, item)) or 0
+    end,
 }
 
 -- ══════════════════════════════════════════════════════════════

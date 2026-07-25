@@ -135,6 +135,32 @@ phone:SetCharging(src, false)       -- unplugged
 phone:IsCharging(src)               --> boolean
 ```
 
+### Payphones
+
+Talk time is held per character, in seconds, and spent by the booth's own meter. Use these
+for a shop that sells calling cards, a reward, or an admin command.
+
+```lua
+phone:GetBoothCredit(src)            --> seconds of talk time
+phone:AddBoothCredit(src, 600)       --> new balance, after adding ten minutes
+phone:AddBoothCredit(src, -120)      --> and a negative takes time away
+```
+
+`AddBoothCredit` clamps to `Config.Booth.card.maxCredit` and pushes the new balance to any
+booth panel the player has open, so the meter never shows a figure the server has moved on
+from.
+
+A booth's number is a pure function of where the box stands, so anything that knows the
+coordinates can name the box - a dispatch logging which payphone a tip came from, for
+instance. And because a payphone can never be rung, `IsBoothNumber` is the test to run
+before you try:
+
+```lua
+phone:BoothNumberAt(215.5, -810.2, 30.7)   --> '311-4827', always the same for that box
+phone:IsBoothNumber('311-4827')            --> true
+phone:IsBoothNumber('555-0142')            --> false
+```
+
 ### Admin
 
 Every action is also behind `/phoneadmin` and the qb-core admin menu, gated by
@@ -364,6 +390,33 @@ que c'est actif, le telephone se recharge comme a une borne. `rate` est un multi
 phone:SetCharging(src, true, 1.5)   -- branche
 phone:SetCharging(src, false)       -- debranche
 phone:IsCharging(src)               --> booleen
+```
+
+### Cabines telephoniques
+
+Le temps de communication est conserve par personnage, en secondes, et depense par le
+compteur de la cabine. Utilisez ces exports pour une boutique qui vend des cartes, une
+recompense, ou une commande admin.
+
+```lua
+phone:GetBoothCredit(src)            --> secondes de credit
+phone:AddBoothCredit(src, 600)       --> nouveau solde, apres dix minutes ajoutees
+phone:AddBoothCredit(src, -120)      --> et un negatif retire du temps
+```
+
+`AddBoothCredit` plafonne a `Config.Booth.card.maxCredit` et pousse le nouveau solde vers
+toute cabine ouverte par le joueur : le compteur n'affiche donc jamais une valeur que le
+serveur a deja depassee.
+
+Le numero d'une cabine est une fonction pure de sa position : tout ce qui connait les
+coordonnees peut nommer la borne - un dispatch qui journalise de quelle cabine vient un
+tuyau, par exemple. Et comme une cabine ne peut jamais etre appelee, `IsBoothNumber` est le
+test a lancer avant d'essayer :
+
+```lua
+phone:BoothNumberAt(215.5, -810.2, 30.7)   --> '311-4827', toujours le meme pour cette borne
+phone:IsBoothNumber('311-4827')            --> true
+phone:IsBoothNumber('555-0142')            --> false
 ```
 
 ### Admin

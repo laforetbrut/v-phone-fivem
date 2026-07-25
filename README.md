@@ -45,6 +45,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
 - **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning.
 - **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
+- **Payphones**: the call boxes already standing in Los Santos, made to work - no coordinate list, because the client finds the props themselves. A booth **places calls and can never receive them**, its number is derived from where it stands so it is the same every restart, and calls are paid for with a prepaid card item fed into the box. Emergency numbers are free, and walking away hangs up.
 - **`/refreshphone`**: a get-out-of-jail command for a phone stuck to the hand or a frozen animation.
 - **Media hosting**: photos and short video clips captured in game and uploaded to a CDN (Fivemanage), with a per-file auto-delete clock. Clips post to Bleeter and Snapmatic.
 - **Front camera**: a selfie mode - a game camera in front of you - for photos and clips of yourself.
@@ -204,6 +205,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
 - **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible.
 - **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.
+- **Cabines téléphoniques** : les bornes déjà présentes à Los Santos, rendues fonctionnelles - aucune liste de coordonnées, car le client trouve les props lui-même. Une cabine **passe des appels et ne peut jamais en recevoir**, son numéro est dérivé de sa position et reste donc identique à chaque redémarrage, et les appels se paient avec un item carte prépayée inséré dans la borne. Les numéros d'urgence sont gratuits, et s'éloigner raccroche.
 - **`/refreshphone`** : une commande de secours quand le téléphone reste collé à la main ou qu'une animation se fige.
 - **Hébergement média** : photos et courts clips vidéo capturés en jeu et envoyés vers un CDN (Fivemanage), avec une horloge de suppression automatique par fichier. Les clips se publient sur Bleeter et Snapmatic.
 - **Caméra frontale** : un mode selfie - une caméra de jeu devant vous - pour se photographier et se filmer.

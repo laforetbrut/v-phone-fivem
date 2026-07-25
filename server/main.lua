@@ -184,8 +184,14 @@ local function newNumber()
     local format = tostring(S('numberFormat', Config.NumberFormat))
     for _ = 1, 40 do
         local n = mintNumber(format)
-        local taken = MySQL.scalar.await('SELECT 1 FROM vphone_characters WHERE phone = ? LIMIT 1', { n })
-        if not taken then return n end
+        -- Never hand a character a number shaped like a payphone's. Booth numbers are
+        -- recognised by their shape and nothing else, so a player holding one would be a
+        -- player nobody can call or text. Only possible if the two formats overlap, which
+        -- is a config mistake worth surviving rather than crashing on.
+        if not Booth.IsNumber(n) then
+            local taken = MySQL.scalar.await('SELECT 1 FROM vphone_characters WHERE phone = ? LIMIT 1', { n })
+            if not taken then return n end
+        end
     end
     return nil
 end
@@ -697,6 +703,11 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
     body, attachment, err = checkContent(body, kind, attachment)
     if err then return nil, err end
 
+    -- A payphone has no inbox. It would fail on the next line anyway, having no citizen
+    -- id, but a plain "no such number" would be a lie about a number the player can see
+    -- printed on the box.
+    if Booth.IsNumber(toNumber) then return nil, 'booth' end
+
     local toCid = cidOfNumber(toNumber)
     if not toCid then return nil, 'nonumber' end
     if toCid == fromCid then return nil, 'self' end
@@ -793,7 +804,10 @@ local function endCall(id, reason)
     -- Log it once, as it ends, from the state it reached: active means it connected.
     logCall(c, c.state == 'active')
     -- Nobody picked up: offer the caller the voicemail, which is the whole point of one.
-    if c.state ~= 'active' and reason == 'noanswer' and c.a and V.SettingBool('voicemail', true) then
+    -- Not from a booth, though: leaving a voicemail needs the phone's own recorder, and the
+    -- caller at a payphone has no phone open to record into.
+    if c.state ~= 'active' and reason == 'noanswer' and c.a and not c.booth
+        and V.SettingBool('voicemail', true) then
         TriggerClientEvent('v-phone:client:voicemailOffer', c.a, { number = c.bNum })
     end
     Calls[id] = nil
@@ -817,6 +831,10 @@ end
 
 local function startCall(src, p, toNumber, anonymous, video)
     if CallOf[src] then return nil, 'busy' end
+    -- **A booth cannot be rung.** The number resolves to no character, so the check below
+    -- would refuse it regardless; this one exists to refuse it for the RIGHT reason, and
+    -- to say so, because a booth number is one a player can read off the box and try.
+    if Booth.IsNumber(toNumber) then return nil, 'booth' end
     if not requireItem(src) then return nil, 'nophone' end
     if V.SettingBool('battery', true) and batteryOf(src) <= 0 then return nil, 'flat' end
     if not hasBars(src) then return nil, 'nosignal' end
@@ -884,6 +902,80 @@ local function answerCall(src)
     return true
 end
 
+-- ── Calls from a payphone ──────────────────────────────────────
+-- A booth call is an ordinary call with an unusual caller. It joins the same voice
+-- channels, obeys the same ring and length limits, and lands in the recipient's call log
+-- exactly like any other inbound call - the number on it simply belongs to a box on a
+-- street corner rather than to a person.
+--
+-- What is deliberately NOT checked on the caller's side: the phone item, the battery and
+-- the signal. The point of a payphone is that it works when your own phone does not.
+--
+-- server/booth.lua owns the box, the card and the credit; these three functions are the
+-- whole surface it drives, so the call machinery stays in one file.
+
+--- Place a call from `boothNumber` on behalf of the player standing at it.
+function BoothCall(src, boothNumber, toNumber)
+    if CallOf[src] then return nil, 'busy' end
+    if Booth.IsNumber(toNumber) then return nil, 'booth' end
+
+    local toCid = cidOfNumber(toNumber)
+    if not toCid then return nil, 'nonumber' end
+
+    local target = Online[toNumber]
+    if not target then return nil, 'offline' end
+    if not requireItem(target) then return nil, 'unreachable' end
+    if not phoneReachable(target) then return nil, 'unreachable' end
+    if CallOf[target] then return nil, 'busy_them' end
+
+    local tp = Core.GetPlayer(target)
+    if tp and prefsOf(tp).dnd then return nil, 'dnd' end
+
+    local id = allocateCallId()
+    if not id then return nil, 'capacity' end
+
+    local callRecord = {
+        a = src, b = target, state = 'ringing', at = os.time(),
+        aNum = boothNumber, bNum = toNumber,
+        -- Never anonymous. A payphone already hides who you are; withholding the box's
+        -- number too would leave the recipient with nothing at all to go on, and it is
+        -- the number that makes a payphone call interesting to receive.
+        anonymous = false,
+        video = false,
+        -- Read by the client handlers, so the caller's own phone stays in his pocket, and
+        -- by booth.lua's ticker to find its own calls.
+        booth = true,
+    }
+    Calls[id] = callRecord
+    CallOf[src], CallOf[target] = id, id
+
+    TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber, booth = true })
+    TriggerClientEvent('v-phone:client:callIn', target, { id = id, number = boothNumber })
+
+    local ring = math.floor(num(S('ringSeconds', Config.Calls.ringSeconds), 30))
+    SetTimeout(ring * 1000, function()
+        local c = Calls[id]
+        if c == callRecord and c.state == 'ringing' then endCall(id, 'noanswer') end
+    end)
+    return id, nil
+end
+
+--- The booth call this player is on, or nil. `state` and `at` are what the credit ticker
+--- reads; the table itself is the live record, so a stale copy can never be billed.
+function BoothCallOf(src)
+    local id = CallOf[src]
+    local c = id and Calls[id]
+    if not c or not c.booth or c.a ~= src then return nil end
+    return c, id
+end
+
+--- End whatever call this player is on. Used when the credit runs out and when he walks
+--- away from the box.
+function BoothEndCall(src, reason)
+    local id = CallOf[src]
+    if id and Calls[id] then endCall(id, reason or 'hangup') end
+end
+
 -- ══════════════════════════════════════════════════════════════
 -- Battery and signal
 -- ══════════════════════════════════════════════════════════════
@@ -911,6 +1003,9 @@ local function currentCallFor(src)
         id = id,
         state = c.state == 'active' and 'active' or (mineIsCaller and 'out' or 'in'),
         number = mineIsCaller and c.bNum or (c.anonymous and '' or c.aNum),
+        -- Carried so a client resyncing after a restart knows not to draw a booth call on
+        -- the handset. Only the caller is at the box; the person he rang is on a normal phone.
+        booth = (c.booth == true) and mineIsCaller or false,
     }
 end
 

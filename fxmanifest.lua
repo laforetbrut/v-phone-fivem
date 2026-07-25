@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.1.3'
+version '1.1.4'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -24,6 +24,10 @@ shared_scripts {
     'locales/en.lua',
     'locales/fr.lua',
     'config.lua',
+    -- Payphones. Loaded after config.lua because a booth's number is derived from the
+    -- format the config names, and both the client and the server have to derive it the
+    -- same way. See bridge/shared/booth.lua.
+    'bridge/shared/booth.lua',
     -- Drop-in apps. `_loader.lua` defines PhoneApp(); the glob after it picks up every
     -- app folder, so adding an app is adding a folder and nothing else.
     'apps/_loader.lua',
@@ -37,6 +41,8 @@ client_scripts {
     'client/main.lua',
     -- The police forensics terminal: a point on the map and the NUI relays behind it.
     'client/police.lua',
+    -- Payphones: finds the call box props already on the map, and holds the player to one.
+    'client/booth.lua',
     'apps/*/client.lua',      -- optional, per app folder
 }
 
@@ -51,6 +57,9 @@ server_scripts {
     'bridge/server/integrations.lua',
 
     'server/main.lua',
+    -- Payphones: prepaid credit, the card, and the metered call. Loaded after main.lua,
+    -- whose call machinery it drives.
+    'server/booth.lua',
     -- Bleeter, Snapmatic and Hush. Player-shared data, which the rest of the phone
     -- avoids, so it keeps its own file.
     'server/social.lua',

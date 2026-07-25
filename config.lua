@@ -875,3 +875,82 @@ Config.FaceTime = {
     -- cannot turn the relay into a flood. A 220x300 q0.4 JPEG is well under this.
     maxFrameKb = 24,
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  PAYPHONES  (call boxes and prepaid cards)
+-- ══════════════════════════════════════════════════════════════
+-- The phone boxes that are ALREADY on the map, made to work.
+--
+-- There is no coordinate list here on purpose. Every booth in Los Santos is one of a
+-- handful of props, so the client looks for those props around the player instead of
+-- trusting a list somebody has to maintain. Add an MLO with a booth in it and it works;
+-- move one with a map edit and it moves with it.
+--
+-- **A booth places calls. It never receives them.** That is the whole character of a
+-- payphone, and it is enforced in three independent places: a booth number is never put
+-- in the online table, it is never written to `vphone_characters`, and both the call and
+-- the SMS paths refuse a booth-shaped number outright. See server/booth.lua.
+--
+-- Paying for the call is a prepaid card: an inventory item the player feeds into the box,
+-- which turns into seconds of talk time held against their character. Emergency numbers
+-- are free, because a payphone that will not call an ambulance is a prop, not a phone.
+Config.Booth = {
+    enabled = true,
+
+    -- The props that count as a phone box. These are the base-game booths; add your own
+    -- model names here if your map ships others.
+    models = {
+        'prop_phonebox_01',
+        'prop_phonebox_02',
+        'prop_phonebox_03',
+        'prop_phonebox_04',
+        'prop_ld_phonebox',
+    },
+
+    -- How close the player must be to use the box, in metres.
+    radius = 1.6,
+
+    -- Walk away and the call drops, the way a handset on a cord would. Metres from the
+    -- box; keep it a little above `radius` so leaning away is not a hang-up.
+    leashDistance = 3.5,
+
+    -- What a booth number looks like. `#` becomes a digit, and every booth derives its
+    -- OWN digits from where it stands, so the box outside the Vanilla Unicorn always has
+    -- the same number and a player can recognise it.
+    --
+    -- **This must not overlap `Config.NumberFormat`.** The literal part ("311-" here) is
+    -- what marks a number as a booth, and the phone refuses to mint a player number that
+    -- would look like one.
+    --
+    -- More `#` means fewer boxes sharing digits. Four gives 10,000 numbers against the
+    -- hundred-odd booths in Los Santos, so a collision is unlikely but not impossible; two
+    -- boxes on opposite sides of the city showing the same number is the only consequence,
+    -- since neither can be called back either way. Use five or six if that bothers you.
+    numberFormat = '311-####',
+
+    -- The anim the player plays while on the box. A booth has its own handset, so no
+    -- phone prop is attached.
+    anim = { dict = 'cellphone@', clip = 'cellphone_call_listen_base' },
+
+    -- ── Paying for the call ────────────────────────────────────
+    -- Seconds of talk time. `0` makes every booth call free and hides the card entirely,
+    -- which is a fine way to run this if you do not want an economy attached to it.
+    costPerMinute = 60,        -- seconds of credit spent per minute of call
+    minimumSeconds = 30,       -- refuse to connect a call there is not this much credit for
+
+    -- Numbers that never cost anything and never need a card. Only useful if something on
+    -- your server actually answers them.
+    freeNumbers = { '911', '112', '999' },
+
+    -- The prepaid card. An ordinary inventory item; the box eats one and pays out seconds.
+    -- Set `item = nil` to run booths on free calls only.
+    card = {
+        item = 'prepaid_card',
+        seconds = 600,         -- talk time one card is worth
+        maxCredit = 7200,      -- a character cannot bank more than this, so cards are not a wallet
+    },
+
+    -- Log every booth call to the server console, the way the forensics terminal logs a
+    -- lookup. A payphone is the classic untraceable call, so an admin trail is worth having.
+    log = false,
+}

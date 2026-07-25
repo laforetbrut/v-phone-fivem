@@ -961,6 +961,7 @@ applyServerCall = function(nextCall, notifyUi)
             id = tonumber(nextCall.id),
             state = tostring(nextCall.state or ''),
             number = nextCall.number,
+            booth = nextCall.booth == true,
         }
         if call.state == 'active'
             and (not previous or previous.id ~= call.id or previous.state ~= 'active') then
@@ -968,6 +969,12 @@ applyServerCall = function(nextCall, notifyUi)
             joinCallAudio()
         elseif call.state == 'in' then
             startRinging()
+        end
+        -- A booth call that survived a resource restart is handed back to the box rather
+        -- than drawn on the handset, which was never holding it.
+        if call.booth then
+            TriggerEvent('v-phone:internal:boothCall', call)
+            return
         end
     end
     refreshPose()
@@ -1010,7 +1017,16 @@ RegisterNUICallback('hangup', function(_, cb)
 end)
 
 RegisterNetEvent('v-phone:client:callOut', function(data)
-    call = { id = data.id, state = 'out', number = data.number, video = data.video == true }
+    call = { id = data.id, state = 'out', number = data.number, video = data.video == true,
+             -- A call placed from a payphone belongs to the box, not to the handset in this
+             -- player's pocket. The flag rides on the call so every handler below, and the
+             -- pose code, can tell the two apart.
+             booth = data.booth == true }
+    if call.booth then
+        -- client/booth.lua draws it, and the phone stays where it is.
+        TriggerEvent('v-phone:internal:boothCall', call)
+        return
+    end
     SendNUIMessage({ action = 'call', call = call })
 end)
 
@@ -1076,10 +1092,17 @@ RegisterNetEvent('v-phone:client:faceFrame', function(frame)
 end)
 
 RegisterNetEvent('v-phone:client:callActive', function(data)
+    local wasBooth = call and call.booth or false
     call = { id = data.id, state = 'active', number = call and call.number or nil,
-             video = call and call.video or false }
+             video = call and call.video or false, booth = wasBooth }
     stopRinging()
+    -- The audio is the same on a payphone: the same v-voice channel, joined the same way.
+    -- Only the picture is different.
     joinCallAudio()
+    if call.booth then
+        TriggerEvent('v-phone:internal:boothCall', call)
+        return
+    end
     refreshPose()
     -- A video call turns the front camera on and starts the picture feed. Focus is left
     -- exactly as it was: an answered call must not steal the cursor.
@@ -1098,9 +1121,16 @@ RegisterNetEvent('v-phone:client:callEnd', function(reason)
     -- And put the front camera and the picture feed away with it.
     stopFaceFeed()
     TriggerEvent('v-phone:internal:selfie', false)
+    local wasBooth = call and call.booth or false
     call = nil
-    refreshPose()
-    SendNUIMessage({ action = 'call', call = nil })
+    if wasBooth then
+        -- The booth clears its own screen and puts the player's arm down. The phone was
+        -- never involved, so it is not told about it.
+        TriggerEvent('v-phone:internal:boothCallEnd', reason)
+    else
+        refreshPose()
+        SendNUIMessage({ action = 'call', call = nil })
+    end
     if reason and reason ~= 'hangup' then V.Notify(L('ph.call_' .. reason), 'info') end
 end)
 

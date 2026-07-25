@@ -8625,3 +8625,184 @@ body.inframe.dark .uisearch {
 }
 /* The name, timer and buttons stay above the picture. */
 .callui.facetime > *:not(.facepeer):not(.faceself) { position: relative; z-index: 4; }
+
+/* ══ The payphone ═══════════════════════════════════════════════
+   The third surface, and the only one that is not a screen. A player at a call box is
+   looking at painted steel and a chrome keypad, so the panel is drawn as the box: warm
+   metal, an amber LCD for the meter, and physical keys. It shares nothing with the phone
+   shell on purpose - a payphone that looked like iFruit would read as the player's own
+   phone, which is exactly the confusion to avoid. */
+.booth {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--ios-ui, system-ui, sans-serif);
+  background: rgba(6, 8, 12, .82);
+}
+.booth.hidden { display: none; }
+
+.boothwrap {
+  display: flex;
+  width: min(420px, 92vw);
+  max-height: min(88vh, 880px);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  color: #e6e2d8;
+  background: linear-gradient(180deg, #2b2a26, #1a1917);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .65), inset 0 0 0 1px rgba(220, 190, 130, .16);
+}
+
+.boothhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid rgba(220, 190, 130, .14);
+}
+.boothtitle { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; }
+.boothdot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #f0a030; box-shadow: 0 0 10px #f0a030;
+}
+.boothx {
+  width: 32px; height: 32px; border-radius: 8px;
+  color: #e6e2d8; font-size: 22px; line-height: 1;
+  background: rgba(220, 190, 130, .12);
+}
+.boothx:hover { background: rgba(220, 190, 130, .22); }
+
+.boothbody { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.boothbody::-webkit-scrollbar { width: 8px; }
+.boothbody::-webkit-scrollbar-thumb { background: rgba(220, 190, 130, .22); border-radius: 4px; }
+
+/* ── The plate: the box's own number, and the meter ──────────── */
+.boothplate {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .3);
+  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .12);
+}
+.boothbox span, .boothcredit span {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #9a9384;
+}
+.boothbox strong {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--ios-num, monospace);
+  font-size: 19px;
+  letter-spacing: .04em;
+  color: #f2e9d6;
+}
+/* The one thing a player has to understand about a payphone, said on the box itself. */
+.boothbox small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: #8b8578;
+}
+.boothcredit { text-align: right; }
+/* An amber segment readout, because that is what a meter on a call box is. */
+.boothcredit strong {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--ios-num, monospace);
+  font-size: 22px;
+  color: #ffc65c;
+  text-shadow: 0 0 12px rgba(255, 170, 60, .45);
+}
+.boothcredit strong.empty { color: #ff7b6b; text-shadow: 0 0 12px rgba(255, 90, 70, .4); }
+.boothcredit small { display: block; margin-top: 3px; font-size: 10px; color: #8b8578; }
+
+/* ── The keypad face ────────────────────────────────────────── */
+.boothscreen { margin-bottom: 12px; }
+.boothscreen input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  color: #ffc65c;
+  font-family: var(--ios-num, monospace);
+  font-size: 21px;
+  letter-spacing: .06em;
+  text-align: center;
+  background: rgba(0, 0, 0, .42);
+  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .14);
+}
+.boothscreen input::placeholder { color: #6d6860; font-size: 14px; letter-spacing: 0; }
+
+.boothkeys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.boothkeys button {
+  padding: 13px 0;
+  border-radius: 10px;
+  color: #f2e9d6;
+  font-family: var(--ios-num, monospace);
+  font-size: 19px;
+  background: linear-gradient(180deg, #423f39, #302e2a);
+  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .1), 0 2px 0 rgba(0, 0, 0, .3);
+  transition: transform .06s ease, background .12s ease;
+}
+.boothkeys button:hover { background: linear-gradient(180deg, #4c4841, #37342f); }
+/* Keys travel when pressed. A keypad that does not move does not feel like a keypad. */
+.boothkeys button:active { transform: translateY(2px); box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .1); }
+.boothkeys button.wide { grid-column: span 3; font-size: 16px; }
+
+.boothgo, .boothcard, .boothend {
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px 0;
+  border-radius: 11px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.boothgo { color: #fff; background: linear-gradient(180deg, #34c759, #23a344); }
+.boothgo:hover { background: linear-gradient(180deg, #3ed465, #27ae49); }
+.boothcard {
+  color: #f2e9d6;
+  background: linear-gradient(180deg, #47433b, #34312c);
+  box-shadow: inset 0 0 0 1px rgba(220, 190, 130, .14);
+}
+.boothcard:hover { background: linear-gradient(180deg, #524d44, #3b3832); }
+
+.boothhint { margin-top: 8px; font-size: 11px; line-height: 1.4; color: #8b8578; text-align: center; }
+.bootherr {
+  margin-top: 10px;
+  min-height: 16px;
+  font-size: 12.5px;
+  text-align: center;
+  color: #ff9b8f;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.bootherr.show { opacity: 1; }
+
+/* ── The call face ──────────────────────────────────────────── */
+.boothcall { padding: 26px 6px 8px; text-align: center; }
+.boothcallnum {
+  font-family: var(--ios-num, monospace);
+  font-size: 27px;
+  letter-spacing: .04em;
+  color: #f2e9d6;
+}
+.boothcallstate {
+  margin-top: 8px;
+  font-size: 13px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #9a9384;
+}
+/* Connected is the only state worth colouring: it is the one that costs money. */
+.boothcallstate.live { color: #6ee787; }
+.boothend { color: #fff; background: linear-gradient(180deg, #ff453a, #d32f26); margin-top: 26px; }
+.boothend:hover { background: linear-gradient(180deg, #ff5a50, #e0342b); }
