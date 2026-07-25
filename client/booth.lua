@@ -263,22 +263,33 @@ CreateThread(function()
         return
     end
 
-    -- No target script: the nearest box gets a marker and an E prompt. The scan runs once a
-    -- second while there is nothing nearby, and every frame only when there is, so a player
-    -- crossing the city is not paying for this.
+    -- No target script: the nearest box gets a marker and an E prompt.
+    --
+    -- Two cadences, deliberately separate. FINDING the box is five `GetClosestObjectOfType`
+    -- calls, one per model, so it runs at most twice a second and the answer is cached.
+    -- DRAWING the marker and reading the key must happen every frame, so it does - off the
+    -- cache, costing nothing but a draw call. Scanning at frame rate, which is what a single
+    -- combined loop would do, is 300 spatial queries a second for a player walking past a
+    -- phone box, and it buys nothing: the props do not move.
     CreateThread(function()
         local reach = num(BOOTH.radius, 1.6)
+        local nearby, nextScan = nil, 0
+
         while true do
-            local sleep = 1000
+            local sleep = 500
             if not isOpen then
-                local ped = PlayerPedId()
-                local coords = GetEntityCoords(ped)
-                local booth = nearestBooth(coords, 12.0)
-                if booth then
+                local coords = GetEntityCoords(PlayerPedId())
+                local now = GetGameTimer()
+                if now >= nextScan then
+                    nearby = nearestBooth(coords, 12.0)
+                    nextScan = now + 500
+                end
+
+                if nearby then
                     sleep = 0
-                    DrawMarker(2, booth.x, booth.y, booth.z + 1.35, 0, 0, 0, 0, 180.0, 0,
+                    DrawMarker(2, nearby.x, nearby.y, nearby.z + 1.35, 0, 0, 0, 0, 180.0, 0,
                         0.18, 0.18, 0.12, 60, 130, 200, 140, false, true, 2, nil, nil, false)
-                    if #(coords - vector3(booth.x, booth.y, booth.z)) < reach + 0.9 then
+                    if #(coords - vector3(nearby.x, nearby.y, nearby.z)) < reach + 0.9 then
                         SetTextComponentFormat('STRING')
                         AddTextComponentString('[E] ' .. L('ph.booth_use'))
                         DisplayHelpTextFromStringLabel(0, 0, 1, -1)

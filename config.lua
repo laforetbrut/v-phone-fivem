@@ -65,8 +65,12 @@ Config.Compat = {
     -- (message, kind) where kind is inform | success | error.
     notifyEvent = 'myserver:notify',
 
-    -- The radio channel range phone calls use, when the voice script is channel based.
-    -- Twenty-four channels are reserved from here up, so two calls never share one.
+    -- The channel range phone calls use, when the voice script is channel based. Twenty-four
+    -- channels are reserved from here up, so two calls in the same minute never share one.
+    --
+    -- On pma-voice these are CALL channels, which are a namespace of their own: they cannot
+    -- collide with the radio channels your job scripts use, and a player on a radio stays on
+    -- it while taking a call. Do not confuse the two - see bridge/shared/compat.lua.
     voiceChannel = 700,
 
     -- ── Apps that need a script you may not run ────────────────
@@ -926,7 +930,7 @@ Config.Booth = {
     -- hundred-odd booths in Los Santos, so a collision is unlikely but not impossible; two
     -- boxes on opposite sides of the city showing the same number is the only consequence,
     -- since neither can be called back either way. Use five or six if that bothers you.
-    numberFormat = '311-####',
+    numberFormat = '311-#####',
 
     -- The anim the player plays while on the box. A booth has its own handset, so no
     -- phone prop is attached.

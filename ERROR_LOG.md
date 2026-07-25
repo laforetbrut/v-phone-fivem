@@ -73,3 +73,58 @@ parse it.
 **Prevention:** for any Lua work in this repo, `lupa` is the test harness. Pure shared logic
 belongs in a file with no FiveM natives in it — as `bridge/shared/booth.lua` is — precisely so
 it can be loaded and asserted against outside the game.
+
+---
+
+## [2026-07-25 02:40] — phone calls were routed through pma-voice's radio
+
+**Context:** a full compatibility audit, with pma-voice named as the must-work target.
+
+**Error:** `bridge/shared/compat.lua` implemented `v-voice.PhoneCallStart` as
+`setVoiceProperty('radioEnabled', true)` + `setRadioChannel(callChannel(id))`, and
+`PhoneCallEnd` as `setRadioChannel(0)`.
+
+**Root cause:** pma-voice ships two separate subsystems and the shim picked the wrong one.
+Read from its source, `client/module/phone.lua` builds voice targets as
+`addVoiceTargets((radioPressed and isRadioEnabled()) and radioData or {}, callData)` — radio
+targets are gated on the push-to-talk key being held, call targets are unconditional. Four
+consequences, all real: a phone call needed PTT to be heard; taking a call overwrote the
+player's `radioChannel` and hanging up set it to 0, silently removing them from their job
+radio; `voice_enableRadios 0` made calls mute while `voice_enableCalls` was never consulted;
+and calls sat in the *radio* channel namespace at 700–724, where a server using a radio
+channel in that range would have a call and a radio merge.
+
+**Fix:** `setCallChannel(n)` to join, `setCallChannel(0)` to leave, `SpeakerListen` likewise.
+Radio is no longer touched at all. Verified with 8 assertions against the shim in real Lua,
+including that `setRadioChannel` and `setVoiceProperty` are never called.
+
+**Prevention:** when integrating a third-party resource, read its source or docs for the
+feature you actually want rather than reaching for the first export with a familiar name.
+"Radio" and "call" are not synonyms in any voice script. The same mistake is still present
+for saltychat and is recorded as outstanding.
+
+---
+
+## [2026-07-25 02:40] — the Jobs app died on a stub that was never written
+
+**Context:** the same audit, sweeping every method called on a `v-*` stub against what the
+stubs actually publish — the check the `Core.Notify` entry above says to run.
+
+**Error:** `server/main.lua` calls `V.Use('v-cityhall').OpenPositions()` unguarded.
+`STUBS['v-cityhall']` did not exist, but `stubIsLive('v-cityhall')` returns true because
+`Config.Compat.modules['v-cityhall']` is `true`. So `V.Use` skipped the provider path, saw
+`GetResourceState` say "started", and returned a proxy onto the real exports of a resource
+that is not installed. The call raised, the pcall in `V.Callback` swallowed it, and the
+client's `v-phone:jobs` request timed out.
+
+**Root cause:** `stubIsLive` and `STUBS` are two lists that have to agree, and nothing made
+them. A module can be declared live without anything standing behind it.
+
+**Fix:** a `v-cityhall` stub whose `OpenPositions` maps `Bridge.Jobs.All()` into the shape
+the app's Openings tab reads. Verified with 6 assertions, including the ESX shape where a
+job has no grades at all.
+
+**Prevention:** the sweep that found this is the one to keep running — extract every
+`V.Use('x').Method` and `exports['x']:Method` in the tree, extract the keys of every `STUBS`
+entry, and diff. Any name reported live by `stubIsLive` must have a stub. Automate it before
+adding another module.

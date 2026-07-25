@@ -86,13 +86,30 @@ local function callChannel(callId)
     return base + (math.floor(tonumber(callId) or 0) % 24)
 end
 
+-- **A phone call is a CALL channel, not a radio channel.**
+--
+-- pma-voice ships two separate systems and they are not interchangeable:
+--
+--   radio  `setRadioChannel(n)`  push-to-talk. `addVoiceTargets` only includes the radio
+--                                targets while the radio key is HELD:
+--                                `(radioPressed and isRadioEnabled()) and radioData or {}`
+--   call   `setCallChannel(n)`   open mic. The call targets are always included.
+--
+-- Routing a phone call over the radio therefore breaks it in four ways at once: the player
+-- has to hold the radio key to be heard, taking a call KICKS them off the job radio they
+-- were on (and hanging up leaves them off it, because the reset is `setRadioChannel(0)`),
+-- a server that set `voice_enableRadios 0` gets silent calls, and the call lands in the
+-- radio channel namespace where it can merge with a real radio channel and let strangers
+-- hear each other.
+--
+-- So: calls use the call API. `voice_enableCalls` gates it, pma-voice tells its own server
+-- about the change, and radio is left entirely alone.
 STUBS['v-voice'] = {
     PhoneCallStart = function(_, callId)
         if isServer or not callId then return end
         local voice = voiceResource()
         if voice == 'pma-voice' then
-            exports['pma-voice']:setVoiceProperty('radioEnabled', true)
-            exports['pma-voice']:setRadioChannel(callChannel(callId))
+            exports['pma-voice']:setCallChannel(callChannel(callId))
         elseif voice == 'saltychat' then
             TriggerEvent('SaltyChat_SetRadioChannel', tostring(callChannel(callId)), true)
         end
@@ -101,22 +118,18 @@ STUBS['v-voice'] = {
         if isServer then return end
         local voice = voiceResource()
         if voice == 'pma-voice' then
-            exports['pma-voice']:setRadioChannel(0)
+            -- Channel 0 is pma-voice's own "leave the call" value.
+            exports['pma-voice']:setCallChannel(0)
         elseif voice == 'saltychat' then
             TriggerEvent('SaltyChat_SetRadioChannel', '', true)
         end
     end,
-    --- Speaker mode: everyone nearby hears the call. Only pma-voice exposes the
-    --- per-channel listen this needs; elsewhere the call stays private, which is the
-    --- safe failure.
+    --- Speaker mode: the people around you hear the call. A listener simply joins the same
+    --- call channel. Only pma-voice exposes this; elsewhere the call stays private, which
+    --- is the safe failure.
     SpeakerListen = function(_, callId, on)
         if isServer or voiceResource() ~= 'pma-voice' then return end
-        if on then
-            exports['pma-voice']:setVoiceProperty('radioEnabled', true)
-            exports['pma-voice']:addPlayerToRadio(callChannel(callId))
-        else
-            exports['pma-voice']:removePlayerFromRadio(callChannel(callId))
-        end
+        exports['pma-voice']:setCallChannel(on and callChannel(callId) or 0)
     end,
 }
 
@@ -166,6 +179,35 @@ STUBS['v-world'] = {
     SeedApps = function() end,
     SeedChargers = function() end,
     SeedDeadZones = function() end,
+}
+
+-- ── v-cityhall ─────────────────────────────────────────────────
+-- The Jobs app's "Openings" tab. Upstream this is a city hall module with vacancies an
+-- admin posts; here every job the framework knows about is an opening, listed at its entry
+-- rank and starting pay, which is the honest answer without inventing a vacancies table.
+--
+-- This stub is not optional. `stubIsLive` reports v-cityhall as started (the config's
+-- `modules` list enables it), so without an entry here `V.Use('v-cityhall')` fell through
+-- to the real exports of a resource that does not exist, and the whole `v-phone:jobs`
+-- callback died on the OpenPositions call - taking the Jobs app with it.
+STUBS['v-cityhall'] = {
+    OpenPositions = function()
+        if not isServer then return {} end
+        local jobs = (Bridge and Bridge.Jobs and Bridge.Jobs.All()) or {}
+        local out = {}
+        for _, job in ipairs(jobs) do
+            local grades = job.grades or {}
+            local entry = grades[1] or {}
+            out[#out + 1] = {
+                name = job.name,
+                label = job.label or job.name,
+                grade = entry.label or '',
+                ranks = #grades,
+                salary = tonumber(entry.pay) or 0,
+            }
+        end
+        return out
+    end,
 }
 
 -- ── v-music ────────────────────────────────────────────────────
