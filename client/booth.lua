@@ -357,21 +357,34 @@ CreateThread(function()
     if not enabled() or BLIP.enabled ~= true then return end
     if #(BOOTH.models or {}) == 0 then return end
 
-    local seen = {}
+    local seen = {}        -- [key] = { blip = handle, x, y, z }
     local sprite = math.floor(num(BLIP.sprite, 64))
     local colour = math.floor(num(BLIP.colour, 3))
     local scale = num(BLIP.scale, 0.6)
     local shortRange = BLIP.shortRange ~= false
     local label = (type(BLIP.label) == 'string' and BLIP.label ~= '') and BLIP.label or L('ph.booth_title')
     local scanDist = num(INTERACT.scanDistance, 12.0)
+    -- The cull radius. Zero means "keep everything discovered", which is the old behaviour.
+    local cull = num(BLIP.distance, 0)
+    local refresh = math.max(250, math.floor(num(BLIP.refresh, 2000)))
+
+    local function drop(key)
+        local entry = seen[key]
+        if not entry then return end
+        if entry.blip and DoesBlipExist(entry.blip) then RemoveBlip(entry.blip) end
+        seen[key] = nil
+    end
 
     while true do
-        -- Wider than the interaction scan and far slower: this is discovery, not interaction,
-        -- and a blip that appears a second late costs nobody anything.
-        local booth = nearestBooth(GetEntityCoords(PlayerPedId()), math.max(scanDist, 60.0))
+        local here = GetEntityCoords(PlayerPedId())
+
+        -- Discovery: wider than the interaction scan and far slower. A blip that appears a
+        -- second late costs nobody anything.
+        local booth = nearestBooth(here, math.max(scanDist, 60.0))
         if booth then
             local key = Booth.Key(booth.x, booth.y, booth.z)
-            if not seen[key] then
+            -- Within the cull radius, or no radius at all.
+            if not seen[key] and (cull <= 0 or #(here - vector3(booth.x, booth.y, booth.z)) <= cull) then
                 local blip = AddBlipForCoord(booth.x, booth.y, booth.z)
                 SetBlipSprite(blip, sprite)
                 SetBlipColour(blip, colour)
@@ -380,10 +393,20 @@ CreateThread(function()
                 BeginTextCommandSetBlipName('STRING')
                 AddTextComponentString(label)
                 EndTextCommandSetBlipName(blip)
-                seen[key] = blip
+                seen[key] = { blip = blip, x = booth.x, y = booth.y, z = booth.z }
             end
         end
-        Wait(3000)
+
+        -- The cull. Walks the handful of boxes already blipped and drops the ones the player
+        -- has left behind; they come back on the next approach. Skipped entirely when no
+        -- radius is set, so the default costs nothing.
+        if cull > 0 then
+            for key, entry in pairs(seen) do
+                if #(here - vector3(entry.x, entry.y, entry.z)) > cull then drop(key) end
+            end
+        end
+
+        Wait(refresh)
     end
 end)
 

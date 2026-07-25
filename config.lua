@@ -1027,5 +1027,23 @@ Config.Booth = {
         scale = 0.6,
         shortRange = true,
         label = nil,              -- nil uses the translation
+
+        -- **Only show a box's blip while the player is within this many metres of it.**
+        -- Beyond it the blip is removed, and it comes back on the next approach.
+        --
+        -- `0` keeps every box the player has walked past, for ever, which is the setting
+        -- for a server that wants a permanent payphone map. A value here is what you want
+        -- if you would rather the map stayed readable: 150 shows the boxes on your street,
+        -- 500 shows the ones in your district.
+        --
+        -- This is a real distance cull, and it is not the same thing as `shortRange`.
+        -- `shortRange` is a GTA flag that hides a blip from the big paused map and leaves
+        -- it on the minimap at any distance; this removes the blip outright.
+        distance = 0,
+
+        -- How often, in milliseconds, the blips are re-checked against `distance`. Only
+        -- matters when `distance` is set. Cheap - it walks a handful of known positions,
+        -- it does not search the world.
+        refresh = 2000,
     },
 }

@@ -881,6 +881,17 @@ local T = {
     ['ph.facetime_video'] = 'Video call',
     ['ph.facetime_hint'] = 'Live video is not shown; the call is voice.',    ['ph.cam_selfie'] = 'Flip camera',
 
+    -- Calls, privacy and notifications, in Settings
+    ['ph.calls_privacy'] = 'Calls & Privacy',
+    ['ph.hide_number'] = 'Hide my number',
+    ['ph.silence_unknown'] = 'Silence unknown callers',
+    ['ph.calls_privacy_hint'] = 'Hidden calls show as withheld. Unknown callers still reach your missed calls; they just do not ring.',
+    ['ph.silence_unknown_hint'] = 'Callers who are not in your contacts still reach your missed calls; they just do not ring.',
+    ['ph.notifications'] = 'Notifications',
+    ['ph.previews'] = 'Show previews',
+    ['ph.peek'] = 'Raise to show',
+    ['ph.previews_hint'] = 'With previews off, a notification shows who it is from and not what it says. Raise to show lifts the handset into view; turn it off to be notified quietly.',
+
     -- Payphones
     ['ph.booth_use'] = 'Use payphone',
     ['ph.booth_title'] = 'Payphone',

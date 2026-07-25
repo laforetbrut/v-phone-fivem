@@ -2464,6 +2464,15 @@ RENDER.jobs = async () => {
 };
 
 // ── Settings ───────────────────────────────────────────────────
+// The Settings rows that are nothing more than a stored boolean. `defaultOn` says which way
+// an unset preference reads, so a row the player has never touched still shows the truth.
+const SETTING_TOGGLES = {
+  hidenumber:     { key: 'hideNumber' },
+  silenceunknown: { key: 'silenceUnknown' },
+  previews:       { key: 'previews', defaultOn: true },
+  peek:           { key: 'peek', defaultOn: true },
+};
+
 RENDER.settings = () => {
   const p = state.prefs || {};
   body(
@@ -2514,6 +2523,23 @@ RENDER.settings = () => {
     '</div>' +
     UI.group([UI.row({ icon: 'moon', tint: '#5856D6', title: L('ph.dnd'), toggle: !!p.dnd, data: { t: 'dnd' } })],
       { footer: L('ph.dnd_hint') }) +
+    // Calls and privacy. Withholding your number is only offered when the operator allows
+    // it at all — a row that cannot do anything is worse than no row.
+    UI.group([
+      ...(state.allowAnonymous ? [UI.row({
+        icon: 'lockshut', tint: '#8E8E93', title: L('ph.hide_number'),
+        toggle: !!p.hideNumber, data: { t: 'hidenumber' },
+      })] : []),
+      UI.row({ icon: 'phone', tint: '#FF9500', title: L('ph.silence_unknown'),
+        toggle: !!p.silenceUnknown, data: { t: 'silenceunknown' } }),
+    ], { header: L('ph.calls_privacy'),
+         footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }) +
+    UI.group([
+      UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.previews'),
+        toggle: p.previews !== false, data: { t: 'previews' } }),
+      UI.row({ icon: 'phone', tint: '#0A84FF', title: L('ph.peek'),
+        toggle: p.peek !== false, data: { t: 'peek' } }),
+    ], { header: L('ph.notifications'), footer: L('ph.previews_hint') }) +
     // iOS 27's headline user-facing change. It is a stored preference every layer of
     // the glass derives from, not a fade on one overlay.
     '<div class="grouphead">' + esc(L('ph.transparency')) + '</div>' +
@@ -2638,6 +2664,15 @@ RENDER.settings = () => {
       return;
     } else if (r.dataset.t === 'vibrate') {
       const res2 = await post('prefs', { vibrate: !((state.prefs || {}).vibrate !== false) });
+      if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+      return;
+    } else if (SETTING_TOGGLES[r.dataset.t]) {
+      // The plain on/off rows, which all behave identically: flip, save, redraw.
+      const spec = SETTING_TOGGLES[r.dataset.t];
+      const now = spec.defaultOn
+        ? (state.prefs || {})[spec.key] !== false
+        : !!(state.prefs || {})[spec.key];
+      const res2 = await post('prefs', { [spec.key]: !now });
       if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
       return;
     } else if (r.dataset.t === 'ringtone' || r.dataset.t === 'alerttone') {

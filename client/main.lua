@@ -109,6 +109,9 @@ local function syncPrefsCache(pf)
     if type(pf) ~= 'table' then return end
     prefsCache.dnd = pf.dnd == true
     prefsCache.vibrate = pf.vibrate ~= false
+    -- Both default ON when the server has not said otherwise, matching prefsOf.
+    prefsCache.previews = pf.previews ~= false
+    prefsCache.peek = pf.peek ~= false
     prefsCache.ringVolume = tonumber(pf.ringVolume) or 0.7
     prefsCache.ringtone = pf.ringtone or 'default'
     prefsCache.notifMuted = {}
@@ -136,9 +139,28 @@ end
 local function peek(kind, data)
     if isOpen or notificationMuted(kind, data) then return end
     if data and data.hasItem == false then return end   -- no phone on them, nothing to peek
+
+    -- "Show previews" off: the notification says who it is from and nothing about what it
+    -- says. The body is stripped HERE, before it ever reaches the page, so the content is
+    -- not merely hidden by CSS - it is not sent.
+    local shown = data or {}
+    if prefsCache.previews == false and type(shown) == 'table' then
+        local copy = {}
+        for k, v in pairs(shown) do copy[k] = v end
+        copy.body, copy.attachment, copy.preview = nil, nil, nil
+        copy.hidden = true
+        shown = copy
+    end
+
+    -- The archive is the notification centre, which is behind the lock: it keeps the real
+    -- content either way.
     SendNUIMessage({ action = 'archive', kind = kind, data = data or {}, strings = strings() })
     if prefsCache.dnd then return end
-    SendNUIMessage({ action = 'peek', kind = kind, data = data or {}, strings = strings() })
+    -- The peek itself is the handset rising out of a pocket. A player who does not want
+    -- their phone announcing itself in the open turns it off and still gets the buzz.
+    if prefsCache.peek ~= false then
+        SendNUIMessage({ action = 'peek', kind = kind, data = shown, strings = strings() })
+    end
     buzz(false)
 end
 
@@ -1032,6 +1054,14 @@ end)
 
 RegisterNetEvent('v-phone:client:callIn', function(data)
     call = { id = data.id, state = 'in', number = data.number, video = data.video == true }
+    -- "Silence unknown callers" was decided on the server, where the contact list lives. A
+    -- silenced call still connects if the player happens to be looking at their phone and
+    -- answers it, and still becomes a missed call if they do not - it simply does not ring
+    -- and does not open the handset by itself.
+    if data.silent == true then
+        SendNUIMessage({ action = 'call', call = call })
+        return
+    end
     startRinging()
     -- An incoming call opens the phone if it is closed: a ringing phone the player cannot
     -- see is a missed call they never had the chance to take.

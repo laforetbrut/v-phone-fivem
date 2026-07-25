@@ -481,6 +481,28 @@ local function prefsOf(p, includeSecrets)
         faceId = securityEnabled and m.faceId == true,
         wallpaper = wallpaperId(m.wallpaper) or Config.DefaultWallpaper,
         dnd       = m.dnd == true,
+        -- ── The player's own privacy and notification choices ──
+        -- Withhold your number on the calls you place. Only meaningful if the operator
+        -- allows it at all: `Config.Settings.anonymous` is the server's own gate, and it is
+        -- off by default because an anonymous call is a harassment tool before it is a
+        -- roleplay tool. The pref is stored either way, so turning the server setting on
+        -- later restores what each player had chosen.
+        hideNumber = m.hideNumber == true,
+        -- Calls from a number that is not in your contacts arrive silently: no ring, no
+        -- phone opening itself. They still land in the call log as missed, which is the
+        -- whole point - you can see who tried.
+        silenceUnknown = m.silenceUnknown == true,
+        -- Show what a message actually says in the notification, or just who it is from.
+        -- On by default, because that is the useful setting; off is for playing in public.
+        --
+        -- `~= false` rather than the `== nil and true or == true` form used above: only an
+        -- explicit false may turn these off. The longer form reads a junk value - a
+        -- hand-edited row, an older client sending a string - as OFF, while the CLIENT reads
+        -- the same field as `pf.previews ~= false` and would call it ON. The two ends have to
+        -- agree, and defaulting a corrupt value to on is the harmless direction.
+        previews  = m.previews ~= false,
+        -- The handset rising out of a pocket to show a notification. On by default.
+        peek      = m.peek ~= false,
         -- Control centre toggles. Each one is real: airplane and cellular drive the
         -- signal the status bar draws, wifi and bluetooth their own glyphs, brightness a
         -- dimming layer. A control that changed nothing would be a lie about the phone.
@@ -869,11 +891,24 @@ local function startCall(src, p, toNumber, anonymous, video)
     Calls[id] = callRecord
     CallOf[src], CallOf[target] = id, id
 
+    -- "Silence unknown callers", the recipient's own choice. A caller who is not in their
+    -- contacts arrives without a ring and without the phone opening itself; the call still
+    -- runs and still lands in the log as missed, which is the point - they can see who tried.
+    -- A withheld number counts as unknown, because it is.
+    local silent = false
+    if tp and prefsOf(tp).silenceUnknown then
+        local known = (not callRecord.anonymous) and MySQL.scalar.await(
+            'SELECT 1 FROM vphone_contacts WHERE citizenid = ? AND number = ? LIMIT 1',
+            { toCid, callRecord.aNum })
+        silent = not known
+    end
+
     TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber, video = callRecord.video })
     TriggerClientEvent('v-phone:client:callIn', target, {
         id = id,
         number = Calls[id].anonymous and '' or Calls[id].aNum,
         video = callRecord.video,
+        silent = silent,
     })
 
     -- Give up rather than ring for ever: an unanswered call that never clears leaves both
@@ -1383,6 +1418,10 @@ V.Callback('v-phone:open', function(src, resolve)
         camera     = V.SettingBool('camera', false)
                      and (tostring(V.Setting('cameraUpload', '')) ~= '') or false,
         customWallpaper = V.SettingBool('customWallpaper', true),
+        -- Whether the operator allows a player to withhold their number at all. The Settings
+        -- row is hidden when they do not, because a control that cannot do anything is worse
+        -- than no control - and startCall re-checks the same setting regardless.
+        allowAnonymous = V.SettingBool('anonymous', false),
         call = currentCallFor(src) or false,
     })
 end)
@@ -1888,6 +1927,10 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         if data.vibrate ~= nil then prefs.vibrate = data.vibrate == true end
         if data.ringVolume ~= nil then prefs.ringVolume = math.max(0, math.min(1, num(data.ringVolume, 0.7))) end
         if data.dnd ~= nil then prefs.dnd = data.dnd == true end
+        if data.hideNumber ~= nil then prefs.hideNumber = data.hideNumber == true end
+        if data.silenceUnknown ~= nil then prefs.silenceUnknown = data.silenceUnknown == true end
+        if data.previews ~= nil then prefs.previews = data.previews == true end
+        if data.peek ~= nil then prefs.peek = data.peek == true end
         if data.airplane  ~= nil then prefs.airplane  = data.airplane == true end
         if data.cellular  ~= nil then prefs.cellular  = data.cellular == true end
         if data.wifi      ~= nil then prefs.wifi      = data.wifi == true end
@@ -2815,8 +2858,11 @@ end)
 V.Callback('v-phone:call', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
+    -- The player's standing choice, with a per-call flag able to force it on. The server
+    -- setting still has the final say inside startCall.
+    local anonymous = (data and data.anonymous == true) or prefsOf(p).hideNumber == true
     local id, err = startCall(src, p, tostring((data and data.number) or ''),
-        data and data.anonymous, data and data.video == true)
+        anonymous, data and data.video == true)
     if not id then resolve({ error = err }) return end
     resolve({ ok = true, id = id })
 end)

@@ -883,6 +883,17 @@ local T = {
     ['ph.facetime_video'] = 'Appel video',
     ['ph.facetime_hint'] = 'La video en direct n est pas affichee ; l appel est vocal.',    ['ph.cam_selfie'] = 'Camera avant',
 
+    -- Appels, confidentialite et notifications, dans les Reglages
+    ['ph.calls_privacy'] = 'Appels et confidentialite',
+    ['ph.hide_number'] = 'Masquer mon numero',
+    ['ph.silence_unknown'] = 'Silence pour les inconnus',
+    ['ph.calls_privacy_hint'] = 'Les appels masques s affichent en numero cache. Les inconnus arrivent quand meme dans vos appels manques ; ils ne sonnent simplement pas.',
+    ['ph.silence_unknown_hint'] = 'Les appelants absents de vos contacts arrivent quand meme dans vos appels manques ; ils ne sonnent simplement pas.',
+    ['ph.notifications'] = 'Notifications',
+    ['ph.previews'] = 'Afficher les apercus',
+    ['ph.peek'] = 'Sortir le telephone',
+    ['ph.previews_hint'] = 'Sans apercu, une notification indique de qui elle vient et non ce qu elle dit. Sortir le telephone le fait apparaitre a l ecran ; desactivez-le pour etre averti discretement.',
+
     -- Cabines telephoniques
     ['ph.booth_use'] = 'Utiliser la cabine',
     ['ph.booth_title'] = 'Cabine telephonique',
