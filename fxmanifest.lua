@@ -62,6 +62,9 @@ server_scripts {
     'bridge/server/characters.lua',
     'bridge/server/integrations.lua',
 
+    -- Staff-imposed network outages and out-of-service handsets. Before main.lua, whose
+    -- `signalAt` and `hasBars` both read it on every signal tick.
+    'server/outage.lua',
     'server/main.lua',
     -- Payphones: prepaid credit, the card, and the metered call. Loaded after main.lua,
     -- whose call machinery it drives.

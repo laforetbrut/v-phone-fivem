@@ -172,6 +172,43 @@ phone:OpenPhoneFor(src)             --> true | false, 'offline'   (support: see 
 phone:WipePhone(citizenid)          --> true, rowsRemoved        (IRREVERSIBLE)
 ```
 
+### Network outages
+
+The phone decides signal from the player's real position, and the worst ceiling always
+wins. An outage is a ceiling with an operator behind it instead of a map, so it obeys the
+same rule: a global outage at zero bars cannot be escaped by standing somewhere the map
+calls perfect reception.
+
+Bars rather than on/off, because *one bar* is a more interesting outage than *no phone*:
+calls drop, messages fail, and players have to move to be heard.
+
+```lua
+phone:AddOutage(bars, minutes, reason)                         --> id   (whole server)
+phone:AddOutage(0, 20, 'heist', { x = 250.0, y = -1000.0, z = 30.0, radius = 120.0 })
+phone:ClearOutage(id)     -- or 'all'                          --> how many went
+phone:GetOutages()                                             --> a list, with seconds left
+```
+
+`minutes = 0` means *until somebody clears it*, which is what a heist jammer wants.
+**Nothing is persisted**: a restart clears every outage, deliberately, so an outage nobody
+remembers setting can never survive a crash.
+
+### A handset out of service
+
+Not an outage - the network is fine, this phone is not. A phone that was smashed, a phone
+confiscated at booking, a phone that has to be dead for a scene. Keyed by citizen id, so it
+survives the player reconnecting, which is the point of confiscating something.
+
+```lua
+phone:BrickPhone(citizenid, minutes, reason)   -- 0 minutes: until unbricked
+phone:UnbrickPhone(citizenid)
+phone:IsPhoneBricked(citizenid)                --> boolean
+```
+
+A bricked phone refuses to open at all rather than opening onto features that quietly fail:
+a phone that answers nothing reads as a broken script, and the player reports it as a bug
+instead of playing the scene.
+
 ### Import / export
 
 For a character transfer, a backup, or a support restore. Export is a plain table; import
@@ -202,6 +239,47 @@ phone:OnCall()          --> boolean
 /refresh-phone    same, the other spelling
 /phoneadmin ...   staff actions, behind Config.Admin.ace
 ```
+
+### /phoneadmin
+
+```
+info     [id|cid|number]                     number, battery, unread, online
+open     [id]                                open their phone on their screen
+battery  [id] [0-100]
+number   [id|cid] [number]
+message  [id|cid] [text]                     a text message, from Staff
+notify   [id|cid] [text]                     a banner, which does not persist
+app      [id|cid] give|take [appid]
+
+outage   [bars 0-4] (minutes)                the whole server
+outage   here [radius] [bars] (minutes)      a circle around you
+outage   at [x] [y] [z] [radius] [bars] (minutes)
+outage   clear [id|all]
+outages                                      what is in force, and for how long
+
+brick    [id|cid] (minutes)                  take one handset out of service
+unbrick  [id|cid]
+bricked                                      who is out of service
+
+verify   [@handle] (off) (snap)              the verified badge
+verified (snap)
+wipe     [id|cid] confirm                    IRREVERSIBLE
+```
+
+Each subcommand has its own switch in `Config.Admin.actions`, so an action you do not want
+staff to have can be removed entirely rather than trusted not to be typed.
+
+**Permission.** `Config.Admin.ace` (default `vphone.admin`), or qb-core's `qbadmin.menu`:
+
+```
+add_ace group.admin vphone.admin allow
+```
+
+The bare `command` ace used to be accepted as well and no longer is. It is true for anybody
+granted *any* command at all, which on many servers includes moderators, trusted players
+and donors - none of whom were meant to be able to wipe a character's phone or cut the
+network. `Config.Admin.aceCommandFallback = true` puts it back if your staff genuinely have
+no other ace. Every refusal is printed to the server console with who tried it.
 
 `refreshphone` is safe for any player to run: it only resets their own phone, for when it
 sticks to the hand or an animation freezes. The server can trigger the same reset on a

@@ -373,7 +373,10 @@ Config.Apps = {
       category = 'utilities' },
     { id = 'gallery',  label = 'app.gallery',  icon = 'images',   owner = 'v-phone',    slot = 8,
       category = 'utilities' },
-    { id = 'music',    label = 'app.music',    icon = 'music',    owner = 'v-music',    slot = 9,
+    -- Owned by the phone, not by a radio script. The library, the playlists, the queue and
+    -- the favourites are all the phone's own; a deck is only needed to make sound come out,
+    -- and the app says so when there is none.
+    { id = 'music',    label = 'app.music',    icon = 'music',    owner = 'v-phone',    slot = 9,
       category = 'entertainment' },
     { id = 'garage',   label = 'app.garage',   icon = 'garage',   owner = 'v-phone',    slot = 10,
       category = 'travel' },
@@ -829,7 +832,28 @@ Config.Admin = {
         wipe         = true,   -- delete every trace of a character's phone data
         sendMessage  = true,   -- send them a service message
         readInfo     = true,   -- number, battery, unread count, social handles
+        -- Cut the network: globally, or inside a circle. `/phoneadmin outage`.
+        -- Also reachable from another script through the AddOutage export, for a heist
+        -- that jams a block or a storm that drops the whole map to one bar.
+        outage       = true,
+        -- Take one handset out of service. Not an outage - the network is fine, the phone
+        -- is not - for a phone that was smashed, confiscated or is dead for a scene.
+        brick        = true,
+        -- Install or remove an app on a character's phone.
+        apps         = true,
+        -- A banner on their phone, which is not the same thing as a text message: it does
+        -- not persist, and it does not come from a number.
+        notify       = true,
     },
+
+    -- Accept the bare `command` ace as proof of being staff.
+    --
+    -- OFF, and it used to be on. `IsPlayerAceAllowed(src, 'command')` is true for anybody
+    -- granted ANY command at all, which on many servers includes moderators, trusted
+    -- players and donors - none of whom were meant to be able to wipe a character's phone
+    -- or cut the network for everybody. Turn it back on only if your staff genuinely have
+    -- no other ace, and prefer `add_ace group.admin vphone.admin allow` instead.
+    aceCommandFallback = false,
 
     -- Wiping is destructive. Require a second confirmation in the command flow.
     confirmWipe = true,

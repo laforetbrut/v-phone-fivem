@@ -8582,6 +8582,40 @@ body.inframe.dark .uisearch {
   font-size: 15px;
 }
 
+/* The photograph attached to a post, before it is a post. Picking one used to publish it
+   outright, so there was nothing to show; now it sits above the caption field with an x on
+   it, which is the whole reason the two steps were split apart. */
+.socattached {
+  position: relative;
+  height: 190px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  background-color: var(--app-card2, rgba(120, 120, 128, .16));
+  background-position: center;
+  background-size: cover;
+}
+
+.socattachx {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+}
+
+.socattachx svg { width: 15px; height: 15px; }
+.socattachx:active { transform: scale(.88); }
+
+/* Snapmatic cannot post without a photograph, so its Post button says so by being dead
+   rather than by explaining itself after the fact. */
+.bigbtn:disabled { opacity: .4; pointer-events: none; }
+
 /* ══ The warrant terminal ══════════════════════════════════════
    A police tool, deliberately not the phone: a dark forensic console over the whole
    screen, monospace metadata, evidence-list rows. It reuses the phone's variables for a

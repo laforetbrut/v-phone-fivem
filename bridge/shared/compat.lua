@@ -399,9 +399,16 @@ local function stubIsLive(name)
     if name == 'v-voice' then return voiceResource() ~= nil end
     if name == 'v-status' then return true end
     if name == 'v-inventory' then return true end
-    -- Live when there is a deck to hand a track to, or a hook that plays one. Before 1.2.0
-    -- this was hardcoded false, which hid a complete Music app on every server.
-    if name == 'v-music' then return MusicProvider ~= nil and MusicProvider() ~= nil end
+    -- Live, always.
+    --
+    -- This used to answer "only when a deck is installed", and the effect was that the whole
+    -- Music app vanished from the home screen of every server that has no radio script -
+    -- which is most of them. That conflated two different questions. The SHIM is live: it
+    -- exists, it answers, and `Play` returns `nodeck` honestly when there is nothing to hand
+    -- a track to. Whether a DECK exists is `Provider()`, and it is the app's business to say
+    -- so on screen, not a reason to hide a library, playlists and favourites that all work
+    -- perfectly well on their own.
+    if name == 'v-music' then return true end
     if name == 'v-police' then
         return (Config.Compat and Config.Compat.policeJobs and #Config.Compat.policeJobs > 0) or false
     end

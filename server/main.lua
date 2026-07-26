@@ -787,6 +787,10 @@ end
 local function hasBars(src)
     local p = Core and Core.GetPlayer(src)
     if not p then return false end
+    -- A handset staff took out of service. Not an outage - the network is fine, this phone
+    -- is not - but it fails at exactly the same place, so nothing downstream has to learn
+    -- a second way for a phone to be unusable.
+    if PhoneBricked and PhoneBricked(p.citizenid) then return false end
     local prefs = prefsOf(p)
     if prefs.airplane or prefs.cellular == false then return false end
     return (Signal[src] or 4) > 0
@@ -1177,8 +1181,12 @@ exports('HasSignal',  function(src) return hasBars(src) end)
 --- The ceiling from any dead zone the player is standing in. Zones overlap on purpose:
 --- the WORST one wins, so a tunnel inside a weak-signal desert is still a tunnel.
 local function signalAt(coords)
-    if GetResourceState('v-world') ~= 'started' then return 4 end
-    local bars = 4
+    -- A staff outage is a ceiling like any dead zone, and it applies whether or not the
+    -- map has any zones of its own - which is why it is read BEFORE the early return.
+    -- Putting it after would have made every outage silently do nothing on a server with
+    -- no v-world, which is most of them.
+    local bars = OutageCeiling and OutageCeiling(coords) or 4
+    if GetResourceState('v-world') ~= 'started' then return bars end
     for _, z in ipairs(V.Use('v-world').GetDeadZones() or {}) do
         if z.enabled ~= false and z.enabled ~= 0 then
             local d = #(coords - vector3(z.x + 0.0, z.y + 0.0, z.z + 0.0))
@@ -1492,6 +1500,10 @@ V.Callback('v-phone:open', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'x' }) return end
     if not requireItem(src) then resolve({ error = 'nophone' }) return end
+    -- Out of service. Refused at the door rather than left to fail one feature at a time:
+    -- a phone that opens and then answers nothing reads as a broken script, and the player
+    -- would report it as a bug instead of as the scene staff intended.
+    if PhoneBricked and PhoneBricked(p.citizenid) then resolve({ error = 'broken' }) return end
     -- A flat phone does not open. It is the one refusal players understand immediately.
     if V.SettingBool('battery', true) and batteryOf(src) <= 0 then resolve({ error = 'flat' }) return end
 

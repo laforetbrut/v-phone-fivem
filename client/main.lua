@@ -642,7 +642,12 @@ local function musicAppData()
 
     return {
         ok = true,
-        enabled = provider ~= nil,
+        -- The OPERATOR's switch, and only that. This used to be `provider ~= nil`, so a
+        -- server with no radio script opened Music onto "unavailable" - even though the
+        -- library, the playlists and the favourites are entirely the phone's own and work
+        -- with no deck at all. What a missing deck costs is playback, which `provider`
+        -- below already says, and the app now explains rather than hiding itself.
+        enabled = (M.enabled ~= false),
         provider = provider,
         -- True when the deck cannot be driven and the player has to paste. The app says so
         -- rather than leaving them wondering why nothing started.

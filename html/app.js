@@ -4000,6 +4000,7 @@ async function musicRenderPlaylists(model) {
     // Said once, where it matters: on a server whose deck cannot be driven, playing a track
     // opens that deck with the URL copied. Better here than as a surprise every time.
     (model.handoff ? '<div class="groupfoot">' + esc(L('ph.music_handoff_hint')) + '</div>' : '') +
+    (noDeck ? '<div class="groupfoot">' + esc(L('ph.music_nodeck_hint')) + '</div>' : '') +
     (items.length ? UI.group(items, { header: L('ph.playlists') })
                   : UI.empty(L('ph.playlist_none'), 'folder')) +
     '<div class="groupfoot">' + esc(L('ph.playlist_hint')) + '</div>');
@@ -4057,6 +4058,9 @@ RENDER.music = async () => {
   loading();
   const model = await musicModel();
   if (!model.enabled) { foot(''); body(UI.empty(L('ph.err_off'), 'music')); return; }
+  // No deck installed. The app still works - a library is a library - so this is a line at
+  // the top rather than an empty screen, and it names what is actually missing.
+  const noDeck = !model.provider;
   if (musicPlayerOpen) { musicRenderPlayer(model); return; }
   musicFoot(model);
 
@@ -7509,56 +7513,86 @@ async function socialTagFeed(appId, tag) {
 }
 
 // -- Composers --------------------------------------------------
-function bleetCompose() {
-  sheet(L('ph.bleet_new'),
-    UI.field('btext', L('ph.bleet_ph'), '', 'maxlength="280"') +
-      UI.button('😊 ' + L('ph.emoji'), 'bemoji', 'plain') +
-      UI.button(L('ph.pick_photo'), 'bpick', 'plain') + UI.button(L('ph.bleet_send'), 'bgo'),
+//
+// Both composers work the same way, and it is worth stating why, because they did not.
+//
+// Choosing a photograph used to PUBLISH it, immediately, using whatever text happened to be
+// in the field at that moment. So there was no way to write a caption for a picture you had
+// already chosen, no way to look at what you were about to post, and no way to change your
+// mind. Attaching and publishing are two different decisions and they now have two different
+// buttons: pick a photo, see it, write about it, then post.
+//
+// The `app` is always sent explicitly. The server falls back to `appOfKind`, which answers
+// 'snap' for every photograph - so a photo composed in Bleeter and sent without an app
+// landed on Snapmatic instead. It was filed correctly from Snapmatic and wrongly from
+// Bleeter, which is exactly the shape of the bug that was reported.
+function socCompose(appId) {
+  const isSnap = appId === 'snap';
+  const textId = isSnap ? 'scap' : 'btext';
+  let image = '';
+
+  // The attachment, drawn under the field. Repainted in place rather than by rebuilding the
+  // sheet, so the caption already typed survives picking - and re-picking - a photograph.
+  const paintAttach = () => {
+    const host = byId('socattach');
+    if (!host) return;
+    host.innerHTML = image
+      ? '<div class="socattached" style="' + photoStyle(image) + '">' +
+          '<button class="socattachx" id="bdrop" type="button" aria-label="' +
+            esc(L('ph.remove')) + '">' + svg('xmark') + '</button>' +
+        '</div>'
+      : '';
+    if (image) byId('bdrop').addEventListener('click', () => {
+      image = '';
+      paintAttach();
+      ui('toggleoff');
+    });
+    const go = byId('bgo');
+    // Snapmatic is a photo app: there is nothing to post until one is attached.
+    if (go && isSnap) go.disabled = !image;
+  };
+
+  sheet(L(isSnap ? 'ph.snap_new' : 'ph.bleet_new'),
+    '<div id="socattach"></div>' +
+    UI.field(textId, L(isSnap ? 'ph.snap_caption' : 'ph.bleet_ph'), '',
+             'maxlength="' + (isSnap ? 140 : 280) + '"') +
+    UI.button('😊 ' + L('ph.emoji'), 'bemoji', 'plain') +
+    UI.button(L('ph.pick_photo'), 'bpick', 'plain') +
+    UI.button(L(isSnap ? 'ph.snap_share' : 'ph.bleet_send'), 'bgo'),
     () => {
-      byId('bemoji').addEventListener('click', () => emojiOpen('btext'));
-      // A post can carry a photo straight off the phone rather than a pasted link.
-      byId('bpick').addEventListener('click', () => pickPhoto(async (url) => {
-        const bodyText = byId('btext').value;
-        const epoch = sheetEpoch;
-        const r = await post('social', { op: 'post', kind: 'photo', body: bodyText, image: url });
-        if (!closeSheet(false, epoch)) return;
-        if (r && r.ok) { ui('sent'); socialRender('bleeter'); }
-        else toast(L('ph.err_' + ((r && r.error) || 'x')));
+      byId('bemoji').addEventListener('click', () => emojiOpen(textId));
+      byId('bpick').addEventListener('click', () => pickPhoto((url) => {
+        image = url;
+        paintAttach();
+        ui('shutter');
       }));
       byId('bgo').addEventListener('click', async () => {
-        const bodyText = byId('btext').value;
+        const bodyText = byId(textId).value;
+        // Nothing at all to send: say so here rather than making the server answer 'empty'.
+        if (!image && bodyText.replace(/\s/g, '') === '') {
+          toast(L(isSnap ? 'ph.snap_needphoto' : 'ph.err_empty'));
+          return;
+        }
         const epoch = sheetEpoch;
-        const r = await post('social', { op: 'post', kind: 'text', body: bodyText });
+        const r = await post('social', {
+          op: 'post', app: appId,
+          kind: image ? 'photo' : 'text',
+          body: bodyText, image,
+        });
         if (!closeSheet(false, epoch)) return;
-        if (r && r.ok) { ui('sent'); socialRender('bleeter'); }
+        if (r && r.ok) { ui('sent'); socialRender(appId); }
         else toast(L('ph.err_' + ((r && r.error) || 'x')));
       });
+      paintAttach();
     });
 }
 
-// Posting starts from the gallery, because that is where photos already are: the camera
-// shoots, Snapmatic shows.
+function bleetCompose() { socCompose('bleeter'); }
 function snapCompose() {
-  const shots = state.photos || [];
-  if (!shots.length) { toast(L('ph.snap_noshots')); return; }
-  sheet(L('ph.snap_new'),
-    '<div class="shots" style="margin-bottom:10px">' + shots.map((v, i) =>
-      '<div class="shot" data-i="' + i + '" style="' + photoStyle(v) + '"></div>').join('') + '</div>' +
-    UI.field('scap', L('ph.snap_caption'), '', 'maxlength="140"') +
-      UI.button('😊 ' + L('ph.emoji'), 'semoji', 'plain'),
-    () => {
-      byId('semoji').addEventListener('click', () => emojiOpen('scap'));
-      [...byId('sheet').querySelectorAll('.shot')].forEach((el) =>
-        el.addEventListener('click', async () => {
-          const bodyText = byId('scap').value;
-          const epoch = sheetEpoch;
-          const r = await post('social', { op: 'post', kind: 'photo',
-            image: photoRow(shots[Number(el.dataset.i)]).url, body: bodyText });
-          if (!closeSheet(false, epoch)) return;
-          if (r && r.ok) { ui('sent'); socialRender('snap'); }
-          else toast(L('ph.err_' + ((r && r.error) || 'x')));
-        }));
-    });
+  // Snapmatic posts photographs, so an empty gallery is a dead end worth naming up front
+  // rather than after somebody has written a caption.
+  if (!(state.photos || []).length) { toast(L('ph.snap_noshots')); return; }
+  socCompose('snap');
 }
 
 RENDER.bleeter = () => needAccount('bleeter', () => socialRender('bleeter'));
