@@ -54,7 +54,33 @@ Config.Compat = {
     housing   = 'auto',   -- qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property
     voice     = 'auto',   -- pma-voice, saltychat, mumble-voip
     notify    = 'auto',   -- ox_lib, qb, esx, chat, custom
-    numbers   = 'auto',   -- auto | framework (keep the number in the framework) | phone (keep it here)
+    -- ── Whose phone numbers ────────────────────────────────────
+    -- **The setting to reach for on a server that already has players.**
+    --
+    -- qb-core writes a phone number into `charinfo` when a character is created, and ox_core
+    -- keeps one in `characters.phoneNumber`. On `auto` the phone ADOPTS that number, which is
+    -- the friendly default: every script that already knows how to reach a player still can,
+    -- and nobody's number changes under them.
+    --
+    -- But an adopted number is in the framework's format, not yours. If you have set
+    -- `Config.NumberFormat` to something you actually want - `5555-####-####`, a French
+    -- shape, whatever - `auto` means your existing players keep their old-looking numbers
+    -- forever and only brand new characters get the new shape.
+    --
+    --   auto       adopt the framework's number if there is one, otherwise mint our own,
+    --              and write ours back so the framework agrees. The default.
+    --   framework  the same adoption, stated explicitly.
+    --   phone      **ignore the framework's numbers entirely.** Every character is minted a
+    --              number in `Config.NumberFormat`, and it is NOT written back into charinfo.
+    --              Pick this when the phone's numbering is the one that matters.
+    --
+    -- Switching to `phone` affects characters from then on. It cannot retroactively change a
+    -- number already stored - so for players whose framework number was adopted on an earlier
+    -- boot, run `/phoneadmin renumber all confirm` once. That mints everybody a number in the
+    -- current format. Anybody who saved an old number in their contacts keeps the old one:
+    -- a contact is a row on somebody else's phone, and rewriting other people's address books
+    -- to follow a staff action would be worse than the problem it solved.
+    numbers   = 'auto',   -- auto | framework | phone
 
     -- ── Standing in for qb-phone ───────────────────────────────
     -- A stock qb-core server has eighteen resources that talk to qb-phone: job mail, police
@@ -301,6 +327,26 @@ Config.Hold = {
 --
 -- `#` is replaced by a random digit. Anything else is kept, so a server can use its own
 -- shape. Los Santos numbers in GTA are 555-xxxx, which is what this ships as.
+-- Every `#` becomes a digit; everything else is kept exactly as written. So all of these
+-- work, and any shape you can spell this way works:
+--
+--     '555-####'            555-0142        the GTA shape, and the default
+--     '5555-####-####'      5555-0142-9930
+--     '(###) ###-####'      (415) 555-0142
+--     '+33 # ## ## ## ##'   +33 6 12 34 56 78
+--     '##########'          4155550142
+--
+-- Three things to keep in mind, each of which the server checks at boot and names:
+--
+--   * at least four `#`, or a busy server runs out of numbers
+--   * 20 characters at most, because that is the column - a longer format would be truncated
+--     and two different numbers could end up stored as the same string
+--   * it must not overlap `Config.Booth.numberFormat`. A payphone is recognised by the SHAPE
+--     of its number and nothing else, so a character holding a booth-shaped number is a
+--     character nobody can ring. Those draws are refused rather than handed out.
+--
+-- Changing this affects new characters. To renumber the ones you already have, see
+-- `/phoneadmin renumber` and `Config.Compat.numbers` above.
 Config.NumberFormat = '555-####'
 
 -- ── Required contacts ─────────────────────────────────────────

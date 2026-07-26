@@ -78,6 +78,62 @@ exports('SetNumber', function(citizenid, number)
     return true
 end)
 
+--- Give a character a NEW number in the current `Config.NumberFormat`.
+---
+--- The case this exists for: a qb-core server that already has players, whose numbers the
+--- phone adopted from `charinfo` because that is the friendly default. Setting
+--- `Config.Compat.numbers = 'phone'` stops it adopting any MORE of them - but it cannot
+--- retroactively change one already stored, so without this the switch appears to do nothing
+--- on exactly the server that wanted it.
+---
+--- **Anybody who saved the old number in their contacts still has the old number.** That is
+--- not something this can fix: a contact is a row on somebody else's phone, and rewriting
+--- other people's address books to follow a staff action would be worse than the problem. The
+--- character's own contacts, messages and call log are untouched - only the number changes.
+exports('Renumber', function(citizenid)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' then return false, 'args' end
+
+    local old = MySQL.scalar.await('SELECT phone FROM vphone_characters WHERE citizenid = ?',
+        { citizenid })
+    if old == nil then return false, 'nocharacter' end
+
+    local fresh = PhoneMintNumber()
+    if not fresh then return false, 'exhausted' end
+
+    MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?',
+        { fresh, citizenid })
+    -- The cache is per session and nothing else invalidates it, so a connected character
+    -- would keep answering with the old number until they reconnected.
+    PhoneForgetNumber(citizenid, old)
+    Bridge.Numbers.Set(citizenid, fresh)
+
+    local target = Core.GetPlayerByCitizenId(citizenid)
+    if target and target.source then
+        PhoneSetOnline(fresh, target.source)
+        TriggerClientEvent('v-phone:client:close', target.source)
+    end
+    Core.Log('phone', ('renumbered %s: %s -> %s'):format(citizenid, tostring(old), fresh),
+        nil, citizenid)
+    return true, fresh, old
+end)
+
+--- Every character on the server, renumbered.
+---
+--- Deliberately NOT parallel and deliberately paced: this is one UPDATE plus one uniqueness
+--- check per character, and running it over a few thousand rows as fast as Lua can is how a
+--- server stutters for everybody at once. A number is not urgent.
+exports('RenumberAll', function()
+    local rows = MySQL.query.await('SELECT citizenid FROM vphone_characters') or {}
+    local self = exports[GetCurrentResourceName()]
+    local done, failed = 0, 0
+    for i, row in ipairs(rows) do
+        if self:Renumber(row.citizenid) then done = done + 1 else failed = failed + 1 end
+        if i % 25 == 0 then Wait(0) end
+    end
+    return done, failed
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Messages
 -- ══════════════════════════════════════════════════════════════

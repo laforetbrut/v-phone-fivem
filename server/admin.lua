@@ -303,6 +303,36 @@ if ADMIN.commands ~= false then
             reply(src, info and ('%s: %s'):format(info.name or cid, info.number or '-')
                 or 'No such character.')
 
+        -- ── A new number, in the phone's own format ─────────────────────
+        --
+        -- Behind `setNumber`, because that is what it is: setting a number, with the phone
+        -- choosing it instead of staff typing it.
+        elseif sub == 'renumber' and actionOn('setNumber') then
+            local who = args[2]
+            if not who then
+                reply(src, 'Usage: /phoneadmin renumber [id|cid|number|all] confirm')
+                return
+            end
+            if (args[3] or '') ~= 'confirm' then
+                reply(src, 'This gives them a NEW number. Anybody who saved the old one in '
+                    .. 'their contacts keeps the old one. Repeat with "confirm" to do it.')
+                return
+            end
+
+            if who:lower() == 'all' then
+                reply(src, 'Renumbering every character. This runs in the background.')
+                CreateThread(function()
+                    local done, failed = self:RenumberAll()
+                    reply(src, ('Renumbered %d character(s), %d failed.'):format(done, failed))
+                end)
+                return
+            end
+
+            local cid = resolveCitizen(who)
+            local ok, fresh, was = self:Renumber(cid)
+            reply(src, ok and ('%s: %s -> %s'):format(cid, tostring(was), fresh)
+                or ('Failed: ' .. tostring(fresh)))
+
         -- ── The whole server at once ────────────────────────────────────
         elseif sub == 'announce' and actionOn('notify') then
             local body = table.concat(args, ' ', 2)
@@ -336,9 +366,9 @@ if ADMIN.commands ~= false then
             reply(src, ('Battery set to %d%% on %d phone(s).'):format(math.floor(pct), n))
 
         else
-            reply(src, 'phoneadmin: info | who | number | contacts | apps | open | battery | ' ..
-                       'batteryall | message | notify | announce | app | outage | outages | ' ..
-                       'brick | unbrick | bricked | verify | verified | wipe')
+            reply(src, 'phoneadmin: info | who | number | renumber | contacts | apps | open | ' ..
+                       'battery | batteryall | message | notify | announce | app | outage | ' ..
+                       'outages | brick | unbrick | bricked | verify | verified | wipe')
         end
     end, false)
 
@@ -365,6 +395,7 @@ if ADMIN.commands ~= false then
         { 'open', "Open a player's phone on their screen", { { 'id', 'server id' } } },
         { 'battery', 'Set a battery level', { { 'id', 'server id' }, { '0-100', 'percent' } } },
         { 'batteryall', 'Set every phone online', { { '0-100', 'percent' } } },
+        { 'renumber', "A new number in the phone's own format", { { 'id|cid|all', 'the target' }, { 'confirm', 'required' } } },
         { 'message', 'Send a text message, from Staff', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
         { 'notify', 'A banner on their phone (does not persist)', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
         { 'announce', 'That banner, to every phone online', { { 'text...', 'the message' } } },

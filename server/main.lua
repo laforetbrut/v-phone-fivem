@@ -197,6 +197,69 @@ local function newNumber()
     return nil
 end
 
+--- Mint a fresh number in the CURRENT format, for a character who already has one.
+---
+--- Exposed as a global rather than kept local because api.lua's Renumber export needs it and
+--- there is no honest way to reimplement it there: the retry loop, the payphone-shape refusal
+--- and the uniqueness check all have to be the same ones `ensureNumber` uses, or a renumbered
+--- character can end up with a number a new character would never have been given.
+function PhoneMintNumber()
+    return newNumber()
+end
+
+--- Forget the cached number for a character, so the next read comes from the row.
+---
+--- The cache is per session and there is no invalidation anywhere else, which is fine while
+--- nothing changes a number mid-session and wrong the moment something does.
+function PhoneForgetNumber(cid, oldNumber)
+    cid = tostring(cid or '')
+    Numbers[cid] = nil
+    if oldNumber and Online[oldNumber] then Online[oldNumber] = nil end
+end
+
+--- Is this number in the online map? Used to keep it in step after a renumber.
+function PhoneSetOnline(number, src)
+    if number and number ~= '' then Online[number] = src end
+end
+
+--- Say so at boot if the number format cannot work.
+---
+--- It used to be discovered forty draws into a player's first connection, as one line about
+--- "too few digits" that arrived long after the config was written and named nothing specific.
+--- Every one of these is a config mistake with a definite answer, so each gets its own line.
+CreateThread(function()
+    Wait(1000)
+    local format = tostring(S('numberFormat', Config.NumberFormat) or '')
+    local digits = select(2, format:gsub('#', ''))
+
+    if format == '' then
+        print('[v-phone] Config.NumberFormat is empty. Nobody can be given a number.')
+    elseif digits == 0 then
+        print(('[v-phone] Config.NumberFormat (%q) has no `#` in it, so every character would '
+            .. 'be minted the same number. Put a `#` where each digit belongs.'):format(format))
+    elseif digits < 4 then
+        print(('[v-phone] Config.NumberFormat (%q) has only %d digit(s) - %d possible numbers. '
+            .. 'A busy server will run out. Four `#` or more is the sane minimum.')
+            :format(format, digits, 10 ^ digits))
+    end
+
+    -- The column is VARCHAR(20). A longer format is silently TRUNCATED by MySQL, which means
+    -- two different numbers can end up stored as the same string.
+    if #format > 20 then
+        print(('[v-phone] Config.NumberFormat (%q) is %d characters. The column holds 20, so it '
+            .. 'would be truncated and numbers could collide.'):format(format, #format))
+    end
+
+    -- A character holding a payphone-shaped number is a character nobody can ring, because a
+    -- booth is recognised by its shape alone. `newNumber` refuses those - so an overlapping
+    -- format does not break anything, it just quietly rejects a share of every draw.
+    if Booth and Booth.IsNumber and Booth.IsNumber(mintNumber(format)) then
+        print(('[v-phone] Config.NumberFormat (%q) overlaps Config.Booth.numberFormat. Numbers '
+            .. 'shaped like a payphone are refused, so minting will be slow or impossible.')
+            :format(format))
+    end
+end)
+
 local function numberOfCid(cid)
     if Numbers[cid] then return Numbers[cid] end
     local n = MySQL.scalar.await('SELECT phone FROM vphone_characters WHERE citizenid = ?', { cid })

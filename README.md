@@ -304,6 +304,53 @@ exports['v-phone']:Open()
 `Config.Compat.inventory` also takes a resource name instead of `'auto'`, for a fork whose name
 the bridge does not recognise.
 
+## Phone numbers
+
+Every `#` in `Config.NumberFormat` becomes a digit and everything else is kept verbatim, so
+all of these work:
+
+| Format | Example |
+|---|---|
+| `555-####` | `555-0142` — the GTA shape, and the default |
+| `5555-####-####` | `5555-0142-9930` |
+| `(###) ###-####` | `(415) 555-0142` |
+| `+33 # ## ## ## ##` | `+33 6 12 34 56 78` |
+| `##########` | `4155550142` |
+
+Four `#` minimum, 20 characters maximum, and it must not collide with
+`Config.Booth.numberFormat` — a payphone is recognised by the shape of its number alone. The
+server checks all three at boot and says which one is wrong.
+
+### Already have players with numbers?
+
+qb-core writes a number into `charinfo` when a character is created, and ox_core keeps one in
+`characters.phoneNumber`. By default the phone **adopts** it, so every script that already
+knows how to reach a player still can.
+
+If you would rather the phone's own format won:
+
+```lua
+Config.Compat.numbers = 'phone'   -- auto | framework | phone
+```
+
+`phone` ignores the framework's numbers entirely and mints in your format, and does not write
+back into `charinfo`.
+
+That governs characters from then on. It cannot retroactively change a number already stored,
+so for players whose framework number was adopted on an earlier boot, run this once:
+
+```
+/phoneadmin renumber all confirm
+```
+
+Or one at a time: `/phoneadmin renumber 3 confirm`.
+
+**Anybody who saved the old number in their contacts keeps the old number.** That is not
+something the phone can fix — a contact is a row on somebody else's phone, and rewriting other
+people's address books to follow a staff action would be worse than the problem. The
+character's own contacts, messages and call log are untouched.
+
+
 ## Admin commands
 
 Behind `Config.Admin.ace` (`vphone.admin` by default), or qb-core's `qbadmin.menu`. Type
@@ -713,6 +760,55 @@ exports['v-phone']:Open()
 
 `Config.Compat.inventory` accepte aussi un nom de ressource au lieu de `'auto'`, pour un fork
 dont le bridge ne connaît pas le nom.
+
+## Numéros de téléphone
+
+Chaque `#` de `Config.NumberFormat` devient un chiffre et tout le reste est conservé tel quel,
+donc tous ceux-ci fonctionnent :
+
+| Format | Exemple |
+|---|---|
+| `555-####` | `555-0142` — la forme GTA, et la valeur par défaut |
+| `5555-####-####` | `5555-0142-9930` |
+| `(###) ###-####` | `(415) 555-0142` |
+| `+33 # ## ## ## ##` | `+33 6 12 34 56 78` |
+| `##########` | `4155550142` |
+
+Quatre `#` au minimum, 20 caractères au maximum, et le format ne doit pas entrer en collision
+avec `Config.Booth.numberFormat` — une cabine est reconnue à la seule forme de son numéro. Le
+serveur vérifie les trois au démarrage et dit lequel ne va pas.
+
+### Vous avez déjà des joueurs avec des numéros ?
+
+qb-core écrit un numéro dans `charinfo` à la création d'un personnage, et ox_core en garde un
+dans `characters.phoneNumber`. Par défaut le téléphone l'**adopte**, pour que tout script qui
+sait déjà joindre un joueur continue de le pouvoir.
+
+Si vous préférez que le format du téléphone l'emporte :
+
+```lua
+Config.Compat.numbers = 'phone'   -- auto | framework | phone
+```
+
+`phone` ignore entièrement les numéros du framework et génère dans votre format, sans réécrire
+dans `charinfo`.
+
+Cela vaut pour les personnages à partir de ce moment. Cela ne peut pas changer rétroactivement
+un numéro déjà enregistré : pour les joueurs dont le numéro du framework a été adopté à un
+démarrage précédent, lancez ceci une fois :
+
+```
+/phoneadmin renumber all confirm
+```
+
+Ou un par un : `/phoneadmin renumber 3 confirm`.
+
+**Quiconque avait enregistré l'ancien numéro dans ses contacts garde l'ancien numéro.** Ce
+n'est pas quelque chose que le téléphone peut corriger — un contact est une ligne sur le
+téléphone de quelqu'un d'autre, et réécrire les répertoires des autres pour suivre une action
+staff serait pire que le problème. Les contacts, messages et historique d'appels du personnage
+lui-même ne sont pas touchés.
+
 
 ## Commandes admin
 
