@@ -100,13 +100,24 @@ Config.Compat = {
     -- Set one to false and its app is not offered at all: no home screen, no store, no
     -- search. This is how you switch off the garage app on a server with no garages,
     -- rather than leaving players an app that answers nothing.
-    modules = {
-        ['v-banking']  = true,    -- Bank
-        ['v-vehicles'] = true,    -- Garage
-        ['v-housing']  = true,    -- Property
-        ['v-licenses'] = true,    -- Wallet
-        ['v-cityhall'] = true,    -- Jobs
+    -- Which of these apps to offer at all. All of them read your framework through the
+    -- bridge - qb-core, qbx, ESX, ox, and whatever banking, garage or housing script is
+    -- running - so none of them needs a companion resource. Set one to false to remove it
+    -- from the phone entirely.
+    apps = {
+        bank     = true,
+        garage   = true,
+        property = true,
+        wallet   = true,
+        jobs     = true,
     },
+
+    -- The same switches under their old names. These were the author's own v-* module
+    -- names, and setting one to true used to make the phone believe that resource was
+    -- RUNNING - which is why four apps reported themselves as not installed while the
+    -- bridge behind them worked perfectly. Kept only so an existing config keeps working;
+    -- `apps` above is the one to use.
+    modules = nil,
 
     -- Jobs that unlock the MDT app. Empty hides it from everybody.
     policeJobs = { 'police', 'sheriff', 'bcso', 'sast' },

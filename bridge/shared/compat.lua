@@ -194,35 +194,6 @@ STUBS['v-world'] = {
     SeedDeadZones = function() end,
 }
 
--- ── v-cityhall ─────────────────────────────────────────────────
--- The Jobs app's "Openings" tab. Upstream this is a city hall module with vacancies an
--- admin posts; here every job the framework knows about is an opening, listed at its entry
--- rank and starting pay, which is the honest answer without inventing a vacancies table.
---
--- This stub is not optional. `stubIsLive` reports v-cityhall as started (the config's
--- `modules` list enables it), so without an entry here `V.Use('v-cityhall')` fell through
--- to the real exports of a resource that does not exist, and the whole `v-phone:jobs`
--- callback died on the OpenPositions call - taking the Jobs app with it.
-STUBS['v-cityhall'] = {
-    OpenPositions = function()
-        if not isServer then return {} end
-        local jobs = (Bridge and Bridge.Jobs and Bridge.Jobs.All()) or {}
-        local out = {}
-        for _, job in ipairs(jobs) do
-            local grades = job.grades or {}
-            local entry = grades[1] or {}
-            out[#out + 1] = {
-                name = job.name,
-                label = job.label or job.name,
-                grade = entry.label or '',
-                ranks = #grades,
-                salary = tonumber(entry.pay) or 0,
-            }
-        end
-        return out
-    end,
-}
-
 -- ── v-music ────────────────────────────────────────────────────
 -- **The phone is a remote, not an audio engine.**
 --
@@ -399,19 +370,24 @@ local function stubIsLive(name)
     if name == 'v-voice' then return voiceResource() ~= nil end
     if name == 'v-status' then return true end
     if name == 'v-inventory' then return true end
-    if name == 'v-banking' then return Bridge ~= nil and Bridge.Banking ~= nil end
     -- Live when there is a deck to hand a track to, or a hook that plays one. Before 1.2.0
     -- this was hardcoded false, which hid a complete Music app on every server.
     if name == 'v-music' then return MusicProvider ~= nil and MusicProvider() ~= nil end
     if name == 'v-police' then
         return (Config.Compat and Config.Compat.policeJobs and #Config.Compat.policeJobs > 0) or false
     end
-    if name == 'v-housing' or name == 'v-vehicles' or name == 'v-licenses' or name == 'v-cityhall' then
-        -- These are only real if the app that reads them is shipped at all. The config
-        -- decides; a server with no garage script removes the app rather than seeing an
-        -- empty one.
-        return (Config.Compat and Config.Compat.modules and Config.Compat.modules[name]) ~= false
-    end
+    -- v-banking, v-vehicles, v-licenses, v-cityhall and v-housing are deliberately absent
+    -- from this list, and must stay absent.
+    --
+    -- Reporting them as started was the single cause of four broken apps. Nothing in this
+    -- resource answers `v-vehicles:myVehicles` or `v-banking:getData` - those belong to the
+    -- author's own suite - so an app that believed the module was running asked a callback
+    -- into the void and told the player it was not installed. The apps read the bridge
+    -- directly now, and these names answer `missing`, which is the truth.
+    --
+    -- Anything still genuinely gated on one of them - the Fleeca card, paying rent - now
+    -- reports unavailable instead of failing, which is also the truth: those features do
+    -- need a resource this server does not have.
     return false
 end
 

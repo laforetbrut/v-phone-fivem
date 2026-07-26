@@ -20,6 +20,27 @@
 
 local function num(v, d) return tonumber(v) or d or 0 end
 
+--- Has the operator switched this app off?
+---
+--- `Config.Compat.apps` names them plainly. The older `Config.Compat.modules` used the
+--- author's v-* module names and is still honoured for a config written against it, because
+--- silently ignoring a switch somebody set is worse than carrying two spellings.
+local LEGACY_KEY = {
+    bank = 'v-banking', garage = 'v-vehicles', property = 'v-housing',
+    wallet = 'v-licenses', jobs = 'v-cityhall',
+}
+local function appOn(key)
+    local compat = Config.Compat or {}
+    local apps = compat.apps
+    if type(apps) == 'table' and apps[key] ~= nil then return apps[key] ~= false end
+    local legacy = compat.modules
+    local name = LEGACY_KEY[key]
+    if type(legacy) == 'table' and name and legacy[name] ~= nil then
+        return legacy[name] ~= false
+    end
+    return true
+end
+
 --- Read something from a provider without letting a broken schema take the app down.
 ---
 --- The bank app taught this: one failing query answered `nil` through the callback layer and
@@ -85,6 +106,7 @@ local function vehicleRow(v)
 end
 
 V.Callback('v-phone:garage:data', function(src, resolve)
+    if not appOn('garage') then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'nochar' }) return end
 
@@ -107,6 +129,7 @@ end)
 -- Property
 -- ══════════════════════════════════════════════════════════════
 V.Callback('v-phone:property:data', function(src, resolve)
+    if not appOn('property') then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'nochar' }) return end
 
@@ -139,6 +162,7 @@ end)
 -- Wallet: the licences
 -- ══════════════════════════════════════════════════════════════
 V.Callback('v-phone:wallet:data', function(src, resolve)
+    if not appOn('wallet') then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'nochar' }) return end
 
@@ -209,6 +233,7 @@ local function ladderOf(all, name)
 end
 
 V.Callback('v-phone:jobs:data', function(src, resolve)
+    if not appOn('jobs') then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'nochar' }) return end
 

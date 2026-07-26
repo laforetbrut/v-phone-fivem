@@ -587,24 +587,28 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- One table, so adding an app is one row rather than a branch. `res` is the module that
 -- must be running for the app to have anything to say.
--- Each app upstream is a view over a companion `v-*` resource. Outside the author's own
--- suite none of them exist, so an app with a `fallback` reads the bridge instead - which is
--- the whole point of shipping a bridge. Without one the bank app answered "not available on
--- this server" on every qb-core, ESX and ox install, which is to say on all of them.
+-- Where each app's data comes from: a callback in this resource, reading the framework
+-- through the bridge.
+--
+-- These used to name a companion `v-*` resource - v-banking, v-vehicles, v-licenses,
+-- v-cityhall, v-housing - and ask ITS callback, falling back to the bridge only if the
+-- resource looked absent. Those resources are part of the author's own private suite. They
+-- do not exist on a qb-core, qbx, ESX or ox server and they never will, so the fallback was
+-- the only path that could ever run, and the check in front of it was a liability: the
+-- compatibility layer reports a `v-*` name as started whenever its stub is enabled, so the
+-- phone believed v-vehicles was running, asked a callback nobody answers, and told the
+-- player the garage was not loaded while the bridge behind it was reading their car
+-- perfectly. Bank, Wallet and Property failed the same way.
+--
+-- One name each, no prediction, nothing to get wrong.
 local APP_SOURCE = {
-    bank   = { res = 'v-banking',  callback = 'v-banking:getData',
-               fallback = 'v-phone:bank:data' },
-    garage = { res = 'v-vehicles', callback = 'v-vehicles:myVehicles',
-               fallback = 'v-phone:garage:data' },
-    wallet = { res = 'v-licenses', callback = 'v-licenses:mine',
-               fallback = 'v-phone:wallet:data' },
-    jobs     = { res = 'v-cityhall', callback = 'v-phone:jobs',
-                 fallback = 'v-phone:jobs:data' },
-    -- Music is the one with no bridge to fall back to: a player's tracks are their own
-    -- phone storage, answered locally by `musicAppData` above, so it never gets here.
-    music    = { res = 'v-music',    callback = 'v-music:list' },
-    property = { res = 'v-housing',  callback = 'v-housing:mine',
-                 fallback = 'v-phone:property:data' },
+    bank     = 'v-phone:bank:data',
+    garage   = 'v-phone:garage:data',
+    wallet   = 'v-phone:wallet:data',
+    jobs     = 'v-phone:jobs:data',
+    property = 'v-phone:property:data',
+    -- Music is answered locally by `musicAppData` below: a player's tracks are their own
+    -- phone storage, so there is nothing to ask the server for.
 }
 
 --- The music app answers from the CONFIG and the local deck, not from a server callback.
@@ -656,36 +660,11 @@ local function musicAppData()
 end
 
 RegisterNUICallback('app', function(data, cb)
-    local id  = data and tostring(data.app or '')
+    local id = data and tostring(data.app or '')
     if id == 'music' then cb(musicAppData()) return end
-    local src = APP_SOURCE[id]
-    if not src then cb({ error = 'unknown' }) return end
-
-    -- Ask, and hand the answer on - unless the answer is "nobody is listening", in which
-    -- case try the other one.
-    --
-    -- This used to decide which backend to ask by looking at `GetResourceState(src.res)`,
-    -- which is a PREDICTION, and a wrong prediction produced an app that reported nothing
-    -- was loaded while the callback it needed was registered and working. The phone no
-    -- longer guesses: it uses whichever backend actually answers. A companion resource that
-    -- is running still wins, because it is asked first.
-    local function ask(name, onMissing)
-        V.Request(name, function(res)
-            if onMissing and type(res) == 'table' and res.error == 'nohandler' then
-                onMissing()
-                return
-            end
-            cb(res or { error = 'x' })
-        end)
-    end
-
-    if GetResourceState(src.res) == 'started' then
-        ask(src.callback, src.fallback and function() ask(src.fallback) end or nil)
-    elseif src.fallback then
-        ask(src.fallback)
-    else
-        cb({ error = 'off' })
-    end
+    local callback = APP_SOURCE[id]
+    if not callback then cb({ error = 'unknown' }) return end
+    V.Request(callback, function(res) cb(res or { error = 'x' }) end)
 end)
 
 -- ══════════════════════════════════════════════════════════════

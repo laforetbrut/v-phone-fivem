@@ -2178,56 +2178,11 @@ V.Callback('v-phone:lookup', function(src, resolve, data)
     resolve({ ok = true, name = row and (row.firstname .. ' ' .. row.lastname) or nil })
 end)
 
---- The jobs app is read-only on purpose. `v-cityhall:take` is gated on standing at a
---- desk, and it should stay that way: browsing vacancies from a sofa is fine, signing on
---- from one is not. The list comes from v-cityhall so there is one definition of "open".
-V.Callback('v-phone:jobs', function(src, resolve)
-    if GetResourceState('v-cityhall') ~= 'started' then resolve({ error = 'off' }) return end
-    local p = Core.GetPlayer(src)
-    if not p then resolve(false) return end
-
-    -- The employment card: not just the job's name, but where the player stands in it.
-    -- v-world owns the ladder, so the grade names and pay come from there rather than
-    -- from a copy kept here that could disagree with the payslip.
-    local name = (p.job and p.job.name) or 'unemployed'
-    local level = num(p.job and p.job.grade, 0)
-    local me = { name = name, label = name, grade = level, gradeLabel = '', salary = 0, ranks = 0 }
-
-    if exports['v-world']:IsReady() then
-        for _, j in ipairs(exports['v-world']:GetJobs() or {}) do
-            if j.name == name then
-                me.label = j.label or name
-                me.type = j.type or 'civ'
-                me.ranks = #(j.grades or {})
-                for _, g in ipairs(j.grades or {}) do
-                    local gl = num(g.grade, g.level or 0)
-                    if gl == level then
-                        me.gradeLabel = g.name or ''
-                        me.salary = num(g.salary, 0)
-                    end
-                end
-                -- The rungs above and below, so a player can see where promotion leads.
-                me.ladder = {}
-                for _, g in ipairs(j.grades or {}) do
-                    me.ladder[#me.ladder + 1] = {
-                        grade = num(g.grade, g.level or 0),
-                        name = g.name or '',
-                        salary = num(g.salary, 0),
-                    }
-                end
-                table.sort(me.ladder, function(a, b) return a.grade < b.grade end)
-                break
-            end
-        end
-    end
-
-    resolve({
-        ok = true,
-        jobs = V.Use('v-cityhall').OpenPositions() or {},
-        current = name,
-        me = me,
-    })
-end)
+-- The Jobs app's data used to be answered here, gated on `v-cityhall` being started and
+-- reading the job ladder out of `exports['v-world']`. Both are modules of the author's own
+-- suite, so on any other server that callback could only ever return "not available". It is
+-- replaced by `v-phone:jobs:data` in server/apps.lua, which reads the same facts through the
+-- bridge and works on qb-core, qbx, ESX and ox.
 
 --- Per app, per character. An app that wants to remember something needs no table, no
 --- migration and no server file: it calls Phone.storage.set and the value is here next
