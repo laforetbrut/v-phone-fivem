@@ -87,6 +87,20 @@ local function actionOn(key)
     return (ADMIN.actions and ADMIN.actions[key]) ~= false
 end
 
+--- Append a row when the action is switched on. Both menus build their list this way, so an
+--- action an operator turned off is absent rather than present and refusing.
+local function addRow(rows, on, title, subtitle, action)
+    if on then rows[#rows + 1] = { title = title, subtitle = subtitle, action = action } end
+end
+
+--- The name of the character whose phone this staff member is holding, or nil. Kept here so
+--- the menu can offer to give it back, and only then.
+local adminHolding = nil
+
+RegisterNetEvent('v-phone:client:adminView', function(view)
+    adminHolding = (type(view) == 'table' and view.name ~= '' ) and view.name or nil
+end)
+
 local openTargetMenu   -- forward declaration: the two menus open each other
 local openActionMenu
 
@@ -150,12 +164,22 @@ end)
 
 openActionMenu = function(target)
     local rows = {}
-    local function add(on, title, subtitle, action)
-        if on then rows[#rows + 1] = { title = title, subtitle = subtitle, action = action } end
-    end
+    -- The shared `add`, bound to this menu's list.
+    local function add(on, title, subtitle, action) return addRow(rows, on, title, subtitle, action) end
+
+    -- First, because it is what a staff member reaches for most: everything below can be done
+    -- from inside the phone once you are holding it.
+    add(actionOn('view'), L('ph.admin_view'), L('ph.admin_view_hint'),
+        function() run('view', target) end)
 
     add(actionOn('readInfo'), L('ph.admin_info'), L('ph.admin_info_hint'),
         function() run('info', target) end)
+
+    add(actionOn('readInfo'), L('ph.admin_contacts'), L('ph.admin_contacts_hint'),
+        function() run('contacts', target) end)
+
+    add(actionOn('apps'), L('ph.admin_apps_list'), L('ph.admin_apps_list_hint'),
+        function() run('apps', target) end)
 
     add(actionOn('openRemote'), L('ph.admin_open'), L('ph.admin_open_hint'),
         function() run('open', target) end)
@@ -208,6 +232,27 @@ openActionMenu = function(target)
         function() run('brick', target) end)
     add(actionOn('brick'), L('ph.admin_unbrick'), L('ph.admin_unbrick_hint'),
         function() run('unbrick', target) end)
+
+    -- The badge. By @handle rather than by character, because that is what a badge belongs to
+    -- and what a staff member reading a report has in front of them - so this row does not
+    -- use `target` at all, and says so.
+    add(actionOn('verify'), L('ph.admin_verify'), L('ph.admin_verify_hint'), function()
+        CreateThread(function()
+            local handle = askText(L('ph.admin_verify'), L('ph.admin_verify_field'))
+            if not handle then return end
+            show(L('ph.admin_verify'), {
+                { title = L('ph.admin_verify_give'), subtitle = L('app.bleeter'),
+                  action = function() run('verify', handle) end },
+                { title = L('ph.admin_verify_give'), subtitle = L('app.snap'),
+                  action = function() run('verify', handle, 'snap') end },
+                { title = L('ph.admin_verify_take'), subtitle = L('app.bleeter'),
+                  action = function() run('verify', handle, 'off') end },
+                { title = L('ph.admin_verify_take'), subtitle = L('app.snap'),
+                  action = function() run('verify', handle, 'off', 'snap') end },
+                { title = L('ph.back'), action = function() openActionMenu(target) end },
+            })
+        end)
+    end)
 
     -- Wipe asks again. It deletes a character's phone, and a menu row next to eight harmless
     -- ones is exactly where a mis-tap happens.
@@ -263,7 +308,60 @@ openTargetMenu = function()
             subtitle = L('ph.admin_outage_clear_hint'),
             action = function() run('outage', 'clear', 'all') end,
         }
+        rows[#rows + 1] = {
+            title = L('ph.admin_outages'),
+            subtitle = L('ph.admin_outages_hint'),
+            action = function() run('outages') end,
+        }
     end
+
+    -- Give the phone back. Only offered while one is held, because a row that says "stop doing
+    -- something you are not doing" is a row that makes a staff member wonder whether they are.
+    if adminHolding then
+        table.insert(rows, 1, {
+            title = L('ph.admin_unview'),
+            subtitle = L('ph.admin_unview_hint'):format(adminHolding),
+            action = function() run('unview') end,
+        })
+    end
+
+    -- Who is online with a phone open, which is how staff find the person they are looking for
+    -- when nobody is standing next to them.
+    addRow(rows, actionOn('readInfo'), L('ph.admin_who'), L('ph.admin_who_hint'),
+        function() run('who') end)
+
+    -- Everybody at once. Deliberately at the bottom, under the per-player rows.
+    addRow(rows, actionOn('setBattery'), L('ph.admin_batteryall'), L('ph.admin_batteryall_hint'),
+        function()
+            CreateThread(function()
+                local level = askText(L('ph.admin_batteryall'), L('ph.admin_battery_field'), 'number')
+                if level then run('batteryall', level) end
+            end)
+        end)
+
+    addRow(rows, actionOn('notify'), L('ph.admin_announce'), L('ph.admin_announce_hint'),
+        function()
+            CreateThread(function()
+                local text = askText(L('ph.admin_announce'), L('ph.write'))
+                if text then run('announce', text) end
+            end)
+        end)
+
+    addRow(rows, actionOn('emergency'), L('ph.admin_alert'), L('ph.admin_alert_hint'),
+        function()
+            CreateThread(function()
+                local kind = askText(L('ph.admin_alert'), L('ph.admin_alert_kind'))
+                if not kind then return end
+                local text = askText(L('ph.admin_alert'), L('ph.write'))
+                if text then run('alert', kind, text) end
+            end)
+        end)
+
+    addRow(rows, actionOn('brick'), L('ph.admin_bricked'), L('ph.admin_bricked_hint'),
+        function() run('bricked') end)
+
+    addRow(rows, actionOn('verify'), L('ph.admin_verified'), L('ph.admin_verified_hint'),
+        function() run('verified') end)
 
     show(L('ph.admin_menu'), rows)
 end

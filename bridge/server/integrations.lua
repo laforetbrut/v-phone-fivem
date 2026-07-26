@@ -654,6 +654,79 @@ local GARAGES = { 'qs-advancedgarages', 'jg-advancedgarages', 'qb-garages', 'cd_
 
 Bridge.Vehicles = {}
 
+--- The framework's own list of vehicles, keyed by spawn code. Read once.
+---
+--- qb-core builds `QBCore.Shared.Vehicles[model] = { name, brand, price, category, ... }` at
+--- boot from `shared/vehicles.lua`, and exposes it through `GetShared`. Seven hundred entries
+--- is not something to fetch per row.
+local vehicleList = nil
+
+local function sharedVehicles()
+    if vehicleList ~= nil then return vehicleList end
+    vehicleList = false
+
+    if Bridge.framework == 'qb' then
+        local ok, list = pcall(function()
+            return exports[Bridge.frameworkResource]:GetShared('Vehicles')
+        end)
+        if not ok or type(list) ~= 'table' then
+            -- Older builds have no `GetShared`; the core object carries the same table.
+            ok, list = pcall(function()
+                return exports[Bridge.frameworkResource]:GetCoreObject().Shared.Vehicles
+            end)
+        end
+        if ok and type(list) == 'table' then vehicleList = list end
+    end
+
+    return vehicleList
+end
+
+--- What a vehicle is CALLED, as a person would say it: 'Grotti Brioso R/A'.
+---
+--- The garage app was showing the spawn code - `daemon`, `bodhi2`, `cruiser` - because that is
+--- what the vehicles table stores, and a spawn code is an identifier rather than a name. Every
+--- framework already keeps the mapping for its own dealership; this reads the same one.
+---
+--- Falls back to the model with its first letter raised, which is not a real name but is
+--- closer to one than `bodhi2`, and is what a server with no list at all can honestly show.
+function Bridge.VehicleLabel(model)
+    model = tostring(model or ''):lower()
+    if model == '' then return '' end
+
+    local custom = Config.Compat.hooks.vehicleLabel
+    if custom then
+        local ok, label = pcall(custom, model)
+        if ok and type(label) == 'string' and label ~= '' then return label end
+    end
+
+    local list = sharedVehicles()
+    local entry = list and list[model]
+    if type(entry) == 'table' then
+        local name = tostring(entry.name or '')
+        local brand = tostring(entry.brand or '')
+        if name ~= '' then
+            -- A brand the name already starts with would read 'Grotti Grotti Brioso'.
+            if brand ~= '' and name:lower():sub(1, #brand) ~= brand:lower() then
+                return brand .. ' ' .. name
+            end
+            return name
+        end
+    end
+
+    if Bridge.framework == 'esx' then
+        local ok, data = pcall(function()
+            local ESX = exports['es_extended']:getSharedObject()
+            return ESX and ESX.GetVehicleData and ESX.GetVehicleData(model)
+        end)
+        if ok and type(data) == 'table' and data.name then
+            local brand = tostring(data.brand or '')
+            return (brand ~= '' and (brand .. ' ') or '') .. tostring(data.name)
+        end
+    end
+
+    return model:sub(1, 1):upper() .. model:sub(2)
+end
+
 function Bridge.Vehicles.Owned(citizenid, src)
     local custom = Config.Compat.hooks.vehicles
     if custom then
@@ -694,6 +767,12 @@ function Bridge.Vehicles.Owned(citizenid, src)
                 r.model = (decoded and data and (data.model or data.modelName)) or '?'
             end
         end
+    end
+
+    -- What each one is called. Done here rather than in the app, because the mapping belongs
+    -- to the framework and this is the file that knows which framework is running.
+    for _, r in ipairs(rows) do
+        if r.label == nil or r.label == '' then r.label = Bridge.VehicleLabel(r.model) end
     end
     return rows
 end

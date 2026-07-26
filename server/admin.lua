@@ -148,6 +148,36 @@ if ADMIN.commands ~= false then
             local ok, removed = self:WipePhone(cid)
             reply(src, ok and ('Wiped %d row(s).'):format(removed or 0) or 'Failed.')
 
+        -- ── Holding somebody else's phone ───────────────────────────────
+        --
+        -- `open` puts a player's phone on THEIR screen; this puts it on YOURS, as them. See
+        -- server/adminview.lua for why it is one wrapped function rather than sixty patches.
+        elseif sub == 'view' and actionOn('view') then
+            if src == 0 then reply(src, 'The console has no phone to hold it on.') return end
+            local target = tonumber(args[2])
+            if not target then
+                -- A citizen id or a number resolves too, but only to somebody ONLINE: the
+                -- session hands back a live player object, and there is none for a character
+                -- who is not connected.
+                local cid = resolveCitizen(args[2])
+                local p = cid and Core.GetPlayerByCitizenId(cid)
+                target = p and p.source
+            end
+            if not target then
+                reply(src, 'Usage: /phoneadmin view [id|cid|number]   (they must be online)')
+                return
+            end
+            local ok, result = AdminViewOpen(src, target)
+            if not ok then
+                reply(src, result == 'self' and 'That is your own phone.' or 'No such player online.')
+                return
+            end
+            reply(src, ('Holding %s\'s phone. Anything you do is done as them. /phoneadmin unview to stop.')
+                :format(tostring(result)))
+
+        elseif sub == 'unview' and actionOn('view') then
+            reply(src, AdminViewClose(src) and 'Back on your own phone.' or 'You were not holding one.')
+
         elseif sub == 'verify' and actionOn('verify') then
             -- `/phoneadmin verify @handle [off] [snap]`
             --
@@ -468,6 +498,8 @@ if ADMIN.commands ~= false then
         { 'brick', 'Take one handset out of service', { { 'id|cid', 'the target' }, { 'minutes', 'omit for until unbricked' } } },
         { 'unbrick', 'Put it back in service', { { 'id|cid', 'the target' } } },
         { 'bricked', 'Which phones are out of service', {} },
+        { 'view', "Hold their phone on YOUR screen, as them", { { 'id|cid|number', 'the target, online' } } },
+        { 'unview', 'Give it back and return to your own', {} },
         { 'verify', 'Grant or revoke the verified badge', { { '@handle', 'the account' }, { 'off', 'to revoke' }, { 'snap', 'Snapmatic instead of Bleeter' } } },
         { 'verified', 'Who holds a badge', { { 'snap', 'Snapmatic instead of Bleeter' } } },
         { 'wipe', 'DELETE everything on a phone. Irreversible', { { 'id|cid', 'the target' }, { 'confirm', 'required' } } },

@@ -211,6 +211,9 @@ Config.Compat = {
         -- What a garage key is called and where it is. Only needed if your garage script
         -- keeps neither in a readable config - Quasar's escrowed build, for instance.
         garage = nil,         -- (key) -> { label, x, y }
+        -- What a vehicle is CALLED, from its spawn code. qb-core's own shared list is read
+        -- when it is there, so this is only for a server whose vehicle names live elsewhere.
+        vehicleLabel = nil,   -- (model) -> 'Grotti Brioso R/A'
         jobs = nil,           -- () -> { { name, label, grades }, ... }
         status = nil,         -- (src) -> { hunger, thirst, ... }
         -- Charge a player. Return true ONLY if the money genuinely left them: the store
@@ -1192,7 +1195,22 @@ Config.Admin = {
         -- A banner on their phone, which is not the same thing as a text message: it does
         -- not persist, and it does not come from a number.
         notify       = true,
+        -- **Hold another character's phone on your own screen, as them.** Their messages,
+        -- their contacts, their bank, their apps - and anything done while holding it is done
+        -- as them. It is the support tool, and it is also the most powerful thing in this
+        -- list: every session is logged with both names, and it expires on its own.
+        --
+        -- Off leaves staff with the read-only routes: `info`, `contacts`, `apps`, and the
+        -- police forensics terminal.
+        view         = true,
     },
+
+    -- How long a held phone stays held before it lets go on its own. Seconds.
+    --
+    -- It expires because forgetting is the realistic failure: a staff member walks away with
+    -- somebody else's phone still open on their screen, and the next thing they type goes out
+    -- under that character's name.
+    viewSeconds = 600,
 
     -- ── The emergency alert ────────────────────────────────────
     -- A loud broadcast to every phone on the server: an earthquake, a wildfire, a citywide

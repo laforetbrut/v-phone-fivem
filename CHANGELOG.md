@@ -4,6 +4,26 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.3.3] - 2026-07-26
+
+### Added (English first)
+
+- **Staff can hold another character's phone on their own screen, as them.** Their messages, their contacts, their bank, their apps - and anything done while holding it is done in that character's name. It is the support tool the read-only forensics terminal deliberately is not. **How it works is one sentence:** every callback in this resource asks `Core.GetPlayer(src)` who is calling, so a session makes that one function answer with the target for the staff member's source, and the whole phone follows without a single app knowing. Sixty call sites patched by hand would have left the ones nobody thought of - a bank transfer, an AirDrop - still acting as the admin, which is worse than not having the feature.
+- **It is bounded on purpose.** Behind its own `Config.Admin.actions.view`; the target must be online; every session is logged with both names; it expires on its own after `Config.Admin.viewSeconds`; it ends the moment either player drops - a target who leaves hands the staff member back their OWN phone rather than silently leaving them acting on an account they think is somebody else's. A red banner sits above the handset naming whose phone it is, outside the screen where the phone's own UI cannot cover it. Position is deliberately not followed: coordinates still come from the staff member's ped.
+- **The verified badge is in the menu.** Grant or revoke it on Bleeter or Snapmatic, by @handle - which is what a badge belongs to and what a staff member reading a report has in front of them.
+- **The staff menu now covers everything the command does**: hold a phone, read it, read its contacts, list its apps, open it on their screen, battery, number, message, notification, give or take an app, out of service, wipe, the badge, plus the server-wide rows - who has a phone open, charge everybody, message everybody, an emergency alert, outages and who is out of service.
+- **The Garage shows what a vehicle is called.** It showed the spawn code - `daemon`, `bodhi2`, `cruiser` - because that is what the vehicles table stores, and a spawn code is an identifier rather than a name. It now reads the framework's own list, the same one its dealership uses, and shows the brand with it: `Western Daemon`, `Canis Bodhi`. A name that already carries its brand is not given it twice, a model the list does not know falls back to itself with its first letter raised, and `Config.Compat.hooks.vehicleLabel` covers a server whose names live somewhere else.
+
+### Ajouts (miroir francais)
+
+- **Le staff peut prendre le telephone d'un autre personnage sur son propre ecran, en tant que lui.** Ses messages, ses contacts, sa banque, ses applications - et tout ce qui est fait en le tenant est fait en son nom. **Le fonctionnement tient en une phrase :** chaque callback de cette ressource demande a `Core.GetPlayer(src)` qui appelle, donc une session fait repondre cette unique fonction avec la cible, et tout le telephone suit sans qu'aucune application ne le sache.
+- **C'est volontairement borne.** Derriere `Config.Admin.actions.view`, la cible doit etre connectee, chaque session est journalisee avec les deux noms, elle expire seule apres `Config.Admin.viewSeconds`, et elle s'arrete des que l'un des deux se deconnecte. Une banniere rouge au-dessus du telephone nomme le proprietaire, en dehors de l'ecran pour que l'interface ne puisse pas la masquer. La position n'est pas suivie : les coordonnees restent celles du staff.
+- **Le badge certifie est dans le menu**, a donner ou a retirer sur Bleeter ou Snapmatic, par @pseudo.
+- **Le menu staff couvre desormais tout ce que fait la commande**, y compris les actions serveur : qui a son telephone ouvert, recharger tout le monde, message a tous, alerte d'urgence, pannes en cours et telephones hors service.
+- **Le Garage affiche le nom du vehicule.** Il montrait le code de spawn - `daemon`, `bodhi2` - parce que c'est ce que stocke la table des vehicules. Il lit maintenant la liste du framework, celle-la meme qu'utilise sa concession, et affiche la marque avec : `Western Daemon`, `Canis Bodhi`.
+
+---
+
 ## [1.3.2] - 2026-07-26
 
 ### Fixed (English first)

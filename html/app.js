@@ -3805,7 +3805,10 @@ RENDER.garage = async () => {
   const list = Array.isArray(d) ? d : (d.vehicles || []);
   if (!list.length) { body(UI.empty(L('ph.no_vehicles'), 'garage')); return; }
   body(UI.group(list.map((v, i) => UI.row({
-    icon: 'garage', tint: '#0A84FF', title: v.model || '',
+    // What it is called, not what it is keyed by. `label` is resolved on the server from the
+    // framework's own vehicle list - `daemon` is a spawn code, `Bravado Bison` is a name -
+    // and the model is kept as the fallback for a server whose list has no entry.
+    icon: 'garage', tint: '#0A84FF', title: v.label || v.model || '',
     // The garage's real name when the server could resolve it, its key when it could not,
     // and "out" when the car is not in one at all.
     subtitle: `${v.plate || ''}  ${placeName(v.garageLabel || v.garage) || L('ph.out')}`,
@@ -3872,7 +3875,7 @@ async function vehicleRemote(v) {
   if (controls.engine) group.push(UI.row({ icon: 'fuel', tint: '#FF453A', title: L('ph.veh_engine'), chevron: true, data: { a: 'engine' } }));
   if (controls.alarm) group.push(UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.veh_alarm'), data: { a: 'alarm' } }));
 
-  sheet(v.model || plate,
+  sheet(v.label || v.model || plate,
     '<div class="groupfoot">' + esc(plate) + ' · ' +
     esc(near ? L('ph.veh_near').replace('{m}', String(found.distance))
              : L('ph.veh_far')) + '</div>' +
@@ -4520,7 +4523,22 @@ function applyTheme() {
 }
 
 let landscape = false;
+// Whose phone is on screen, when it is not the player's own.
+//
+// Staff can hold another character's handset (see server/adminview.lua). Everything on the
+// phone is then that character's, which is the point - and which is exactly why it has to be
+// said out loud somewhere the phone's own UI cannot cover. The one failure mode this exists to
+// prevent is a staff member forgetting and typing a message that goes out as somebody else.
+function applyAdminView() {
+  const host = byId('adminview');
+  if (!host) return;
+  const name = String(state.adminView || '').trim();
+  host.classList.toggle('hidden', !name);
+  if (name) host.textContent = L('ph.admin_holding').replace('{name}', name);
+}
+
 function applyDevice() {
+  applyAdminView();
   const p = state.prefs || {};
   const d = byId('device');
   const size = Math.max(0.75, Math.min(1.15, Number(p.size) || 1));
@@ -10740,6 +10758,9 @@ window.addEventListener('message', async (e) => {
 async function refresh() {
   const res = await post('refresh');
   if (res && res.ok) Object.assign(state, res);
+  // A session can open, expire or be handed back between two refreshes, so the banner is
+  // repainted from whatever just arrived rather than only when the phone is set up.
+  applyAdminView();
 }
 
 // ══ Wiring ═════════════════════════════════════════════════════

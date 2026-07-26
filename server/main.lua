@@ -1796,6 +1796,15 @@ V.Callback('v-phone:open', function(src, resolve)
         -- what it always did - and which shows a player in another country their time rather
         -- than the city's. See Config.Clock.
         clockZone = tostring((Config.Clock and Config.Clock.timezone) or ''),
+        -- Whose phone this actually is, when it is not yours.
+        --
+        -- `src` and not the wrapped player: `Core.GetPlayer` has already answered with the
+        -- TARGET while a staff session is open, so asking the player object whose phone this
+        -- is would only ever say "theirs". The question here is about the person holding it.
+        adminView = (function()
+            local _, name = AdminViewTarget and AdminViewTarget(src)
+            return name or nil
+        end)(),
         voicemail = V.SettingBool('voicemail', true),
         -- Unread voicemail, so the Phone icon can carry a badge like Messages does.
         vmUnread = tonumber(MySQL.scalar.await(

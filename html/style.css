@@ -104,6 +104,26 @@ input { font: inherit; }
 }
 
 /* ══ Device ═══════════════════════════════════════════════════ */
+/* Whose phone this is, when it is not yours. Deliberately loud and deliberately outside the
+   handset: it is a warning about what your next tap will do, not part of the phone. */
+.adminview {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 80;
+  padding: 9px 16px;
+  color: #fff;
+  font-family: var(--ios-ui, system-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-align: center;
+  background: linear-gradient(180deg, #d1224a, #a3113a);
+  box-shadow: 0 6px 22px rgba(163, 17, 58, .38);
+}
+.adminview.hidden { display: none; }
+
 .device { position: fixed; right: 3vw; bottom: 2.5vh; width: 372px; height: 784px;
   z-index: var(--z-overlay); font-family: var(--ios-font); color: var(--l1);
   animation: ph-rise .38s var(--spring); }

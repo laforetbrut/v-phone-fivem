@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.3.2'
+version '1.3.3'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -83,6 +83,10 @@ server_scripts {
     'bridge/server/characters.lua',
     'bridge/server/integrations.lua',
 
+    -- Staff holding another character's phone. Straight after framework.lua, which builds
+    -- `Core`, and before everything that uses it: this file wraps `Core.GetPlayer`, and a file
+    -- that took its own copy of that function first would keep the unwrapped one.
+    'server/adminview.lua',
     -- Staff-imposed network outages and out-of-service handsets. Before main.lua, whose
     -- `signalAt` and `hasBars` both read it on every signal tick.
     'server/outage.lua',

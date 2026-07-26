@@ -25,6 +25,12 @@
 <body>
   <!-- The chrome is a phone's. The accent, panel and radius tokens come from v-ui,
        so a server that themes the framework purple gets a purple iPhone. -->
+  <!-- Whose phone this is, when it is not yours.
+       OUTSIDE the bezel on purpose: a staff member holding somebody else's handset has to be
+       able to see that at a glance, and anything drawn inside the screen is something the
+       phone's own UI can cover. -->
+  <div class="adminview hidden" id="adminview" role="status"></div>
+
   <div id="device" class="device hidden">
     <div class="bezel">
       <span class="btn-side action"></span>
