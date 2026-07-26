@@ -1,0 +1,466 @@
+-- v-phone | server/bank.lua
+--
+-- **The bank app: a statement, transfers, and saved beneficiaries.**
+--
+-- The balance is never the phone's. It is read through `Bridge.Banking` from whatever the
+-- server already believes - qb-core, qbx, ESX, ox, or a banking script on top of one - so
+-- the number on the phone is the number at the ATM. Upstream this app was a view over a
+-- companion `v-banking` resource; that resource does not exist outside the author's own
+-- suite, which is why the app answered "not available on this server" on every qb, ESX and
+-- ox install. It now reads the bridge, and `v-banking` is preferred only when it is
+-- genuinely running.
+--
+-- What the phone DOES own is the part no framework has: its own statement lines, transfers
+-- between characters, and a beneficiary list. Those live in the phone's tables.
+--
+-- Money is the one thing here that cannot be approximately right, so a transfer is
+-- deliberately paranoid:
+--
+--   * the amount is floored to whole currency and bounded by config, on the server, after
+--     the client has been ignored;
+--   * the recipient is resolved from a phone number to a citizen id HERE - the client
+--     sends a number, never an id and never a name;
+--   * the debit goes through `Bridge.RemoveMoney`, which **fails closed**: a debit that
+--     cannot be confirmed stops the transfer instead of crediting from nothing;
+--   * a credit that fails is **refunded**, and a refund that also fails is escrowed back
+--     to the sender rather than silently destroyed;
+--   * paying somebody offline holds the money in escrow, so it has left exactly one
+--     account and is owed to exactly one other at every point in between.
+
+local BANK = Config.Bank or {}
+
+local function num(v, d) return tonumber(v) or d or 0 end
+local function enabled() return BANK.enabled ~= false end
+local function transfersOn() return enabled() and BANK.transfers ~= false end
+
+local function minAmount() return math.max(1, math.floor(num(BANK.minAmount, 1))) end
+local function maxAmount() return math.max(0, math.floor(num(BANK.maxAmount, 0))) end
+local function feePercent()
+    local pct = num(BANK.feePercent, 0)
+    if pct < 0 then return 0 end
+    return math.min(100, pct)
+end
+local function dailyLimit() return math.max(0, math.floor(num(BANK.dailyLimit, 0))) end
+local function maxFavourites() return math.max(0, math.floor(num(BANK.maxFavourites, 25))) end
+local function historyLimit()
+    return math.max(1, math.min(200, math.floor(num(BANK.historyLimit, 50))))
+end
+
+--- What the bank takes on top of the amount. Floored, so the house never rounds up.
+local function feeFor(amount)
+    local pct = feePercent()
+    if pct <= 0 then return 0 end
+    return math.floor(amount * pct / 100)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- The phone's own ledger
+-- ══════════════════════════════════════════════════════════════
+--- One statement line. `amount` is signed: negative left the account.
+local function record(citizenid, amount, label, kind, counterparty)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' then return end
+    MySQL.insert('INSERT INTO vphone_bank_tx (citizenid, amount, label, kind, counterparty) VALUES (?,?,?,?,?)', {
+        citizenid,
+        math.floor(num(amount, 0)),
+        tostring(label or ''):sub(1, 60),
+        tostring(kind or 'transfer'):sub(1, 12),
+        tostring(counterparty or ''):sub(1, 64),
+    })
+end
+
+--- The phone's lines, newest first, already shaped the way the app draws them.
+local function ownHistory(citizenid)
+    local rows = MySQL.query.await([[SELECT amount, label, kind, counterparty,
+            UNIX_TIMESTAMP(at) AS ts
+        FROM vphone_bank_tx WHERE citizenid = ? ORDER BY id DESC LIMIT ?]],
+        { citizenid, historyLimit() }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do
+        out[#out + 1] = {
+            amount = math.floor(num(r.amount, 0)),
+            label = tostring(r.label or ''),
+            kind = tostring(r.kind or ''),
+            with = tostring(r.counterparty or ''),
+            ts = math.floor(num(r.ts, 0)),
+        }
+    end
+    return out
+end
+
+--- The framework's or banking script's own history, when it keeps one, normalised into the
+--- same shape. Two sources rather than one because neither is complete: the phone knows
+--- about phone transfers and nothing else, the banking script knows about everything else.
+local function frameworkHistory(src, citizenid)
+    local rows = Bridge.Banking and Bridge.Banking.Transactions
+        and Bridge.Banking.Transactions(src, citizenid)
+    if type(rows) ~= 'table' then return {} end
+
+    local out = {}
+    for _, r in ipairs(rows) do
+        if type(r) == 'table' then
+            -- Every banking script names these differently, and an amount is sometimes a
+            -- string. Whatever arrives is coerced here so the page never has to guess.
+            local amount = math.floor(num(r.amount or r.value or 0, 0))
+            local label = tostring(r.label or r.reason or r.message or r.type or '')
+            local at = r.at or r.date or r.time
+            out[#out + 1] = {
+                amount = amount,
+                label = label:sub(1, 60),
+                kind = 'account',
+                with = tostring(r.receiver or r.name or ''):sub(1, 64),
+                at = type(at) == 'string' and at:sub(1, 30) or nil,
+                ts = type(at) == 'number' and math.floor(at) or nil,
+            }
+        end
+    end
+    return out
+end
+
+--- Both sources, newest first. Lines with a real timestamp sort against each other; a
+--- banking script that only hands back a preformatted date keeps its own order after them,
+--- because inventing a sort key for it would put lines in the wrong place with confidence.
+local function statement(src, citizenid)
+    local mine = ownHistory(citizenid)
+    local theirs = frameworkHistory(src, citizenid)
+
+    local dated, undated = {}, {}
+    for _, list in ipairs({ mine, theirs }) do
+        for _, row in ipairs(list) do
+            if row.ts and row.ts > 0 then dated[#dated + 1] = row else undated[#undated + 1] = row end
+        end
+    end
+    table.sort(dated, function(a, b) return a.ts > b.ts end)
+
+    local out = {}
+    for _, row in ipairs(dated) do out[#out + 1] = row end
+    for _, row in ipairs(undated) do out[#out + 1] = row end
+    while #out > historyLimit() do table.remove(out) end
+    return out
+end
+
+--- What this character has already sent today, from the phone's own lines. Read from the
+--- ledger rather than a counter in memory, so a restart does not reset somebody's limit.
+local function sentToday(citizenid)
+    local total = MySQL.scalar.await([[SELECT COALESCE(SUM(-amount), 0) FROM vphone_bank_tx
+        WHERE citizenid = ? AND kind = 'transfer' AND amount < 0 AND at >= (NOW() - INTERVAL 1 DAY)]],
+        { citizenid })
+    return math.floor(num(total, 0))
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- Escrow: paying somebody who is not connected
+-- ══════════════════════════════════════════════════════════════
+-- The sender is debited immediately, so the money must be somewhere. It is here, owed to
+-- one citizen id, until they next open their bank.
+local function escrow(citizenid, amount, label, counterparty)
+    MySQL.insert([[INSERT INTO vphone_bank_pending (citizenid, amount, label, counterparty)
+        VALUES (?,?,?,?)]], {
+        tostring(citizenid or ''), math.floor(num(amount, 0)),
+        tostring(label or ''):sub(1, 60), tostring(counterparty or ''):sub(1, 64),
+    })
+end
+
+--- Pay out everything owed to this character, exactly once each.
+---
+--- The row is CLAIMED by deleting it and checking that this call is the one that deleted
+--- it, and only then is the money credited. Claim-then-credit can lose a payment if the
+--- process dies in the gap, which is why a failed credit puts the row straight back;
+--- credit-then-delete would pay twice on a retry, and inventing money is the worse of the
+--- two failures.
+local function payPending(src, citizenid)
+    if not citizenid or citizenid == '' then return 0 end
+    local rows = MySQL.query.await([[SELECT id, amount, label, counterparty
+        FROM vphone_bank_pending WHERE citizenid = ? LIMIT 25]], { citizenid }) or {}
+    if #rows == 0 then return 0 end
+
+    local paid = 0
+    for _, r in ipairs(rows) do
+        local claimed = MySQL.update.await('DELETE FROM vphone_bank_pending WHERE id = ?', { r.id })
+        if num(claimed, 0) >= 1 then
+            local amount = math.floor(num(r.amount, 0))
+            local label = tostring(r.label or '')
+            local who = tostring(r.counterparty or '')
+            if amount > 0 and Bridge.AddMoney(src, amount, 'bank', 'v-phone: transfer') then
+                record(citizenid, amount, label, 'transfer', who)
+                paid = paid + amount
+            else
+                -- Put it back rather than keep it: it is still owed.
+                escrow(citizenid, amount, label, who)
+            end
+        end
+    end
+
+    if paid > 0 then
+        V.Notify(src, LP(src, 'ph.bank_pending_paid', paid), 'success')
+    end
+    return paid
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- Beneficiaries
+-- ══════════════════════════════════════════════════════════════
+-- A saved name and number, per character, in the same per-character store every other
+-- phone preference uses. Numbers only: a beneficiary is a phone number the sender typed
+-- once, and it is re-resolved to a citizen id on every send, so a saved entry cannot
+-- become a way to pay somebody the sender never chose.
+local function favourites(citizenid)
+    local list = Bridge.KvGet(citizenid, 'bank_favs')
+    if type(list) ~= 'table' then return {} end
+
+    local out = {}
+    for _, row in ipairs(list) do
+        if type(row) == 'table' and row.number then
+            out[#out + 1] = {
+                name = tostring(row.name or ''):sub(1, 40),
+                number = tostring(row.number):sub(1, 20),
+            }
+        end
+    end
+    return out
+end
+
+local function saveFavourites(citizenid, list)
+    while #list > maxFavourites() do table.remove(list) end
+    Bridge.KvSet(citizenid, 'bank_favs', list)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- Reads
+-- ══════════════════════════════════════════════════════════════
+V.Callback('v-phone:bank:data', function(src, resolve)
+    if not enabled() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'x' }) return end
+
+    -- Anything owed to this character is settled before the balance is read, so the number
+    -- they see already includes what somebody sent them while they were away.
+    payPending(src, p.citizenid)
+
+    local balances = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+    if type(balances) ~= 'table' then
+        -- Standalone, or a framework the bridge could not read. Say so rather than
+        -- showing a confident zero.
+        resolve({ error = 'nobank' })
+        return
+    end
+
+    local limit = dailyLimit()
+    resolve({
+        ok = true,
+        bank = math.floor(num(balances.bank, 0)),
+        cash = math.floor(num(balances.cash, 0)),
+        number = Bridge.Numbers.Get(p.citizenid) or '',
+        name = p.name or '',
+        transfers = transfersOn(),
+        fee = feePercent(),
+        min = minAmount(),
+        max = maxAmount(),
+        -- What is left of today's allowance, or nil when there is no limit at all: the app
+        -- draws the line only when there is one.
+        remaining = limit > 0 and math.max(0, limit - sentToday(p.citizenid)) or nil,
+        favourites = favourites(p.citizenid),
+        transactions = statement(src, p.citizenid),
+    })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Transfers
+-- ══════════════════════════════════════════════════════════════
+V.Callback('v-phone:bank:transfer', function(src, resolve, data)
+    if not transfersOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'x' }) return end
+
+    -- Whole currency only, and the client's number is a suggestion.
+    local amount = math.floor(num(data and data.amount, 0))
+    if amount < minAmount() then resolve({ error = 'toosmall' }) return end
+    if maxAmount() > 0 and amount > maxAmount() then resolve({ error = 'toobig' }) return end
+
+    local limit = dailyLimit()
+    if limit > 0 and sentToday(p.citizenid) + amount > limit then
+        resolve({ error = 'daily' })
+        return
+    end
+
+    -- A number, resolved here. The client never names a citizen id.
+    local number = tostring((data and data.number) or ''):gsub('%s', '')
+    if number == '' then resolve({ error = 'needsnumber' }) return end
+    local targetCid = Bridge.Numbers.Owner(number)
+    if not targetCid then resolve({ error = 'unknownnumber' }) return end
+    if targetCid == p.citizenid then resolve({ error = 'self' }) return end
+
+    local note = tostring((data and data.note) or ''):sub(1, 40)
+    local target = Core.GetPlayerByCitizenId(targetCid)
+    if not target and BANK.offlineTransfers == false then
+        resolve({ error = 'offline' })
+        return
+    end
+
+    local fee = feeFor(amount)
+    local total = amount + fee
+    local myName = tostring(p.name or ''):sub(1, 40)
+    local theirName = Bridge.NameOfCitizen(targetCid) or number
+
+    -- The debit first, and it fails closed: nothing below runs unless the money actually
+    -- left. `total`, so the fee is paid by the sender and the recipient gets the round
+    -- number they were promised.
+    if not Bridge.RemoveMoney(src, total, 'bank') then
+        resolve({ error = 'funds' })
+        return
+    end
+
+    --- Put it back where it came from. Escrowed if even that fails, because the one
+    --- outcome that is not acceptable is money that stopped existing.
+    local function refund()
+        if not Bridge.AddMoney(src, total, 'bank', 'v-phone: transfer refunded') then
+            escrow(p.citizenid, total, '', theirName)
+        end
+    end
+
+    if target and target.source then
+        if not Bridge.AddMoney(target.source, amount, 'bank',
+            ('v-phone: from %s'):format(myName)) then
+            refund()
+            resolve({ error = 'credit' })
+            return
+        end
+        -- The label is the sender's own note and nothing else. "From Alice" written here
+        -- would freeze one language into a row that outlives the setting: the page composes
+        -- the wording from `counterparty` and the sign instead.
+        record(targetCid, amount, note, 'transfer', myName)
+        V.Notify(target.source, LP(target.source, 'ph.bank_received', amount, myName), 'success')
+    else
+        escrow(targetCid, amount, note, myName)
+    end
+
+    -- Two lines that add up to what left the account: the transfer, and the fee beside it.
+    -- One combined line for `total` made the statement disagree with the amount the player
+    -- typed, and a fee recorded as zero showed up as "Fee 15" worth nothing at all.
+    record(p.citizenid, -amount, note, 'transfer', theirName)
+    if fee > 0 then
+        -- No label at all: `kind` says what it is, and the page prints the translation.
+        record(p.citizenid, -fee, '', 'fee', theirName)
+    end
+
+    -- A text, because a bank that moves money without telling you is a bug report.
+    -- In the recipient's language, not the server's opinion of English.
+    local body = LP(target and target.source, 'ph.bank_received', amount, myName)
+    if note ~= '' then body = body .. ' - ' .. note end
+    pcall(function()
+        exports[GetCurrentResourceName()]:SendServiceMessage(targetCid, 'iFruit Bank', body)
+    end)
+
+    resolve({ ok = true, amount = amount, fee = fee, to = theirName,
+              held = (target == nil) or nil })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Beneficiary edits
+-- ══════════════════════════════════════════════════════════════
+V.Callback('v-phone:bank:favourite', function(src, resolve, data)
+    if not enabled() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'x' }) return end
+
+    local op = tostring((data and data.op) or '')
+    local list = favourites(p.citizenid)
+
+    if op == 'add' then
+        if maxFavourites() <= 0 then resolve({ error = 'off' }) return end
+        local number = tostring((data and data.number) or ''):gsub('%s', ''):sub(1, 20)
+        if number == '' then resolve({ error = 'needsnumber' }) return end
+        -- A beneficiary has to be somebody. Saving an unreachable number would only fail
+        -- later, at the point where the player has already typed an amount.
+        local cid = Bridge.Numbers.Owner(number)
+        if not cid then resolve({ error = 'unknownnumber' }) return end
+        if cid == p.citizenid then resolve({ error = 'self' }) return end
+
+        local name = tostring((data and data.name) or ''):sub(1, 40)
+        if name == '' then name = Bridge.NameOfCitizen(cid) or number end
+
+        for i, row in ipairs(list) do
+            if row.number == number then
+                list[i] = { name = name, number = number }   -- already saved: rename it
+                saveFavourites(p.citizenid, list)
+                resolve({ ok = true, favourites = list })
+                return
+            end
+        end
+        if #list >= maxFavourites() then resolve({ error = 'full' }) return end
+        table.insert(list, { name = name, number = number })
+        saveFavourites(p.citizenid, list)
+        resolve({ ok = true, favourites = list })
+        return
+    end
+
+    if op == 'del' then
+        local number = tostring((data and data.number) or ''):gsub('%s', '')
+        for i = #list, 1, -1 do
+            if list[i].number == number then table.remove(list, i) end
+        end
+        saveFavourites(p.citizenid, list)
+        resolve({ ok = true, favourites = list })
+        return
+    end
+
+    resolve({ error = 'badop' })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Boot
+-- ══════════════════════════════════════════════════════════════
+function Bridge.BankBoot()
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_bank_tx` (
+        `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `citizenid`    VARCHAR(64)  NOT NULL,
+        `amount`       BIGINT       NOT NULL DEFAULT 0,
+        `label`        VARCHAR(60)  NOT NULL DEFAULT '',
+        `kind`         VARCHAR(12)  NOT NULL DEFAULT 'transfer',
+        `counterparty` VARCHAR(64)  NOT NULL DEFAULT '',
+        `at`           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `owner_idx` (`citizenid`, `id`),
+        KEY `spend_idx` (`citizenid`, `kind`, `at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- Escrow is deliberately its own table rather than a flag on a statement line: a line
+    -- is history and must never change, an owed payment is state and gets deleted.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_bank_pending` (
+        `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `citizenid` VARCHAR(64)  NOT NULL,
+        `amount`    BIGINT       NOT NULL DEFAULT 0,
+        `label`     VARCHAR(60)  NOT NULL DEFAULT '',
+        `counterparty` VARCHAR(64) NOT NULL DEFAULT '',
+        `at`        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `owed_idx` (`citizenid`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- Statement lines expire; escrow never does. Money that is owed stays owed however
+    -- long the character stays away.
+    local days = math.floor(num(BANK.retentionDays, 0))
+    if days > 0 then
+        CreateThread(function()
+            while true do
+                MySQL.query.await(
+                    'DELETE FROM vphone_bank_tx WHERE at < (NOW() - INTERVAL ? DAY)', { days })
+                Wait(6 * 60 * 60 * 1000)
+            end
+        end)
+    end
+
+    -- One line at boot saying what the app will do, because "not available on this server"
+    -- with no reason given is exactly the bug this file was written to fix.
+    CreateThread(function()
+        Wait(3000)
+        if not enabled() then
+            print('[v-phone] bank: OFF (Config.Bank.enabled)')
+            return
+        end
+        local reader = (GetResourceState('v-banking') == 'started') and 'v-banking'
+            or ('the ' .. tostring(Bridge.framework or '?') .. ' bridge')
+        print(('[v-phone] bank: on, balance from %s, transfers %s')
+            :format(reader, transfersOn() and 'on' or 'off'))
+    end)
+end

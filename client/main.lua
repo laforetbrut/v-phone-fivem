@@ -555,8 +555,13 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- One table, so adding an app is one row rather than a branch. `res` is the module that
 -- must be running for the app to have anything to say.
+-- Each app upstream is a view over a companion `v-*` resource. Outside the author's own
+-- suite none of them exist, so an app with a `fallback` reads the bridge instead - which is
+-- the whole point of shipping a bridge. Without one the bank app answered "not available on
+-- this server" on every qb-core, ESX and ox install, which is to say on all of them.
 local APP_SOURCE = {
-    bank   = { res = 'v-banking',  callback = 'v-banking:getData' },
+    bank   = { res = 'v-banking',  callback = 'v-banking:getData',
+               fallback = 'v-phone:bank:data' },
     garage = { res = 'v-vehicles', callback = 'v-vehicles:myVehicles' },
     wallet = { res = 'v-licenses', callback = 'v-licenses:mine' },
     jobs     = { res = 'v-cityhall', callback = 'v-phone:jobs' },
@@ -617,7 +622,14 @@ RegisterNUICallback('app', function(data, cb)
     if id == 'music' then cb(musicAppData()) return end
     local src = APP_SOURCE[id]
     if not src then cb({ error = 'unknown' }) return end
-    if GetResourceState(src.res) ~= 'started' then cb({ error = 'off' }) return end
+    if GetResourceState(src.res) ~= 'started' then
+        if src.fallback then
+            V.Request(src.fallback, function(res) cb(res or { error = 'x' }) end)
+            return
+        end
+        cb({ error = 'off' })
+        return
+    end
     V.Request(src.callback, function(res) cb(res or { error = 'x' }) end)
 end)
 
@@ -629,6 +641,12 @@ local function relay(callback)
         V.Request(callback, function(res) cb(res or { error = 'x' }) end, data)
     end
 end
+
+-- The bank's two writes. Relays on purpose: the amount, the recipient, the limits and the
+-- fee are all decided on the server, so there is nothing for this side to check and
+-- nothing it could usefully lie about.
+RegisterNUICallback('bankTransfer', relay('v-phone:bank:transfer'))
+RegisterNUICallback('bankFavourite', relay('v-phone:bank:favourite'))
 
 RegisterNUICallback('conversation',  relay('v-phone:conversation'))
 RegisterNUICallback('send',          relay('v-phone:send'))

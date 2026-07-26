@@ -52,10 +52,11 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
+Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players.
 - **Messages**: private and group threads, photos, GIFs, location sharing, reactions, forwarding and emoji.
+- **Bank**: the balance your framework already keeps, a statement, transfers to another character by phone number, and saved beneficiaries. No companion resource - it reads qb-core, qbx, ESX, ox or your banking script through the bridge. Limits, an optional fee and offline transfers are configurable.
 - **Bleeter** (Twitter): two timelines, likes, comments, reposts, a searchable directory, follows, direct messages and profiles.
 - **Snapmatic** (Instagram): stories with a 24 hour life, a photo feed, a profile grid, search and direct messages.
 - **Hush** (Tinder): a card you throw with your finger, matches kept in their own tab, an editable profile.
@@ -212,10 +213,11 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.
+Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Banque, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour.
 - **Messages** : conversations privées et groupées, photos, GIF, partage de position, réactions, transfert et emoji.
+- **Banque** : le solde que votre framework tient déjà, un relevé, des virements vers un autre personnage par numéro de téléphone, et des bénéficiaires enregistrés. Aucune ressource compagnon : elle lit qb-core, qbx, ESX, ox ou votre script bancaire via le bridge. Limites, frais optionnels et virements hors ligne configurables.
 - **Bleeter** (Twitter) : deux fils, likes, commentaires, republications, annuaire cherchable, abonnements, messages privés et profils.
 - **Snapmatic** (Instagram) : stories d'une journée, fil photo, profil en grille, recherche et messages privés.
 - **Hush** (Tinder) : une carte qu'on lance au doigt, les matchs conservés dans leur onglet, un profil modifiable.

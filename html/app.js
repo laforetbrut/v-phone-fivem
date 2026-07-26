@@ -115,7 +115,12 @@ let cipherDemo = false;
 let cipherBurn = 0;
 
 const L = (k) => S[k] || k;
-const money = (n) => '$' + Number(n || 0).toLocaleString('en-US');
+const money = (n) => {
+  const v = Number(n || 0);
+  // "-$1,015", not "$-1,015". The sign goes before the symbol in every locale that puts the
+  // symbol first, and the bank statement is where this is read all day.
+  return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US');
+};
 
 // ══ Clock ══════════════════════════════════════════════════════
 function tick() {
@@ -2421,11 +2426,39 @@ function contactSheet(c) {
 }
 
 // ── Bank ───────────────────────────────────────────────────────
+// A statement line's date. The phone's own lines carry a unix timestamp; a banking script
+// that hands back a preformatted string keeps its string, because reformatting something
+// whose format is unknown is how dates end up wrong.
+function txWhen(t) {
+  if (t.at) return String(t.at);
+  if (!t.ts) return '';
+  const d = new Date(t.ts * 1000);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
+    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// What a statement line is called. The server stores the sender's note and who it was
+// with, never a sentence: composing it here means a row written on an English server still
+// reads in French for whoever is looking at it.
+function txTitle(t) {
+  if (t.kind === 'fee') return L('ph.bank_fee');
+  if (t.label) return String(t.label);
+  if (t.with) {
+    return L(Number(t.amount) < 0 ? 'ph.bank_to_name' : 'ph.bank_from_name')
+      .replace('{name}', t.with);
+  }
+  return L('ph.bank_transfer');
+}
+
 RENDER.bank = async () => {
   loading();
   const d = await post('app', { app: 'bank' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'bank')); return; }
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'bank')); return; }
+
   const tx = d.transactions || [];
+  const favs = d.favourites || [];
+  const fee = Number(d.fee) || 0;
+
   body(
     UI.hero({
       appicon: 'bank',
@@ -2433,14 +2466,145 @@ RENDER.bank = async () => {
       value: money(d.bank),
       subtitle: `${L('ph.cash')} ${money(d.cash)}`,
     }) +
+    (d.transfers ? UI.button(L('ph.bank_transfer'), 'bxfer', 'tinted') : '') +
+    // Only drawn when there is something to say: a server with no fee and no daily limit
+    // gets no row about either.
+    ((fee > 0 || d.remaining !== undefined || d.number)
+      ? UI.group([
+          d.number ? UI.row({ icon: 'phone', title: L('ph.bank_my_number'), value: d.number, mono: true }) : '',
+          fee > 0 ? UI.row({ icon: 'bank', title: L('ph.bank_fee'), value: fee + '%', mono: true }) : '',
+          d.remaining !== undefined
+            ? UI.row({ icon: 'timer', title: L('ph.bank_daily_left'), value: money(d.remaining), mono: true })
+            : '',
+        ].filter(Boolean))
+      : '') +
+    (d.transfers
+      ? UI.group(
+          (favs.length
+            ? favs.map((f) => UI.row({
+                avatar: f.name || f.number, title: f.name || f.number,
+                // No second line when it would just repeat the first.
+                subtitle: f.name ? f.number : '', chevron: true,
+                data: { fav: f.number, favname: f.name || '' },
+              }))
+            : [UI.row({ icon: 'contacts', title: L('ph.bank_no_favs') })]
+          ).concat([UI.row({ icon: 'add', title: L('ph.bank_add_fav'), data: { addfav: '1' } })]),
+          { header: L('ph.bank_beneficiaries') })
+      : '') +
     (tx.length
       ? UI.group(tx.map((t) => UI.row({
-          title: t.label || t.type || '', subtitle: t.at || '',
+          title: txTitle(t),
+          subtitle: txWhen(t),
           value: money(t.amount), mono: true, tone: Number(t.amount) < 0 ? 'neg' : 'pos',
         })), { header: L('ph.history') })
       : UI.empty(L('ph.no_history')))
   );
+
+  if (byId('bxfer')) byId('bxfer').addEventListener('click', () => transferSheet(d));
+  // A saved beneficiary is a shortcut to the same transfer sheet, prefilled.
+  rows('[data-fav]', (el) => el.addEventListener('click', () =>
+    favouriteSheet(d, el.dataset.fav, el.dataset.favname)));
+  rows('[data-addfav]', (el) => el.addEventListener('click', () => addFavouriteSheet()));
 };
+
+// ── Sending money ──────────────────────────────────────────────
+// Everything below only draws and asks. The amount, the limits, the fee and who the number
+// belongs to are all decided on the server, so a player editing this page changes nothing
+// except what they see.
+function transferSheet(d, prefillNumber, prefillName) {
+  const fee = Number(d.fee) || 0;
+  const min = Number(d.min) || 1;
+  const max = Number(d.max) || 0;
+
+  sheet(L('ph.bank_transfer'),
+    UI.field('bamount', L('ph.bank_amount'), '', 'type="number" inputmode="numeric" min="' +
+      min + '"' + (max > 0 ? ' max="' + max + '"' : '')) +
+    UI.field('bnumber', L('ph.bank_to'), prefillNumber || '', 'maxlength="20"') +
+    UI.field('bnote', L('ph.bank_note'), '', 'maxlength="40"') +
+    '<div class="bankcalc" id="bcalc"></div>' +
+    UI.button(L('ph.bank_send'), 'bgo', 'tinted'),
+    () => {
+      const amount = byId('bamount'), calc = byId('bcalc');
+      // What this will actually cost, updated as it is typed. A fee discovered after the
+      // fact is the kind of thing a player reports as theft.
+      const repaint = () => {
+        const n = Math.floor(Number(amount.value) || 0);
+        if (n <= 0) {
+          calc.textContent = max > 0
+            ? L('ph.bank_limits').replace('{min}', money(min)).replace('{max}', money(max))
+            : '';
+          return;
+        }
+        const f = Math.floor(n * fee / 100);
+        calc.textContent = f > 0
+          ? L('ph.bank_total') + ' ' + money(n + f) + '  (' + L('ph.bank_fee') + ' ' + money(f) + ')'
+          : L('ph.bank_total') + ' ' + money(n);
+      };
+      amount.addEventListener('input', repaint);
+      repaint();
+      if (prefillName) byId('bnote').setAttribute('placeholder', prefillName);
+
+      byId('bgo').addEventListener('click', async () => {
+        const epoch = sheetEpoch;
+        const go = byId('bgo');
+        // Double-tapping send must not send twice.
+        if (go.disabled) return;
+        go.disabled = true;
+        const r = await post('bankTransfer', {
+          amount: Math.floor(Number(byId('bamount').value) || 0),
+          number: byId('bnumber').value.trim(),
+          note: byId('bnote').value.trim(),
+        });
+        if (!r || !r.ok) {
+          go.disabled = false;
+          toast(L('ph.err_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        toast(L(r.held ? 'ph.bank_held' : 'ph.bank_sent') + ' ' + money(r.amount) +
+          (r.to ? ' - ' + r.to : ''));
+        RENDER.bank();
+      });
+    });
+}
+
+function favouriteSheet(d, number, name) {
+  sheet(name || number,
+    UI.group([UI.row({ icon: 'phone', title: number, mono: true })]) +
+    UI.button(L('ph.bank_send'), 'bfsend', 'tinted') +
+    UI.button(L('ph.bank_remove'), 'bfdel', 'destructive'),
+    () => {
+      byId('bfsend').addEventListener('click', () => transferSheet(d, number, name));
+      byId('bfdel').addEventListener('click', async () => {
+        const epoch = sheetEpoch;
+        await post('bankFavourite', { op: 'del', number });
+        if (!closeSheet(false, epoch)) return;
+        toast(L('ph.bank_fav_removed'));
+        RENDER.bank();
+      });
+    });
+}
+
+function addFavouriteSheet() {
+  sheet(L('ph.bank_add_fav'),
+    UI.field('bfnum', L('ph.bank_to'), '', 'maxlength="20"') +
+    UI.field('bfname', L('ph.bank_fav_name'), '', 'maxlength="40"') +
+    UI.button(L('ph.save'), 'bfadd', 'tinted'),
+    () => {
+      byId('bfadd').addEventListener('click', async () => {
+        const epoch = sheetEpoch;
+        const r = await post('bankFavourite', {
+          op: 'add',
+          number: byId('bfnum').value.trim(),
+          name: byId('bfname').value.trim(),
+        });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        toast(L('ph.bank_fav_saved'));
+        RENDER.bank();
+      });
+    });
+}
 
 // ── Garage ─────────────────────────────────────────────────────
 // Where a car is, not how to spawn one: taking it out is the garage's job and needs the

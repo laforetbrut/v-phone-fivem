@@ -74,6 +74,9 @@ server_scripts {
     -- Everything another resource is meant to call. Loaded after the app it wraps, so
     -- every export it builds on already exists. See API.md.
     'server/api.lua',
+    -- The bank app: statement, transfers, beneficiaries. After api.lua, whose
+    -- SendServiceMessage tells a recipient that money arrived.
+    'server/bank.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',

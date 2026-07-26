@@ -3302,6 +3302,9 @@ CreateThread(function()
     -- Media hosting (photos/video on a CDN) with its own expiry sweep. A no-op table
     -- and no sweep when Config.Media is off, so it costs nothing unused.
     if Bridge.MediaBoot then Bridge.MediaBoot() end
+    -- The bank app's own ledger and its escrow for offline transfers. The balance itself
+    -- is the framework's and needs no table.
+    if Bridge.BankBoot then Bridge.BankBoot() end
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_contacts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,

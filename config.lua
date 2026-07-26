@@ -149,6 +149,9 @@ Config.Compat = {
         -- Charge a player. Return true ONLY if the money genuinely left them: the store
         -- treats false as "not paid" and does not grant the app.
         removeMoney = nil,    -- (src, amount, account) -> boolean
+        -- Pay a player. Return true ONLY if the money genuinely arrived: a transfer whose
+        -- credit reports false is refunded to the sender rather than lost.
+        addMoney = nil,       -- (src, amount, account, reason) -> boolean
         -- CLIENT side: true when the local player is inside a property they can charge
         -- in. Only fill this if your housing script is none of the supported ones.
         atHome = nil,         -- () -> boolean, runs on the client
@@ -812,6 +815,53 @@ Config.ExternalCharging = {
 
 -- ══════════════════════════════════════════════════════════════
 --  POLICE FORENSICS
+-- ══════════════════════════════════════════════════════════════
+--  BANK
+-- ══════════════════════════════════════════════════════════════
+-- The bank app reads the balance your framework already keeps - qb-core, qbx, ESX, ox, or
+-- whatever banking script is running - through the bridge. Nothing here needs a companion
+-- resource, and nothing here invents an account: the phone is a window onto the money the
+-- server already believes in.
+--
+-- What it ADDS is the phone part: a statement, transfers between characters, and a list of
+-- saved beneficiaries. Those are the phone's own, kept in its own tables, because no
+-- framework has them.
+Config.Bank = {
+    enabled = true,
+
+    -- Transfers, character to character, from the bank balance. Off leaves the app a
+    -- read-only statement, which is what a server with its own banking UI usually wants.
+    transfers = true,
+
+    -- The bounds of one transfer. `max = 0` means no ceiling.
+    minAmount = 1,
+    maxAmount = 100000,
+
+    -- A cut the bank takes, as a percentage of the amount, rounded down. 0 for none. The
+    -- sender pays it on top: sending 1000 at 1.5% costs 1015 and delivers 1000, so the
+    -- number the recipient was promised is the number they get.
+    feePercent = 0,
+
+    -- How much one character may send per real day, 0 for no limit. Counted on the phone's
+    -- own ledger, so it cannot be walked around by closing the app.
+    dailyLimit = 0,
+
+    -- Paying somebody who is not connected. On: the money leaves the sender now and is
+    -- held by the phone until that character next looks at their bank, then credited once.
+    -- Off: the transfer is refused with "they are not connected".
+    --
+    -- On is the honest default. The alternative is a transfer that silently does nothing
+    -- because the recipient logged off between choosing them and pressing send.
+    offlineTransfers = true,
+
+    -- Saved beneficiaries per character.
+    maxFavourites = 25,
+
+    -- How many statement lines the app shows, and how long the phone keeps its own.
+    historyLimit = 50,
+    retentionDays = 60,       -- 0 keeps them for ever
+}
+
 -- ══════════════════════════════════════════════════════════════
 -- A warrant terminal: police walk to a point on the map and, with the target's number,
 -- read what is on that phone. Everything that is stored in the clear - texts, contacts,

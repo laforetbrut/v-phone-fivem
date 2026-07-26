@@ -13,8 +13,10 @@
 --     picks whatever is running. Naming one explicitly always wins.
 --  2. **Absent is not broken.** A provider that finds nothing to talk to returns nil,
 --     and the phone hides the app rather than showing an empty one.
---  3. **Read-mostly.** The phone shows a balance and a garage list. It does not move
---     money or spawn cars: those belong to the scripts that own them.
+--  3. **Read-mostly, and where it is not, it fails closed.** The phone shows a balance and
+--     a garage list; it does not spawn cars. It does move money - the app store charges,
+--     and the bank app transfers - and both directions report honestly whether the
+--     framework confirmed the movement, so a half-finished transfer can be undone.
 --
 -- Supported out of the box: qb-core, qbx_core, ox_core, es_extended, ox_inventory,
 -- qs-inventory, qb-inventory, ps-inventory, Renewed-Banking, qb-banking, okokBanking,
@@ -354,6 +356,80 @@ function Bridge.RemoveMoney(src, amount, account)
     end
 
     -- Standalone, or a framework with no money to take. Refuse rather than give it away.
+    return false
+end
+
+--- Put money into a player, and say whether it actually arrived.
+---
+--- The credit half of `Bridge.RemoveMoney`, needed because a transfer has two ends. Same
+--- contract: **true only when the framework confirmed it**, so the bank app can put a
+--- failed transfer back where it came from instead of quietly destroying it.
+---
+--- `account` is 'bank' or 'cash'. `reason` is what the framework writes in its own log.
+---
+--- Deliberately narrower than the read side: this asks the FRAMEWORK for money and never
+--- a banking script, even when one is running. Banking scripts observe the framework's
+--- money and add their own statement line; calling both would credit twice. A missing line
+--- in somebody's statement is a cosmetic problem, money invented from nothing is not.
+function Bridge.AddMoney(src, amount, account, reason)
+    src = tonumber(src)
+    amount = math.floor(tonumber(amount) or 0)
+    account = (account == 'cash') and 'cash' or 'bank'
+    reason = tostring(reason or 'v-phone')
+    if not src or amount <= 0 then return false end
+
+    local custom = Config.Compat.hooks.addMoney
+    if custom then
+        local ok, done = pcall(custom, src, amount, account, reason)
+        return ok and done == true
+    end
+
+    if Bridge.framework == 'qb' then
+        local qbp = Bridge.QBGetPlayer(src)
+        local add = qbp and qbp.Functions and qbp.Functions.AddMoney
+        if add then return add(account, amount, reason) == true end
+        return false
+
+    elseif Bridge.framework == 'esx' then
+        local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
+        if not ok or not ESX then return false end
+        local xPlayer = ESX.GetPlayerFromId(src)
+        if not xPlayer then return false end
+        if account == 'cash' then
+            if not xPlayer.addMoney then return false end
+            local done = pcall(xPlayer.addMoney, amount, reason)
+            return done
+        end
+        if not xPlayer.addAccountMoney then return false end
+        return pcall(xPlayer.addAccountMoney, 'bank', amount, reason)
+
+    elseif Bridge.framework == 'ox' then
+        -- ox keeps cash as an inventory item and the bank as an account with its own
+        -- methods. The account is tried first because that is where a bank transfer
+        -- belongs; cash falls through to the item.
+        if account == 'bank' then
+            local ok = pcall(function()
+                local player = exports.ox_core:GetPlayer(src)
+                if not player or not player.charId then error('no character') end
+                local acc = exports.ox_core:GetCharacterAccount(player.charId)
+                if not acc then error('no account') end
+                if acc.addBalance then
+                    if acc:addBalance(amount, reason) == false then error('refused') end
+                elseif acc.id and exports.ox_core.AddAccountBalance then
+                    if exports.ox_core:AddAccountBalance(acc.id, amount) == false then error('refused') end
+                else
+                    error('no credit method')
+                end
+            end)
+            if ok then return true end
+        end
+        local ok, added = pcall(function()
+            return exports.ox_inventory:AddItem(src, 'money', amount)
+        end)
+        return ok and added ~= false
+    end
+
+    -- Standalone, or a framework with nowhere to put it. Say so: the caller refunds.
     return false
 end
 
