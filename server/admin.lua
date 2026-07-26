@@ -107,8 +107,39 @@ if ADMIN.commands ~= false then
             local ok, removed = self:WipePhone(cid)
             reply(src, ok and ('Wiped %d row(s).'):format(removed or 0) or 'Failed.')
 
+        elseif sub == 'verify' and actionOn('verify') then
+            -- `/phoneadmin verify @handle [off] [snap]`
+            --
+            -- By handle rather than by character: a badge belongs to an account, and staff
+            -- reading a report have the @handle in front of them, not a citizen id.
+            local handle = args[2]
+            if not handle then
+                reply(src, 'Usage: /phoneadmin verify [@handle] (off) (snap)')
+                return
+            end
+            local rest = table.concat(args, ' ', 3):lower()
+            local on = not rest:find('off', 1, true)
+            local app = rest:find('snap', 1, true) and 'snap' or 'bleeter'
+
+            local ok, result = self:SetVerified(app, handle, on)
+            if not ok then
+                reply(src, result == 'nosuchhandle'
+                    and ('No %s account called @%s.'):format(app, tostring(handle):gsub('^@', ''))
+                    or 'Usage: /phoneadmin verify [@handle] (off) (snap)')
+                return
+            end
+            reply(src, ('@%s is %s verified on %s.')
+                :format(result, on and 'now' or 'no longer', app))
+
+        elseif sub == 'verified' and actionOn('verify') then
+            local app = ((args[2] or ''):lower() == 'snap') and 'snap' or 'bleeter'
+            local list = self:VerifiedHandles(app)
+            reply(src, #list == 0
+                and ('Nobody is verified on %s.'):format(app)
+                or ('Verified on %s: @%s'):format(app, table.concat(list, ', @')))
+
         else
-            reply(src, 'phoneadmin: info | open | battery | number | message | wipe')
+            reply(src, 'phoneadmin: info | open | battery | number | message | verify | verified | wipe')
         end
     end, false)
 

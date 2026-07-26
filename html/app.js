@@ -8987,6 +8987,10 @@ window.addEventListener('message', (e) => {
     applyPower(d.power);
   } else if (d.action === 'banner') {
     banner(d.banner || {});
+  } else if (d.action === 'socialRefresh') {
+    // Only if that app is what is on screen. Redrawing a social view the player is not
+    // looking at would throw away wherever they had scrolled to for nothing.
+    if (openApp && openApp.id === d.app) socialRender(d.app);
   } else if (d.action === 'buzz') {
     buzzDevice();
   } else if (d.action === 'camLive') {

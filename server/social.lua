@@ -939,6 +939,55 @@ end)
 -- rules - it disappears, and being seen is part of its state - not to keep two feeds.
 local STORY_HOURS = 24
 
+-- ══════════════════════════════════════════════════════════════
+-- Verification
+-- ══════════════════════════════════════════════════════════════
+--- Grant or revoke the badge on one account.
+---
+--- The column and the badge have both existed since the app shipped - the badge is drawn
+--- wherever a name appears - and nothing has ever set it, so no account could be verified by
+--- anybody. This is the missing half.
+---
+--- Deliberately NOT a callback: a client must never be able to ask for this. It is an export,
+--- and the only thing that calls it is the ace-gated staff command in server/admin.lua. A
+--- server with its own admin menu calls the export from there.
+---
+---     exports['v-phone']:SetVerified('bleeter', 'somehandle', true)
+---
+--- Returns ok, and the handle as it is actually stored, so a caller can echo it back.
+exports('SetVerified', function(app, handle, on)
+    app = (tostring(app or ''):lower() == 'snap') and 'snap' or 'bleeter'
+    handle = tostring(handle or ''):gsub('^@', ''):gsub('%s', '')
+    if handle == '' then return false, 'nohandle' end
+
+    local cid = cidOfHandle(app, handle)
+    if not cid then return false, 'nosuchhandle' end
+
+    MySQL.update.await(
+        'UPDATE vphone_social_accounts SET verified = ? WHERE citizenid = ? AND app = ?',
+        { on and 1 or 0, cid, app })
+
+    -- The badge is on every card that account has ever posted, so an open phone would keep
+    -- showing the old state until something else made it refresh. Telling it costs one event.
+    local target = Core.GetPlayerByCitizenId(cid)
+    if target and target.source then
+        TriggerClientEvent('v-phone:client:socialRefresh', target.source, app)
+    end
+    return true, handle
+end)
+
+--- Who is verified, for a staff command that wants to list them. Handles only: this is an
+--- account list, not a character list, and it has no business carrying citizen ids.
+exports('VerifiedHandles', function(app)
+    app = (tostring(app or ''):lower() == 'snap') and 'snap' or 'bleeter'
+    local rows = MySQL.query.await(
+        'SELECT handle FROM vphone_social_accounts WHERE app = ? AND verified = 1 ORDER BY handle',
+        { app }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do out[#out + 1] = tostring(r.handle) end
+    return out
+end)
+
 V.Callback('v-phone:soc:stories', function(src, resolve, data)
     if not socOn() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)

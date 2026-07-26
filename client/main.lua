@@ -1835,6 +1835,14 @@ RegisterNetEvent('v-phone:client:cipher', function(packet)
     end
 end)
 
+--- A social account changed in a way the open phone cannot have noticed: staff granted or
+--- took away a verified badge. The badge is on every card that account has posted, so the
+--- view has to be redrawn rather than waiting for the player to navigate.
+RegisterNetEvent('v-phone:client:socialRefresh', function(app)
+    if not isOpen then return end
+    SendNUIMessage({ action = 'socialRefresh', app = tostring(app or '') })
+end)
+
 RegisterNetEvent('v-phone:client:banner', function(b)
     if isOpen then
         SendNUIMessage({ action = 'banner', banner = b })

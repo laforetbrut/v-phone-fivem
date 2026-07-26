@@ -810,6 +810,9 @@ Config.Admin = {
     -- What staff may do. Turn any of these off to hide it from the command and the menu.
     actions = {
         openRemote   = true,   -- open a player's phone on their screen (support)
+        -- Grant or revoke the verified badge on a Bleeter or Snapmatic account. Off leaves
+        -- nobody able to hand one out, including through the export.
+        verify       = true,
         setBattery   = true,
         setNumber    = true,
         wipe         = true,   -- delete every trace of a character's phone data
