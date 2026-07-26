@@ -28,10 +28,24 @@ shared_scripts {
     -- format the config names, and both the client and the server have to derive it the
     -- same way. See bridge/shared/booth.lua.
     'bridge/shared/booth.lua',
-    -- Drop-in apps. `_loader.lua` defines PhoneApp(); the glob after it picks up every
-    -- app folder, so adding an app is adding a folder and nothing else.
+    -- Drop-in apps. `_loader.lua` defines PhoneApp(); the entries under it are the app
+    -- folders this resource ships with.
+    --
+    -- **These are named, not globbed, and that is on purpose.** `apps/*/app.lua` looks
+    -- tidier and cost nineteen warnings on every single restart:
+    --
+    --     Warning: could not find shared_script `apps/*/app.lua` (defined in fxmanifest.lua)
+    --
+    -- Two separate reasons, and both are permanent. A glob that matches nothing warns - and
+    -- most of the per-extension patterns matched nothing, because an app folder that ships no
+    -- stylesheet and no images is the normal case. And a glob does not resolve at all when
+    -- the resource is installed as a junction or a symlink to a git checkout, which is how
+    -- anybody developing against it runs it. Nineteen warnings that mean nothing teach an
+    -- operator to ignore the console, which is where the warnings that DO mean something go.
+    --
+    -- The cost is two lines per app folder instead of zero. See DEVELOPERS.md.
     'apps/_loader.lua',
-    'apps/*/app.lua',
+    'apps/example/app.lua',
 }
 
 client_scripts {
@@ -49,7 +63,9 @@ client_scripts {
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
     'client/vehicle.lua',
-    'apps/*/client.lua',      -- optional, per app folder
+    -- An app folder's optional `client.lua` goes here, one line each. No app shipped with
+    -- the phone has one, so there is nothing to list - and a glob for a file that does not
+    -- exist is a warning on every restart.
 }
 
 server_scripts {
@@ -92,7 +108,10 @@ server_scripts {
     'server/police.lua',
     -- Photo and video hosting through screencapture + a CDN, with auto-deletion.
     'server/media.lua',
-    'apps/*/server.lua',      -- optional, per app folder
+    -- Music heard by other people: a positioned sound has to be broadcast, and a broadcast
+    -- is the server's to make. After main.lua, whose requireItem it checks.
+    'server/music.lua',
+    -- An app folder's optional `server.lua` goes here, one line each.
 }
 
 ui_page 'html/index.html'
@@ -111,22 +130,9 @@ files {
     -- Ringtones, alerts and interface sounds. Generated rather than sampled, so they
     -- are safe to ship: tools/make-sounds.py rebuilds every one of them.
     'sounds/*.wav',
-    -- Everything a dropped-in app ships. The page and whatever it loads beside it.
-    'apps/*/*.html',
-    'apps/*/*.css',
-    'apps/*/*.js',
-    'apps/*/*.png',
-    'apps/*/*.jpg',
-    'apps/*/*.jpeg',
-    'apps/*/*.webp',
-    'apps/*/*.gif',
-    'apps/*/*.svg',
-    'apps/*/*.json',
-    'apps/*/*.woff',
-    'apps/*/*.woff2',
-    'apps/*/*.mp3',
-    'apps/*/*.ogg',
-    -- Nested assets are allowed too (images/, fonts/, data/...). Keeping this last means
-    -- a complex app still remains a self-contained folder.
-    'apps/*/**/*',
+    -- A dropped-in app's page and its assets, named per app. The fifteen glob patterns that
+    -- used to be here produced fifteen warnings on every restart, because an app folder that
+    -- ships no stylesheet, no fonts and no audio is the ordinary case rather than the
+    -- exception - and a glob does not resolve through a junction at all.
+    'apps/example/index.html',
 }

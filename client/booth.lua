@@ -136,7 +136,14 @@ local function openBooth()
         current = { x = booth.x, y = booth.y, z = booth.z, number = res.number }
         isOpen = true
         SetNuiFocus(true, true)
-        SendNUIMessage({ action = 'booth:open', data = res, call = boothCall })
+        -- The strings travel with the panel.
+        --
+        -- The page's table is filled by the phone's own `open` message, and a payphone is the
+        -- one screen a player can reach WITHOUT ever opening their phone - that is the whole
+        -- point of a payphone. So on a fresh connection every label on this panel rendered as
+        -- its own key: `ph.booth_title`, `ph.booth_call`, and so on, exactly as reported.
+        SendNUIMessage({ action = 'booth:open', data = res, call = boothCall,
+                         strings = PhoneStrings and PhoneStrings() or nil })
     end, { x = booth.x, y = booth.y, z = booth.z })
 end
 

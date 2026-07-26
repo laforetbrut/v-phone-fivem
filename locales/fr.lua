@@ -496,6 +496,9 @@ local T = {
     ['ph.store_required'] = 'Intégrée',
 
     ['ph.store_install'] = 'OBTENIR',
+    ['ph.store_delete_ask'] = 'Retirer {app} ?',
+    ['ph.store_delete_hint'] = "L'icône quitte votre écran d'accueil. La réinstaller est gratuit : ce que vous avez payé reste associé à votre personnage.",
+    ['ph.err_builtin'] = 'Cette application est fournie avec le téléphone et ne peut pas être retirée',
     ['ph.store_delete'] = 'Retirer',
     ['ph.store_added'] = 'Installée',
     ['ph.store_removed'] = 'Retirée',

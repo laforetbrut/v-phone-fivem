@@ -60,10 +60,31 @@ local function syncSdkApps(apps)
     if activeSdkApp and not sdkApps[activeSdkApp] then activeSdkApp = nil end
 end
 
+--- The string table handed to the page.
+---
+--- `PhoneLang()` rather than a second copy of the same logic: this used to default to 'fr'
+--- while `bridge/shared/locale.lua` defaulted to 'en', so a server that set `phone_locale`
+--- with a non-replicated `set` got a French phone and an English payphone prompt. One
+--- default, in one place.
+---
+--- A key missing from the chosen language falls back to English, exactly as `L` does, so a
+--- half-translated locale file shows English rather than raw keys.
 local function strings()
-    return Locales[(LocalPlayer.state and LocalPlayer.state.lang) or 'fr'] or Locales.fr or {}
+    local lang = PhoneLang()
+    local chosen = Locales[lang]
+    if not chosen then return Locales[LOCALE_FALLBACK] or Locales.en or {} end
+    if lang == LOCALE_FALLBACK then return chosen end
+    local base = Locales[LOCALE_FALLBACK] or Locales.en or {}
+    local merged = {}
+    for k, v in pairs(base) do merged[k] = v end
+    for k, v in pairs(chosen) do merged[k] = v end
+    return merged
 end
 local function L(k) return strings()[k] or k end
+
+--- The same table, by a name another client file can reach. client/booth.lua sends it with
+--- the payphone panel, which is the one screen reachable without opening the phone.
+PhoneStrings = strings
 
 local function voice() return GetResourceState('v-voice') == 'started' end
 

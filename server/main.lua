@@ -2613,6 +2613,18 @@ V.Callback('v-phone:install', function(src, resolve, data)
     if not found then resolve({ error = 'unavailable' }) return end
     if found.required and not want then resolve({ error = 'required' }) return end
 
+    -- **Only a DOWNLOADED app can be uninstalled.**
+    --
+    -- `optional` means the app was not on the phone to begin with - it had to be fetched from
+    -- the store, and it can go back. Everything else shipped with the handset: the Bank, the
+    -- Garage, Music. Those are part of the phone in the way the Phone app is, and a player who
+    -- removes one has quietly broken a feature their server expects them to have, then reports
+    -- the missing icon as a bug.
+    --
+    -- Checked HERE and not only in the page. The page hides the button, which stops the
+    -- accident; this stops a hand-made request, which is the only kind left.
+    if not want and not found.optional then resolve({ error = 'builtin' }) return end
+
     local prefs = prefsOf(p)
 
     -- ── Paying for it ──────────────────────────────────────────
@@ -3317,8 +3329,26 @@ V.Callback('v-phone:callState', function(src, resolve)
     resolve({ ok = true, call = currentCallFor(src) or false })
 end)
 
+--- Put the server's language on the player's state bag.
+---
+--- Replicated, so the client reads it without the convar being replicated itself. `set
+--- phone_locale "fr"` is what operators write - it is what the documentation said for a long
+--- time - and a plain `set` is invisible to a client, which read English instead. Rather than
+--- ask every server to change a line, the server answers the question directly.
+---
+--- A language already on the bag is left alone: another resource may be giving a player their
+--- own language, and that decision outranks the server default.
+local function pushLocale(src, player)
+    local state = Player(src) and Player(src).state
+    if not state then return end
+    local carried = state.lang
+    if type(carried) == 'string' and carried ~= '' then return end
+    state:set('lang', GetConvar('phone_locale', 'en'), true)
+end
+
 local function hydratePlayer(src, player)
     if not player then return end
+    pushLocale(src, player)
     ensureNumber(src, player)
     local saved = player.GetMetadata('battery')
     Battery[src] = V.SettingBool('battery', true)

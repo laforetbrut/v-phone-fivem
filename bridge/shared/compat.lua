@@ -114,6 +114,10 @@ end
 --
 -- So: calls use the call API. `voice_enableCalls` gates it, pma-voice tells its own server
 -- about the change, and radio is left entirely alone.
+-- The headphone sound's name. One per client is enough: a phone plays one track, and giving
+-- it a fixed name is what makes "stop whatever is playing" a single call.
+local PRIVATE_SOUND = 'vphone_music'
+
 -- Said once per session, not once per call: a warning that repeats every time somebody
 -- dials is noise that hides the next real line.
 local warnedNoCalls = false
@@ -234,7 +238,17 @@ STUBS['v-world'] = {
 --
 -- A server whose music script CAN be driven fills `Config.Music.hooks.play`, and that wins
 -- outright - no deck, no paste, the track simply plays.
-local MUSIC_DECKS = { 'rcore_radiocar', 'xdiskjockey' }
+-- **xsound first, and deliberately.**
+--
+-- The other two are paid resources. A phone whose Music app only works if you have bought
+-- something is a Music app most servers cannot use, which is how this app spent its life
+-- hidden. xsound is MIT, free, and does the one thing needed: play a URL, positioned or
+-- private, and stop it again.
+--
+-- It is also the only one of the three the phone can DRIVE. The two decks below open their
+-- own interface and the player pastes the link; with xsound the phone plays the track itself,
+-- which is what the app looked like it did all along.
+local MUSIC_DECKS = { 'xsound', 'rcore_radiocar', 'xdiskjockey' }
 
 --- Which deck this server has, or `hooks` when the operator drives playback themselves.
 --- nil means the app has nothing to talk to and stays hidden.
@@ -281,6 +295,38 @@ STUBS['v-music'] = {
         local deck = musicDeckFor()
         if not deck or deck == 'hooks' then return { error = 'nodeck' } end
 
+        -- xsound: the phone plays the track itself rather than opening somebody else's UI.
+        --
+        -- Two different problems behind one button. Headphones are private, so the sound is
+        -- started on THIS client and nobody else ever holds it. The speaker and the car radio
+        -- have to exist on every client near you, so they are the server's to broadcast - and
+        -- the server also has to keep pushing the position, or the music stands still while
+        -- the player walks away from it. See server/music.lua.
+        if deck == 'xsound' then
+            local url = tostring(track.url or '')
+            if url == '' then return { error = 'nourl' } end
+            local volume = math.max(0.0, math.min(1.0, tonumber(track.volume) or 0.65))
+
+            if output == nil or output == 'headphones' then
+                -- Whatever was playing goes first: one phone, one track.
+                pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+                local ok = pcall(function()
+                    exports.xsound:PlayUrl(PRIVATE_SOUND, url, volume, false)
+                end)
+                return ok and { ok = true, driven = true, deck = 'xsound' } or { error = 'nodeck' }
+            end
+
+            -- The speaker and the car. A private sound left over from headphone mode would
+            -- otherwise play on top of the broadcast one, in the same ears.
+            pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+            local answer
+            V.Request('v-phone:music:play', function(res) answer = res end,
+                { url = url, volume = volume, mode = output })
+            local waited = 0
+            while answer == nil and waited < 5000 do Wait(50); waited = waited + 50 end
+            return answer or { error = 'timeout' }
+        end
+
         if deck == 'rcore_radiocar' then
             -- The export is the documented route; the event is its published alias, and some
             -- builds only carry one of the two.
@@ -305,6 +351,14 @@ STUBS['v-music'] = {
             local ok, stopped = pcall(M.hooks.stop)
             if ok and stopped then return { ok = true, driven = true } end
         end
+        -- xsound: both halves, because the player may have switched output mid-track and
+        -- either one could be the live one.
+        if musicDeckFor() == 'xsound' then
+            pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+            V.Request('v-phone:music:stop', function() end)
+            return { ok = true, driven = true }
+        end
+
         -- The decks own their own transport; the most the phone can do is put the DJ mixer
         -- away. A car radio has no documented close.
         pcall(function() realExports.xdiskjockey:HideDiskjockeyUI() end)
@@ -318,6 +372,16 @@ STUBS['v-music'] = {
             local ok, done = pcall(M.hooks.volume, level)
             return { ok = ok and done == true }
         end
+
+        if musicDeckFor() == 'xsound' then
+            local volume = math.max(0.0, math.min(1.0, tonumber(level) or 0.65))
+            -- Whichever one is live. Setting the volume of a sound that does not exist is a
+            -- no-op in xsound, so both can be told without checking which.
+            pcall(function() exports.xsound:setVolume(PRIVATE_SOUND, volume) end)
+            V.Request('v-phone:music:volume', function() end, { volume = volume })
+            return { ok = true, driven = true }
+        end
+
         return { error = 'nohook' }
     end,
 

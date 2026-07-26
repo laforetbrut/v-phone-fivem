@@ -5,22 +5,45 @@
 --
 -- The language comes from one convar so a server sets it once:
 --
---     set phone_locale "en"     # or fr, or any locale file you add
+--     set phone_locale "fr"     # or en, or any locale file you add
+--
+-- **`set`, not `setr`, and the client still gets it.** A plain `set` convar exists only on
+-- the server: the client's `GetConvar('phone_locale', ...)` comes back empty and falls back
+-- to English. That is what put an English payphone prompt on a server whose phone was in
+-- French - two code paths reading the same convar and disagreeing about the default.
+--
+-- So the SERVER decides and pushes the answer onto each player's state bag as they load
+-- (see `pushLocale` in server/main.lua). The convar read below stays as the fallback for the
+-- moment before that lands, and for a server that replicates it with `setr` anyway.
 --
 -- A key with no translation falls back to English rather than to nothing, because a
 -- missing string should read as an oversight, not as a broken screen.
 
 Locales = Locales or { en = {}, fr = {} }
 
-local function currentLang()
+--- The fallback language, named once. Everything that needs a default reads THIS, so no two
+--- code paths can disagree about it - which is the bug this replaced.
+LOCALE_FALLBACK = 'en'
+
+--- The language for the local player, or the server's default.
+---
+--- Exposed rather than local because client/main.lua builds the page's string table and has
+--- to arrive at the same answer as `L` does; when it had its own copy, it picked a different
+--- default and the phone and the payphone ended up in different languages.
+function PhoneLang()
     if IsDuplicityVersion() then
-        return GetConvar('phone_locale', 'en')
+        return GetConvar('phone_locale', LOCALE_FALLBACK)
     end
-    -- A player may carry their own language on their state bag; the convar is the
-    -- server's default for everyone who does not.
-    return (LocalPlayer and LocalPlayer.state and LocalPlayer.state.lang)
-        or GetConvar('phone_locale', 'en')
+    -- The state bag first: the server writes it on load, so this is right even when the
+    -- operator used `set` rather than `setr` and the convar below is invisible here.
+    local carried = LocalPlayer and LocalPlayer.state and LocalPlayer.state.lang
+    if type(carried) == 'string' and carried ~= '' then return carried end
+    local convar = GetConvar('phone_locale', '')
+    if convar ~= '' then return convar end
+    return LOCALE_FALLBACK
 end
+
+local function currentLang() return PhoneLang() end
 
 local function translate(lang, key, ...)
     local tbl = Locales[lang] or Locales.en or {}

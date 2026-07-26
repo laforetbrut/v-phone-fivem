@@ -2,9 +2,16 @@
 --
 -- **Drop a folder in `apps/`, and the phone has a new app.**
 --
--- Everything under `apps/` is picked up by the globs in fxmanifest.lua, so an app folder
--- needs no edit anywhere else - not here, not in config.lua, not in the manifest. This
--- file only defines the one function those folders call.
+-- An app folder needs no edit here and none in config.lua. It does need its files listed in
+-- fxmanifest.lua - two lines, `app.lua` and `index.html`, plus any asset it ships.
+--
+-- That used to be a glob, and the glob is gone deliberately: a pattern that matches nothing
+-- warns on every restart, most of them matched nothing because an app shipping no stylesheet
+-- is the normal case, and a glob does not resolve at all through a junction or a symlink -
+-- which is how the resource is installed by anybody developing against it. Nineteen warnings
+-- that mean nothing teach an operator to stop reading the console.
+--
+-- This file only defines the one function an app folder calls.
 --
 -- The shape of an app folder:
 --

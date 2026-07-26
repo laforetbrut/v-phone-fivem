@@ -103,6 +103,7 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 | [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | the Camera app uploading photos, and the FaceTime live picture | citizenfx/screenshot-basic |
 | [screencapture](https://github.com/itschip/screencapture) | photos and **video clips** to a CDN (Fivemanage) | itschip/screencapture |
 | [pma-voice](https://github.com/AvarianKnight/pma-voice) | phone call voice | AvarianKnight/pma-voice |
+| [xsound](https://github.com/Xogy/xsound) | **the Music app actually playing** - see below | Xogy/xsound |
 | [ox_lib](https://github.com/overextended/ox_lib) | nicer notifications | overextended/ox_lib |
 | [ox_target](https://github.com/overextended/ox_target) | targeting the police forensics terminal | overextended/ox_target |
 | A framework | jobs, money, licences, character names | [qb-core](https://github.com/qbcore-framework/qb-core) · [qbx_core](https://github.com/Qbox-project/qbx_core) · [ox_core](https://github.com/overextended/ox_core) · [es_extended](https://github.com/esx-framework/esx_core) |
@@ -110,6 +111,34 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 Inventory, banking, garage and housing scripts are detected too - see [COMPATIBILITY.md](COMPATIBILITY.md) for the full list and the exact resource names.
 
 The Bank, Garage, Property, Wallet and Jobs apps need **no companion resource**: they read whatever your framework and your scripts already keep, through the bridge.
+
+### Music needs a player
+
+The phone has no audio engine of its own, and it cannot have one: playing a URL out loud in
+GTA means an NUI page that streams it, and that page belongs to a resource. So the Music app
+keeps the library, the playlists, the queue and the favourites - all of that works with
+nothing installed - and hands the actual sound to whatever player your server runs.
+
+Install [**xsound**](https://github.com/Xogy/xsound) (MIT, free) and the phone plays tracks
+itself, with all three outputs working:
+
+```
+ensure xsound
+```
+
+| Output | What happens |
+|---|---|
+| Headphones | only you hear it |
+| Phone speaker | everybody near you hears it, and it follows you as you walk |
+| Car radio | positioned on the vehicle, so it moves with the car |
+
+`Config.Music.speakerRange` sets how far the speaker carries - 12 m by default, because a
+phone speaker is a phone speaker.
+
+`rcore_radiocar` and `xdiskjockey` are detected too, but neither can be driven from outside:
+with those the phone opens their own interface and copies the link for you to paste. With no
+player at all the app still works as a library and says so on screen.
+
 
 ## Installation
 
@@ -264,11 +293,39 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 | [screenshot-basic](https://github.com/citizenfx/screenshot-basic) | l'upload de photos de l'app Appareil photo, et l'image FaceTime en direct | citizenfx/screenshot-basic |
 | [screencapture](https://github.com/itschip/screencapture) | photos et **clips vidéo** vers un CDN (Fivemanage) | itschip/screencapture |
 | [pma-voice](https://github.com/AvarianKnight/pma-voice) | la voix des appels | AvarianKnight/pma-voice |
+| [xsound](https://github.com/Xogy/xsound) | **la lecture réelle dans l'app Musique** - voir plus bas | Xogy/xsound |
 | [ox_lib](https://github.com/overextended/ox_lib) | de plus belles notifications | overextended/ox_lib |
 | [ox_target](https://github.com/overextended/ox_target) | le ciblage du terminal d'enquête police | overextended/ox_target |
 | Un framework | métiers, argent, licences, noms de personnage | [qb-core](https://github.com/qbcore-framework/qb-core) · [qbx_core](https://github.com/Qbox-project/qbx_core) · [ox_core](https://github.com/overextended/ox_core) · [es_extended](https://github.com/esx-framework/esx_core) |
 
 Les scripts d'inventaire, de banque, de garage et de logement sont aussi détectés - voir [COMPATIBILITY.md](COMPATIBILITY.md) pour la liste complète et les noms exacts.
+
+### La musique a besoin d'un lecteur
+
+Le téléphone n'a pas de moteur audio et ne peut pas en avoir : jouer une URL à voix haute dans
+GTA suppose une page NUI qui la diffuse, et cette page appartient à une ressource. L'app
+Musique garde donc la bibliothèque, les playlists, la file d'attente et les favoris - tout cela
+fonctionne sans rien installer - et confie le son au lecteur que votre serveur fait tourner.
+
+Installez [**xsound**](https://github.com/Xogy/xsound) (MIT, gratuit) et le téléphone joue les
+titres lui-même, avec les trois sorties fonctionnelles :
+
+```
+ensure xsound
+```
+
+| Sortie | Ce qui se passe |
+|---|---|
+| Écouteurs | vous seul entendez |
+| Haut-parleur du téléphone | tout le monde autour de vous entend, et le son vous suit quand vous marchez |
+| Autoradio | positionné sur le véhicule, donc il se déplace avec la voiture |
+
+`Config.Music.speakerRange` règle la portée du haut-parleur - 12 m par défaut, parce qu'un
+haut-parleur de téléphone reste un haut-parleur de téléphone.
+
+`rcore_radiocar` et `xdiskjockey` sont également détectés, mais aucun des deux ne se pilote de
+l'extérieur : avec ceux-là le téléphone ouvre leur propre interface et copie le lien à coller.
+Sans aucun lecteur, l'app fonctionne toujours comme bibliothèque et le dit à l'écran.
 
 Les applications Banque, Garage, Logement, Portefeuille et Emplois n'ont besoin d'**aucune ressource compagnon** : elles lisent ce que votre framework et vos scripts conservent déjà, via le bridge.
 

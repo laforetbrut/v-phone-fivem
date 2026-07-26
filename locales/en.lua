@@ -494,6 +494,9 @@ local T = {
     ['ph.store_required'] = 'Built in',
 
     ['ph.store_install'] = 'GET',
+    ['ph.store_delete_ask'] = 'Remove {app}?',
+    ['ph.store_delete_hint'] = 'The icon leaves your home screen. Installing it again is free - what you paid for is remembered against your character.',
+    ['ph.err_builtin'] = 'This app came with the phone and cannot be removed',
     ['ph.store_delete'] = 'Remove',
     ['ph.store_added'] = 'Installed',
     ['ph.store_removed'] = 'Removed',

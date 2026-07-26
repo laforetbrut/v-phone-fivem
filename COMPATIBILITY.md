@@ -49,7 +49,7 @@ uninstalling the phone leaves your character rows untouched.
 | **Jobs** | a framework | qb `Shared.Jobs`, ESX `jobs`, ox groups |
 | **Health** | optional | Vitals from the game. Hunger and thirst from esx_status or state bags |
 | **MDT** | a police job | `Config.Compat.policeJobs` |
-| **Music** | a media script | Hidden unless one is wired through the hooks |
+| **Music** | [xsound](https://github.com/Xogy/xsound) (MIT), `rcore_radiocar`, `xdiskjockey`, or `Config.Music.hooks` | Always visible. With xsound the phone plays the track itself - headphones, speaker or car radio. With the other two it opens their interface and copies the link. With none, the library and playlists still work and the app says so. |
 | **Bleeter / Snapmatic / Hush / Cipher** | nothing | Own tables. Downloads, not shipped |
 
 ## Battery charging

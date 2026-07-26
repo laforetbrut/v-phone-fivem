@@ -1452,6 +1452,13 @@ Config.Music = {
     maxPlaylists = 20,         -- playlists per character
     maxTracksPerPlaylist = 100,
 
+    -- How far a phone SPEAKER carries, in metres. The car radio uses the same ceiling.
+    --
+    -- A limit rather than whatever the page asks for: a phone speaker is a phone speaker, and
+    -- the obvious abuse is one player broadcasting across a district. 12 m is about right for
+    -- a handset on a table.
+    speakerRange = 12.0,
+
     -- Where a track URL may point. Same idea as the wallpaper hosts: an operator decision,
     -- not the player's. An empty list allows any host, which is the permissive setting.
     allowCustomUrl = true,

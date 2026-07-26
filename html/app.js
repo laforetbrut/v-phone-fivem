@@ -4967,7 +4967,13 @@ function storeDetail(a) {
           ? '<span class="stget have">' + esc(L('ph.store_required')) + '</span>'
           : (has
               ? '<button class="stget have" id="stopen" type="button">' + esc(L('ph.store_open')) + '</button>' +
-                '<button class="stdel" id="stdel" type="button">' + esc(L('ph.store_delete')) + '</button>'
+                // Remove is offered for a DOWNLOADED app only. Anything else came with the
+                // handset, and a player who deletes the Bank has broken a feature their
+                // server expects them to have rather than freed up a slot. The server
+                // refuses it too - this only keeps the button from being there to press.
+                (a.optional
+                  ? '<button class="stdel" id="stdel" type="button">' + esc(L('ph.store_delete')) + '</button>'
+                  : '')
               : '<button class="stget" id="stget" type="button">' + esc(L('ph.store_install')) + '</button>')) +
       '</div></div></div></div>' +
     '<div class="stmeta">' +
@@ -5016,7 +5022,23 @@ function storeDetail(a) {
   const sg = byId('stget');
   if (sg) sg.addEventListener('click', async () => { if (await storeInstall(a.id, true)) storeDetail(a); });
   const sd = byId('stdel');
-  if (sd) sd.addEventListener('click', async () => { if (await storeInstall(a.id, false)) storeDetail(a); });
+  // Confirmed, because it takes the icon off the home screen and any data the app kept goes
+  // with it on some apps. Reinstalling is free - what was paid for is remembered against the
+  // character - and the sheet says so, since that is the fact that makes the decision easy.
+  if (sd) sd.addEventListener('click', () => {
+    sheet(L('ph.store_delete_ask').replace('{app}', L(a.label)),
+      '<div class="groupfoot">' + esc(L('ph.store_delete_hint')) + '</div>' +
+      UI.button(L('ph.store_delete'), 'stdelyes', 'neg') +
+      UI.button(L('ph.cancel'), 'stdelno', 'plain'),
+      () => {
+        const epoch = sheetEpoch;
+        byId('stdelyes').addEventListener('click', async () => {
+          if (!closeSheet(false, epoch)) return;
+          if (await storeInstall(a.id, false)) { ui('toggleoff'); storeDetail(a); }
+        });
+        byId('stdelno').addEventListener('click', () => closeSheet(false, epoch));
+      });
+  });
 }
 
 let storeCat = 'all';
@@ -10069,7 +10091,12 @@ byId('boothx').addEventListener('click', boothClose);
 // The client raises and lowers the box, and keeps its meter and its call in step.
 window.addEventListener('message', (e) => {
   const d = e.data || {};
-  if (d.action === 'booth:open') boothOpen(d.data, d.call);
+  if (d.action === 'booth:open') {
+    // A payphone can be the FIRST thing this page ever draws - it is reachable without
+    // opening the phone at all - so the strings arrive with it rather than being assumed.
+    if (d.strings && Object.keys(d.strings).length) S = d.strings;
+    boothOpen(d.data, d.call);
+  }
   else if (d.action === 'booth:close') boothClose();
   else if (d.action === 'booth:credit') boothCredit(d.data);
   else if (d.action === 'booth:call') boothSetCall(d.call, d.reason);
