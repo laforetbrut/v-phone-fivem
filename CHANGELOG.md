@@ -4,6 +4,24 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.15] - 2026-07-26
+
+### Fixed (English first)
+
+- **Taking an app out of a folder is a button in the folder, and it works.** Three attempts hung this off a gesture - a tap during a drag in 1.2.9, then a long press in 1.2.12 - and all three failed in players' hands for reasons that did not reproduce here. Opening a folder is the one part of this that has never been in question, so the control is now a **visible button inside the folder view**: open the folder, press "Take apps out", get a list with one row per app. No arrange mode, no gesture, no mode to be in. The gesture routes are kept, because they are nicer when they work, but nothing depends on them any more.
+- **The long press was being cancelled by its own click.** A `pointerup` after a long press still fires `click` on the tile it was pressed on, and that handler opens the folder view - directly over the sheet the press had just raised. The player saw a folder with no badges in it and reasonably concluded the press had done nothing. A press now marks the click that follows to be swallowed, and the click clears the mark as it consumes it.
+- **Three separate places indexed the item list with a tile count.** `data-idx` counts real tiles; the layout also holds page breaks, so the two spaces differ by however many breaks come first - and getting it wrong opens the wrong folder or moves the wrong app. It is one function now, and it answers `-1` rather than `0` when there is no match, because a silent zero is what turns this class of mistake into "it opened something else".
+- **Nothing in this path ends in a silent return any more.** A folder that is no longer there says so. Four reports of "nothing happens" is the argument: where a player is watching, a refusal has to be audible.
+
+### Correctifs (miroir francais)
+
+- **Sortir une application d'un dossier est un bouton dans le dossier, et il fonctionne.** Trois tentatives ont accroche cela a un geste - un tap pendant un deplacement en 1.2.9, puis un appui long en 1.2.12 - et les trois ont echoue entre les mains des joueurs pour des raisons qui ne se reproduisaient pas ici. Ouvrir un dossier est la seule partie qui n'a jamais ete en question : le controle est donc desormais un **bouton visible dans la vue dossier**. Ouvrez le dossier, appuyez sur "Sortir des applications", obtenez une liste avec une ligne par application. Pas de mode reorganisation, pas de geste, aucun mode dans lequel il faut etre. Les chemins gestuels sont conserves, parce qu'ils sont plus agreables quand ils marchent, mais plus rien n'en depend.
+- **L'appui long etait annule par son propre clic.** Un `pointerup` apres un appui long declenche tout de meme `click` sur la tuile pressee, et ce gestionnaire ouvre la vue dossier - directement par-dessus la feuille que l'appui venait de faire apparaitre. Le joueur voyait un dossier sans badges et concluait raisonnablement que l'appui n'avait rien fait. Un appui marque desormais le clic suivant pour qu'il soit avale, et le clic efface la marque en la consommant.
+- **Trois endroits distincts indexaient la liste d'elements avec un compte de tuiles.** `data-idx` compte les tuiles reelles ; la disposition contient aussi les sauts de page, donc les deux espaces different du nombre de sauts qui precedent - et se tromper ouvre le mauvais dossier ou deplace la mauvaise application. C'est une seule fonction maintenant, et elle repond `-1` plutot que `0` en cas d'echec, parce qu'un zero silencieux est ce qui transforme cette classe d'erreur en "ca a ouvert autre chose".
+- **Plus rien dans ce chemin ne se termine par un retour silencieux.** Un dossier qui n'existe plus le dit. Quatre signalements de "rien ne se passe" sont l'argument : la ou un joueur regarde, un refus doit etre audible.
+
+---
+
 ## [1.2.14] - 2026-07-26
 
 ### Fixed (English first)

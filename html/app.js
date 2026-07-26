@@ -882,9 +882,12 @@ function paintPages(items) {
 
   [...byId('pages').querySelectorAll('.tile:not(.gap)')].forEach((t) => {
     t.addEventListener('click', () => {
+      // A long press already acted on this gesture. Swallow the click it produced, or the folder
+      // view opens over the sheet the press just raised.
+      if (arrSwallowClick) { arrSwallowClick = false; return; }
       if (editing) return;   // a tap in arrange mode never launches
-      const gi = Number(t.dataset.idx);
-      if (t.classList.contains('isfolder')) { openFolder(gi); return; }
+      const gi = itemsIndexOfTileEl(t);
+      if (t.classList.contains('isfolder')) { if (gi >= 0) openFolder(gi); return; }
       const a = (state.apps || []).find((x) => x.id === t.dataset.app);
       if (a) enterApp(a, t);
     });
@@ -971,6 +974,16 @@ function openFolder(i) {
   byId('folderview').classList.add('on');
   ui('folder');
 
+  // The way out, as a button rather than a gesture.
+  const manage = byId('foldermanage');
+  if (manage) {
+    manage.textContent = L('ph.folder_manage');
+    manage.onclick = () => {
+      byId('folderview').classList.remove('on', 'arranging');
+      folderManageSheet(i);
+    };
+  }
+
   // Out of the folder, onto the home screen, in the position the folder occupies.
   const takeOut = (id) => {
     const items = layoutItems();
@@ -1024,8 +1037,10 @@ function openFolder(i) {
 // one is nicer when it works, and a player whose apps are stuck in a folder needs a way out that
 // is not conditional on a gesture behaving.
 function folderManageSheet(i) {
-  const it = layoutItems()[i];
-  if (!it || it.t !== 'folder') return;
+  const it = (i >= 0) ? layoutItems()[i] : null;
+  // Says so rather than doing nothing. Four reports of "nothing happens" is the argument for
+  // never letting a path end in a silent return where a player is watching.
+  if (!it || it.t !== 'folder') { toast(L('ph.folder_gone')); return; }
 
   sheet(it.name || L('ph.folder'),
     UI.group(it.apps.map((id) => {
@@ -1105,6 +1120,29 @@ function moveGhost(e) {
 // early on any tap while editing, so a folder could not be opened at all in the one mode where
 // its contents can be changed.
 let arrDownAt = null;
+
+// Set when a long press has already acted, so the `click` that follows the same pointerup does
+// not act again. Without it, a press that opens a sheet is immediately covered by the tap
+// behaviour of the very tile that was pressed.
+let arrSwallowClick = false;
+
+// The position in `items` of a rendered tile ELEMENT.
+//
+// `data-idx` counts real tiles; `layoutItems()` also holds page breaks. Anything that takes a
+// `data-idx` and indexes the item list with it is wrong the moment one break exists - and this
+// has now been got wrong in three separate places, so it is one function.
+function itemsIndexOfTileEl(tile) {
+  const list = layoutItems();
+  const want = Number(tile && tile.dataset && tile.dataset.idx);
+  if (!Number.isFinite(want)) return -1;
+  let tiles = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    if (list[i] && list[i].t === 'break') continue;
+    if (tiles === want) return i;
+    tiles += 1;
+  }
+  return -1;
+}
 
 function beginDrag(tile, e) {
   arrDownAt = { x: e.clientX, y: e.clientY };
@@ -1317,12 +1355,17 @@ function initArrange() {
     downTile = tile;
     hold = setTimeout(() => {
       hold = null;
-      // A held FOLDER opens its contents to be managed. Arranging a folder among the other
-      // icons is what dragging it does; what a held folder is for is what is inside it, and
-      // that had no route at all.
+      // A held FOLDER opens its contents to be managed.
       if (tile.classList.contains('isfolder')) {
+        // **And the click that follows this press must not run.**
+        //
+        // A pointerup after a long press still fires `click` on the tile, and that handler opens
+        // the folder view - straight over the sheet this just opened. The player saw a folder
+        // with no badges in it and concluded the press had done nothing, which is exactly the
+        // report. One flag, cleared by the click it suppresses.
+        arrSwallowClick = true;
         ui('folder');
-        folderManageSheet(Number(tile.dataset.idx));
+        folderManageSheet(itemsIndexOfTileEl(tile));
         return;
       }
       enterArrange();

@@ -8601,6 +8601,25 @@ body.inframe.dark .uisearch {
 
 .mailimg:active { transform: scale(.99); }
 
+/* The way out of a folder, as a button you can see.
+   Three attempts hung this off a gesture and all three failed in players' hands. A visible
+   control in the place the player is already looking cannot be missed, cannot race a click, and
+   does not depend on a mode being on. */
+.foldermanage {
+  display: block;
+  margin: 18px auto 0;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.foldermanage:active { transform: scale(.96); }
+
 /* Taking an app back out of a folder. Only in arrange mode, and the same corner badge the
    home screen uses to remove one - a folder used to be a one-way door. */
 .unfolder {
