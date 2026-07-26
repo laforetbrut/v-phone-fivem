@@ -8100,55 +8100,62 @@ byId('qcam').addEventListener('click', () => {
 });
 byId('qtorch').addEventListener('click', toggleTorch);
 
-// Hold Alt and the mouse goes back to the camera. The page is the only side that sees this
-// key - Lua cannot, because the browser has the keyboard while the phone is focused - so it
-// reports the press and Lua watches for the release once focus is back in the game.
-// Hold Alt for the camera. The page keeps the keyboard throughout - Lua drops only the
-// cursor - so it is the page that sees the key come back up and says so. Nothing else can:
-// the game cannot read a key the browser is holding.
-// The press only. Lua owns the release, and the page must not guess at it: dropping NUI
-// focus fires `blur` on this document, so a blur handler here would cancel free look on the
-// very frame it started. keyup never arrives either, for the same reason - the keyboard is
-// gone by then. One edge, reported by the only side that can see it.
+// Hold Alt for the camera - the press only. Lua owns the release and the page must not
+// guess at it: dropping NUI focus fires `blur` on this document, so a blur handler here
+// would cancel free look on the frame it started, and keyup never arrives either because
+// the keyboard is gone by then.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Alt' && !e.repeat) { e.preventDefault(); post('freelook', { on: true }); }
 });
 
 // What is painting outside the handset. Only with `set phone_debug true`.
 //
-// The first version of this waited for an app to be open before reporting, and said nothing
-// at all - a silent probe is worse than no probe. This one reports on a timer regardless,
-// says whether an app was open when it looked, and wraps everything so a thrown error is
-// printed rather than swallowed by the timer that called it.
+// Two earlier versions reported on a timer and every single report said appOpen=false, which
+// made them useless: the square only appears with an app open. This one watches for the app
+// to open and reports THEN.
+//
+// It reports painting properties rather than hit-testing. Every `elementFromPoint` probe came
+// back `body` on all four sides, and that was the real clue: a box-shadow and a filter
+// overflow are painted but never hit-tested, so whatever is escaping cannot be found by
+// asking what is under a pixel. This lists what each layer is actually drawing.
 window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.action !== 'open' || window.__vphoneEdgeProbe || !d.debug) return;
   window.__vphoneEdgeProbe = true;
 
-  let shots = 0;
-  const probe = () => {
+  let done = 0;
+  const report = (why) => {
     try {
-      const dev = document.getElementById('device');
-      if (!dev) { console.error('[v-phone] probe: no #device'); return; }
-      const r = dev.getBoundingClientRect();
-      const appEl = document.getElementById('app');
-      const appOpen = !!appEl && appEl.classList.contains('on');
-      const name = (el) => !el ? 'none'
-        : (el.id ? '#' + el.id : '') + '.' + String(el.className || el.tagName).slice(0, 28);
-      const at = (x, y) => name(document.elementFromPoint(
-        Math.min(Math.max(1, x), innerWidth - 1), Math.min(Math.max(1, y), innerHeight - 1)));
-      console.info('[v-phone] probe ' + (++shots) + ' appOpen=' + appOpen +
-        ' rect=' + [r.x, r.y, r.width, r.height].map(Math.round).join(',') +
-        ' | L=' + at(r.left - 10, r.top + r.height / 2) +
-        ' | R=' + at(r.right + 10, r.top + r.height / 2) +
-        ' | T=' + at(r.left + r.width / 2, r.top - 10) +
-        ' | B=' + at(r.left + r.width / 2, r.bottom + 10));
+      const layers = ['#device', '.bezel', '#screen', '#wallpaper', '#app', '#appbody'];
+      const out = layers.map((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return sel + '=absent';
+        const c = getComputedStyle(el), r = el.getBoundingClientRect();
+        const bits = [sel];
+        if (c.filter && c.filter !== 'none') bits.push('filter=' + c.filter);
+        if (c.backdropFilter && c.backdropFilter !== 'none') bits.push('backdrop=' + c.backdropFilter);
+        if (c.boxShadow && c.boxShadow !== 'none') bits.push('shadow=' + c.boxShadow.slice(0, 60));
+        if (c.transform && c.transform !== 'none') bits.push('tf=' + c.transform);
+        if (c.overflow !== 'visible') bits.push('ovf=' + c.overflow);
+        if (c.contain && c.contain !== 'none') bits.push('contain=' + c.contain);
+        bits.push('bg=' + c.backgroundColor);
+        bits.push('rect=' + [r.x, r.y, r.width, r.height].map(Math.round).join(','));
+        return bits.join(' ');
+      });
+      console.info('[v-phone] LAYERS - ' + why);
+      out.forEach((line) => console.info('[v-phone]   ' + line));
     } catch (err) {
-      console.error('[v-phone] probe threw: ' + err);
+      console.error('[v-phone] layer report threw: ' + err);
     }
-    if (shots < 4) setTimeout(probe, 4000);
   };
-  setTimeout(probe, 2500);
+
+  const app = document.getElementById('app');
+  if (!app) { console.error('[v-phone] probe: no #app'); return; }
+  new MutationObserver(() => {
+    if (!app.classList.contains('on') || done >= 2) return;
+    done += 1;
+    setTimeout(() => report('app open, ' + (app.dataset.app || '?')), 700);
+  }).observe(app, { attributes: true, attributeFilter: ['class'] });
 });
 
 document.addEventListener('keydown', (e) => {
