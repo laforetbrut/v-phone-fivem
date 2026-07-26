@@ -9,7 +9,7 @@ Read it before changing anything.
 |---|---|
 | Project name | v-phone (in-game brand: **iFruit**) |
 | Resource name | `v-phone` |
-| Version | `1.2.16` (single source: `fxmanifest.lua`) |
+| Version | `1.3.0` (single source: `fxmanifest.lua`) |
 | Tech stack | Lua 5.4 (`lua54 'yes'`), vanilla JS + CSS for the NUI, MySQL via oxmysql |
 | Author | vyrriox |
 | Licence | See `LICENSE`. Attribution in Settings › About is **required** and must not be removed. |
