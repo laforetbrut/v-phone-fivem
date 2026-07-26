@@ -92,6 +92,7 @@ local T = {
     ['ph.crop_focus'] = "Framing",
     ['ph.app_bank'] = "Bank",
     ['ph.bank_transfer'] = "Transfer",
+    ['ph.err_nochar'] = "The server does not know your character yet",
     ['ph.bank_notify_in'] = "Money received",
     ['ph.bank_notify_out'] = "Payment sent",
     ['ph.bank_deposit'] = "Deposit",

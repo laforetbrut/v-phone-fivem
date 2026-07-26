@@ -231,13 +231,29 @@ end
 V.Callback('v-phone:bank:data', function(src, resolve)
     if not enabled() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
-    if not p then resolve({ error = 'x' }) return end
+    -- Its own code, not the catch-all: "the framework does not know who you are" and "a
+    -- query blew up" are different problems and used to produce the same four words.
+    if not p then resolve({ error = 'nochar' }) return end
 
     -- Anything owed to this character is settled before the balance is read, so the number
     -- they see already includes what somebody sent them while they were away.
-    payPending(src, p.citizenid)
+    --
+    -- Isolated on purpose. Escrow is a side errand; if it fails, the balance and the
+    -- statement are still perfectly readable, and blanking the whole app over a payment
+    -- nobody is waiting for is the wrong trade. The error is printed rather than swallowed.
+    local paidOk, paidErr = pcall(payPending, src, p.citizenid)
+    if not paidOk then
+        print(('[v-phone] bank: pending transfers could not be settled: %s'):format(paidErr))
+    end
 
-    local balances = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+    local gotBalance, balances = pcall(function()
+        return Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+    end)
+    if not gotBalance then
+        print(('[v-phone] bank: the balance could not be read: %s'):format(balances))
+        resolve({ error = 'nobank' })
+        return
+    end
     if type(balances) ~= 'table' then
         -- Standalone, or a framework the bridge could not read. Say so rather than
         -- showing a confident zero.
@@ -245,7 +261,30 @@ V.Callback('v-phone:bank:data', function(src, resolve)
         return
     end
 
+    -- The statement is the part that touches the phone's own tables, so it is the part most
+    -- likely to be upset by a schema that is a version behind. An unreadable statement
+    -- leaves the balance on screen instead of taking the app down with it.
+    local gotRows, tx = pcall(statement, src, p.citizenid)
+    if not gotRows then
+        print(('[v-phone] bank: the statement could not be read: %s'):format(tx))
+        tx = {}
+    end
+
+    -- The remaining two reads touch the phone's own storage as well, so they get the same
+    -- treatment: a usable screen beats a blank one over a beneficiary list.
     local limit = dailyLimit()
+    local spentToday = 0
+    if limit > 0 then
+        local ok, used = pcall(sentToday, p.citizenid)
+        if ok then spentToday = num(used, 0)
+        else print(('[v-phone] bank: the daily total could not be read: %s'):format(used)) end
+    end
+    local gotFavs, favs = pcall(favourites, p.citizenid)
+    if not gotFavs then
+        print(('[v-phone] bank: beneficiaries could not be read: %s'):format(favs))
+        favs = {}
+    end
+
     resolve({
         ok = true,
         bank = math.floor(num(balances.bank, 0)),
@@ -258,9 +297,11 @@ V.Callback('v-phone:bank:data', function(src, resolve)
         max = maxAmount(),
         -- What is left of today's allowance, or nil when there is no limit at all: the app
         -- draws the line only when there is one.
-        remaining = limit > 0 and math.max(0, limit - sentToday(p.citizenid)) or nil,
-        favourites = favourites(p.citizenid),
-        transactions = statement(src, p.citizenid),
+        remaining = limit > 0 and math.max(0, limit - spentToday) or nil,
+        favourites = favs,
+        -- Already read, and already survived its own failure above. Calling `statement` a
+        -- second time here would both double the queries and undo that.
+        transactions = tx,
     })
 end)
 
@@ -588,6 +629,27 @@ function Bridge.BankBoot()
         PRIMARY KEY (`id`),
         KEY `owed_idx` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so a column
+    -- added after the first release never appears and every read of it fails with "Unknown
+    -- column". `counterparty` on the escrow table was added one commit after the table
+    -- itself, which broke the whole app on any server that had already started once: the
+    -- callback threw, and the app could only say "something went wrong".
+    --
+    -- Same idempotent shape the messages table already uses. Cheap on every later boot: one
+    -- metadata lookup that finds the column and stops.
+    local function ensureColumn(tbl, column, definition)
+        local has = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+            LIMIT 1]], { tbl, column })
+        if has then return false end
+        MySQL.query.await(('ALTER TABLE `%s` ADD COLUMN `%s` %s'):format(tbl, column, definition))
+        print(('[v-phone] bank: added %s.%s'):format(tbl, column))
+        return true
+    end
+    ensureColumn('vphone_bank_pending', 'counterparty', "VARCHAR(64) NOT NULL DEFAULT ''")
+    ensureColumn('vphone_bank_tx', 'counterparty', "VARCHAR(64) NOT NULL DEFAULT ''")
+    ensureColumn('vphone_bank_tx', 'kind', "VARCHAR(12) NOT NULL DEFAULT 'transfer'")
 
     -- Statement lines expire; escrow never does. Money that is owed stays owed however
     -- long the character stays away.

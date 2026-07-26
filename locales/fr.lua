@@ -94,6 +94,7 @@ local T = {
     ['ph.crop_focus'] = "Cadrage",
     ['ph.app_bank'] = "Banque",
     ['ph.bank_transfer'] = "Virement",
+    ['ph.err_nochar'] = "Le serveur ne connait pas encore votre personnage",
     ['ph.bank_notify_in'] = "Argent recu",
     ['ph.bank_notify_out'] = "Paiement envoye",
     ['ph.bank_deposit'] = "Depot",
