@@ -4,6 +4,22 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.16] - 2026-07-26
+
+### Fixed (English first)
+
+- **Deleting a track no longer leaves the now-playing bar stuck at the bottom of the Music app.** The bar is drawn from whatever the app believes is playing, and that value ends in a fallback to the last track handed to the deck - a deliberate one, so a track played from a URL that was never saved to the library still shows. What was missing is that **nothing ever cleared it**. Delete the track and the library row went away, the fallback caught it, and the bar came back showing a track that no longer existed, with no control on it that could remove it.
+- **Deleting the track that is currently playing now stops it first.** Before this, the audio kept going for a song the player had just thrown away. Stopping is now a real state change rather than a pause: the deck is told to stop, the current track, the queue and the control-centre tile are all cleared together, and the full player closes.
+- **Both players can now be dismissed at any time.** The mini bar has a close button and the full player has a "Stop playing" button. This is deliberately independent of the bug above: whatever leaves the phone showing something it should not, the player has to have a way out of it. That is the lesson from the folder that could not be emptied - a screen with no exit is a bug report waiting to happen.
+
+### Correctifs (miroir francais)
+
+- **Supprimer une musique ne laisse plus la barre de lecture bloquee en bas de l'application Musique.** La barre est dessinee a partir de ce que l'application croit etre en cours de lecture, et cette valeur se termine par un repli sur la derniere piste transmise a la platine - un repli voulu, pour qu'une piste jouee depuis une URL jamais enregistree dans la bibliotheque s'affiche quand meme. Ce qui manquait, c'est que **rien ne remettait jamais cette valeur a zero**. On supprimait la piste, la ligne de bibliotheque disparaissait, le repli la rattrapait, et la barre revenait en affichant une piste qui n'existait plus, sans aucun controle capable de la faire disparaitre.
+- **Supprimer la piste en cours de lecture l'arrete desormais d'abord.** Avant cela, le son continuait pour un morceau que le joueur venait de jeter. L'arret est maintenant un vrai changement d'etat plutot qu'une pause : la platine recoit l'ordre d'arreter, la piste courante, la file d'attente et la tuile du centre de controle sont effacees ensemble, et le lecteur complet se ferme.
+- **Les deux lecteurs peuvent desormais etre fermes a tout moment.** La barre reduite a un bouton de fermeture et le lecteur complet un bouton "Arreter la lecture". C'est volontairement independant du bug ci-dessus : quoi qu'il arrive pour que le telephone affiche quelque chose qu'il ne devrait pas, le joueur doit avoir une sortie. C'est la lecon du dossier qu'on ne pouvait pas vider - un ecran sans sortie est un rapport de bug en attente.
+
+---
+
 ## [1.2.15] - 2026-07-26
 
 ### Fixed (English first)

@@ -1024,6 +1024,19 @@ local function logCall(c, answered)
     end
 end
 
+--- Where a player is, or nil if they have no ped yet.
+---
+--- Declared HERE rather than beside the AirDrop code that used to own it. `ringOut` below is the
+--- first caller in the file and it sat 1584 lines above the `local function coordsOf`, so the
+--- name resolved to a nil GLOBAL: every call, answer and hangup failed with "attempt to call a
+--- nil value (global 'coordsOf')" from the moment ring-out shipped. A `local` is only in scope
+--- after the line that declares it - being in the same file is not enough.
+local function coordsOf(src)
+    local ped = GetPlayerPed(src)
+    if not ped or ped == 0 then return nil end
+    return GetEntityCoords(ped)
+end
+
 --- Tell the people near a ringing phone that it is ringing.
 ---
 --- The ring the owner hears is `PlaySoundFrontend`, which is 2D and private to that client. For
@@ -2628,12 +2641,6 @@ local function btOn(pl)
     if not pl then return false end
     local m = pl.GetMetadata('phone')
     return type(m) == 'table' and m.bluetooth == true
-end
-
-local function coordsOf(src)
-    local ped = GetPlayerPed(src)
-    if not ped or ped == 0 then return nil end
-    return GetEntityCoords(ped)
 end
 
 local function airRange()

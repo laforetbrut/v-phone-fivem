@@ -1116,6 +1116,7 @@ local T = {
     ['ph.play_all'] = 'Tout lire',
     ['ph.music_copied'] = 'Lien copie - collez-le dans le deck',
     ['ph.music_nodeck_hint'] = 'Aucun script radio sur ce serveur : rien ne se joue depuis le téléphone. Votre bibliothèque, vos playlists et vos favoris fonctionnent, et un titre peut être copié pour être collé dans un autoradio.',
+    ['ph.music_stop'] = 'Arrêter la lecture',
     ['ph.music_handoff_hint'] = 'Lancer un titre ouvre la radio de votre voiture, ou le deck DJ a pied, avec le lien copie pret a coller.',
     ['ph.err_nodeck'] = 'Aucun lecteur de musique ne tourne sur ce serveur.',
     ['ph.err_nohook'] = 'Ce deck ne peut pas etre pilote depuis le telephone.',

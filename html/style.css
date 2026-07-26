@@ -8601,6 +8601,13 @@ body.inframe.dark .uisearch {
 
 .mailimg:active { transform: scale(.99); }
 
+/* Dismissing the now-playing bar. Small and quiet next to the transport controls, because it is
+   the rarest of the three - but always present, so the bar can never be a thing the player is
+   stuck with. */
+.musiministop { opacity: .55; }
+.musiministop svg { width: 13px; height: 13px; }
+.musiministop:active { opacity: 1; transform: scale(.88); }
+
 /* The way out of a folder, as a button you can see.
    Three attempts hung this off a gesture and all three failed in players' hands. A visible
    control in the place the player is already looking cannot be missed, cannot race a click, and

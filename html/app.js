@@ -4484,7 +4484,14 @@ function musicMiniHTML(current) {
       '<span><b>' + esc(current.title) + '</b><small>' + esc(current.artist || musicKind(current.kind)) + '</small></span></button>' +
     '<button id="musicminiplay" type="button" aria-label="' + esc(current.paused ? L('ph.resume') : L('ph.pause')) + '">' +
       svg(current.paused ? 'play' : 'pause') + '</button>' +
-    '<button id="musicmininext" type="button" aria-label="' + esc(L('ph.next')) + '">' + svg('chevron') + '</button></div>';
+    '<button id="musicmininext" type="button" aria-label="' + esc(L('ph.next')) + '">' + svg('chevron') + '</button>' +
+    // A way out, always.
+    //
+    // Whatever put the phone in a state where this bar is showing something it should not, the
+    // player has to be able to close it. That is the whole lesson of the folder that could not be
+    // emptied: a screen with no exit is a bug report waiting to happen.
+    '<button class="musiministop" id="musiministop" type="button" aria-label="' +
+      esc(L('ph.music_stop')) + '">' + svg('xmark') + '</button></div>';
 }
 
 function musicFoot(model) {
@@ -4502,6 +4509,8 @@ function musicFoot(model) {
   if (toggle) toggle.addEventListener('click', () => musicToggle(model.current));
   const next = byId('musicmininext');
   if (next) next.addEventListener('click', () => musicStep(1));
+  const stop = byId('musiministop');
+  if (stop) stop.addEventListener('click', () => musicStop());
 }
 
 function musicWireTracks(tracks, queue) {
@@ -4558,6 +4567,22 @@ async function musicPlay(track, queue, output) {
   ccNow = musicNow;
   await musicRemember(track);
   toast(kind === 'headphones' ? L('ph.playing_ear') : L('ph.playing'));
+  if (openApp && openApp.id === 'music') RENDER.music();
+}
+
+// Stop, and forget what was playing.
+//
+// `musicNow` is what draws the mini player, and nothing ever cleared it: `model.current` ends in
+// `|| musicNow`, so a track deleted from the library came back as the current one and the bar at
+// the bottom of the Music app could not be got rid of. Stopping has to be a real state change,
+// not just a pause.
+async function musicStop() {
+  await post('music', { action: 'stop' });
+  musicNow = null;
+  ccNow = null;
+  musicQueue = [];
+  musicQueueIndex = 0;
+  musicPlayerOpen = false;
   if (openApp && openApp.id === 'music') RENDER.music();
 }
 
@@ -4665,6 +4690,14 @@ function musicTrackSheet(track, index) {
         if (epoch !== sheetEpoch) return;
         library.splice(index, 1);
         await musicSaveLibrary(library);
+        // Deleting what is playing stops it. Anything else leaves a track playing that the
+        // player has just thrown away, with a mini player they cannot dismiss because the
+        // library no longer holds the row it was drawn from.
+        if (musicNow && track && musicNow.url === track.url) {
+          await musicStop();
+          closeSheet(false, epoch);
+          return;
+        }
         if (closeSheet(false, epoch)) RENDER.music();
       });
     }, 'music-actions');
@@ -4740,13 +4773,15 @@ function musicRenderPlayer(model) {
     '<div class="musicplayeractions">' +
       '<button id="mplayerfav" type="button">' + svg(current.favorite ? 'heart' : 'star') + '<span>' + esc(L('ph.favorite')) + '</span></button>' +
       '<button id="mplayerout" type="button">' + svg('airdrop') + '<span>' + esc(L('ph.output')) + '</span></button>' +
-      '<button id="mplayerqueue" type="button">' + svg('note') + '<span>' + esc(L('ph.queue')) + '</span></button></div></div>');
+      '<button id="mplayerqueue" type="button">' + svg('note') + '<span>' + esc(L('ph.queue')) + '</span></button></div>' +
+    UI.button(L('ph.music_stop'), 'mplayerstop', 'plain') + '</div>');
   byId('mplaymain').addEventListener('click', () => musicToggle(current));
   byId('mprevious').addEventListener('click', () => musicStep(-1));
   byId('mnext').addEventListener('click', () => musicStep(1));
   byId('mplayerfav').addEventListener('click', () => musicFavourite(current));
   byId('mplayerout').addEventListener('click', () => musicOutputSheet(current));
   byId('mplayerqueue').addEventListener('click', musicQueueSheet);
+  if (byId('mplayerstop')) byId('mplayerstop').addEventListener('click', () => musicStop());
   const slider = byId('mvolume');
   // Set once at render, not only on the first drag: the filled part of the track is drawn from
   // this, so without it the slider opens looking empty whatever the volume actually is.

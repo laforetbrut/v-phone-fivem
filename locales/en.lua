@@ -1114,6 +1114,7 @@ local T = {
     ['ph.play_all'] = 'Play all',
     ['ph.music_copied'] = 'Link copied - paste it into the deck',
     ['ph.music_nodeck_hint'] = 'No radio script on this server, so nothing plays from the phone. Your library, playlists and favourites still work, and a track can be copied to paste into a car radio.',
+    ['ph.music_stop'] = 'Stop playing',
     ['ph.music_handoff_hint'] = 'Playing a track opens the radio in your car, or the DJ deck on foot, with the link copied ready to paste.',
     ['ph.err_nodeck'] = 'No music player is running on this server.',
     ['ph.err_nohook'] = 'This deck cannot be controlled from the phone.',

@@ -118,6 +118,22 @@ end
 -- it a fixed name is what makes "stop whatever is playing" a single call.
 local PRIVATE_SOUND = 'vphone_music'
 
+--- Does xsound currently hold a sound by this name?
+---
+--- Every one of xsound's manipulation exports indexes its own table without checking first:
+--- `Pause`, `Resume`, `setVolume` and `Destroy` all do `soundInfo[name].field = ...`. Calling any
+--- of them for a sound that was never created throws inside xsound - and a `pcall` on THIS side
+--- cannot catch it, because the export runs in xsound's runtime and the error is raised and
+--- printed there. The console filled with `manipulation.lua:87: attempt to index a nil value`
+--- every time the volume moved with nothing playing, which is most of the time.
+---
+--- So the guard has to be asked, not assumed. `soundExists` is the one export that is safe to
+--- call for a name that is not there.
+local function xsoundHas(name)
+    local ok, exists = pcall(function() return exports.xsound:soundExists(name) end)
+    return ok and exists == true
+end
+
 --- A track URL xsound can actually deal with.
 ---
 --- xsound reads a YouTube link with this, in its own NUI:
@@ -378,7 +394,9 @@ STUBS['v-music'] = {
 
             if output == nil or output == 'headphones' then
                 -- Whatever was playing goes first: one phone, one track.
-                pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+                if xsoundHas(PRIVATE_SOUND) then
+                    pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+                end
                 local ok = pcall(function()
                     exports.xsound:PlayUrl(PRIVATE_SOUND, url, volume, false)
                 end)
@@ -387,7 +405,9 @@ STUBS['v-music'] = {
 
             -- The speaker and the car. A private sound left over from headphone mode would
             -- otherwise play on top of the broadcast one, in the same ears.
-            pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+            if xsoundHas(PRIVATE_SOUND) then
+                pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+            end
             local answer
             V.Request('v-phone:music:play', function(res) answer = res end,
                 { url = url, volume = volume, mode = output })
@@ -423,7 +443,9 @@ STUBS['v-music'] = {
         -- xsound: both halves, because the player may have switched output mid-track and
         -- either one could be the live one.
         if musicDeckFor() == 'xsound' then
-            pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+            if xsoundHas(PRIVATE_SOUND) then
+                pcall(function() exports.xsound:Destroy(PRIVATE_SOUND) end)
+            end
             V.Request('v-phone:music:stop', function() end)
             return { ok = true, driven = true }
         end
@@ -450,11 +472,14 @@ STUBS['v-music'] = {
         if musicDeckFor() ~= 'xsound' then return { error = 'nopause' } end
 
         -- Both halves, because either could be the live one: the player may have switched
-        -- output mid-track. Pausing a sound that does not exist is a no-op in xsound.
-        pcall(function()
-            if resume then exports.xsound:Resume(PRIVATE_SOUND)
-            else exports.xsound:Pause(PRIVATE_SOUND) end
-        end)
+        -- output mid-track. The private sound is only touched when xsound actually holds it -
+        -- pausing one it does not know about is not a no-op, it is an error in its runtime.
+        if xsoundHas(PRIVATE_SOUND) then
+            pcall(function()
+                if resume then exports.xsound:Resume(PRIVATE_SOUND)
+                else exports.xsound:Pause(PRIVATE_SOUND) end
+            end)
+        end
         local answer
         V.Request('v-phone:music:pause', function(res) answer = res end, { resume = resume == true })
         local waited = 0
@@ -474,9 +499,12 @@ STUBS['v-music'] = {
 
         if musicDeckFor() == 'xsound' then
             local volume = math.max(0.0, math.min(1.0, tonumber(level) or 0.65))
-            -- Whichever one is live. Setting the volume of a sound that does not exist is a
-            -- no-op in xsound, so both can be told without checking which.
-            pcall(function() exports.xsound:setVolume(PRIVATE_SOUND, volume) end)
+            -- Whichever one is live. The private sound is asked about first: this line ran on
+            -- every movement of the slider, and with nothing in the earphones each one printed
+            -- a stack trace from inside xsound.
+            if xsoundHas(PRIVATE_SOUND) then
+                pcall(function() exports.xsound:setVolume(PRIVATE_SOUND, volume) end)
+            end
             V.Request('v-phone:music:volume', function() end, { volume = volume })
             return { ok = true, driven = true }
         end
