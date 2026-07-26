@@ -106,11 +106,20 @@ input { font: inherit; }
 /* ══ Device ═══════════════════════════════════════════════════ */
 .device { position: fixed; right: 3vw; bottom: 2.5vh; width: 372px; height: 784px;
   z-index: var(--z-overlay); font-family: var(--ios-font); color: var(--l1);
-  animation: ph-rise .38s var(--spring) backwards; }
+  animation: ph-rise .38s var(--spring); }
 
+/* The entrance does NOT touch opacity, and must not. An animation that fades in from
+   `opacity: 0` owns whether the element can be seen at all, and a running animation applies
+   its `from` keyframe even at time zero - so if the animation never advances, the phone is
+   invisible, with no error anywhere and the DOM insisting everything is fine.
+   `animation-fill-mode: backwards` made that worse by holding the same state before it
+   started.
+
+   Moving only the transform means the worst an animation that never runs can do is leave
+   the phone 46px low and slightly small. Visible and usable beats pretty and absent. */
 @keyframes ph-rise {
-  from { transform: translateY(46px) scale(.94); opacity: 0; }
-  to   { transform: none; opacity: 1; }
+  from { transform: translateY(46px) scale(.94); }
+  to   { transform: none; }
 }
 
 /* Titanium band, then the black ceramic front, then the screen. */

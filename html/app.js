@@ -8768,8 +8768,31 @@ window.addEventListener('message', (e) => {
 console.info('[v-phone] page booted');
 window.addEventListener('message', (e) => {
   const d = e.data || {};
-  if (d.action === 'open' && !window.__vphoneOpenSeen) {
-    window.__vphoneOpenSeen = true;
-    console.info('[v-phone] open received');
-  }
+  if (d.action !== 'open' || window.__vphoneOpenSeen) return;
+  window.__vphoneOpenSeen = true;
+  console.info('[v-phone] open received');
+
+  // Silent when the phone is on screen, loud when it is not. "The page opened but I see
+  // nothing" is otherwise indistinguishable from "the page never opened", and the DOM will
+  // happily report that everything is fine while the handset sits at zero opacity or off
+  // the edge of the viewport.
+  setTimeout(() => {
+    const el = document.getElementById('device');
+    if (!el) { console.error('[v-phone] #device is missing from the page'); return; }
+    const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+    const why = [];
+    if (el.classList.contains('hidden')) why.push('still has .hidden');
+    if (cs.display === 'none') why.push('display:none');
+    if (cs.visibility !== 'visible') why.push('visibility:' + cs.visibility);
+    if (parseFloat(cs.opacity) < 0.01) why.push('opacity:' + cs.opacity);
+    if (r.width < 1 || r.height < 1) why.push('zero size');
+    if (r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) {
+      why.push('off-screen at ' + Math.round(r.x) + ',' + Math.round(r.y) +
+               ' in ' + innerWidth + 'x' + innerHeight);
+    }
+    if (!why.length) return;
+    console.error('[v-phone] the phone is open but not visible: ' + why.join('; ') +
+      ' | transform=' + cs.transform +
+      ' | animation=' + cs.animationName + ' ' + el.getAnimations().map(a => a.playState).join(','));
+  }, 600);
 });
