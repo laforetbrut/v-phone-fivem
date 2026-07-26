@@ -2068,7 +2068,81 @@ function filterCss(f) {
 }
 
 // Photos arrive as rows now; older saves were bare strings.
-function photoRow(v) { return (typeof v === 'string') ? { url: v, album: '', filter: '' } : (v || {}); }
+// ══ A photo's edits, carried by its URL ════════════════════════
+// A retouch in the Gallery is a RECIPE, not a new image: a filter name, a crop shape and where
+// the crop sits. The comment on the server says so outright - "the phone never holds pixels,
+// only the link and how to draw it" - and that is a good decision, because re-encoding a
+// screenshot in a browser and re-uploading it would be a lot of machinery for a colour wash.
+//
+// But the recipe lived only on the gallery ROW. Post that photo to Bleeter and only the URL
+// travelled, so the picture came back untouched, and the edit looked like it had not saved.
+//
+// So the recipe rides along in the URL FRAGMENT. A fragment is never sent to the host - the
+// browser strips it before the request - so the image still loads from exactly the same place,
+// and every column, payload and table that already carries a URL string now carries the edit
+// too, with no schema change anywhere.
+const PHOTO_TAG = '#vp=';
+
+function photoEncode(url, row) {
+  const base = String(url || '').split(PHOTO_TAG)[0];
+  if (!base || !row) return base;
+  const parts = [];
+  if (row.filter) parts.push('f' + row.filter);
+  if (row.crop) parts.push('c' + row.crop);
+  // 50 is the default band, so it is only worth carrying when it is not.
+  if (row.focus !== undefined && row.focus !== null && Number(row.focus) !== 50) {
+    parts.push('y' + Math.round(Number(row.focus)));
+  }
+  return parts.length ? base + PHOTO_TAG + parts.join('.') : base;
+}
+
+// The other direction. Tolerant on purpose: an unknown letter is ignored rather than throwing,
+// because this string travels through other people's databases and comes back years later.
+function photoDecode(url) {
+  const text = String(url || '');
+  const at = text.indexOf(PHOTO_TAG);
+  if (at === -1) return { url: text, filter: '', crop: '', focus: 50 };
+  const out = { url: text.slice(0, at), filter: '', crop: '', focus: 50 };
+  text.slice(at + PHOTO_TAG.length).split('.').forEach((token) => {
+    const value = token.slice(1);
+    if (token[0] === 'f') out.filter = value.replace(/[^a-z0-9_-]/gi, '').slice(0, 20);
+    else if (token[0] === 'c') out.crop = ['portrait', 'square', 'tall'].includes(value) ? value : '';
+    else if (token[0] === 'y') out.focus = Math.max(0, Math.min(100, Number(value) || 50));
+  });
+  return out;
+}
+
+// A row, whether it arrived as a row or as a URL carrying its own recipe.
+function photoRow(v) {
+  if (typeof v === 'string') {
+    const r = photoDecode(v);
+    return { url: r.url, album: '', filter: r.filter, crop: r.crop, focus: r.focus };
+  }
+  if (!v) return {};
+  // A row whose url carries a recipe: the row's own fields win, since they are the live ones.
+  if (typeof v.url === 'string' && v.url.indexOf(PHOTO_TAG) !== -1) {
+    const r = photoDecode(v.url);
+    return Object.assign({}, v, {
+      url: r.url,
+      filter: v.filter || r.filter,
+      crop: v.crop || r.crop,
+      focus: (v.focus === undefined || v.focus === null) ? r.focus : v.focus,
+    });
+  }
+  return v;
+}
+
+// An <img> that honours the recipe, for the places that use a real element rather than a
+// background: a post, a message bubble. Same output as `photoStyle` produces for a background.
+function photoImg(value, cls) {
+  const r = photoRow(value);
+  const ratio = { portrait: '4 / 5', square: '1 / 1', tall: '9 / 16' }[r.crop || ''] || '';
+  const style = 'filter:' + filterCss(r.filter)
+    + (ratio ? ';aspect-ratio:' + ratio + ';object-fit:cover;object-position:50% '
+      + focusOf(r.focus) + '%' : '');
+  return '<img class="' + esc(cls || '') + '" src="' + esc(r.url)
+    + '" style="' + style + '" alt="" />';
+}
 function inlineBackground(url) {
   const clean = Array.from(String(url || '')).filter((char) => {
     const code = char.charCodeAt(0);
@@ -2118,7 +2192,9 @@ function pickPhoto(onPick) {
         const r = photoRow(shots[Number(el.dataset.i)]);
         if (restoreComposer) restoreComposer();
         else closeSheet();
-        onPick(r.url, r);
+        // The URL carries the edit. Every caller stores a URL and nothing else, which is why
+        // the edit used to be lost the moment a photo left the Gallery.
+        onPick(photoEncode(r.url, r), r);
       })));
     sheetReturn = restoreComposer;
   });
@@ -2447,7 +2523,7 @@ async function openThread(number, draft) {
 function bubbleHtml(m) {
   let inner;
   if (m.kind === 'image') {
-    inner = '<img class="mimg" src="' + esc(m.attachment) + '" />' +
+    inner = photoImg(m.attachment, 'mimg') +
       (m.body ? '<div class="mcap">' + esc(m.body) + '</div>' : '');
   } else if (m.kind === 'location') {
     // A shared position opens in Maps, which here means: it sets your waypoint.
@@ -7151,7 +7227,7 @@ function postCard(pst, appId) {
   const image = !pst.image ? ''
     : (pst.kind === 'video'
         ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
-        : '<img class="pimg" src="' + esc(pst.image) + '" alt="" />');
+        : photoImg(pst.image, 'pimg'));
   // Linkified AFTER escaping, never before: the tags and mentions are built out of text that
   // is already safe, so a post containing markup stays a post containing markup.
   const text = pst.body ? '<div class="pbody">' + socLinkify(esc(pst.body)) + '</div>' : '';

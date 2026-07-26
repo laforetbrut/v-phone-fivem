@@ -534,6 +534,10 @@ end
 local function wallpaperAllowed(url)
     url = tostring(url or '')
     if url == '' then return true end                      -- clearing it is always fine
+    -- A photo's URL may carry the phone's own edit recipe in its fragment. A fragment is never
+    -- sent to the host, so it has no bearing on whether the host is allowed - but it must not
+    -- be mistaken for part of the host on a URL that has no path.
+    url = url:gsub('#.*$', '')
     local host = url:match('^https?://([^/]+)')
     if not host then return false end
     host = host:lower():gsub(':%d+$', '')
@@ -2527,9 +2531,13 @@ end)
 local function ownsPhoto(p, url)
     local shots = p and p.GetMetadata('photos')
     if type(shots) ~= 'table' then return false end
+    -- Compared without the edit recipe. The stored row holds the bare URL; what the page hands
+    -- over carries `#vp=...`, and a string comparison of the two would answer that a player
+    -- does not own their own photograph the moment they retouched it.
+    local bare = tostring(url or ''):gsub('#.*$', '')
     for _, shot in ipairs(shots) do
-        local stored = type(shot) == 'table' and shot.url or shot
-        if tostring(stored or '') == url then return true end
+        local stored = tostring((type(shot) == 'table' and shot.url or shot) or ''):gsub('#.*$', '')
+        if stored == bare then return true end
     end
     return false
 end
@@ -3887,12 +3895,46 @@ CreateThread(function()
         PRIMARY KEY (`id`), KEY `owner_idx` (`citizenid`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
+    -- One row per ADDRESS, not per character.
+    --
+    -- This table was `PRIMARY KEY (citizenid)` with no `id` at all, which was right for exactly
+    -- as long as a character had one address. 1.2.7 gave them several and did not touch the
+    -- schema, so on a server that took that update `ORDER BY id ASC` asked for a column that
+    -- did not exist and a second address collided with the primary key. Both broke the Mail app
+    -- outright.
+    --
+    -- `address` keeps its UNIQUE: two people must never hold the same one. `citizenid` becomes
+    -- an ordinary index, which is what allows more than one row per person.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail_accounts` (
+        `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
         `address`   VARCHAR(64) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (`citizenid`), UNIQUE KEY `address` (`address`)
+        PRIMARY KEY (`id`), UNIQUE KEY `address` (`address`), KEY `owner` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- And the same change on a table that already exists, since `CREATE TABLE IF NOT EXISTS`
+    -- does nothing to one.
+    --
+    -- Done as a single ALTER on purpose: MySQL requires an AUTO_INCREMENT column to be indexed
+    -- at every moment, so dropping the old primary key and adding the new one have to happen in
+    -- the same statement. Split into two, the first half is rejected.
+    if not MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_mail_accounts'
+          AND COLUMN_NAME = 'id' LIMIT 1]]) then
+        local ok = pcall(function()
+            MySQL.query.await([[ALTER TABLE `vphone_mail_accounts`
+                DROP PRIMARY KEY,
+                ADD COLUMN `id` INT UNSIGNED NOT NULL AUTO_INCREMENT FIRST,
+                ADD PRIMARY KEY (`id`),
+                ADD KEY `owner` (`citizenid`)]])
+        end)
+        print(ok and '[v-phone] mail: vphone_mail_accounts now allows several addresses per character'
+            or '[v-phone] mail: could NOT alter vphone_mail_accounts. Run this once by hand:\n'
+            .. '  ALTER TABLE vphone_mail_accounts DROP PRIMARY KEY,\n'
+            .. '    ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT FIRST,\n'
+            .. '    ADD PRIMARY KEY (id), ADD KEY owner (citizenid);')
+    end
 
     -- A domain a player registered. Unique on the domain, because the whole point of buying
     -- one is that nobody else can have it.

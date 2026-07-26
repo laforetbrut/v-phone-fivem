@@ -57,7 +57,13 @@ end
 
 --- Same shape as the phone's wallpaper gate, for the same reason. Rejected rather than
 --- rewritten: silently fixing somebody's link is worse than telling them it is refused.
+--- A photo's URL may carry the phone's own edit recipe in its fragment. Stripped before the
+--- host is read: a fragment never reaches the host, so it cannot bear on whether the host is
+--- allowed, and on a URL with no path it would otherwise be read as part of the host itself.
+local function withoutRecipe(url) return (tostring(url or ''):gsub('#.*$', '')) end
+
 local function imageAllowed(url)
+    url = withoutRecipe(url)
     url = tostring(url or '')
     if url == '' then return true end
     local host = url:match('^https?://([^/]+)')
