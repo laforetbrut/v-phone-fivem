@@ -131,6 +131,13 @@ V.Callback('v-phone:media:photo', function(src, resolve)
 
     -- screencapture's server export uploads for us and calls back with the host response.
     local done = false
+    -- The fifth argument is the one that matters, and leaving it off is why every upload
+    -- came back `400 request Content-Type isn't multipart/form-data`.
+    --
+    -- screencapture's `remoteUpload(source, url, options, callback, dataType)` defaults
+    -- dataType to 'base64', and its `createRequestBody` only builds a FormData - the only
+    -- path that sets a multipart Content-Type - when dataType is 'blob'. On 'base64' it posts
+    -- the raw string with nothing but our own headers, which Fivemanage rightly rejects.
     exports['screencapture']:remoteUpload(src, MEDIA.endpoint, {
         encoding = MEDIA.imageEncoding or 'webp',
         headers = uploadHeaders(),
@@ -142,7 +149,7 @@ V.Callback('v-phone:media:photo', function(src, resolve)
         if not url then resolve({ error = 'upload' }) return end
         remember(p.citizenid, url, 'image', { id = idFromResponse(response) })
         resolve({ ok = true, url = url })
-    end)
+    end, 'blob')
 
     -- A capture that never calls back must not hang the caller for ever.
     SetTimeout(15000, function()

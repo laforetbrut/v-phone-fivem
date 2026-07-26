@@ -5,6 +5,37 @@ one coming back.
 
 ---
 
+## [2026-07-26 08:05] — Every photo upload rejected: multipart never happened
+
+**Context:** with the Camera app finally reachable, taking a photo failed with
+`400 {"error":"request Content-Type isn't multipart/form-data"}` from Fivemanage.
+
+**Error:** `exports['screencapture']:remoteUpload(source, url, options, callback)` was called
+with four arguments. Its real signature is
+
+    remoteUpload(source, url, options, callback, dataType = "base64")
+
+and inside, `createRequestBody` builds a `FormData` — the only path that sets a multipart
+Content-Type — **only when dataType is `'blob'`**. On the default `'base64'` it posts the raw
+string with nothing but the caller's own headers, so the request carries no Content-Type at
+all and any API expecting multipart refuses it.
+
+**Fix:** pass `'blob'` as the fifth argument. Read out of the resource's own bundle rather
+than guessed: `uploadFile` branches on `body instanceof FormData`, and `createRequestBody`
+gates that on the dataType.
+
+**What NOT to do, checked while fixing it:** the video call looks parallel but is not.
+`startVideoCaptureUpload(source, url, options, callback, legacyCallback)` takes a BOOLEAN
+fifth, so adding `'blob'` there would have silently switched its callback convention. Video
+uploads a file from disk and builds its own FormData, so it needed nothing.
+
+**Prevention:** a defaulted trailing parameter in a third-party export is the kind of thing
+that changes the wire format without changing the call. Read the signature in the shipped
+bundle before assuming a four-argument call is complete — and never copy a fifth argument
+from one export to its neighbour on the assumption they match.
+
+---
+
 ## [2026-07-26 07:40] — The camera gate accepted only one of its two destinations
 
 **Context:** the Camera app reported "disabled on this server" across five rounds of fixes on
