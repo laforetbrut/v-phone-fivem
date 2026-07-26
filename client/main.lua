@@ -928,6 +928,15 @@ end)
 --- list IS the config: it is the same on every client, it never changes while the server is
 --- up, and a round trip to be told what this client already has in memory would be waste.
 --- The Music app's library is answered the same way and for the same reason.
+--- This player's temporary server id.
+---
+--- The number staff ask for and the number a player has to read off something. It is not a
+--- secret - it is in the player list and on every server console line about them - but it is
+--- also not knowable from the page, so the page has to be told.
+RegisterNUICallback('serverId', function(_, cb)
+    cb({ ok = true, id = GetPlayerServerId(PlayerId()) })
+end)
+
 RegisterNUICallback('hospitals', function(_, cb)
     local out = {}
     for _, h in ipairs(Config.Hospitals or {}) do

@@ -2933,6 +2933,7 @@ RENDER.jobs = async () => {
 const SETTING_TOGGLES = {
   hidenumber:     { key: 'hideNumber' },
   streamer:       { key: 'streamer' },
+  serverid:       { key: 'showServerId', defaultOn: true },
   silenceunknown: { key: 'silenceUnknown' },
   previews:       { key: 'previews', defaultOn: true },
   peek:           { key: 'peek', defaultOn: true },
@@ -3002,6 +3003,9 @@ RENDER.settings = () => {
         toggle: !!p.silenceUnknown, data: { t: 'silenceunknown' } }),
       UI.row({ icon: 'shield', tint: '#BF5AF2', title: L('ph.streamer'),
         subtitle: L('ph.streamer_sub'), toggle: !!p.streamer, data: { t: 'streamer' } }),
+      UI.row({ icon: 'id', tint: '#64D2FF', title: L('ph.show_server_id'),
+        subtitle: L('ph.show_server_id_sub'), toggle: p.showServerId !== false,
+        data: { t: 'serverid' } }),
     ], { header: L('ph.calls_privacy'),
          footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }) +
     UI.group([
@@ -3129,7 +3133,13 @@ RENDER.settings = () => {
         ? (state.prefs || {})[spec.key] !== false
         : !!(state.prefs || {})[spec.key];
       const res2 = await post('prefs', { [spec.key]: !now });
-      if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+      if (res2 && res2.ok) {
+        state.prefs = res2.prefs;
+        RENDER.settings();
+        // The lock screen is drawn on open, so a switch that changes what it says - the
+        // server id, or streamer mode masking the number - has to repaint it now.
+        paintLockMeta();
+      }
       return;
     } else if (r.dataset.t === 'ringtone' || r.dataset.t === 'alerttone') {
       const isRing = r.dataset.t === 'ringtone';
@@ -7821,6 +7831,31 @@ function syncDndAudio() {
   if (call && call.state === 'in') playRingtone();
 }
 
+// ══ The lock screen's second line ══════════════════════════════
+// The phone number, and optionally the temporary server id. Asked once: a server id is fixed
+// for the life of the connection, so re-asking it on every clock tick would be waste.
+let serverIdCache = null;
+
+async function paintLockMeta() {
+  const host = byId('locknum');
+  if (!host) return;
+  const p = state.prefs || {};
+  const number = maskNum(state.number);
+
+  if (p.showServerId === false) { host.textContent = number; return; }
+  if (serverIdCache === null) {
+    const r = await post('serverId');
+    serverIdCache = (r && r.id) || 0;
+  }
+  if (!byId('locknum')) return;                 // locked and unlocked while it was in flight
+  // Not masked by streamer mode: a server id is already public in the player list, and it is
+  // what a viewer would be TOLD in order to help rather than something to hide from them.
+  host.textContent = serverIdCache
+    ? (number ? number + '  ·  ' + L('ph.server_id') + ' ' + serverIdCache
+              : L('ph.server_id') + ' ' + serverIdCache)
+    : number;
+}
+
 // ══ Buzz and peek ══════════════════════════════════════════════
 // The handset shakes for a notification, and - when it is in a pocket rather than in the
 // hand - the top of it rises into view carrying that notification, then slides back. The
@@ -9093,7 +9128,10 @@ window.addEventListener('message', (e) => {
     byId('qcam').setAttribute('aria-label', L('app.camera'));
     byId('homebar').setAttribute('aria-label', L('ph.home'));
     byId('arrangedone').setAttribute('aria-label', L('ph.arrange_done'));
-    byId('locknum').textContent = d.number || '';
+    // The number, and the temporary server id beside it when the player wants it there. Staff
+    // ask for that id constantly and it is the one thing a player cannot look up on their own
+    // phone, so the lock screen is the right place for it: visible without unlocking.
+    paintLockMeta();
     applyWallpaper();
     applyDevice();
     applyTheme();

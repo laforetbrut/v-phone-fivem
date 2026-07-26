@@ -558,6 +558,9 @@ prefsOf = function(p, includeSecrets)
         -- later restores what each player had chosen.
         hideNumber = m.hideNumber == true,
         streamer   = m.streamer == true,
+        -- Absent means "never set", which reads as on: it is the default, and a player who has
+        -- never opened Settings should still see the id staff will ask them for.
+        showServerId = m.showServerId ~= false,
         -- Calls from a number that is not in your contacts arrive silently: no ring, no
         -- phone opening itself. They still land in the call log as missed, which is the
         -- whole point - you can see who tried.
@@ -2096,6 +2099,7 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         -- Streamer mode: purely a display choice, so it changes nothing the server does. It
         -- is stored per character because a streamer wants it on every time they log in.
         if data.streamer ~= nil then prefs.streamer = data.streamer == true end
+        if data.showServerId ~= nil then prefs.showServerId = data.showServerId == true end
         if data.silenceUnknown ~= nil then prefs.silenceUnknown = data.silenceUnknown == true end
         if data.previews ~= nil then prefs.previews = data.previews == true end
         if data.peek ~= nil then prefs.peek = data.peek == true end
