@@ -4,6 +4,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.3.4] - 2026-07-26
+
+### Fixed (English first)
+
+- **The weather widget showed the game's hour while the status bar above it showed the real one.** 19:59 in the status bar and 09:10 in the tile six centimetres under it - a phone showing two different times at once is a phone that is wrong about one of them. The widget was reading the game clock deliberately, on the grounds that a Los Santos weather tile wants Los Santos time, and that reasoning did not survive `Config.Clock.timezone` arriving in 1.3.2. There is one formatter now and every surface that shows a time of day uses it. The game hour is still read - it drives automatic dark mode, which is where a game fact belongs, because the sun in the sky is one.
+
+### Correctifs (miroir francais)
+
+- **Le widget meteo affichait l'heure du jeu alors que la barre d'etat au-dessus affichait l'heure reelle.** 19:59 en haut et 09:10 dans la tuile juste en dessous : un telephone qui affiche deux heures differentes se trompe forcement sur l'une des deux. Il y a desormais un seul formateur et toutes les surfaces qui affichent une heure passent par lui. L'heure du jeu reste lue - elle pilote le mode sombre automatique, ou un fait de jeu a sa place.
+
+---
+
 ## [1.3.3] - 2026-07-26
 
 ### Added (English first)

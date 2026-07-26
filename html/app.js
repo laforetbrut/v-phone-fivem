@@ -181,14 +181,22 @@ function clockZone() {
   return clockZoneOk ? zone : '';
 }
 
+// HH:MM on this phone's clock. Every surface that shows a time of day uses this one, so the
+// status bar, the lock screen, the control centre and the weather widget cannot disagree.
+function phoneClock(at) {
+  const zone = clockZone();
+  // `en-GB` for the time, so it is 24-hour whatever the player's own locale prefers - the
+  // status bar of this phone has always shown 24-hour.
+  return new Intl.DateTimeFormat('en-GB', Object.assign(
+    { hour: '2-digit', minute: '2-digit', hour12: false },
+    zone ? { timeZone: zone } : {})).format(at || new Date());
+}
+
 function tick() {
   const d = new Date();
   const zone = clockZone();
   const opts = zone ? { timeZone: zone } : {};
-  // `en-GB` for the time, so it is 24-hour whatever the player's own locale prefers - the
-  // status bar of this phone has always shown 24-hour.
-  const hhmm = new Intl.DateTimeFormat('en-GB',
-    Object.assign({ hour: '2-digit', minute: '2-digit', hour12: false }, opts)).format(d);
+  const hhmm = phoneClock(d);
   byId('clock').textContent = hhmm;
   byId('lockclock').textContent = hhmm;
   const ccClock = byId('ccclock');
@@ -1650,16 +1658,20 @@ async function renderWidgets() {
   applyTheme();
   const w = String(d.weather || 'CLEAR').toUpperCase();
   const icon = WEATHER_ICON[w] || 'sun';
-  const hh = String(d.hours).padStart(2, '0') + ':' + String(d.minutes).padStart(2, '0');
+  // The same clock as the status bar, six centimetres above it.
+  //
+  // This used to show the GAME's hour on the grounds that a weather tile for Los Santos wants
+  // Los Santos time. That reasoning does not survive contact with the screen: the status bar
+  // said 19:59 and the tile under it said 09:10, and a phone showing two different times at
+  // once is a phone that is wrong about one of them. The game hour is still read - it is what
+  // drives automatic dark mode, where it belongs, because the sun in the sky is a game fact.
   host.innerHTML =
     '<div class="widget weather"><div class="wtop"><span>' + esc(L('ph.los_santos')) + '</span>' +
       '<span class="wicon">' + svg(icon) + '</span></div>' +
-      '<div><div class="wbig">' + esc(hh) + '</div>' +
+      '<div><div class="wbig">' + esc(phoneClock()) + '</div>' +
       '<div class="wsub">' + esc(L('ph.weather_' + icon)) + '</div></div></div>' +
     // The real date, not the game's. GTA's clock runs at its own pace and its calendar is
     // scenery; a player reading "2" off their phone wants to know what day it actually is.
-    // The weather tile beside it still shows Los Santos time, which IS what a player needs
-    // from a game clock.
     calendarWidget();
 }
 
