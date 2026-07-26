@@ -987,7 +987,10 @@ camModeOff = function()
     -- hold animation is left frozen when the camera closes - the phone sits in the hand doing
     -- nothing. z-phone re-plays its animation at exactly this point for the same reason.
     if isOpen then
+        -- The prop and pose were taken away to let GTA's phone camera have the ped. Give them
+        -- back, or the player is left holding nothing with a frozen animation.
         phoneAnim = nil        -- force playHold to restart rather than think it is already on
+        attachProp()
         refreshPose()
     end
 end
@@ -1005,6 +1008,15 @@ RegisterNUICallback('camMode', function(data, cb)
     -- The handset leaves the screen before anything else happens, and the cursor with it.
     SendNUIMessage({ action = 'camLive', on = true })
     SetNuiFocus(false, false)
+
+    -- The prop and the pose come OFF first, and this is the part that was missing. v-phone
+    -- holds its own model with its own animation, which occupies the ped's task - and
+    -- `CreateMobilePhone` needs that task to raise the arm and hand the camera over. With ours
+    -- still running, the call did nothing: the view stayed a normal third-person gameplay
+    -- camera pointed at the player's back, and the arm never came up. qb-phone does not hit
+    -- this because its hold animation IS a GTA phone task.
+    clearHand()
+    ClearPedSecondaryTask(PlayerPedId())
 
     pcall(function()
         CreateMobilePhone(1)
@@ -1042,10 +1054,17 @@ RegisterNUICallback('camMode', function(data, cb)
             HideHudComponentThisFrame(9)
             HideHudComponentThisFrame(19)
             HideHudAndRadarThisFrame()
-            -- Everything back on, every frame. The phone's guard thread disables aiming and
-            -- looking while it is open, which would leave the camera pointing wherever the
-            -- player last happened to be facing.
+            -- Everything back on, every frame: the phone's guard thread disables looking
+            -- while it is open, which would leave the camera pointing wherever the player last
+            -- happened to be facing.
             EnableAllControlActions(0)
+            -- Except the fists. `EnableAllControlActions` hands attack back too, so a player
+            -- clicking to take a photograph threw a punch instead. The shutter is Enter.
+            DisableControlAction(0, 24, true)
+            DisableControlAction(0, 25, true)
+            DisableControlAction(0, 140, true)
+            DisableControlAction(0, 141, true)
+            DisableControlAction(0, 142, true)
             Wait(0)
         end
         camModeOff()
