@@ -148,7 +148,22 @@ V.Callback('v-phone:media:photo', function(src, resolve)
         local url = urlFromResponse(response)
         if not url then resolve({ error = 'upload' }) return end
         remember(p.citizenid, url, 'image', { id = idFromResponse(response) })
-        resolve({ ok = true, url = url })
+
+        -- Store it here rather than sending the client back round through `v-phone:photo`
+        -- with op=add. That path runs every URL past the WALLPAPER host allowlist - which
+        -- exists to stop a player pasting an arbitrary link, and which naturally does not
+        -- list whichever CDN the operator uploads to. So every photo the phone took was
+        -- refused as `badhost` and the gallery stayed empty.
+        --
+        -- This URL needs no allowlist: the server produced it, seconds ago, from this
+        -- player's own capture. Nothing was taken on trust.
+        local shots = p.GetMetadata('photos')
+        if type(shots) ~= 'table' then shots = {} end
+        table.insert(shots, 1, { url = url, album = '', filter = '' })
+        while #shots > 60 do table.remove(shots) end
+        p.SetMetadata('photos', shots)
+
+        resolve({ ok = true, url = url, stored = true })
     end, 'blob')
 
     -- A capture that never calls back must not hang the caller for ever.

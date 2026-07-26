@@ -441,6 +441,16 @@ local function wallpaperAllowed(url)
         allowed = tostring(allowed):lower():gsub('^%s+', ''):gsub('%s+$', '')
         if host == allowed or host:sub(-(#allowed + 1)) == '.' .. allowed then return true end
     end
+
+    -- A file this phone uploaded itself is allowed whatever host it landed on. The list above
+    -- guards against a player pasting a link to somewhere the operator did not choose; it has
+    -- no business refusing a photograph the server took, uploaded and recorded seconds ago.
+    -- Without this a player could not set their own picture as a wallpaper unless the
+    -- operator happened to list their own CDN.
+    if MySQL.scalar.await('SELECT 1 FROM vphone_media WHERE url = ? LIMIT 1', { url }) then
+        return true
+    end
+
     return false
 end
 

@@ -1237,6 +1237,12 @@ function enterApp(a, tile) {
 }
 
 function closeApp(instant) {
+  // Whatever route out of an app is taken, the camera's first-person hold and hidden HUD
+  // must not survive it. Cheap to call when no camera was open.
+  if (byId('device').classList.contains('camlive')) {
+    byId('device').classList.remove('camlive');
+    post('camMode', { on: false });
+  }
   beginView();
   const app = byId('app');
   const wasOpen = app.classList.contains('on');
@@ -4943,6 +4949,14 @@ RENDER.camera = async () => {
   byId('navbar').classList.add('hidden');
   byId('app').classList.add('camfull');
   byId('screen').classList.add('appblack');
+  // The viewfinder shows the world, not a black rectangle. `camlive` makes the screen and
+  // the app surface transparent so the game is visible THROUGH the handset - which is the
+  // preview of the photograph about to be taken, and needs no capture loop to produce.
+  //
+  // Lua is told at the same moment: it puts the player in first person and hides the HUD and
+  // minimap, so what is framed is what is photographed.
+  byId('device').classList.add('camlive');
+  post('camMode', { on: true });
 
   body(
     '<div class="camui">' +
@@ -5036,11 +5050,68 @@ RENDER.gallery = async () => {
   rows('.shot', (el) => el.addEventListener('click', () => photoSheet(shots, Number(el.dataset.i), albums)));
 };
 
+// ══ Zooming a photo ════════════════════════════════════════════
+// A photograph is worth looking at closely, and a phone that cannot is annoying. The wheel
+// zooms about the cursor - so the detail under the pointer stays under it - and a drag pans
+// once the picture is larger than its frame. Double-click resets.
+//
+// Pure CSS transform on the img: nothing is re-fetched and the filter chosen above still
+// applies, because the transform and the filter are independent properties.
+function wirePhotoZoom(wrapId, imgId) {
+  const wrap = byId(wrapId), img = byId(imgId);
+  if (!wrap || !img) return;
+  let z = 1, ox = 0, oy = 0, drag = null;
+  const MIN = 1, MAX = 6;
+
+  const apply = () => {
+    // Never leave a gap: at any zoom the picture must still cover its frame.
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const maxX = Math.max(0, w * z - w), maxY = Math.max(0, h * z - h);
+    ox = Math.min(0, Math.max(-maxX, ox));
+    oy = Math.min(0, Math.max(-maxY, oy));
+    img.style.transform = 'translate(' + ox + 'px,' + oy + 'px) scale(' + z + ')';
+    const hint = byId(wrapId + 'hint');
+    if (hint) hint.textContent = z > 1.01 ? Math.round(z * 100) + '%' : '';
+  };
+
+  wrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const before = z;
+    z = Math.min(MAX, Math.max(MIN, z * (e.deltaY < 0 ? 1.18 : 1 / 1.18)));
+    // Keep the point under the cursor fixed: solve for the offset that does not move it.
+    const k = z / before;
+    ox = px - (px - ox) * k;
+    oy = py - (py - oy) * k;
+    if (z <= MIN + 0.001) { z = MIN; ox = 0; oy = 0; }
+    apply();
+  }, { passive: false });
+
+  wrap.addEventListener('pointerdown', (e) => {
+    if (z <= MIN + 0.001) return;
+    drag = { x: e.clientX, y: e.clientY, ox, oy };
+    wrap.classList.add('panning');
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    ox = drag.ox + (e.clientX - drag.x);
+    oy = drag.oy + (e.clientY - drag.y);
+    apply();
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
+    wrap.addEventListener(ev, () => { drag = null; wrap.classList.remove('panning'); }));
+  wrap.addEventListener('dblclick', () => { z = MIN; ox = 0; oy = 0; apply(); });
+  apply();
+}
+
 function photoSheet(shots, i, albums) {
   const r = photoRow(shots[i]);
   const url = r.url;
   sheet(L('app.gallery'),
-    '<img class="shotbig" id="shotbig" src="' + esc(url) + '" style="filter:' + filterCss(r.filter) + '" />' +
+    '<div class="shotzoom" id="shotwrap"><img class="shotbig" id="shotbig" src="' + esc(url) +
+      '" style="filter:' + filterCss(r.filter) + '" />' +
+      '<span class="shotzoomhint" id="shotwraphint"></span></div>' +
     // Retouching: pick a look, it applies live and is remembered with the photo.
     '<div class="grouphead">' + esc(L('ph.filters')) + '</div>' +
     '<div class="seg scroll" id="sfilters">' + FILTERS.map((f) =>
@@ -5051,6 +5122,7 @@ function photoSheet(shots, i, albums) {
     UI.button(L('ph.set_wallpaper'), 'swall') +
     UI.button(L('ph.delete'), 'sdel', 'destructive'),
     () => {
+      wirePhotoZoom('shotwrap', 'shotbig');
       [...byId('sheet').querySelectorAll('#sfilters button')].forEach((b) =>
         b.addEventListener('click', async () => {
           const f = b.dataset.f;

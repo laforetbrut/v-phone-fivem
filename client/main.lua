@@ -24,6 +24,7 @@ local activeSdkEpoch = 0     -- rejects late shell requests that arrive out of o
 local sdkApps = {}           -- installed iframe apps allowed for this open session
 local pendingUiActions = {}  -- prompts received while the asynchronous open is in flight
 local applyServerCall
+local camModeOff            -- defined with the camera mode, used by closePhone above it
 local mediaOn = false        -- server-side capture and upload, decided by the server
 
 local function sdkAppId(value)
@@ -405,6 +406,7 @@ local function closePhone()
     activeSdkApp = nil
     if not call then stopRinging() end
     stopSelfie()
+    camModeOff()
     SetNuiFocusKeepInput(false)
     SetNuiFocus(false, false)
     clearHand()
@@ -897,6 +899,53 @@ end)
 --- deliberately no path for a data URI: a photo kept as base64 in a metadata column is
 --- megabytes per shot, and the operator's upload target is the whole reason the camera
 --- setting has one.
+-- ══ Camera mode ═══════════════════════════════════════════════
+-- The Camera app is a viewfinder, so while it is open the game has to look like one: first
+-- person, and nothing on screen that would end up baked into the photograph.
+--
+-- The previous view mode is remembered and put back. Forcing a player into first person and
+-- leaving them there is the sort of thing that gets a phone uninstalled.
+local camPrevPed, camPrevVeh, camActive = nil, nil, false
+
+camModeOff = function()
+    if not camActive then return end
+    camActive = false
+    if camPrevPed then SetFollowPedCamViewMode(camPrevPed) camPrevPed = nil end
+    if camPrevVeh then SetFollowVehicleCamViewMode(camPrevVeh) camPrevVeh = nil end
+    DisplayRadar(true)
+end
+
+RegisterNUICallback('camMode', function(data, cb)
+    cb({ ok = true })
+    local on = data and data.on == true
+    if not on then camModeOff() return end
+    if camActive or not isOpen then return end
+
+    camActive = true
+    -- 4 is first person for both. Remembered per surface because a player in a car and a
+    -- player on foot carry different modes.
+    camPrevPed = GetFollowPedCamViewMode()
+    camPrevVeh = GetFollowVehicleCamViewMode()
+    SetFollowPedCamViewMode(4)
+    SetFollowVehicleCamViewMode(4)
+    DisplayRadar(false)
+
+    CreateThread(function()
+        while camActive and isOpen do
+            -- Every frame, because the HUD redraws itself every frame. This covers the
+            -- minimap, the wanted stars, the cash and the weapon wheel in one call, which is
+            -- what a photograph should not contain.
+            HideHudAndRadarThisFrame()
+            -- A player who switches back to third person mid-shot would photograph their own
+            -- back, so the mode is held rather than merely set once.
+            if GetFollowPedCamViewMode() ~= 4 then SetFollowPedCamViewMode(4) end
+            if GetFollowVehicleCamViewMode() ~= 4 then SetFollowVehicleCamViewMode(4) end
+            Wait(0)
+        end
+        camModeOff()
+    end)
+end)
+
 RegisterNUICallback('shoot', function(_, cb)
     local finished = false
     local focusReleased = false
@@ -937,7 +986,10 @@ RegisterNUICallback('shoot', function(_, cb)
         SetTimeout(20000, function() finish({ error = 'upload' }) end)
         V.Request('v-phone:media:photo', function(r)
             if not r or not r.ok then finish(r or { error = 'upload' }) return end
-            -- The URL is stored in the gallery the same way a pasted one is.
+            -- The server already put it in the gallery - it made the URL, so it needs no
+            -- allowlist check and no second round trip. Older builds answered without
+            -- `stored`, so that case still adds it the long way.
+            if r.stored then finish({ ok = true, url = r.url }) return end
             V.Request('v-phone:photo', function(res) finish(res or { error = 'x' }) end,
                 { op = 'add', url = r.url })
         end, {})
