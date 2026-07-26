@@ -28,10 +28,16 @@ All notable changes to v-phone are documented here.
 - **New music configuration.** `provider`, `copyUrl`, `hooks`, `maxLibrary`, `maxPlaylists`, `maxTracksPerPlaylist`, `allowCustomUrl` and a `hosts` allowlist for track URLs — the same idea as the wallpaper hosts, an operator decision rather than a player one.
 - **`requireItem` was a landmine, not a setting.** Turning it on called `inv.GetItemCount`, a key no inventory provider registers — neither `bridge/server/integrations.lua` nor the compat stub has it. Every check raised instead of answering, the open callback never resolved, and the phone died silently until the client's ten-second guard gave up. It now uses `HasItem`, which both providers register and which fails open on a server with no inventory v-phone recognises.
 - **`Config.PhoneItem` was dead code.** The item check hardcoded `phone` and `iphone` and never read the setting, so a server that renamed the handset was silently ignored.
+- **Escape opened the GTA menu with the phone in your hand.** The page already treated Escape as “go back” — close a sheet, then the app, then the phone — but the game acted on the same keypress, so one press did both. Controls 199 and 200 are blocked while the phone is out and restored the moment it goes away.
+- **The phone went blurry at any size but 100%.** The size setting scales the handset with a transform, and `.device` also carried a `drop-shadow` filter. A filter gives an element its own render surface, rasterised **before** the transform — so the phone was drawn at 372px and then stretched, and every glyph softened. The filter is gone; `.bezel`’s existing box-shadow is the same silhouette and rasterises at the final scale, so it stays sharp.
 
 ### Changed
 
 - **The phone item is now required by default, and there is no key.** `Config.Settings.requireItem` is on and `Config.Key` is `false`: the phone opens by using the item, the way any other object does. A phone every character owns for free is not an item, it is a menu. Put a key name back in `Config.Key` to also offer a binding, or `set phone_requireItem false` to give everybody one again. Mark the item `useable` in your framework's own catalogue — on qb-core that is `qb-core/shared/items.lua`. It cuts both ways: a character with no handset cannot be called either, and messages sent to them wait until they hold one.
+
+### Performance
+
+- **Forty-four `backdrop-filter` declarations removed.** This stylesheet opens by forbidding the property outright, because FiveM’s CEF renders it as an opaque black box — the glass here is composed from a tint, a rim and a sheen rather than sampled. They had crept back in across twenty-one rules, costing a backdrop render surface each while showing the wrong thing. Every one of those rules already carried its own background, so the look is unchanged and there is now nothing between the phone and the frame it sits on.
 
 ---
 
@@ -59,10 +65,16 @@ All notable changes to v-phone are documented here.
 - **Nouvelle configuration musique.** `provider`, `copyUrl`, `hooks`, `maxLibrary`, `maxPlaylists`, `maxTracksPerPlaylist`, `allowCustomUrl` et une liste blanche `hosts` pour les URL de titres — la même idée que les hôtes de fonds d'écran : une décision d'opérateur, pas de joueur.
 - **`requireItem` était une mine, pas un réglage.** L'activer appelait `inv.GetItemCount`, une clé qu'aucun fournisseur d'inventaire n'enregistre — ni `bridge/server/integrations.lua`, ni le stub de compatibilité. Chaque vérification levait au lieu de répondre, le callback d'ouverture ne se résolvait jamais, et le téléphone mourait en silence jusqu'à ce que le garde de dix secondes du client abandonne. Il utilise maintenant `HasItem`, présent dans les deux fournisseurs, qui échoue en mode ouvert sur un serveur dont l'inventaire n'est pas reconnu.
 - **`Config.PhoneItem` était du code mort.** La vérification codait en dur `phone` et `iphone` sans jamais lire le réglage : un serveur ayant renommé le combiné était ignoré en silence.
+- **Échap ouvrait le menu GTA avec le téléphone en main.** La page traitait déjà Échap comme un retour — fermer une feuille, puis l’app, puis le téléphone — mais le jeu agissait sur la même touche, donc une pression faisait les deux. Les contrôles 199 et 200 sont bloqués tant que le téléphone est sorti, et rendus dès qu’il disparaît.
+- **Le téléphone devenait flou à toute taille autre que 100 %.** Le réglage de taille met le combiné à l’échelle par un `transform`, et `.device` portait en plus un filtre `drop-shadow`. Un filtre donne à l’élément sa propre surface de rendu, rastérisée **avant** le transform : le téléphone était dessiné à 372px puis étiré, et chaque glyphe s’adoucissait. Le filtre est retiré ; le box-shadow déjà présent sur `.bezel` donne la même silhouette et se rastérise à l’échelle finale, donc il reste net.
 
 ### Modifications
 
 - **L'objet téléphone est désormais requis par défaut, et il n'y a plus de touche.** `Config.Settings.requireItem` est activé et `Config.Key` vaut `false` : le téléphone s'ouvre en utilisant l'objet, comme n'importe quel autre. Un téléphone que chaque personnage possède gratuitement n'est pas un objet, c'est un menu. Remettez un nom de touche dans `Config.Key` pour proposer aussi un raccourci, ou `set phone_requireItem false` pour en redonner un à tout le monde. Marquez l'objet `useable` dans le catalogue de votre framework — sur qb-core, c'est `qb-core/shared/items.lua`. Cela vaut dans les deux sens : un personnage sans combiné ne peut pas non plus être appelé, et les messages qu'on lui envoie attendent qu'il en tienne un.
+
+### Performance
+
+- **Quarante-quatre déclarations `backdrop-filter` supprimées.** Cette feuille de style s’ouvre en interdisant la propriété, parce que le CEF de FiveM la rend en boîte noire opaque — ici le verre est composé d’une teinte, d’un liseré et d’un reflet, pas échantillonné. Elles étaient revenues dans vingt-et-une règles, coûtant une surface de rendu chacune tout en affichant la mauvaise chose. Chacune de ces règles avait déjà son propre fond : l’apparence est inchangée, et il n’y a plus rien entre le téléphone et l’image sur laquelle il se pose.
 
 ---
 

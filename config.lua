@@ -235,7 +235,13 @@ Config.Hold = {
     -- Disabled while the phone is up so a click on the screen does not fire a gun, and the
     -- mouse drives the cursor instead of spinning the camera. Movement, sprint, jump and
     -- every vehicle control are left untouched, so you keep walking and driving.
-    block  = { 1, 2, 24, 25, 47, 257, 263, 264, 45, 140, 141, 142, 143, 37, 44, 68, 69, 70, 91, 92 },
+    -- 199 and 200 are the pause menu (P and Escape). The page already treats Escape as
+    -- "go back": it closes a sheet, then the app, then the phone. Without these two the
+    -- game acts on the same keypress as well, so Escape closed a sheet AND opened the GTA
+    -- menu over the top. Blocking them leaves Escape meaning one thing while the phone is
+    -- out, and they are restored the moment it goes away.
+    block  = { 1, 2, 24, 25, 47, 257, 263, 264, 45, 140, 141, 142, 143, 37, 44, 68, 69, 70, 91, 92,
+               199, 200 },
 }
 
 -- ── Numbers ────────────────────────────────────────────────────

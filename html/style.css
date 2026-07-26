@@ -1661,7 +1661,15 @@ input { font: inherit; }
 /* Device and wallpaper ---------------------------------------------------- */
 .device {
   z-index: var(--ph-overlay-z);
-  filter: drop-shadow(0 24px 46px rgba(0, 0, 0, .34));
+  /* No `filter` here, deliberately. The size setting scales this element with a transform,
+     and a filter gives the element its own render surface which is rasterised BEFORE the
+     transform is applied - so the phone was drawn at 372px and then stretched, and every
+     glyph went soft the moment anyone moved the size slider off 100%.
+
+     The shadow is not lost: `.bezel` already carries
+     `0 42px 90px rgba(0,0,0,.62), 0 6px 18px rgba(0,0,0,.5)`, which is the same silhouette
+     as a box-shadow. A box-shadow paints as part of the element and rasterises at the final
+     scale, so it stays crisp where a drop-shadow filter did not. */
 }
 
 .device.capturing {
@@ -5824,8 +5832,6 @@ input { font: inherit; }
   background:
     radial-gradient(90% 56% at 50% 0%, rgba(33, 140, 255, .24), transparent 64%),
     rgba(5, 8, 19, .92);
-  -webkit-backdrop-filter: blur(28px) saturate(1.35);
-  backdrop-filter: blur(28px) saturate(1.35);
 }
 
 .auth.on {
@@ -6033,16 +6039,12 @@ input { font: inherit; }
   background:
     linear-gradient(180deg, rgba(14, 35, 40, .94), rgba(6, 19, 24, .84));
   box-shadow: 0 10px 28px rgba(0, 0, 0, .08), inset 0 -1px rgba(255, 255, 255, .025);
-  -webkit-backdrop-filter: blur(26px) saturate(145%);
-  backdrop-filter: blur(26px) saturate(145%);
 }
 
 .app[data-app="cipher"] .navbar.collapsed {
   background: rgba(5, 16, 21, .82);
   border-bottom: 1px solid rgba(137, 245, 218, .08);
   box-shadow: none;
-  -webkit-backdrop-filter: blur(24px) saturate(145%);
-  backdrop-filter: blur(24px) saturate(145%);
 }
 
 .app[data-app="cipher"] .navact.round,
@@ -6070,8 +6072,6 @@ input { font: inherit; }
   background:
     linear-gradient(160deg, rgba(20, 48, 52, .94), rgba(4, 14, 18, .97));
   box-shadow: 0 -18px 55px rgba(0, 0, 0, .38), inset 0 1px rgba(255, 255, 255, .09);
-  -webkit-backdrop-filter: blur(34px) saturate(145%);
-  backdrop-filter: blur(34px) saturate(145%);
 }
 
 .screen.cipher-open {
@@ -6082,8 +6082,6 @@ input { font: inherit; }
 
 .screen.cipher-open .scrim {
   background: rgba(0, 8, 10, .58);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
 }
 
 .cipherwelcome,
@@ -6534,8 +6532,6 @@ input { font: inherit; }
   border-top: 1px solid rgba(138, 234, 212, .08);
   background: rgba(4, 13, 17, .82);
   box-shadow: 0 -12px 32px rgba(0, 0, 0, .16);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  backdrop-filter: blur(24px) saturate(140%);
 }
 .ciphercompose .field {
   min-width: 0;
@@ -6694,8 +6690,6 @@ input { font: inherit; }
   background:
     radial-gradient(120% 100% at 80% -50%, rgba(255, 83, 126, .11), transparent 58%),
     rgba(249, 249, 251, .86);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
 }
 .screen.dark .app[data-app="music"] .navbar {
   background:
@@ -6862,8 +6856,6 @@ input { font: inherit; }
     radial-gradient(100% 100% at 0 0, rgba(255, 93, 128, .2), transparent 60%),
     linear-gradient(155deg, var(--music-glass), rgba(183, 146, 190, .12));
   box-shadow: inset 0 1px rgba(255,255,255,.32), 0 13px 28px rgba(50, 20, 43, .1);
-  -webkit-backdrop-filter: blur(24px) saturate(155%);
-  backdrop-filter: blur(24px) saturate(155%);
 }
 .musicmixart { display: flex; width: 126px; height: 126px; flex-wrap: wrap; overflow: hidden; border-radius: 18px; box-shadow: 0 11px 25px rgba(43,12,35,.19); }
 .musicmix > div:last-child { display: flex; min-width: 0; flex-direction: column; justify-content: center; }
@@ -6888,8 +6880,6 @@ input { font: inherit; }
     radial-gradient(130% 130% at 16% -55%, rgba(255, 255, 255, .55), transparent 58%),
     var(--music-glass);
   box-shadow: inset 0 1px rgba(255,255,255,.36), 0 10px 27px rgba(0,0,0,.14);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
 }
 .musicminiopen { display: flex; min-width: 0; align-items: center; gap: 9px; text-align: left; }
 .musicminiopen > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
@@ -6969,7 +6959,7 @@ input { font: inherit; }
 }
 .musicgenres > button svg { width: 13px; height: 13px; }
 
-.musicradiohero { display: flex; align-items: center; flex-direction: column; padding: 23px 20px 21px; text-align: center; border: 1px solid rgba(255,255,255,.25); border-radius: 27px; background: radial-gradient(circle at 50% 0, rgba(255,66,111,.25), transparent 61%), var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 14px 30px rgba(63,21,43,.09); -webkit-backdrop-filter: blur(23px); backdrop-filter: blur(23px); }
+.musicradiohero { display: flex; align-items: center; flex-direction: column; padding: 23px 20px 21px; text-align: center; border: 1px solid rgba(255,255,255,.25); border-radius: 27px; background: radial-gradient(circle at 50% 0, rgba(255,66,111,.25), transparent 61%), var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 14px 30px rgba(63,21,43,.09); }
 .musicradiohero > div { display: grid; width: 58px; height: 58px; margin: 7px 0 10px; place-items: center; color: #fff; border-radius: 50%; background: linear-gradient(145deg, #ff587b, #d8174c); box-shadow: 0 12px 28px rgba(216,23,76,.24), inset 0 1px rgba(255,255,255,.35); }
 .musicradiohero > div svg { width: 26px; height: 26px; }
 .musicradiohero h2 { margin: 0; font-size: 23px; letter-spacing: -.025em; }
@@ -6991,7 +6981,7 @@ input { font: inherit; }
 .musicstationcards button > svg { width: 18px; height: 18px; margin-right: 7px; color: var(--music-red); }
 
 .musiclibrarytiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }
-.musiclibrarytiles > button { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 11px; text-align: left; border: 1px solid rgba(255,255,255,.24); border-radius: 18px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.3), 0 8px 20px rgba(40,20,34,.07); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.musiclibrarytiles > button { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 11px; text-align: left; border: 1px solid rgba(255,255,255,.24); border-radius: 18px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.3), 0 8px 20px rgba(40,20,34,.07); }
 .musiclibrarytiles > button > span { display: grid; width: 34px; height: 34px; place-items: center; color: #fff; border-radius: 11px; background: linear-gradient(145deg,#ff587b,#db164c); }
 .musiclibrarytiles > button > span svg { width: 16px; height: 16px; }
 .musiclibrarytiles > button > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }
@@ -7004,7 +6994,7 @@ input { font: inherit; }
 .musiclibraryempty button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 13px; color: #fff; font-size: 12px; font-weight: 700; border-radius: 12px; background: var(--music-red); }
 .musiclibraryempty button svg { width: 13px; height: 13px; }
 
-.musicsearchbox { display: flex; min-height: 45px; align-items: center; gap: 8px; margin: 2px 0 16px; padding: 0 12px; border: 1px solid rgba(255,255,255,.28); border-radius: 15px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 7px 18px rgba(40,20,34,.06); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.musicsearchbox { display: flex; min-height: 45px; align-items: center; gap: 8px; margin: 2px 0 16px; padding: 0 12px; border: 1px solid rgba(255,255,255,.28); border-radius: 15px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 7px 18px rgba(40,20,34,.06); }
 .musicsearchbox > svg { width: 16px; height: 16px; color: var(--app-label2); }
 .musicsearchbox input { min-width: 0; flex: 1; color: var(--app-label); font-size: 14px; border: 0; outline: 0; background: none; }
 .musicsearchbox input::placeholder { color: var(--app-label3); }
@@ -7099,7 +7089,7 @@ input { font: inherit; }
 .musicvolume > svg:last-child { width: 17px; }
 .musicvolume input { width: 100%; height: 4px; accent-color: var(--music-red); }
 .musicplayeractions { display: grid; width: 100%; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 18px; }
-.musicplayeractions button { display: flex; min-height: 50px; align-items: center; flex-direction: column; justify-content: center; gap: 4px; color: var(--music-red); border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.28), 0 7px 16px rgba(36,18,30,.07); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.musicplayeractions button { display: flex; min-height: 50px; align-items: center; flex-direction: column; justify-content: center; gap: 4px; color: var(--music-red); border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.28), 0 7px 16px rgba(36,18,30,.07); }
 .musicplayeractions button svg { width: 18px; height: 18px; }
 .musicplayeractions button span { color: var(--app-label2); font-size: 8px; }
 
@@ -7183,8 +7173,6 @@ html.keyboard-nav .homebar:focus {
     linear-gradient(160deg,
       rgba(247, 249, 255, .86),
       rgba(235, 238, 247, .70));
-  -webkit-backdrop-filter: blur(28px) saturate(158%);
-  backdrop-filter: blur(28px) saturate(158%);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {
@@ -7215,8 +7203,6 @@ html.keyboard-nav .homebar:focus {
   box-shadow:
     inset 0 -1px 0 rgba(60, 60, 67, .09),
     0 9px 28px rgba(28, 32, 48, .055);
-  -webkit-backdrop-filter: blur(30px) saturate(165%);
-  backdrop-filter: blur(30px) saturate(165%);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) .navbar {
@@ -7274,8 +7260,6 @@ html.keyboard-nav .homebar:focus {
     inset 0 -1px 0 rgba(60, 60, 67, .075),
     0 0 0 .5px rgba(60, 60, 67, .10),
     0 13px 30px rgba(28, 32, 48, .11);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .group,
@@ -7320,8 +7304,6 @@ html.keyboard-nav .homebar:focus {
     inset 0 1px 0 rgba(255, 255, 255, .35),
     0 0 0 .5px rgba(60, 60, 67, .09),
     0 6px 17px rgba(30, 34, 48, .065);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .field,
@@ -7385,8 +7367,6 @@ html.keyboard-nav .homebar:focus {
     inset 0 -1px 0 rgba(60, 60, 67, .08),
     0 0 0 .5px rgba(60, 60, 67, .11),
     0 16px 36px rgba(25, 29, 44, .16);
-  -webkit-backdrop-filter: blur(30px) saturate(172%);
-  backdrop-filter: blur(30px) saturate(172%);
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .tabbar,
@@ -7451,8 +7431,6 @@ html.keyboard-nav .homebar:focus {
     inset 0 -1px 0 rgba(60, 60, 67, .08),
     0 0 0 .5px rgba(60, 60, 67, .10),
     0 10px 22px rgba(28, 32, 48, .13);
-  -webkit-backdrop-filter: blur(18px) saturate(148%);
-  backdrop-filter: blur(18px) saturate(148%);
   transition:
     transform var(--ph-fast) var(--ph-spring),
     filter var(--ph-fast) ease,
@@ -7490,8 +7468,6 @@ html.keyboard-nav .homebar:focus {
     inset 0 1px 0 rgba(255, 255, 255, .40),
     0 0 0 .5px rgba(60, 60, 67, .08),
     0 5px 14px rgba(25, 29, 43, .09);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
 }
 
 .screen.dark .app[data-app="messages"] .bub.them {
@@ -7525,8 +7501,6 @@ html.keyboard-nav .homebar:focus {
     inset 0 1px 0 rgba(255, 255, 255, .42),
     0 0 0 .5px rgba(60, 60, 67, .08),
     0 14px 31px rgba(27, 31, 45, .10);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  backdrop-filter: blur(22px) saturate(150%);
 }
 
 .app:not([data-app="cipher"]):not([data-app="music"]) .appbody > .empty svg {
@@ -7641,8 +7615,6 @@ body.inframe.dark {
     inset 0 0 0 .5px rgba(255, 255, 255, .48),
     0 0 0 .5px rgba(60, 60, 67, .09),
     0 11px 26px rgba(24, 28, 40, .09);
-  -webkit-backdrop-filter: blur(22px) saturate(155%);
-  backdrop-filter: blur(22px) saturate(155%);
 }
 
 .screen.dark .uicard,
