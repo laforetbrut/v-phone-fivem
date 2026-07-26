@@ -2899,8 +2899,42 @@ end)
 -- else is a mailbox row: one per copy of a message, so the sender's Sent, each
 -- recipient's Inbox and a draft are the same mail seen from different sides. Deleting
 -- your copy never touches anybody else's.
+--- Every address this character holds, oldest first so the list is stable between reads.
+local function mailAccountsOf(cid)
+    local rows = MySQL.query.await(
+        'SELECT address FROM vphone_mail_accounts WHERE citizenid = ? ORDER BY id ASC', { cid }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do out[#out + 1] = r.address end
+    return out
+end
+
+--- Which address this request is acting as.
+---
+--- The page names it and the server checks it belongs to the caller. Deliberately NOT a stored
+--- "active address": a pointer in a preferences row is one more thing that can disagree with
+--- the truth, and checking ownership per request is both simpler and stricter. An unnamed or
+--- unowned address falls back to the first one rather than failing, so an older page that knows
+--- nothing of this keeps working exactly as it did.
+local function mailPick(cid, wanted)
+    local accounts = mailAccountsOf(cid)
+    wanted = tostring(wanted or '')
+    for _, a in ipairs(accounts) do
+        if a == wanted then return a, accounts end
+    end
+    return accounts[1], accounts
+end
+
 local function mailAddressOf(cid)
-    return MySQL.scalar.await('SELECT address FROM vphone_mail_accounts WHERE citizenid = ?', { cid })
+    return (mailAccountsOf(cid))[1]
+end
+
+--- The domains this character has bought.
+local function mailOwnedDomains(cid)
+    local rows = MySQL.query.await(
+        'SELECT domain FROM vphone_mail_domains WHERE citizenid = ? ORDER BY domain ASC', { cid }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do out[#out + 1] = r.domain end
+    return out
 end
 
 local function cidOfAddress(addr)
@@ -2910,34 +2944,191 @@ end
 --- Rows in a folder, newest first, with the mail they point at.
 local function mailbox(addr, folder)
     return MySQL.query.await([[SELECT b.id AS box_id, b.folder, b.seen, b.saved,
-               m.id AS mail_id, m.from_addr, m.to_addr, m.subject, m.body, m.at, m.reply_to
+               m.id AS mail_id, m.from_addr, m.to_addr, m.subject, m.body, m.image, m.at, m.reply_to
         FROM vphone_mail_box b JOIN vphone_mail m ON m.id = b.mail_id
         WHERE b.address = ? AND b.folder = ? ORDER BY b.id DESC LIMIT 60]], { addr, folder }) or {}
+end
+
+--- Which domains this character may create an address on.
+---
+--- The public list, plus any reserved domain their job qualifies for. Returned as two values
+--- because the page wants to mark a reserved one as such: an address nobody else can take is
+--- worth pointing out, and it is also the only explanation for why the list is longer for a
+--- police officer than for everybody else.
+local function mailDomainsFor(p)
+    local out, reserved = {}, {}
+    for _, d in ipairs(Config.Mail.domains or {}) do out[#out + 1] = d end
+
+    local job = (p and p.job) or {}
+    local name = tostring(job.name or '')
+    for domain, jobs in pairs(Config.Mail.reserved or {}) do
+        if type(jobs) == 'table' then
+            for _, allowed in ipairs(jobs) do
+                if allowed == name then
+                    out[#out + 1] = domain
+                    reserved[domain] = true
+                    break
+                end
+            end
+        end
+    end
+    table.sort(out)
+    return out, reserved
+end
+
+--- May this character take an address on this domain?
+---
+--- Decided here and not from the list the page was handed: a client can ask for any string,
+--- and a reserved domain that is only enforced by not being offered is not reserved at all.
+local function mailDomainOk(p, domain)
+    for _, d in ipairs(Config.Mail.domains or {}) do
+        if d == domain then return true end
+    end
+    local jobs = (Config.Mail.reserved or {})[domain]
+    if type(jobs) ~= 'table' then return false end
+    local name = tostring(((p and p.job) or {}).name or '')
+    for _, allowed in ipairs(jobs) do
+        if allowed == name then return true end
+    end
+    return false
+end
+
+--- The same question, including a domain this character bought.
+---
+--- Separate from `mailDomainOk` because that one is also asked by `buyDomain` to find out
+--- whether a name is already the operator's - and there, owning it must NOT count as a reason
+--- to allow buying it again.
+local function mailDomainUsable(p, domain)
+    if mailDomainOk(p, domain) then return true end
+    return MySQL.scalar.await(
+        'SELECT 1 FROM vphone_mail_domains WHERE domain = ? AND citizenid = ?',
+        { domain, p.citizenid }) ~= nil
+end
+
+--- An image on a mail, or '' when there is none.
+---
+--- The same host gate as a wallpaper, for the same reason: the URL is fetched by every
+--- recipient's client, so which hosts are acceptable is an operator decision rather than a
+--- sender's. Returns nil when the value was given and is not allowed, so the caller can refuse
+--- rather than quietly dropping it - a mail that silently loses its attachment is worse than
+--- one that will not send.
+local function mailImage(raw)
+    local url = tostring(raw or ''):sub(1, 300)
+    if url == '' then return '' end
+    if Config.Mail.images == false then return nil end
+    if not wallpaperAllowed(url) then return nil end
+    return url
 end
 
 V.Callback('v-phone:mail', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
     local op = tostring((data and data.op) or 'me')
-    local mine = mailAddressOf(p.citizenid)
+    -- Which of this character's addresses the request is acting as. Every op below reads
+    -- `mine` exactly as it did when there was only ever one.
+    local mine, accounts = mailPick(p.citizenid, data and data.address)
 
     if op == 'me' then
-        resolve({ ok = true, address = mine, domains = Config.Mail.domains })
+        local domains, reserved = mailDomainsFor(p)
+        local owned = {}
+        for _, d in ipairs(mailOwnedDomains(p.citizenid)) do
+            owned[d] = true
+            local already = false
+            for _, existing in ipairs(domains) do
+                if existing == d then already = true break end
+            end
+            if not already then domains[#domains + 1] = d end
+        end
+        local custom = Config.Mail.custom or {}
+        resolve({
+            ok = true,
+            address = mine,
+            accounts = accounts,
+            maxAccounts = math.max(1, math.floor(num(Config.Mail.maxAccounts, 1))),
+            domains = domains, reserved = reserved, owned = owned,
+            images = Config.Mail.images ~= false,
+            buy = { enabled = custom.enabled == true, price = math.floor(num(custom.price, 0)) },
+        })
+        return
+    end
+
+    -- Register a domain of your own, by paying for it.
+    if op == 'buyDomain' then
+        local custom = Config.Mail.custom or {}
+        if custom.enabled ~= true then resolve({ error = 'disabled' }) return end
+
+        local domain = tostring((data and data.domain) or ''):lower():gsub('[^%w%.-]', '')
+        local minLen = math.max(2, math.floor(num(custom.minLen, 4)))
+        local maxLen = math.min(48, math.floor(num(custom.maxLen, 24)))
+        if #domain < minLen or #domain > maxLen then resolve({ error = 'address' }) return end
+        -- A domain has to look like one: labels of letters and digits, separated by dots, and
+        -- at least one dot. Without this, `police` on its own would be registrable.
+        if not domain:match('^[%w][%w-]*%.[%w][%w-]*$')
+            and not domain:match('^[%w][%w-]*%.[%w][%w-]*%.[%w][%w-]*$') then
+            resolve({ error = 'address' }) return
+        end
+
+        -- Never something the operator already uses, in either list.
+        if mailDomainOk(p, domain) then resolve({ error = 'inuse' }) return end
+        for d in pairs(Config.Mail.reserved or {}) do
+            if d == domain then resolve({ error = 'inuse' }) return end
+        end
+
+        -- And never something that READS like a public service. Checked per label, so both
+        -- `police.ls` and `ls-police.com` are refused rather than only the first.
+        for _, word in ipairs(custom.blocked or {}) do
+            word = tostring(word):lower()
+            if word ~= '' then
+                for label in domain:gmatch('[^%.]+') do
+                    if label == word or label:find(word, 1, true) then
+                        resolve({ error = 'domainblocked' }) return
+                    end
+                end
+            end
+        end
+
+        if MySQL.scalar.await('SELECT 1 FROM vphone_mail_domains WHERE domain = ?', { domain }) then
+            resolve({ error = 'taken' }) return
+        end
+
+        -- Paid for BEFORE it is registered, and it fails closed: `Bridge.RemoveMoney` answers
+        -- false when it could not take the money, and a domain handed over on a failed payment
+        -- is the one mistake here that cannot be undone quietly.
+        local price = math.max(0, math.floor(num(custom.price, 0)))
+        if price > 0 then
+            local paid = Bridge.RemoveMoney and Bridge.RemoveMoney(src, price,
+                tostring(custom.account or 'bank'))
+            if not paid then resolve({ error = 'nomoney' }) return end
+        end
+
+        local id = MySQL.insert.await(
+            'INSERT INTO vphone_mail_domains (citizenid, domain) VALUES (?,?)',
+            { p.citizenid, domain })
+        if not id then
+            -- Refund rather than keep the money for nothing. Same rule as the bank: a failure
+            -- after the debit has to put it back.
+            if price > 0 and Bridge.AddMoney then
+                Bridge.AddMoney(src, price, tostring(custom.account or 'bank'))
+            end
+            resolve({ error = 'x' }) return
+        end
+        Core.Log('mail', ('%s bought the domain %s for %d'):format(p.citizenid, domain, price),
+            nil, p.citizenid)
+        resolve({ ok = true, domain = domain })
         return
     end
 
     -- One address, chosen once. It is the account other people will write to, which is
     -- exactly why it cannot be edited away afterwards.
     if op == 'create' then
-        if mine then resolve({ error = 'exists' }) return end
+        local cap = math.max(1, math.floor(num(Config.Mail.maxAccounts, 1)))
+        if #accounts >= cap then resolve({ error = 'maxaccounts', max = cap }) return end
         local localpart = tostring((data and data.localpart) or ''):lower():gsub('[^%w%._-]', '')
         if #localpart < Config.Mail.localMin or #localpart > Config.Mail.localMax then
             resolve({ error = 'address' }) return
         end
         local domain = tostring((data and data.domain) or '')
-        local okDomain = false
-        for _, d in ipairs(Config.Mail.domains) do if d == domain then okDomain = true break end end
-        if not okDomain then resolve({ error = 'domain' }) return end
+        if not mailDomainUsable(p, domain) then resolve({ error = 'domain' }) return end
 
         local addr = localpart .. '@' .. domain
         if MySQL.scalar.await('SELECT 1 FROM vphone_mail_accounts WHERE address = ?', { addr }) then
@@ -2964,7 +3155,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
     -- Everything the player keeps, whatever folder it came from.
     if op == 'saved' then
         resolve({ ok = true, mail = MySQL.query.await([[SELECT b.id AS box_id, b.folder, b.seen, b.saved,
-                   m.id AS mail_id, m.from_addr, m.to_addr, m.subject, m.body, m.at, m.reply_to
+                   m.id AS mail_id, m.from_addr, m.to_addr, m.subject, m.body, m.image, m.at, m.reply_to
             FROM vphone_mail_box b JOIN vphone_mail m ON m.id = b.mail_id
             WHERE b.address = ? AND b.saved = 1 ORDER BY b.id DESC LIMIT 60]], { mine }) or {} })
         return
@@ -2996,6 +3187,8 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         local subject = tostring((data and data.subject) or ''):sub(1, Config.Mail.maxSubject)
         local bodyTxt = tostring((data and data.body) or ''):sub(1, Config.Mail.maxBody)
         local replyTo = math.floor(num(data and data.replyTo, 0))
+        local image = mailImage(data and data.image)
+        if image == nil then resolve({ error = 'badhost' }) return end
 
         -- Recipients arrive as one field; a group mail is simply more than one of them.
         local raw = tostring((data and data.to) or '')
@@ -3015,14 +3208,17 @@ V.Callback('v-phone:mail', function(src, resolve, data)
                     'SELECT mail_id FROM vphone_mail_box WHERE id = ? AND address = ? AND folder = ?',
                     { prev, mine, 'draft' })
                 if mid then
-                    MySQL.update.await('UPDATE vphone_mail SET to_addr = ?, subject = ?, body = ? WHERE id = ?',
-                        { table.concat(to, ', '), subject, bodyTxt, mid })
+                    MySQL.update.await([[UPDATE vphone_mail
+                        SET to_addr = ?, subject = ?, body = ?, image = ? WHERE id = ?]],
+                        { table.concat(to, ', '), subject, bodyTxt, image, mid })
                     resolve({ ok = true }) return
                 end
             end
             local mid = MySQL.insert.await(
-                'INSERT INTO vphone_mail (from_addr, to_addr, subject, body, reply_to) VALUES (?,?,?,?,?)',
-                { mine, table.concat(to, ', '), subject, bodyTxt, replyTo > 0 and replyTo or nil })
+                [[INSERT INTO vphone_mail (from_addr, to_addr, subject, body, image, reply_to)
+                  VALUES (?,?,?,?,?,?)]],
+                { mine, table.concat(to, ', '), subject, bodyTxt, image,
+                  replyTo > 0 and replyTo or nil })
             MySQL.insert.await(
                 'INSERT INTO vphone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,1)',
                 { mid, mine, 'draft' })
@@ -3043,8 +3239,10 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         end
 
         local mid = MySQL.insert.await(
-            'INSERT INTO vphone_mail (from_addr, to_addr, subject, body, reply_to) VALUES (?,?,?,?,?)',
-            { mine, table.concat(to, ', '), subject, bodyTxt, replyTo > 0 and replyTo or nil })
+            [[INSERT INTO vphone_mail (from_addr, to_addr, subject, body, image, reply_to)
+              VALUES (?,?,?,?,?,?)]],
+            { mine, table.concat(to, ', '), subject, bodyTxt, image,
+              replyTo > 0 and replyTo or nil })
 
         MySQL.insert.await('INSERT INTO vphone_mail_box (mail_id, address, folder, seen) VALUES (?,?,?,1)',
             { mid, mine, 'sent' })
@@ -3696,16 +3894,37 @@ CreateThread(function()
         PRIMARY KEY (`citizenid`), UNIQUE KEY `address` (`address`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
+    -- A domain a player registered. Unique on the domain, because the whole point of buying
+    -- one is that nobody else can have it.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail_domains` (
+        `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `citizenid` VARCHAR(16) NOT NULL,
+        `domain`    VARCHAR(48) NOT NULL,
+        `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`), UNIQUE KEY `domain` (`domain`), KEY `owner` (`citizenid`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `from_addr` VARCHAR(64) NOT NULL,
         `to_addr`   VARCHAR(400) NOT NULL DEFAULT '',
         `subject`   VARCHAR(120) NOT NULL DEFAULT '',
         `body`      TEXT,
+        -- An image attached to the mail: one URL, host-gated on the way in.
+        `image`     VARCHAR(300) NOT NULL DEFAULT '',
         `reply_to`  INT UNSIGNED NULL DEFAULT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so the column
+    -- is added on its own. This is the fourth time in this resource; it is the reflex now.
+    if not MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_mail'
+          AND COLUMN_NAME = 'image' LIMIT 1]]) then
+        MySQL.query.await("ALTER TABLE `vphone_mail` ADD COLUMN `image` VARCHAR(300) NOT NULL DEFAULT ''")
+        print('[v-phone] mail: added image')
+    end
 
     -- One row per copy: the sender's Sent, each recipient's Inbox, and drafts. Deleting
     -- your copy leaves everyone else's alone, which is what a mailbox means.

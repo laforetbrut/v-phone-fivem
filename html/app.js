@@ -1720,36 +1720,96 @@ function noteEdit(n) {
 let mailFolder = 'inbox';
 let mailAcc = null;
 
+let mailImages = true;      // whether the server allows an attachment at all
+
+// Every mail request names which of the player's addresses it is acting as.
+//
+// One wrapper rather than the field repeated at nine call sites: a request that forgets it
+// would silently act as the FIRST address instead of the open one, which is the kind of bug
+// that reads as "my mail went from the wrong account" and is impossible to spot in a diff.
+const mailPost = (op, extra) => post('mail', Object.assign({ op, address: mailAcc }, extra || {}));
+let mailMe = null;          // the last `me` answer, for the domain sheet
+
+// Buying a domain of your own.
+//
+// The price and whether it is allowed at all are the server's to state; this only asks. The
+// name is checked there too - a player must not be able to buy something that reads like a
+// public service, and a list the page was shown is not a rule.
+function mailBuyDomain() {
+  const buy = (mailMe && mailMe.buy) || {};
+  sheet(L('ph.mail_buy_title'),
+    '<div class="groupfoot">' + esc(L('ph.mail_buy_hint').replace('{price}', money(buy.price))) + '</div>' +
+    UI.field('mdomname', L('ph.mail_buy_name'), '', 'maxlength="30"') +
+    UI.button(L('ph.mail_buy_go'), 'mdomgo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      byId('mdomgo').addEventListener('click', async () => {
+        const r = await post('mail', { op: 'buyDomain', domain: byId('mdomname').value.trim() });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        toast(L('ph.mail_buy_done').replace('{domain}', r.domain));
+        RENDER.mail();
+      });
+    });
+}
+
 RENDER.mail = async () => {
   setNav(L('app.mail'), null);
   loading();
-  const me = await post('mail', { op: 'me' });
+  // `address` so the server answers with the account the player was last reading, rather than
+  // silently snapping back to their first one every time the app is opened.
+  const me = await post('mail', { op: 'me', address: mailAcc });
   if (!me || me.error) { body(UI.empty(L('ph.err_' + ((me && me.error) || 'off')), 'mail')); return; }
-  if (!me.address) { mailSignup(me.domains || []); return; }
+  mailImages = me.images !== false;
+  mailMe = me;
+  if (!me.address) {
+    mailSignup(me.domains || [], me.reserved || {}, me.owned || {}, me.buy || {});
+    return;
+  }
   mailAcc = me.address;
   mailList();
 };
 
 // The address is chosen once and is what people write to, which is why it cannot be
 // edited away afterwards.
-function mailSignup(domains) {
+function mailSignup(domains, reserved, owned, buy) {
   if (!openApp || openApp.id !== 'mail') return;
   setNav(L('app.mail'), null);
+  reserved = reserved || {};
+  owned = owned || {};
   let domain = domains[0] || 'eyefind.info';
+  // A reserved domain is only in this list because the reader's job qualifies for it, which is
+  // worth saying: it is also the only explanation for why an officer's list is longer than
+  // everybody else's.
+  const anyReserved = domains.some((d) => reserved[d]);
   body(
     '<div class="accthead">' + UI.appIcon('mail') +
       '<div class="acctname">' + esc(L('app.mail')) + '</div>' +
       '<div class="acctsub">' + esc(L('ph.mail_pick_sub')) + '</div></div>' +
     UI.field('mlocal', L('ph.mail_localpart'), '', 'maxlength="20"') +
-    '<div class="seg scroll" id="mdoms">' + domains.map((d, i) =>
-      '<button class="' + (i === 0 ? 'on' : '') + '" data-d="' + esc(d) + '" type="button">@' + esc(d) + '</button>').join('') + '</div>' +
+    // Chips that WRAP, not a scrolling segmented control.
+    //
+    // `.seg.scroll` hides its scrollbar, so a fourth domain simply disappeared off the right
+    // edge with nothing to say it was there - and this list gets longer, not shorter: a
+    // reserved domain per public service, plus whatever a player has bought. A control that
+    // hides options is worse than a taller one.
+    '<div class="domlist" id="mdoms">' + domains.map((d, i) =>
+      '<button class="' + (i === 0 ? 'on' : '') + (reserved[d] ? ' gov' : '') +
+      (owned[d] ? ' mine' : '') +
+      '" data-d="' + esc(d) + '" type="button">@' + esc(d) + '</button>').join('') + '</div>' +
     UI.button(L('ph.mail_create'), 'mmake', 'tinted') +
-    '<div class="groupfoot">' + esc(L('ph.mail_pick_hint')) + '</div>'
+    '<div class="groupfoot">' + esc(L('ph.mail_pick_hint')) + '</div>' +
+    (anyReserved ? '<div class="groupfoot">' + esc(L('ph.mail_reserved_hint')) + '</div>' : '') +
+    (buy && buy.enabled
+      ? UI.button(L('ph.mail_buy').replace('{price}', money(buy.price)), 'mbuy', 'plain')
+      : '')
   );
   qrows('mdoms', 'button', (b) => b.addEventListener('click', () => {
     domain = b.dataset.d;
     [...byId('mdoms').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
   }));
+  if (byId('mbuy')) byId('mbuy').addEventListener('click', () => mailBuyDomain());
   byId('mmake').addEventListener('click', async () => {
     const r = await post('mail', { op: 'create', localpart: byId('mlocal').value.trim(), domain });
     if (r && r.ok) { mailAcc = r.address; toast(L('ph.mail_made')); mailList(); }
@@ -1769,11 +1829,17 @@ async function mailList() {
   beginView();
   setNav(L('app.mail'), null, { icon: 'add', onClick: () => mailCompose({}) });
   tabbar(MAIL_TABS, mailFolder, (t) => { mailFolder = t; mailList(); });
-  body('<div class="mailaddr">' + esc(mailAcc || '') + '</div><div id="mlist"></div>');
+  // The address you are reading, and the way to the others. Already on screen; now it is the
+  // control too, which is where somebody would look for it.
+  const many = ((mailMe && mailMe.accounts) || []).length > 1
+    || ((mailMe && mailMe.accounts) || []).length < (Number(mailMe && mailMe.maxAccounts) || 1);
+  body('<button class="mailaddr' + (many ? ' pick' : '') + '" id="maddr" type="button">'
+    + esc(mailAcc || '') + (many ? svg('chevron') : '') + '</button><div id="mlist"></div>');
+  if (many) byId('maddr').addEventListener('click', () => mailAccountSheet());
 
   const r = mailFolder === 'saved'
-    ? await post('mail', { op: 'saved' })
-    : await post('mail', { op: 'list', folder: mailFolder });
+    ? await mailPost('saved')
+    : await mailPost('list', { folder: mailFolder });
   const host = byId('mlist');
   if (!host) return;
   const list = (r && r.mail) || [];
@@ -1801,12 +1867,12 @@ function mailRead(m) {
   beginView();
   // A draft is not something you read; it is something you carry on writing.
   if (m.folder === 'draft') { mailCompose({ draft: m }); return; }
-  if (m.folder === 'inbox' && !Number(m.seen)) post('mail', { op: 'seen', boxId: m.box_id });
+  if (m.folder === 'inbox' && !Number(m.seen)) mailPost('seen', { boxId: m.box_id });
 
   setNav(m.subject || L('ph.mail_nosubject'), L('app.mail'), {
     icon: 'star', onClick: async () => {
       const saved = !Number(m.saved);
-      await post('mail', { op: 'save', boxId: m.box_id, saved });
+      await mailPost('save', { boxId: m.box_id, saved });
       m.saved = saved ? 1 : 0;
       toast(L(saved ? 'ph.mail_kept' : 'ph.mail_unkept'));
     },
@@ -1819,6 +1885,8 @@ function mailRead(m) {
       '<div class="mailmeta">' + esc(String(m.at || '').slice(0, 16)) + '</div>' +
     '</div>' +
     '<div class="mailbody">' + esc(m.body || '') + '</div>' +
+    (m.image ? '<button class="mailimg" id="mimg" type="button" style="'
+      + photoStyle(m.image) + '"></button>' : '') +
     UI.button(L('ph.mail_reply'), 'mreply', 'tinted') +
     UI.button(L('ph.mail_forward'), 'mfwd', 'plain') +
     ((m.to_addr || '').indexOf(',') !== -1 ? UI.button(L('ph.mail_reply_all'), 'mreplyall', 'plain') : '') +
@@ -1827,12 +1895,51 @@ function mailRead(m) {
   byId('mreply').addEventListener('click', () => mailCompose({ reply: m, all: false }));
   // Forward keeps the message and clears the recipients: the point is to send it on.
   byId('mfwd').addEventListener('click', () => mailCompose({ forward: m }));
+  // Tapping the attachment opens the photo viewer, so it can be looked at properly rather
+  // than at reading-column width.
+  if (byId('mimg')) byId('mimg').addEventListener('click', () => photoSheet([m.image], 0, []));
   const ra = byId('mreplyall');
   if (ra) ra.addEventListener('click', () => mailCompose({ reply: m, all: true }));
   byId('mdel').addEventListener('click', async () => {
-    await post('mail', { op: 'del', boxId: m.box_id });
+    await mailPost('del', { boxId: m.box_id });
     toast(L('ph.mail_deleted')); mailList();
   });
+}
+
+// Which address you are reading, and the way to the others.
+//
+// A sheet rather than a segmented control: the number of accounts is small but the addresses
+// are long, and three of them side by side would be three unreadable stubs.
+function mailAccountSheet() {
+  const me = mailMe || {};
+  const accounts = me.accounts || [];
+  const cap = Number(me.maxAccounts) || 1;
+  sheet(L('ph.mail_accounts'),
+    UI.group(accounts.map((a) => UI.row({
+      icon: 'mail', tint: '#0A84FF', title: a,
+      value: a === mailAcc ? L('ph.mail_reading') : '',
+      data: { acc: a },
+    }))) +
+    (accounts.length < cap
+      ? UI.button(L('ph.mail_add_account'), 'macc_add', 'tinted')
+      : '<div class="groupfoot">' + esc(L('ph.mail_account_cap').replace('{max}', String(cap))) + '</div>'),
+    () => {
+      const epoch = sheetEpoch;
+      rows('.row[data-acc]', () => {});
+      [...byId('sheet').querySelectorAll('[data-acc]')].forEach((el) =>
+        el.addEventListener('click', () => {
+          if (!closeSheet(false, epoch)) return;
+          if (el.dataset.acc === mailAcc) return;
+          mailAcc = el.dataset.acc;
+          mailFolder = 'inbox';
+          RENDER.mail();
+        }));
+      if (byId('macc_add')) byId('macc_add').addEventListener('click', () => {
+        if (!closeSheet(false, epoch)) return;
+        // The same screen that creates the first address creates the next one.
+        mailSignup(me.domains || [], me.reserved || {}, me.owned || {}, me.buy || {});
+      });
+    });
 }
 
 // One composer for a new mail, a reply, a reply-all and an unfinished draft.
@@ -1861,27 +1968,72 @@ function mailCompose(o) {
     replyTo = Number(r.mail_id || 0);
   }
 
+  // An attachment survives a redraw of the preview, so it lives here rather than in the DOM.
+  let image = (d && d.image) || '';
+
   setNav(L('ph.mail_new'), L('app.mail'), null, () => mailList());
   body(
     UI.field('mto', L('ph.mail_to_ph'), to, 'maxlength="400"') +
     UI.field('msubj', L('ph.mail_subject'), subject, 'maxlength="80"') +
     '<textarea class="mailedit" id="mbody" maxlength="2000" placeholder="' + esc(L('ph.mail_body_ph')) + '">' + esc(bodyTxt) + '</textarea>' +
+    (mailImages ? '<div id="mattach"></div>' + UI.button(L('ph.mail_attach'), 'mpick', 'plain') : '') +
     UI.button(L('ph.mail_send'), 'msend', 'tinted') +
     UI.button(L('ph.mail_savedraft'), 'msave', 'plain') +
     '<div class="groupfoot">' + esc(L('ph.mail_group_hint')) + '</div>'
   );
 
-  const payload = (op) => ({ op, to: byId('mto').value, subject: byId('msubj').value,
-    body: byId('mbody').value, replyTo, boxId });
+  // The attachment, drawn above the buttons with an x on it. Repainted in place so the
+  // recipients and the body already typed survive picking - and re-picking - an image.
+  const paintAttach = () => {
+    const host = byId('mattach');
+    if (!host) return;
+    host.innerHTML = image
+      ? '<div class="socattached" style="' + photoStyle(image) + '">' +
+          '<button class="socattachx" id="mdrop" type="button" aria-label="' +
+            esc(L('ph.remove')) + '">' + svg('xmark') + '</button></div>'
+      : '';
+    if (image) byId('mdrop').addEventListener('click', () => {
+      image = '';
+      paintAttach();
+      ui('toggleoff');
+    });
+  };
+
+  if (byId('mpick')) byId('mpick').addEventListener('click', () => {
+    // From the phone, or a link - a link is the only route for anybody whose gallery is
+    // empty, and for an image that was never taken on this phone.
+    sheet(L('ph.mail_attach'),
+      UI.button(L('ph.pick_photo'), 'mfrom_roll', 'plain') +
+      UI.field('mfrom_url', L('ph.mail_attach_url'), image, 'maxlength="300"') +
+      UI.button(L('ph.mail_attach_use'), 'mfrom_use', 'tinted'),
+      () => {
+        const epoch = sheetEpoch;
+        byId('mfrom_roll').addEventListener('click', () => pickPhoto((url) => {
+          image = url;
+          paintAttach();
+          ui('shutter');
+        }));
+        byId('mfrom_use').addEventListener('click', () => {
+          const url = byId('mfrom_url').value.trim();
+          if (!closeSheet(false, epoch)) return;
+          image = url;
+          paintAttach();
+        });
+      });
+  });
+  paintAttach();
+
+  const payload = () => ({ to: byId('mto').value, subject: byId('msubj').value,
+    body: byId('mbody').value, image, replyTo, boxId });
 
   byId('msend').addEventListener('click', async () => {
-    const res = await post('mail', payload('send'));
+    const res = await mailPost('send', payload());
     if (res && res.ok) { ui('sent'); toast(L('ph.mail_sent')); mailFolder = 'sent'; mailList(); }
     else if (res && res.error === 'noaddr') toast(L('ph.err_noaddr') + ' ' + (res.address || ''));
     else toast(L('ph.err_' + ((res && res.error) || 'x')));
   });
   byId('msave').addEventListener('click', async () => {
-    const res = await post('mail', payload('draft'));
+    const res = await mailPost('draft', payload());
     if (res && res.ok) { toast(L('ph.mail_drafted')); mailFolder = 'draft'; mailList(); }
     else toast(L('ph.err_' + ((res && res.error) || 'x')));
   });

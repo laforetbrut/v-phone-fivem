@@ -843,6 +843,70 @@ Config.Mail = {
     -- address only if its domain is in this list. Existing addresses are never touched by a
     -- change here, so removing a domain stops new sign-ups on it without breaking anyone.
     domains  = { 'ls.com', 'eyefind.info', 'lifeinvader.com', 'bilkinton.com' },
+
+    -- ── Domains only certain jobs may sign up on ───────────────
+    -- A public service needs an address that cannot be impersonated. `@lspd.gov` is worth
+    -- nothing if any player can take `chief@lspd.gov` before the actual chief does.
+    --
+    -- The key is the domain, the value is the list of jobs allowed on it. A reserved domain
+    -- does NOT need to be in `domains` above and should not be: that list is what everybody
+    -- is offered, and this one is only offered to whoever qualifies. Both are checked on the
+    -- server, so a client asking for a domain it was never shown is refused.
+    --
+    -- **An address already created survives the player losing the job.** A dismissed officer
+    -- keeping their `@lspd.gov` address is a roleplay matter to settle in character, not a
+    -- mailbox for a script to delete behind them - and revoking it would silently break every
+    -- thread they are part of. Take the job away and they simply cannot make a NEW one.
+    reserved = {
+        -- ['lspd.gov']    = { 'police', 'sheriff', 'bcso' },
+        -- ['ems.gov']     = { 'ambulance', 'ems' },
+        -- ['ls.gov']      = { 'judge', 'mayor', 'government' },
+        -- ['weazel.news'] = { 'reporter', 'journalist' },
+    },
+
+    -- ── How many addresses one character may hold ──────────────
+    -- One is the classic mailbox. More is what somebody actually wants: a personal address and
+    -- a work one, kept apart, switched between in the app.
+    --
+    -- There is no "active address" stored anywhere. The page names which of its addresses it is
+    -- acting as on every request, and the server checks that the address belongs to the caller
+    -- - which is both simpler than a stored pointer and stricter, because there is no state to
+    -- get out of step with the truth.
+    maxAccounts = 3,
+
+    -- ── A domain a player buys ─────────────────────────────────
+    -- The state's domains are yours to define in `reserved` above. This is the other half: a
+    -- player registering a domain of their own, for a company or a newspaper, by paying for it.
+    --
+    -- Owning a domain lets THAT player create addresses on it. It does not let them hand
+    -- addresses to other people - that is a company directory, a bigger feature than this, and
+    -- pretending to offer it would be worse than not.
+    custom = {
+        enabled = false,       -- off by default: a server should decide to sell something
+        price   = 25000,
+        account = 'bank',      -- which account the money comes out of
+        minLen  = 4,
+        maxLen  = 24,
+
+        -- Words a player may not register, checked as a whole label and as any dot-separated
+        -- part of one. The point is that a bought domain must never be able to READ like a
+        -- public service: `police.ls` and `ls-police.com` are both refused by this list.
+        --
+        -- A domain already in `domains` or `reserved` is refused regardless of this list, so
+        -- there is no need to repeat them here.
+        blocked = {
+            'gov', 'gouv', 'police', 'lspd', 'bcso', 'sheriff', 'ems', 'ambulance',
+            'sams', 'fib', 'iaa', 'state', 'etat', 'mairie', 'city', 'justice',
+            'court', 'tribunal', 'prison', 'admin', 'staff', 'ifruit', 'phone',
+        },
+    },
+
+    -- Attach an image to a mail: one picked from the phone's own gallery, or a link.
+    --
+    -- The URL faces every recipient's client, so it goes through the same host allowlist as a
+    -- wallpaper or an avatar - `Config.Media.hosts`. Off refuses both, and an existing mail
+    -- that carries one still shows it.
+    images = true,
     maxSubject = 80,
     maxBody    = 2000,
     maxTo      = 10,       -- a group mail, not a mailing list

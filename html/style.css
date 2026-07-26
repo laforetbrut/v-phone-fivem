@@ -1409,7 +1409,14 @@ input { font: inherit; }
 .vmwhen { font-size: 12.5px; color: var(--app-label2); padding-bottom: 12px; }
 
 /* ── Mail ──────────────────────────────────────────────────────── */
-.mailaddr { font-size: 12.5px; color: var(--app-label2); padding: 2px 6px 10px; text-align: center; }
+/* The address you are reading. A button when there is somewhere to go - another account, or
+   room for one - and plain text when there is not, because a control that does nothing is
+   worse than no control. */
+.mailaddr { display: block; width: 100%; font-size: 12.5px; color: var(--app-label2);
+  padding: 2px 6px 10px; text-align: center; background: none; }
+.mailaddr.pick { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.mailaddr.pick svg { width: 11px; height: 11px; opacity: .55; }
+.mailaddr.pick:active { opacity: .6; }
 .mailhead { padding: 4px 2px 12px; border-bottom: .5px solid var(--app-sep); margin-bottom: 12px; }
 .mailsubj { font-size: 20px; font-weight: 700; letter-spacing: -.02em; color: var(--app-label);
   margin-bottom: 6px; }
@@ -8541,6 +8548,50 @@ body.inframe.dark .uisearch {
 /* Snapmatic cannot post without a photograph, so its Post button says so by being dead
    rather than by explaining itself after the fact. */
 .bigbtn:disabled { opacity: .4; pointer-events: none; }
+
+/* The domain picker: chips that WRAP.
+   `.seg.scroll` hides its scrollbar, so a fourth domain vanished off the right edge with
+   nothing to say it was there - and this list only gets longer, with a reserved domain per
+   public service plus whatever a player has bought. Every option visible beats a tidy row. */
+.domlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.domlist button {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--app-card);
+  color: var(--app-label);
+  font-size: 13px;
+}
+
+.domlist button.on { background: var(--app-tint, #0A84FF); color: #fff; }
+.domlist button:active { transform: scale(.96); }
+
+/* Reserved for this player's job, and bought by this player: two different reasons for a
+   domain to be in the list that nobody else would see, so they do not look the same. */
+.domlist button.gov { color: #30d158; font-weight: 700; }
+.domlist button.gov.on { background: #30d158; color: #fff; }
+.domlist button.mine { color: #bf5af2; font-weight: 700; }
+.domlist button.mine.on { background: #bf5af2; color: #fff; }
+
+/* A mail's attachment, under the text, the way a mail client shows one. Tapping it opens the
+   photo viewer - a reading column is the wrong width to look at a photograph in. */
+.mailimg {
+  display: block;
+  width: 100%;
+  height: 180px;
+  margin: 0 0 16px;
+  border-radius: 14px;
+  background-color: var(--app-card2, rgba(120, 120, 128, .16));
+  background-position: center;
+  background-size: cover;
+}
+
+.mailimg:active { transform: scale(.99); }
 
 /* ══ The warrant terminal ══════════════════════════════════════
    A police tool, deliberately not the phone: a dark forensic console over the whole
