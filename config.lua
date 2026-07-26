@@ -207,7 +207,15 @@ Config.Settings = {
     voicemailMax    = 200,
     anonymous       = false,
     customWallpaper = true,
-    camera          = false,
+    -- The Camera app, on. It shipped off, which meant a phone with a camera icon that
+    -- opened onto "the camera is disabled on this server" - a bad thing to hand somebody
+    -- out of the box, and it hid a real bug for a long time: the flag was never sent to
+    -- the page at all, so switching it on changed nothing and looked like a config error.
+    --
+    -- A photo needs somewhere to live. Either Config.Media (server-side capture and upload,
+    -- the better option, and the API key stays on the server) or `phone_cameraUpload` with
+    -- screenshot-basic. With neither, the app opens and taking a shot says so plainly.
+    camera          = true,
     cameraUpload    = '',
     social          = true,
     socialMaxLength = 280,

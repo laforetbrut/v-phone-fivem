@@ -5,6 +5,44 @@ one coming back.
 
 ---
 
+## [2026-07-26 07:00] — The camera flag was never sent, and I repeated the scope bug fixing it
+
+**Context:** the Camera app reported "the camera is disabled on this server" no matter what
+the operator configured. `set phone_camera true` was in server.cfg and changed nothing.
+
+**Error:** the page decides from `state.camera`. The `v-phone:open` payload did not contain
+`camera` — not wrongly, not stale, absent. So the page read `undefined`, took it as off, and
+said so. The app has never opened for anybody on any server since it was written.
+
+**Why it took several passes:** the previous round found a real and adjacent bug — the client
+reading `Config.Media.enabled` from the file while the server resolved `phone_media` from a
+convar — and fixing it felt like fixing this. It was a different link in the same chain:
+that one governs whether a photo can be UPLOADED, this one governs whether the app exists at
+all. Two switches, both off, one visible symptom. I should have traced the exact string in the
+screenshot to its condition before touching anything; `ph.camera_off` comes from
+`if (!state.camera)` and nothing else, and grepping the payload for `camera` would have taken
+a minute.
+
+**And I reproduced the `prefsOf` bug while fixing it.** The startup report I added called
+`apiKey()` from a `CreateThread` placed ABOVE the `local function apiKey` that defines it.
+Lua resolves that name at compile time, so the closure captured the nil global; the
+`Wait(3000)` inside makes no difference, which is exactly the trap. Caught before shipping by
+re-running the use-before-definition scan I wrote for `prefsOf` — which now covers 24 files
+and comes back clean.
+
+**Fix:** `camera` is sent in the open payload. `Config.Settings.camera` now ships ON, because
+a phone with a camera icon that opens onto "disabled" is a poor default and it is what hid
+this for so long. And `server/media.lua` prints one line at startup saying what the camera
+will actually do — off, uploading through screencapture, uploading through screenshot-basic,
+or on with nowhere to put a photo. Three things can be missing and nothing said which.
+
+**Prevention:** when a symptom is a literal string on screen, find that string's condition
+first and check every input to it, before forming a theory. And run the scope scan after
+adding any `CreateThread` that calls a local — a delay inside the thread does not change
+when the name is bound.
+
+---
+
 ## [2026-07-26 06:20] — Blocked the camera myself, then broke the glass twice chasing a square
 
 **Context:** two long-running complaints — Alt not freeing the camera, and a black square

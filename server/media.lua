@@ -60,6 +60,34 @@ local function uploadHeaders()
     return h
 end
 
+-- Say what the camera is going to do, once, at startup. The Camera app spent a long time
+-- reporting "disabled on this server" while the operator had switched it on, and nothing
+-- anywhere said which of the three things was actually missing: the setting, the capture
+-- resource, or the upload target. One line closes that.
+CreateThread(function()
+    Wait(3000)
+    if not V.SettingBool('camera', true) then
+        print('[v-phone] camera: OFF (Config.Settings.camera / set phone_camera true)')
+        return
+    end
+    if mediaOn() then
+        print(('[v-phone] camera: on, uploading through screencapture (%s)')
+            :format(tostring(MEDIA.provider or 'custom')))
+        if apiKey() == '' then
+            print('[v-phone] camera: no API key. Set `phone_media_key` or uploads will fail.')
+        end
+        return
+    end
+    local target = tostring(V.Setting('cameraUpload', '') or '')
+    if GetResourceState('screencapture') == 'started' then
+        print('[v-phone] camera: on. screencapture is running but media hosting is off - `set phone_media true` to use it.')
+    elseif target ~= '' then
+        print('[v-phone] camera: on, uploading through screenshot-basic to the configured target.')
+    else
+        print('[v-phone] camera: on, but nowhere to put a photo. Set Config.Media (with screencapture) or `phone_cameraUpload`.')
+    end
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Recording an upload for later deletion
 -- ══════════════════════════════════════════════════════════════
