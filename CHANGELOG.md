@@ -4,6 +4,22 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.11] - 2026-07-26
+
+### Fixed (English first)
+
+- **"Message" on a contact did nothing.** `openThread` opens with a guard that returns unless the Messages app is the open one - correct, since it draws into that app's own body and has nowhere else to put a conversation. But it made every caller from outside Messages a silent no-op: a contact card, a notification, a deep link from another resource. Two callers happened to enter the app first by hand and worked; the six that did not, did nothing, and nothing in the code said they had to. There is one way in now, `messageTo`, which enters the app and then opens the thread - and it says so when Messages is not installed rather than failing quietly. This is the same shape as the mail bug fixed in 1.2.9, and finding it twice is the argument for the wrapper.
+- **A new message could only be sent to a typed number.** The people somebody writes to are almost always already in their contacts, and reading a number off one screen to type it into another is exactly the annoyance a phone exists to remove. The sheet lists the contact book, keeps the number field for anybody not in it, and masks the numbers so a contact picker does not undo streamer mode.
+- **Tapping a notification did nothing.** A banner's action was whatever the caller passed and `null` otherwise, and almost no caller passed one - so most notifications announced that something had happened and then refused to take you to it. The default is now to open the app the notification came from, which the code had already worked out a line earlier. A caller with something more specific in mind still wins. All three places a notification can be tapped - the island, Notification Centre, and the lock screen - read the same field, so one default covers them.
+
+### Correctifs (miroir français)
+
+- **« Message » sur un contact ne faisait rien.** `openThread` commence par une garde qui retourne si l'application Messages n'est pas celle ouverte — ce qui est correct, puisqu'elle dessine dans le corps de cette application et n'a nulle part ailleurs où mettre une conversation. Mais cela rendait silencieusement inopérant tout appel venu d'ailleurs : une fiche de contact, une notification, un lien profond depuis une autre ressource. Deux appels entraient dans l'application à la main et fonctionnaient ; les six autres ne faisaient rien, et rien dans le code ne disait qu'il fallait le faire. Il y a désormais une seule entrée, `messageTo`, qui ouvre l'application puis la conversation — et qui le dit si Messages n'est pas installé au lieu d'échouer en silence. C'est la même forme que le bug du mail corrigé en 1.2.9, et le trouver deux fois est l'argument en faveur du wrapper.
+- **Un nouveau message ne pouvait aller qu'à un numéro saisi.** Les personnes à qui on écrit sont presque toujours déjà dans les contacts, et relever un numéro sur un écran pour le taper sur un autre est précisément la corvée qu'un téléphone existe pour supprimer. La feuille liste le répertoire, garde le champ numéro pour qui n'y est pas, et masque les numéros afin qu'un sélecteur de contacts n'annule pas le mode streameur.
+- **Toucher une notification ne faisait rien.** L'action d'une bannière était ce que l'appelant fournissait, et `null` sinon — et presque aucun appelant n'en fournissait : la plupart des notifications annonçaient donc qu'il s'était passé quelque chose puis refusaient d'y conduire. Le comportement par défaut est maintenant d'ouvrir l'application dont vient la notification, que le code avait déjà déterminée une ligne plus haut. Un appelant ayant une action plus précise en tête l'emporte toujours. Les trois endroits où une notification peut être touchée — l'îlot, le centre de notifications et l'écran de verrouillage — lisent le même champ : un seul défaut les couvre tous.
+
+---
+
 ## [1.2.10] - 2026-07-26
 
 ### Added (English first)

@@ -2740,6 +2740,24 @@ async function openGroup(id, name) {
   paintThread(res.messages || []);
 }
 
+// Write to a number from ANYWHERE: a contact card, a notification, another app.
+//
+// `openThread` opens with a guard that returns unless the Messages app is the open one -
+// correct, since it draws into that app's body and has nowhere to draw otherwise. But it meant
+// every caller outside Messages did nothing at all, which is exactly what "I press Message on a
+// contact and nothing happens" was. Two callers entered the app first by hand; the rest did not,
+// and nothing told them they had to.
+function messageTo(number, draft) {
+  const to = String(number || '').trim();
+  if (!to) return;
+  if (!openApp || openApp.id !== 'messages') {
+    const app = (state.apps || []).find((a) => a.id === 'messages');
+    if (!app) { toast(L('ph.err_notinstalled')); return; }
+    enterApp(app, null);
+  }
+  openThread(to, draft);
+}
+
 async function openThread(number, draft) {
   if (!openApp || openApp.id !== 'messages') return;
   beginView();
@@ -2935,15 +2953,35 @@ function paintThread(messages, service) {
 }
 
 function newMessageSheet() {
+  // The contact book, not only a number field.
+  //
+  // Typing a number was the one way in, which is the wrong way round: the people somebody writes
+  // to are almost always already in their contacts, and reading a number off one screen to type
+  // it into another is the small daily annoyance a phone exists to remove. The field stays, for
+  // the number that is not in the book yet.
+  const picks = (state.contacts || []).filter((c) => c && c.number);
   sheet(L('ph.new_message_to'),
     UI.field('nmnum', L('ph.number')) + UI.button(L('ph.write'), 'nmgo') +
+    (picks.length
+      ? UI.group(picks.map((c) => UI.row({
+          avatar: c.name, title: c.name, subtitle: maskNum(c.number),
+          chevron: true, data: { n: c.number },
+        })), { header: L('app.contacts') })
+      : '<div class="groupfoot">' + esc(L('ph.no_contacts')) + '</div>') +
     UI.button(L('ph.new_group'), 'nggo', 'plain'),
     () => {
+      const epoch = sheetEpoch;
       byId('nmgo').addEventListener('click', () => {
         const n = byId('nmnum').value.trim();
-        closeSheet();
-        if (n) openThread(n);
+        if (!closeSheet(false, epoch)) return;
+        if (n) messageTo(n);
       });
+      [...byId('sheet').querySelectorAll('.row[data-n]')].forEach((r) =>
+        r.addEventListener('click', () => {
+          const n = r.dataset.n;
+          if (!closeSheet(false, epoch)) return;
+          messageTo(n);
+        }));
       byId('nggo').addEventListener('click', newGroupSheet);
     });
 }
@@ -3024,7 +3062,7 @@ function contactSheet(c) {
       () => {
         byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
         byId('cface').addEventListener('click', () => { closeSheet(); placeCall(c.number, { video: true }); });
-        byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
+        byId('cmsg').addEventListener('click', () => { closeSheet(); messageTo(c.number); });
         byId('cshare').addEventListener('click', () =>
           airdropShare('contact', { name: c.name, number: c.number }));
         wireMailto();
@@ -3068,7 +3106,7 @@ function contactSheet(c) {
       if (isNew) return;
       byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
       byId('cshare').addEventListener('click', () => airdropShare('contact', { name: c.name, number: c.number }));
-      byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
+      byId('cmsg').addEventListener('click', () => { closeSheet(); messageTo(c.number); });
       // The address as it stands in the field, not as it was when the sheet opened: somebody
       // who has just typed one expects the button to use it.
       if (byId('cmail')) byId('cmail').addEventListener('click', () => {
@@ -8613,7 +8651,7 @@ function hushMatchSheet(c) {
         if (!closeSheet(false, epoch2)) return;
         // Straight into the conversation the match already created on both phones.
         const app = (state.apps || []).find((x) => x.id === 'messages');
-        if (app) { enterApp(app, null); openThread(c.number); }
+        messageTo(c.number);
       });
       byId('hmnext').addEventListener('click', () => {
         if (!closeSheet(false, epoch2)) return;
@@ -8712,7 +8750,7 @@ async function hushMatches() {
             const messages = (state.apps || []).find((a) => a.id === 'messages');
             if (!messages) return;
             enterApp(messages, null);
-            openThread(m.number);
+            messageTo(m.number);
           }));
         // Confirmed, because it lands on both phones: the match is gone for the other person
         // too, and neither of them can put it back.
@@ -9141,7 +9179,7 @@ function archivePeek(kind, data) {
     enterApp(target, null);
     if (kind === 'message') {
       if (data.group) openGroup(data.group, data.groupName || L('ph.groups'));
-      else if (data.from) openThread(data.from);
+      else if (data.from) messageTo(data.from);
     }
   };
   notifs.unshift({
@@ -9383,8 +9421,19 @@ function banner(b) {
   const app = notifApp(b);
   if (appMuted(app)) return;
 
+  // Tapping it opens the app it came from.
+  //
+  // `onClick` was whatever the caller passed and null otherwise, and almost no caller passed
+  // one - so most notifications were decoration: they told you something had happened and then
+  // refused to take you to it. The app the notification belongs to is already worked out above,
+  // so the default is obvious and there is no reason for it to have been nothing.
+  const openIt = () => {
+    const target = (state.apps || []).find((entry) => entry.id === app);
+    if (target) enterApp(target, null);
+    else toast(L('ph.err_notinstalled'));
+  };
   const n = { id: ++notifSeq, app, icon: b.icon || app, title: b.title || '', body: b.body || '',
-              at: Date.now(), onClick: b.onClick || null };
+              at: Date.now(), onClick: b.onClick || openIt };
   notifs.unshift(n);
   notifs = notifs.slice(0, 40);
   paintNotifs();
@@ -9924,7 +9973,7 @@ function sdkShare(settle, payload) {
           settle({ ok: true, channel: 'messages', contact: result.contact });
           setTimeout(() => {
             enterApp(messages, null);
-            openThread(result.contact.number, text);
+            messageTo(result.contact.number, text);
           }, 40);
         }, {});
       });
@@ -9939,7 +9988,7 @@ function sdkOpenApp(settle, data) {
   setTimeout(() => {
     enterApp(target, null);
     if (target.id === 'messages' && data.data && data.data.number) {
-      openThread(String(data.data.number), data.data.draft || '');
+      messageTo(String(data.data.number), data.data.draft || '');
     } else if (target.id === 'maps' && data.data && Number.isFinite(Number(data.data.x))) {
       post('waypoint', data.data);
     } else if (target.page) {
@@ -10437,7 +10486,7 @@ window.addEventListener('message', (e) => {
           if (!a) return;
           enterApp(a, null);
           if (groupId) openGroup(groupId, groupName);
-          else openThread(m.from);
+          else messageTo(m.from);
         } });
       refresh().then(() => { if (!openApp) renderHome(); });
     }
