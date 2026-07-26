@@ -9205,3 +9205,8 @@ body.inframe.dark .uisearch {
   box-shadow: 0 0 12px var(--c), inset 0 -2px 6px rgba(0, 0, 0, .35);
 }
 .neongrid button:active { transform: scale(.95); }
+
+/* Alt is held and the mouse belongs to the camera again. The phone stays on screen and
+   keeps its state - it simply stops looking interactive, because it is not. */
+.device.freelook { opacity: .72; }
+.device.freelook .screen { pointer-events: none; }

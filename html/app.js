@@ -1111,9 +1111,21 @@ async function renderWidgets() {
       '<span class="wicon">' + svg(icon) + '</span></div>' +
       '<div><div class="wbig">' + esc(hh) + '</div>' +
       '<div class="wsub">' + esc(L('ph.weather_' + icon)) + '</div></div></div>' +
-    '<div class="widget cal"><div class="wday">' + esc(L('ph.month_' + MONTHS[(d.month || 1) - 1])) + '</div>' +
-      '<div class="wnum">' + esc(d.day || 1) + '</div>' +
-      '<div class="wsub">' + esc(L('ph.in_game_date')) + '</div></div>';
+    // The real date, not the game's. GTA's clock runs at its own pace and its calendar is
+    // scenery; a player reading "2" off their phone wants to know what day it actually is.
+    // The weather tile beside it still shows Los Santos time, which IS what a player needs
+    // from a game clock.
+    calendarWidget();
+}
+
+function calendarWidget() {
+  const now = new Date();
+  const host = byId('widgets');
+  const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
+  host.innerHTML += '<div class="widget cal">' +
+      '<div class="wday">' + esc(L('ph.month_' + MONTHS[now.getMonth()])) + '</div>' +
+      '<div class="wnum">' + esc(now.getDate()) + '</div>' +
+      '<div class="wsub">' + esc(L('ph.day_' + weekday)) + '</div></div>';
 }
 
 // ══ App shell ══════════════════════════════════════════════════
@@ -8092,6 +8104,13 @@ window.addEventListener('message', (e) => {
   }
   const d = e.data || {};
   if (d.__phone) return;                       // SDK traffic, handled above
+  // Alt is held: the cursor has gone back to the camera, so the phone dims a little and
+  // stops reacting to hover. Purely cosmetic - Lua has already taken the focus away - but
+  // without it the last hovered button stays lit while the player looks around.
+  if (d.action === 'freelook') {
+    byId('device').classList.toggle('freelook', d.on === true);
+    return;
+  }
   if (d.action === 'open') {
     torchCommit += 1;
     torchPending = false;

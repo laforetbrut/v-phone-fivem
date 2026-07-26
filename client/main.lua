@@ -219,10 +219,40 @@ end
 
 -- The control guard: everything in Config.Hold.block is disabled each frame while the
 -- phone is up. It also keeps the animation alive if something interrupts it.
+-- Holding Alt hands the mouse back to the camera: cursor off, look around, let go and the
+-- phone takes it again. `freeLook` is the latch, so focus is only touched on the frame the
+-- key actually changes state rather than every frame it is held.
+local freeLook = false
+
 local function startGuard()
+    freeLook = false
     CreateThread(function()
         while isOpen do
             for _, c in ipairs(Config.Hold.block) do DisableControlAction(0, c, true) end
+
+            -- Disabling control 200 is not enough on its own: the pause menu is opened by
+            -- the frontend, which does not always go through the control it is bound to.
+            -- Closing it the frame it appears is what actually holds, and it is invisible -
+            -- the menu never gets to draw.
+            if IsPauseMenuActive() then SetPauseMenuActive(false) end
+
+            -- 19 is INPUT_CHARACTER_WHEEL, which is Left Alt. Read as a DISABLED control so
+            -- it still reports while the phone has the keyboard.
+            local wantFree = IsDisabledControlPressed(0, 19) or IsControlPressed(0, 19)
+            if wantFree ~= freeLook then
+                freeLook = wantFree
+                if wantFree then
+                    -- Cursor away, mouse back to the camera. The page keeps its state; it
+                    -- simply stops receiving pointer events for as long as the key is held.
+                    SetNuiFocus(false, false)
+                    SendNUIMessage({ action = 'freelook', on = true })
+                else
+                    SetNuiFocus(true, true)
+                    SetNuiFocusKeepInput(true)
+                    SendNUIMessage({ action = 'freelook', on = false })
+                end
+            end
+
             local ped = PlayerPedId()
             if phoneAnim and not IsEntityPlayingAnim(ped, Config.Hold.dict, phoneAnim, 3) then
                 phoneAnim = nil
@@ -230,6 +260,8 @@ local function startGuard()
             end
             Wait(0)
         end
+        -- The phone closed while Alt was down: do not leave the cursor released.
+        freeLook = false
     end)
 end
 
