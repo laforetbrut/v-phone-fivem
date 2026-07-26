@@ -236,7 +236,6 @@ local T = {
     ['ph.id_sex_f'] = "Femme",
     ['ph.id_nationality'] = "Nationalite",
     ['ph.id_height'] = "Taille",
-    ['ph.id_number'] = "Numero de citoyen",
     ['ph.calls_clear'] = "Effacer l historique d appels",
     ['ph.calls_clear_ask'] = "Supprimer tous les appels de ce telephone ?",
     ['ph.calls_cleared'] = "Historique d appels efface",

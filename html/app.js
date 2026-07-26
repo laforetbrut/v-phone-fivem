@@ -2817,8 +2817,9 @@ RENDER.wallet = async () => {
                               value: id.nationality }) : '',
     id.height ? UI.row({ icon: 'focus', tint: '#64D2FF', title: L('ph.id_height'),
                          value: id.height + ' cm', mono: true }) : '',
-    id.id ? UI.row({ icon: 'shield', tint: '#8E8E93', title: L('ph.id_number'),
-                     value: id.id, mono: true }) : '',
+    // The citizen id is deliberately NOT here. It is an internal database key, it is what
+    // every other script uses to identify a character, and putting it on a screen a player
+    // can be asked to show is a privacy problem, not a feature.
   ].filter(Boolean), { header: L('ph.id_card') }) : '';
 
   if (!list.length) {

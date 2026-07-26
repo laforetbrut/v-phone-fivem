@@ -886,15 +886,42 @@ RegisterNUICallback('health', function(data, cb)
         return
     end
     if op ~= nil then cb({ error = 'x' }) return end
-    if GetResourceState('v-status') ~= 'started' then cb({ error = 'off' }) return end
-    local st = exports['v-status']:Get() or {}
-    cb({
-        ok = true,
-        hunger = st.hunger, thirst = st.thirst, stress = st.stress,
-        bleed = st.bleed, sick = st.sick,
-        armour = GetPedArmour(PlayerPedId()),
-        health = GetEntityHealth(PlayerPedId()) - 100,   -- GTA floors a living ped at 100
-    })
+
+    -- Two halves, and neither is optional.
+    --
+    -- Health and armour are the PED's, and a ped can only be read on the client. Hunger,
+    -- thirst and stress are the FRAMEWORK's, and on qb they live in the character's metadata,
+    -- which only the server holds - the client's own reading looked for them on a state bag
+    -- qb does not fill, so they came back as zero on every qb server while health worked.
+    -- That is the "half working" this fixes.
+    local ped = PlayerPedId()
+    local live = {
+        armour = math.floor(GetPedArmour(ped)),
+        health = math.max(0, math.floor(GetEntityHealth(ped) - 100)),   -- GTA floors a living ped at 100
+    }
+
+    -- Whatever the client CAN read locally: esx_status keeps its vitals here and nowhere
+    -- else, so on ESX this is the only source there is.
+    local ok, st = pcall(function() return exports['v-status']:Get() end)
+    if ok and type(st) == 'table' then
+        live.hunger, live.thirst, live.stress = st.hunger, st.thirst, st.stress
+        live.bleed, live.sick = st.bleed, st.sick
+    end
+
+    V.Request('v-phone:vitals', function(res)
+        if type(res) == 'table' then
+            -- The server wins where it knows: it reads the framework, the client was
+            -- guessing. Where it knows nothing, the client's own reading stands.
+            if res.hunger ~= nil then live.hunger = res.hunger end
+            if res.thirst ~= nil then live.thirst = res.thirst end
+            if res.stress ~= nil then live.stress = res.stress end
+            if res.dead ~= nil then live.dead = res.dead end
+            if res.bloodtype ~= nil then live.bloodtype = res.bloodtype end
+            -- Armour is the exception: the ped is the truth, whatever a metadata copy says.
+        end
+        live.ok = true
+        cb(live)
+    end)
 end)
 
 RegisterNUICallback('photos', relay('v-phone:photo'))

@@ -234,7 +234,6 @@ local T = {
     ['ph.id_sex_f'] = "Female",
     ['ph.id_nationality'] = "Nationality",
     ['ph.id_height'] = "Height",
-    ['ph.id_number'] = "Citizen ID",
     ['ph.calls_clear'] = "Clear the call history",
     ['ph.calls_clear_ask'] = "Delete every call from this phone?",
     ['ph.calls_cleared'] = "Call history cleared",

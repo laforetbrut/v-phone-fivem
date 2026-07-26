@@ -994,23 +994,63 @@ end
 Bridge.Status = {}
 
 function Bridge.Status.Get(src)
+    src = tonumber(src)
+    if not src then return nil end
+
     local custom = Config.Compat.hooks.status
     if custom then
         local ok, result = pcall(custom, src)
         if ok and type(result) == 'table' then return result end
     end
 
-    -- The two status scripts this ecosystem actually runs.
-    if started('esx_status') then
-        return nil     -- esx_status is client-owned; the phone reads vitals client side
-    end
+    -- esx_status keeps its vitals on the CLIENT and nowhere else, so there is nothing to read
+    -- from here. The client half asks it directly; nil is the correct answer, not a failure.
+    if started('esx_status') then return nil end
+
     if Bridge.framework == 'qb' then
-        local player = Core.GetPlayer(src)
-        if player then
-            local meta = player.GetMetadata('phone_status')
-            if type(meta) == 'table' then return meta end
+        -- **qb keeps hunger and thirst in the character's metadata, not on a state bag.**
+        --
+        -- This used to read a `phone_status` key out of the phone's own storage - a key
+        -- nothing has ever written - so it always came back nil and the Health app showed
+        -- hunger, thirst and stress as zero on every qb server while cheerfully reporting
+        -- health, which the client reads off the ped. Half a working app.
+        --
+        -- `SetMetaData` clamps hunger and thirst to 0..100 in qb-core itself, so the numbers
+        -- here are already percentages. `stress` is qb-hud's, in the same table.
+        local qbp = Bridge.QBGetPlayer(src)
+        local meta = qbp and qbp.PlayerData and qbp.PlayerData.metadata
+        if type(meta) == 'table' then
+            return {
+                hunger = tonumber(meta.hunger),
+                thirst = tonumber(meta.thirst),
+                stress = tonumber(meta.stress),
+                -- Not every fork carries these, and an absent one stays absent rather than
+                -- becoming a confident zero.
+                armour = tonumber(meta.armor) or tonumber(meta.armour),
+                bloodtype = meta.bloodtype and tostring(meta.bloodtype) or nil,
+                dead = (meta.isdead == true) or (meta.inlaststand == true) or nil,
+            }
         end
+        return nil
     end
+
+    if Bridge.framework == 'ox' then
+        -- ox_core and the scripts around it publish vitals on the player's state bag. Read
+        -- through a pcall because a server that publishes none of it must not error.
+        local ok, out = pcall(function()
+            local st = Player(src).state
+            if not st then return nil end
+            local found = {
+                hunger = tonumber(st.hunger),
+                thirst = tonumber(st.thirst),
+                stress = tonumber(st.stress),
+            }
+            if found.hunger == nil and found.thirst == nil then return nil end
+            return found
+        end)
+        if ok then return out end
+    end
+
     return nil
 end
 

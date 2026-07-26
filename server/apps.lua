@@ -226,7 +226,8 @@ V.Callback('v-phone:wallet:data', function(src, resolve)
             sex = (id.sex == 'm' or id.sex == 'f') and id.sex or nil,
             nationality = id.nationality and tostring(id.nationality):sub(1, 40) or nil,
             height = tonumber(id.height),
-            id = id.id and tostring(id.id):sub(1, 40) or nil,
+            -- The citizen id is not sent. Nothing on the page shows it, and a value the
+            -- client never needs is a value the client should never receive.
         }
         if identity.name == '' then identity.name = tostring(p.name or '') end
     end
@@ -258,6 +259,37 @@ V.Callback('v-phone:wallet:data', function(src, resolve)
         end
     end
     resolve({ ok = true, licenses = out, readable = true, identity = identity })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Vitals
+-- ══════════════════════════════════════════════════════════════
+-- Hunger, thirst and stress are the framework's, and health and armour are the ped's. The
+-- ped can only be read on the client, so the two halves meet in the client's `health`
+-- handler: this answers the half a server knows about.
+V.Callback('v-phone:vitals', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    local st = safely('vitals', function()
+        return Bridge.Status and Bridge.Status.Get and Bridge.Status.Get(src)
+    end)
+    if type(st) ~= 'table' then
+        -- Nothing readable here. Not an error: on ESX the vitals live on the client and the
+        -- client reads them itself, so an empty answer is the normal case there.
+        resolve({ ok = true })
+        return
+    end
+
+    resolve({
+        ok = true,
+        hunger = tonumber(st.hunger),
+        thirst = tonumber(st.thirst),
+        stress = tonumber(st.stress),
+        armour = tonumber(st.armour),
+        bloodtype = st.bloodtype and tostring(st.bloodtype):sub(1, 6) or nil,
+        dead = st.dead == true or nil,
+    })
 end)
 
 -- ══════════════════════════════════════════════════════════════
