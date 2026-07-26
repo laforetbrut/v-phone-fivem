@@ -446,6 +446,127 @@ local POST_COLUMNS = [[
     (s.citizenid = ?) AS mine
 ]]
 
+-- ══════════════════════════════════════════════════════════════
+-- Being told about it
+-- ══════════════════════════════════════════════════════════════
+--- Who wrote a post, and which app it belongs to.
+local function postAuthor(id)
+    local row = MySQL.single.await('SELECT citizenid, kind FROM vphone_social_posts WHERE id = ?', { id })
+    if not row then return nil end
+    return row.citizenid, appOfKind(row.kind)
+end
+
+--- File a notification, unless it is somebody being told about their own action.
+---
+--- Liking your own post, replying to yourself, following yourself: all legal, none of them
+--- worth a badge on your own icon. The check is here rather than at each of the five call
+--- sites so it cannot be forgotten at one of them.
+local function notify(app, toCid, fromCid, kind, postId)
+    toCid, fromCid = tostring(toCid or ''), tostring(fromCid or '')
+    if toCid == '' or fromCid == '' or toCid == fromCid then return end
+    MySQL.insert('INSERT INTO vphone_social_notifs (app, to_cid, from_cid, kind, post_id) VALUES (?,?,?,?,?)',
+        { app, toCid, fromCid, tostring(kind), postId })
+end
+
+--- Lowercase the ASCII letters and nothing else.
+---
+--- `string.lower` is byte-wise and locale-dependent, and that is not a detail: on a Latin-1
+--- locale it maps 0xC3 to 0xE3, and 0xC3 is the LEAD BYTE of every accented Latin character in
+--- UTF-8. So `('#soirée'):lower()` does not return a lowercase tag, it returns a corrupt one -
+--- which then goes into the database and comes back as a broken glyph.
+---
+--- Restricting the match to the byte range A-Z cannot touch anything above 0x7F. The trade is
+--- that an accented capital stays capital, so #SOIRÉE and #soirée are two tags. That is a
+--- visible imperfection rather than a silent corruption, which is the right way round.
+local function lowerAscii(str)
+    return (tostring(str):gsub('[A-Z]', string.lower))
+end
+
+--- Cut a string to a byte budget without leaving half a character behind.
+---
+--- Lua strings are bytes and the tag column counts characters, so a plain `sub(1, 40)` on
+--- `#soirée` can stop between the two bytes of the é and store a broken sequence. This walks
+--- back to the start of the character the boundary landed inside.
+local function cutBytes(str, maxBytes)
+    if #str <= maxBytes then return str end
+    local nextByte = str:byte(maxBytes + 1)
+    local cut = str:sub(1, maxBytes)
+    -- 0x80..0xBF is a UTF-8 continuation byte: the boundary is mid-character.
+    if nextByte and nextByte >= 0x80 and nextByte < 0xC0 then
+        while #cut > 0 do
+            local b = cut:byte(#cut)
+            cut = cut:sub(1, #cut - 1)
+            if b >= 0xC0 then break end   -- that was the lead byte; the character is gone
+        end
+    end
+    return cut
+end
+
+--- Every #hashtag in a body, lowercased and de-duplicated.
+---
+--- Lowercased because #Ballas and #ballas are the same conversation, and a tag list that
+--- disagrees with itself is worse than no tag list.
+---
+--- The pattern takes anything that is not whitespace and not another # or @, then trims
+--- trailing punctuation, rather than allowing only `[%w_]`. `%w` is ASCII here, so the narrow
+--- version cut `#soirée` into `soir` plus a stray byte - fine for an English server and wrong
+--- for every other one. `lower()` leaves accented characters alone, which is the honest
+--- outcome: it means #Soirée and #soirée are two tags, and mangling the bytes to avoid that
+--- would be worse.
+local function tagsIn(body)
+    local seen, out = {}, {}
+    -- The match is not reassigned: a generic-for control variable is const in Lua 5.5, and
+    -- writing to it is a hard error there even though 5.4 allows it.
+    for raw in tostring(body or ''):gmatch('#([^%s#@]+)') do
+        -- A tag at the end of a sentence must not swallow the full stop.
+        --
+        -- The set is written out rather than using `%p`, and it is a Lua long string so no
+        -- character in it needs escaping. Lua patterns work on BYTES and `ispunct` is true for
+        -- 0xA9 - the second byte of an e-acute - so `%p` stripped that byte and left its lead
+        -- byte dangling, which is an invalid UTF-8 sequence in the database. Every character
+        -- listed here is ASCII, so no multi-byte sequence can be touched.
+        local trimmed = raw:gsub([=[[%.,;:!%?%)%]}>"']+$]=], '')
+        local tag = cutBytes(lowerAscii(trimmed), 40)
+        if #tag >= 2 and not seen[tag] then
+            seen[tag] = true
+            out[#out + 1] = tag
+            if #out >= 10 then break end   -- a post is not a tag dump
+        end
+    end
+    return out
+end
+
+--- Every @handle in a body, lowercased and de-duplicated.
+---
+--- Deliberately narrower than the tag pattern: registration strips a handle to `[%w_]`, so a
+--- wider pattern here could only ever match text that is not an account.
+local function handlesIn(body)
+    local seen, out = {}, {}
+    for raw in tostring(body or ''):gmatch('@([%w_]+)') do
+        -- Same treatment, for the same reason: registration filters a handle with `%w`, which
+        -- is also byte-wise, so a handle can in principle hold a byte that `lower` would ruin.
+        local handle = lowerAscii(raw):sub(1, 20)
+        if #handle >= 2 and not seen[handle] then
+            seen[handle] = true
+            out[#out + 1] = handle
+            if #out >= 10 then break end
+        end
+    end
+    return out
+end
+
+--- Index a new post's tags, and tell everybody it mentioned.
+local function indexPost(id, app, body, authorCid)
+    for _, tag in ipairs(tagsIn(body)) do
+        MySQL.insert('INSERT IGNORE INTO vphone_social_tags (post_id, app, tag) VALUES (?,?,?)',
+            { id, app, tag })
+    end
+    for _, handle in ipairs(handlesIn(body)) do
+        local cid = cidOfHandle(app, handle)
+        if cid then notify(app, cid, authorCid, 'mention', id) end
+    end
+end
+
 --- MySQL answers booleans as 0/1 and counts as strings. The page should receive the
 --- types it is going to render, not the types the driver happened to return.
 local function cleanPosts(rows)
@@ -538,6 +659,13 @@ V.Callback('v-phone:soc:post', function(src, resolve, data)
         'INSERT INTO vphone_social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
         { p.citizenid, kind, body, image })
     Core.Log('social', ('%s posted %s #%d'):format(p.citizenid, kind, id), nil, p.citizenid)
+    -- Hashtags into their own table, and anybody the post named gets told. Both read the
+    -- body that was actually stored, not the one that arrived, so a truncated post cannot
+    -- index a tag the reader will never see.
+    -- `mediaApp`, which is what this post was actually filed under. `appOfKind(kind)` would
+    -- say 'snap' for every photo, so a photo posted to Bleeter would have its tags indexed
+    -- against the wrong app and never appear under them.
+    if id then indexPost(id, mediaApp, body, p.citizenid) end
     resolve({ ok = true, id = id })
 end)
 
@@ -558,6 +686,10 @@ V.Callback('v-phone:soc:like', function(src, resolve, data)
     else
         MySQL.insert.await('INSERT IGNORE INTO vphone_social_likes (post_id, citizenid) VALUES (?,?)', { id, p.citizenid })
         liked = true
+        -- Only on the way up. Somebody who likes, unlikes and likes again has not done
+        -- three things worth being told about.
+        local author, app = postAuthor(id)
+        if author then notify(app, author, p.citizenid, 'like', id) end
     end
     local count = num(MySQL.scalar.await(
         'SELECT COUNT(*) FROM vphone_social_likes WHERE post_id = ?', { id }), 0)
@@ -833,6 +965,7 @@ V.Callback('v-phone:soc:follow', function(src, resolve, data)
     else
         MySQL.insert.await('INSERT IGNORE INTO vphone_social_follows (app, from_cid, to_cid) VALUES (?,?,?)',
             { app, p.citizenid, cid })
+        notify(app, cid, p.citizenid, 'follow', nil)
     end
     resolve({
         ok = true, followed = not exists,
@@ -879,6 +1012,10 @@ V.Callback('v-phone:soc:comment', function(src, resolve, data)
 
     MySQL.insert.await('INSERT INTO vphone_social_comments (post_id, citizenid, body) VALUES (?,?,?)',
         { id, p.citizenid, body })
+    -- `postApp`, not `app`: shadowing the request's app with the post's would work here and
+    -- quietly mislead whoever edits the lines after it.
+    local author, postApp = postAuthor(id)
+    if author then notify(postApp, author, p.citizenid, 'comment', id) end
     resolve({ ok = true, comments = num(MySQL.scalar.await(
         'SELECT COUNT(*) FROM vphone_social_comments WHERE post_id = ?', { id }), 0) })
 end)
@@ -909,6 +1046,14 @@ V.Callback('v-phone:soc:repost', function(src, resolve, data)
         MySQL.insert.await('INSERT IGNORE INTO vphone_social_reposts (post_id, citizenid) VALUES (?,?)',
             { id, p.citizenid })
     end
+    -- Same rule as a like: the notification belongs to the act of reposting, not to
+    -- toggling it off again. `exists` was the state BEFORE this call, so a fresh repost is
+    -- `not exists` - there is no `reposted` local here, and reading one as a global would
+    -- have been nil and silently notified nobody.
+    if not exists then
+        local author, postApp = postAuthor(id)
+        if author then notify(postApp, author, p.citizenid, 'repost', id) end
+    end
     resolve({
         ok = true, reposted = not exists,
         reposts = num(MySQL.scalar.await(
@@ -929,6 +1074,10 @@ V.Callback('v-phone:soc:delete', function(src, resolve, data)
     MySQL.query.await('DELETE FROM vphone_social_likes WHERE post_id = ?', { id })
     MySQL.query.await('DELETE FROM vphone_social_comments WHERE post_id = ?', { id })
     MySQL.query.await('DELETE FROM vphone_social_reposts WHERE post_id = ?', { id })
+    -- And its tags, and every notification that points at it. A notification whose post is
+    -- gone is a tap that leads nowhere.
+    MySQL.query.await('DELETE FROM vphone_social_tags WHERE post_id = ?', { id })
+    MySQL.query.await('DELETE FROM vphone_social_notifs WHERE post_id = ?', { id })
     resolve({ ok = true })
 end)
 
@@ -938,6 +1087,110 @@ end)
 -- A story is a post with an expiry. It is a separate table because it has different
 -- rules - it disappears, and being seen is part of its state - not to keep two feeds.
 local STORY_HOURS = 24
+
+-- ══════════════════════════════════════════════════════════════
+-- Notifications, hashtags and trending
+-- ══════════════════════════════════════════════════════════════
+--- What happened to you. Newest first, with the handle behind it resolved here so the page
+--- never has to make a second call per row.
+V.Callback('v-phone:soc:notifs', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+
+    local rows = MySQL.query.await([[SELECT n.id, n.kind, n.post_id, n.seen,
+            UNIX_TIMESTAMP(n.at) AS ts,
+            a.handle, a.displayname, a.avatar, a.verified,
+            (SELECT LEFT(s.body, 80) FROM vphone_social_posts s WHERE s.id = n.post_id) AS excerpt
+        FROM vphone_social_notifs n
+        JOIN vphone_social_accounts a ON a.citizenid = n.from_cid AND a.app = n.app
+        WHERE n.app = ? AND n.to_cid = ?
+        ORDER BY n.id DESC LIMIT 60]], { app, p.citizenid }) or {}
+
+    local out = {}
+    for _, r in ipairs(rows) do
+        out[#out + 1] = {
+            id = math.floor(num(r.id, 0)),
+            kind = tostring(r.kind or ''),
+            postId = r.post_id and math.floor(num(r.post_id, 0)) or nil,
+            seen = num(r.seen, 0) == 1,
+            ts = math.floor(num(r.ts, 0)),
+            handle = tostring(r.handle or ''),
+            displayname = r.displayname and tostring(r.displayname) or nil,
+            avatar = r.avatar and tostring(r.avatar) or nil,
+            verified = num(r.verified, 0) == 1,
+            excerpt = r.excerpt and tostring(r.excerpt) or nil,
+        }
+    end
+    resolve({ ok = true, notifs = out })
+end)
+
+--- How many are unread. Its own call because the tab bar wants the number on every screen,
+--- not just on the notifications tab, and a count is one indexed read rather than sixty rows.
+V.Callback('v-phone:soc:notifCount', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    resolve({ ok = true, unread = num(MySQL.scalar.await(
+        'SELECT COUNT(*) FROM vphone_social_notifs WHERE app = ? AND to_cid = ? AND seen = 0',
+        { app, p.citizenid }), 0) })
+end)
+
+--- Mark them read. All of them: opening the tab IS reading them, and per-row seen state on a
+--- list somebody just looked at is bookkeeping nobody asked for.
+V.Callback('v-phone:soc:notifSeen', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    MySQL.update.await(
+        'UPDATE vphone_social_notifs SET seen = 1 WHERE app = ? AND to_cid = ? AND seen = 0',
+        { app, p.citizenid })
+    resolve({ ok = true })
+end)
+
+--- Every post carrying one tag, newest first. The tag table is indexed on (app, tag, post_id),
+--- so this is a range read rather than a scan of every body ever written.
+V.Callback('v-phone:soc:tag', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    local tag = cutBytes(lowerAscii(tostring((data and data.tag) or ''):gsub('^#', '')), 40)
+    if tag == '' then resolve({ error = 'notag' }) return end
+
+    local rows = MySQL.query.await(([[
+        SELECT %s
+        FROM vphone_social_posts s
+        JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
+        JOIN vphone_social_tags t ON t.post_id = s.id AND t.app = ?
+        WHERE t.tag = ?
+        ORDER BY s.id DESC LIMIT ?
+    ]]):format(POST_COLUMNS),
+        { p.citizenid, p.citizenid, p.citizenid, p.citizenid, app, app, tag, socFeedSize() }) or {}
+
+    resolve({ ok = true, tag = tag, posts = cleanPosts(rows) })
+end)
+
+--- What people are talking about: the most used tags in a recent window, with how many posts
+--- carry each. A window rather than all time, because "trending" that never changes is just a
+--- list of the tags somebody used most in the first week the server ran.
+V.Callback('v-phone:soc:trending', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    local hours = math.max(1, math.min(168, math.floor(num(SOC.trendingHours, 48))))
+
+    local rows = MySQL.query.await([[SELECT tag, COUNT(*) AS posts
+        FROM vphone_social_tags
+        WHERE app = ? AND at >= (NOW() - INTERVAL ? HOUR)
+        GROUP BY tag ORDER BY posts DESC, tag ASC LIMIT 10]], { app, hours }) or {}
+
+    local out = {}
+    for _, r in ipairs(rows) do
+        out[#out + 1] = { tag = tostring(r.tag), posts = math.floor(num(r.posts, 0)) }
+    end
+    resolve({ ok = true, trending = out, hours = hours })
+end)
 
 -- ══════════════════════════════════════════════════════════════
 -- Verification
@@ -1265,6 +1518,36 @@ function SocialBoot(core)
         `image`     VARCHAR(300) NOT NULL DEFAULT '',
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), KEY `kind_idx` (`kind`, `id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- What somebody did to your post, or to you. The one thing a social app cannot be
+    -- without: a like nobody is told about may as well not have happened.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_notifs` (
+        `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `app`      VARCHAR(8)  NOT NULL DEFAULT 'bleeter',
+        `to_cid`   VARCHAR(16) NOT NULL,
+        `from_cid` VARCHAR(16) NOT NULL,
+        `kind`     VARCHAR(10) NOT NULL,
+        `post_id`  INT UNSIGNED NULL DEFAULT NULL,
+        `seen`     TINYINT(1)  NOT NULL DEFAULT 0,
+        `at`       TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `inbox` (`app`, `to_cid`, `id`),
+        KEY `unread` (`app`, `to_cid`, `seen`),
+        KEY `post` (`post_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- Hashtags, extracted once when the post is written. The alternative is a LIKE '%#tag%'
+    -- scan over every post ever made, every time somebody taps a tag, which is fine on a
+    -- test server and hopeless on a real one.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_tags` (
+        `post_id` INT UNSIGNED NOT NULL,
+        `app`     VARCHAR(8)  NOT NULL DEFAULT 'bleeter',
+        `tag`     VARCHAR(40) NOT NULL,
+        `at`      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`post_id`, `tag`),
+        KEY `bytag` (`app`, `tag`, `post_id`),
+        KEY `trend` (`app`, `at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_likes` (

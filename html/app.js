@@ -6726,7 +6726,9 @@ function postCard(pst, appId) {
     : (pst.kind === 'video'
         ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
         : '<img class="pimg" src="' + esc(pst.image) + '" alt="" />');
-  const text = pst.body ? '<div class="pbody">' + esc(pst.body) + '</div>' : '';
+  // Linkified AFTER escaping, never before: the tags and mentions are built out of text that
+  // is already safe, so a post containing markup stays a post containing markup.
+  const text = pst.body ? '<div class="pbody">' + socLinkify(esc(pst.body)) + '</div>' : '';
 
   const actions =
     '<div class="pfoot">' +
@@ -6771,6 +6773,16 @@ function wirePosts(appId, reload) {
     commentSheet(appId, Number(b.closest('.post').dataset.id), b.querySelector('span'))));
   rows('.post .phead', (b) => b.addEventListener('click', () =>
     socialProfile(appId, b.dataset.who)));
+  // A tag opens its own timeline, a mention opens that profile. `stopPropagation` because
+  // both sit inside a card that has its own handlers.
+  rows('.post .soctag', (b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    socialTagFeed(appId, b.dataset.tag);
+  }));
+  rows('.post .socmention', (b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    socialProfile(appId, b.dataset.who);
+  }));
   rows('.post .pdel', (b) => b.addEventListener('click', () => {
     const card = b.closest('.post');
     confirmSheet(L('ph.soc_delete_post'), L('ph.delete'), async () => {
@@ -6991,8 +7003,12 @@ function socialSearchView(appId) {
   body(
     '<div class="socsearch">' + svg('search') +
       '<input id="socq" autocomplete="off" placeholder="' + esc(L('ph.soc_search_ph')) + '" /></div>' +
+    // What people are talking about, above the results: the search tab is where somebody goes
+    // when they do not already know what they are looking for.
+    '<div id="soctrend"></div>' +
     '<div id="socresults">' + UI.empty(L('ph.loading')) + '</div>'
   );
+  socDrawTrending(appId);
   let timer = null;
   byId('socq').addEventListener('input', () => {
     clearTimeout(timer);
@@ -7001,6 +7017,24 @@ function socialSearchView(appId) {
     timer = setTimeout(() => socialSearch(appId, byId('socq').value.trim()), 220);
   });
   socialSearch(appId, '');
+}
+
+// The tags with the most posts behind them in the configured window. Drawn only if there are
+// any: an empty "trending" box is worse than none.
+async function socDrawTrending(appId) {
+  const host = byId('soctrend');
+  if (!host) return;
+  const d = await post('social', { op: 'trending', app: appId });
+  const list = (d && d.trending) || [];
+  if (!byId('soctrend')) return;              // the player left while it was in flight
+  if (!list.length) { host.innerHTML = ''; return; }
+
+  host.innerHTML = '<div class="grouphead">' + esc(L('ph.soc_trending')) + '</div>' +
+    '<div class="seg scroll soctrendrow">' + list.map((t) =>
+      '<button type="button" data-tag="' + esc(t.tag) + '">#' + esc(t.tag) +
+      '<small>' + t.posts + '</small></button>').join('') + '</div>';
+  [...host.querySelectorAll('button')].forEach((b) =>
+    b.addEventListener('click', () => socialTagFeed(appId, b.dataset.tag)));
 }
 
 async function socialFollow(appId, handle, pill) {
@@ -7161,8 +7195,21 @@ function socialRender(appId) {
        { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }]
     : [{ id: 'feed', icon: 'home', label: L('ph.soc_feed') },
        { id: 'search', icon: 'search', label: L('ph.soc_search') },
+       // `badge` is what the tab bar actually renders for this: a dot on the icon. It draws
+       // the icon and the label is only an aria-label, so a count put in the text would have
+       // been read out by a screen reader and shown to nobody.
+       { id: 'notifs', icon: 'bell', label: L('ph.soc_notifs'),
+         badge: socUnread[appId] > 0 },
        { id: 'dm', icon: 'messages', label: L('ph.soc_dm') },
        { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }];
+
+  // The count behind the tab label. Asked without blocking the draw: if it comes back
+  // different, the tab bar is redrawn on its own rather than holding up the view.
+  if (appId !== 'hush') {
+    socRefreshUnread(appId).then((changed) => {
+      if (changed && openApp && openApp.id === appId) socialRender(appId);
+    });
+  }
 
   const composer = appId === 'bleeter' ? bleetCompose : (appId === 'snap' ? snapCompose : null);
   const wantsAdd = composer && SOC.tab[appId] === 'feed';
@@ -7175,10 +7222,97 @@ function socialRender(appId) {
     if (tab === 'me') return hushProfile();
     return hushSwipe();
   }
+  if (tab === 'notifs') return socialNotifs(appId);
   if (tab === 'search') return socialSearchView(appId);
   if (tab === 'dm') return socialDmList(appId);
   if (tab === 'me') return socialProfile(appId, SOC.handle[appId]);
   return socialFeed(appId);
+}
+
+// ══ Notifications ══════════════════════════════════════════════
+// Per app, because a Bleeter like has nothing to do with a Snapmatic one.
+const socUnread = { bleeter: 0, snap: 0 };
+
+// Asked whenever a social app is drawn, so the number on the tab is right before anybody
+// opens it. One indexed COUNT, not the sixty rows behind it.
+async function socRefreshUnread(appId) {
+  const r = await post('social', { op: 'notifCount', app: appId });
+  const n = (r && r.unread) || 0;
+  if (socUnread[appId] === n) return false;
+  socUnread[appId] = n;
+  return true;
+}
+
+function socNotifLine(n) {
+  const who = n.displayname || ('@' + n.handle);
+  const key = {
+    like: 'ph.soc_n_like', comment: 'ph.soc_n_comment', repost: 'ph.soc_n_repost',
+    follow: 'ph.soc_n_follow', mention: 'ph.soc_n_mention',
+  }[n.kind] || 'ph.soc_n_other';
+  return L(key).replace('{who}', who);
+}
+
+async function socialNotifs(appId) {
+  loading();
+  const d = await post('social', { op: 'notifs', app: appId });
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'bell')); return; }
+
+  const list = d.notifs || [];
+  if (!list.length) { body(UI.empty(L('ph.soc_no_notifs'), 'bell')); }
+  else {
+    body(UI.group(list.map((n, i) => UI.row({
+      icon: { like: 'heart', comment: 'messages', repost: 'repost',
+              follow: 'contacts', mention: 'bleet' }[n.kind] || 'bell',
+      tint: { like: '#FF2D55', comment: '#0A84FF', repost: '#34C759',
+              follow: '#5856D6', mention: '#FF9F0A' }[n.kind] || '#8E8E93',
+      title: socNotifLine(n),
+      // The post it happened to, so a like is not just a name with no context.
+      subtitle: (n.excerpt || '') + (n.excerpt ? '  ·  ' : '') + socWhen(n.ts * 1000),
+      chevron: true,
+      data: { ni: String(i) },
+    }))));
+    rows('.row[data-ni]', (r) => r.addEventListener('click', () => {
+      const n = list[Number(r.dataset.ni)];
+      if (!n) return;
+      // A follow has no post behind it, so it opens the profile instead.
+      // The comment sheet IS the single-post view here; its counter argument is optional.
+      if (n.postId) commentSheet(appId, n.postId);
+      else socialProfile(appId, n.handle);
+    }));
+  }
+
+  // Opening the tab IS reading them. The count is cleared here rather than per row.
+  if (list.some((n) => !n.seen)) {
+    await post('social', { op: 'notifSeen', app: appId });
+    socUnread[appId] = 0;
+    // The dot is taken off the tab directly. Rebuilding the whole tab bar would need the tabs
+    // array back, and re-rendering the view would fetch the list a second time to show
+    // something the player is already looking at.
+    const dot = document.querySelector('#appfoot .soctab[data-tab="notifs"] .socdot');
+    if (dot) dot.remove();
+  }
+}
+
+// ══ Hashtags ═══════════════════════════════════════════════════
+// A tag in a body becomes a link, and so does an @handle. Both are built from the ESCAPED
+// text, never from the raw body: the linkifier runs after esc(), so a post containing markup
+// stays text.
+function socLinkify(escaped) {
+  return escaped
+    .replace(/#([\w\u00C0-\u024F]{2,40})/g, '<button class="soctag" type="button" data-tag="$1">#$1</button>')
+    .replace(/@(\w{2,20})/g, '<button class="socmention" type="button" data-who="$1">@$1</button>');
+}
+
+async function socialTagFeed(appId, tag) {
+  loading();
+  setNav('#' + tag, L('app.' + appId), null, () => socialRender(appId));
+  const d = await post('social', { op: 'tag', app: appId, tag });
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'bleet')); return; }
+  const list = d.posts || [];
+  body(list.length
+    ? list.map((pst) => postCard(pst, appId)).join('')
+    : UI.empty(L('ph.soc_no_tag').replace('{tag}', tag), 'bleet'));
+  if (list.length) wirePosts(appId, () => socialTagFeed(appId, tag));
 }
 
 // -- Composers --------------------------------------------------

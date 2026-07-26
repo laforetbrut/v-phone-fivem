@@ -607,6 +607,10 @@ Config.Categories = { 'social', 'finance', 'utilities', 'travel', 'work', 'duty'
 --
 -- The brands are Rockstar's own: Bleeter and Snapmatic ship in the game.
 Config.Social = {
+    -- How far back "trending" looks, in hours. A window rather than all time: trending that
+    -- never changes is a list of whatever was posted in the server's first week.
+    trendingHours = 48,
+
     enabled = true,
 
     handleMin = 3,

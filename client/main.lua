@@ -960,6 +960,8 @@ local SOCIAL_OPS = {
     profile = true, search = true, follow = true,
     -- What a post can carry beyond a like.
     comments = true, comment = true, uncomment = true, repost = true, delete = true,
+    -- What happened to you, what people are talking about, and one tag's posts.
+    notifs = true, notifCount = true, notifSeen = true, tag = true, trending = true,
     -- Stories, and the direct messages between two handles.
     stories = true, story = true, storySeen = true,
     dmList = true, dmThread = true, dmSend = true,

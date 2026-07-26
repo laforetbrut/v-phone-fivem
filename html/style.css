@@ -9255,6 +9255,16 @@ body.inframe.dark .uisearch {
 .shotzoom[data-nozoom="1"] img { cursor: default; }
 /* What a transfer will actually cost, under the amount field. Tabular figures so the
    number does not jitter while it is being typed. */
+/* A hashtag and a mention inside a post body. Buttons rather than links because they act on
+   the phone rather than navigating anywhere, and they inherit the body's own type so a
+   sentence containing one does not change line height. */
+.soctag, .socmention { background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: var(--ph-accent, #0a84ff); }
+.soctag:active, .socmention:active { opacity: .6; }
+
+/* The trending row: a tag with its post count tucked under it. */
+.soctrendrow button { display: inline-flex; align-items: baseline; gap: 5px; }
+.soctrendrow small { opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; }
 .bankcalc { padding: 2px 4px 10px; font-size: 13px; font-weight: 600; opacity: .75;
   font-variant-numeric: tabular-nums; min-height: 18px; }
 .focusrow { display: flex; align-items: center; gap: 10px; padding: 4px 2px 10px;
