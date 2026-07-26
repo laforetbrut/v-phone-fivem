@@ -316,13 +316,33 @@ end
 
 --- `auto` again, but at the moment of playing rather than at boot: the car radio only makes
 --- sense when the player is actually in a car.
+--- Which deck will actually be handed this track.
+---
+--- **xsound first, always.** It is the only one of the three the phone can DRIVE: it plays a URL
+--- where the phone tells it to, so the Music app's own outputs - headphones, speaker, car - all
+--- work. The other two can only be OPENED: the phone puts the link on the clipboard and their
+--- interface appears for the player to paste into.
+---
+--- The old order asked for the car radio in a vehicle and then xdiskjockey, and only fell back
+--- to `anyStarted` after both. That was written before xsound was supported and became exactly
+--- backwards once it was: a server running xsound AND xdiskjockey handed every track to the deck
+--- that cannot play it, while the one that can sat there started. From the player's side that is
+--- silence with no error, because opening somebody else's mixer is a perfectly successful thing
+--- to have done.
+---
+--- `Config.Music.provider` still overrides all of this by name, for an operator who wants their
+--- own deck's interface rather than sound from the phone.
 local function musicDeckFor()
     local wanted = tostring((Config.Music or {}).provider or 'auto'):lower()
     if wanted ~= 'auto' then return musicProvider() end
+
+    if realGetResourceState('xsound') == 'started' then return 'xsound' end
+
+    -- No xsound. Now the question is which interface to open, and in a car the car radio is the
+    -- one that makes sense.
     local inVehicle = not isServer and IsPedInAnyVehicle(PlayerPedId(), false)
     if inVehicle and realGetResourceState('rcore_radiocar') == 'started' then return 'rcore_radiocar' end
     if realGetResourceState('xdiskjockey') == 'started' then return 'xdiskjockey' end
-    -- On foot with only a car radio installed: still the honest answer, it just opens in a car.
     return anyStarted(MUSIC_DECKS)
 end
 
@@ -469,6 +489,10 @@ STUBS['v-music'] = {
 }
 
 MusicProvider = musicProvider
+
+--- The deck a track would be handed right now. Exposed for `/phonemusic`, which has to be able
+--- to print the answer that decides rather than the answer that sounds right.
+MusicDeckInUse = musicDeckFor
 
 -- ── v-inventory ────────────────────────────────────────────────
 -- One thing only: "using" an item runs a function. Every inventory script offers this

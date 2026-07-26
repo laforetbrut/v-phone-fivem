@@ -538,7 +538,18 @@ RegisterCommand('phonemusic', function()
         print('[v-phone] music ─────────────────────────────────────')
         print(('  Config.Music.enabled   %s'):format(tostring(M.enabled ~= false)))
         print(('  Config.Music.provider  %s'):format(tostring(M.provider or 'auto')))
-        print(('  resolved deck          %s'):format(tostring(provider or 'NONE')))
+        -- **The deck that will actually be used**, not the one `Provider()` reports.
+        --
+        -- These are two different questions and they had two different answers: `Provider` names
+        -- the best deck INSTALLED, `musicDeckFor` names the one a track is handed to. Printing
+        -- the first while the second decided is how a diagnostic written to explain a silence
+        -- said `xsound` on a server that was sending every track to xdiskjockey.
+        local using = MusicDeckInUse and MusicDeckInUse() or provider
+        print(('  best deck installed    %s'):format(tostring(provider or 'NONE')))
+        print(('  deck actually used     %s'):format(tostring(using or 'NONE')))
+        if using ~= provider then
+            print('  ^^ these disagree. The second one is what plays your music.')
+        end
         for _, res2 in ipairs({ 'xsound', 'rcore_radiocar', 'xdiskjockey' }) do
             print(('  %-22s %s'):format(res2, GetResourceState(res2)))
         end

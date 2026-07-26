@@ -4,6 +4,20 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.14] - 2026-07-26
+
+### Fixed (English first)
+
+- **Music played nothing on a server that had xsound AND another deck installed.** Two functions answered "which deck", with different rules: `musicProvider` names the best deck **installed**, `musicDeckFor` names the one a track is actually **handed to**. The second asked for the car radio in a vehicle, then xdiskjockey, and only fell back to the first deck in the list after both - an order written before xsound was supported, and exactly backwards once it was. So a server running xsound and xdiskjockey sent every track to xdiskjockey, whose branch cannot play anything: it opens that resource's own mixer and puts the link on the clipboard. From the player's side that is silence with no error, because opening somebody else's interface is a perfectly successful thing to have done. **xsound is chosen first now**, always, because it is the only one of the three the phone can drive - the other two can only be opened. `Config.Music.provider` still overrides by name for an operator who wants their own deck's interface instead.
+- **`/phonemusic` printed the deck that was not being used.** It reported `musicProvider`, so on the server above it said `xsound` while every track went to xdiskjockey - a diagnostic written to explain a silence, confidently naming the wrong cause. It prints both now, labelled *best deck installed* and *deck actually used*, and says outright when they disagree.
+
+### Correctifs (miroir français)
+
+- **La musique ne jouait rien sur un serveur ayant xsound ET une autre platine installée.** Deux fonctions répondaient à « quelle platine », avec des règles différentes : `musicProvider` nomme la meilleure platine **installée**, `musicDeckFor` nomme celle à qui un titre est réellement **confié**. La seconde demandait l'autoradio en véhicule, puis xdiskjockey, et ne retombait sur la première de la liste qu'après les deux — un ordre écrit avant la prise en charge de xsound, et devenu exactement à l'envers dès qu'elle a existé. Un serveur faisant tourner xsound et xdiskjockey envoyait donc chaque titre à xdiskjockey, dont la branche ne peut rien jouer : elle ouvre le mixeur de cette ressource et met le lien dans le presse-papiers. Du point de vue du joueur, c'est du silence sans erreur — parce qu'ouvrir l'interface de quelqu'un d'autre est une action parfaitement réussie. **xsound est désormais choisie en premier**, toujours, parce que c'est la seule des trois que le téléphone peut piloter : les deux autres ne peuvent qu'être ouvertes. `Config.Music.provider` continue de l'emporter par son nom, pour un opérateur qui préfère l'interface de sa propre platine.
+- **`/phonemusic` imprimait la platine qui n'était pas utilisée.** Elle rapportait `musicProvider` : sur le serveur ci-dessus elle affichait donc `xsound` alors que chaque titre partait vers xdiskjockey — un diagnostic écrit pour expliquer un silence, nommant avec assurance la mauvaise cause. Elle imprime les deux désormais, étiquetées *best deck installed* et *deck actually used*, et signale explicitement quand elles divergent.
+
+---
+
 ## [1.2.13] - 2026-07-26
 
 ### Added (English first)
