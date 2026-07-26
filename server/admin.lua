@@ -78,12 +78,21 @@ end
 if ADMIN.commands ~= false then
     local self = exports[GetCurrentResourceName()]
 
+    -- Forward declared: `runAdmin` calls it when the menu opens, and it is defined below with
+    -- the suggestion table it reads. A `local` is only in scope after its own line.
+    local suggestTo
+
     local function reply(src, msg)
         if src == 0 then print('[v-phone] ' .. msg)
         else TriggerClientEvent('chat:addMessage', src, { args = { 'iFruit admin', msg } }) end
     end
 
-    RegisterCommand('phoneadmin', function(src, args)
+    -- Named, rather than anonymous inside `RegisterCommand`.
+    --
+    -- The staff MENU is a second front end to exactly this: same handler, same permission
+    -- check on its first line, same replies. A menu with its own copy of twenty-four actions
+    -- would be twenty-four places for the two to drift apart.
+    local function runAdmin(src, args)
         local sub = (args[1] or ''):lower()
         if not allowed(src) then
             denied(src, sub)
@@ -379,12 +388,49 @@ if ADMIN.commands ~= false then
             end
             reply(src, ('Battery set to %d%% on %d phone(s).'):format(math.floor(pct), n))
 
+        elseif sub == '' or sub == 'menu' then
+            -- No arguments opens the menu. `Config.Admin.qbAdminMenu` used to promise entries
+            -- in qb-core's admin menu and print two lines of advice instead, which with boot
+            -- logging off - the default - is nothing at all. See client/admin.lua for why the
+            -- menu cannot literally live inside qb-adminmenu.
+            TriggerClientEvent('v-phone:admin:openMenu', src)
+            suggestTo(src)
         else
             reply(src, 'phoneadmin: info | who | number | renumber | contacts | apps | open | ' ..
                        'battery | batteryall | message | notify | announce | alert | app | ' ..
                        'outage | outages | brick | unbrick | bricked | verify | verified | wipe')
         end
-    end, false)
+    end
+
+    RegisterCommand('phoneadmin', runAdmin, false)
+
+    --- The menu's actions, arriving as an argument list instead of a typed line.
+    ---
+    --- Unauthenticated by design at this layer: `runAdmin` checks the ace on its first line and
+    --- logs the refusal, so a client firing this event by hand is refused exactly as a client
+    --- typing the command is. What IS done here is bounding the input - eight arguments of
+    --- sixty-four characters, all strings - because a command handler is not the place to
+    --- discover that somebody sent it a table.
+    RegisterNetEvent('v-phone:admin:run', function(args)
+        local src = source
+        if type(args) ~= 'table' then return end
+        local clean = {}
+        for i = 1, 8 do
+            local v = args[i]
+            if v == nil then break end
+            if type(v) ~= 'string' and type(v) ~= 'number' then return end
+            clean[i] = tostring(v):sub(1, 64)
+        end
+        if not clean[1] then return end
+        runAdmin(src, clean)
+    end)
+
+    --- Open the menu. For a button in any admin menu: one line, and this is the line.
+    RegisterNetEvent('v-phone:admin:menu', function()
+        local src = source
+        if not allowed(src) then denied(src, 'menu') return end
+        TriggerClientEvent('v-phone:admin:openMenu', src)
+    end)
 
     -- ── What the chat box offers as you type ────────────────────────
     --
@@ -427,7 +473,7 @@ if ADMIN.commands ~= false then
         { 'wipe', 'DELETE everything on a phone. Irreversible', { { 'id|cid', 'the target' }, { 'confirm', 'required' } } },
     }
 
-    local function suggestTo(src)
+    suggestTo = function(src)
         if not allowed(src) then return end
         for _, entry in ipairs(SUGGESTIONS) do
             local params = {}
@@ -470,20 +516,24 @@ if ADMIN.commands ~= false then
 end
 
 -- ══════════════════════════════════════════════════════════════
--- qb-core admin menu
+-- Other admin menus
 -- ══════════════════════════════════════════════════════════════
--- qb-adminmenu lets other resources contribute options through an event. When it is
--- running and enabled, the phone adds its actions so staff get them without a command.
--- ox and ESX have no equivalent menu to extend, so this simply does nothing there.
+-- **qb-adminmenu cannot be extended by a third party.** It builds its menu from local
+-- variables in its own client file and hands them to MenuV; there is no event, export or hook
+-- that reaches those locals. The old code here knew that and settled for printing advice -
+-- which, with boot logging off by default, printed nothing to anybody.
+--
+-- So the phone brings its own menu (client/admin.lua), opened by `/phoneadmin` with no
+-- arguments. Any admin menu can put a button in front of it with one line:
+--
+--     TriggerServerEvent('v-phone:admin:menu')
+--
+-- Said once at boot, for an operator who wants that button.
 if ADMIN.qbAdminMenu ~= false then
     CreateThread(function()
         Wait(2000)
         if GetResourceState('qb-adminmenu') ~= 'started' then return end
-        -- qb-adminmenu reads `qb-adminmenu:client:...` menus; the supported way for a
-        -- third party is to register a header + buttons it exposes. Rather than depend on
-        -- an internal shape that changes between builds, the phone registers a single
-        -- command the menu can point a button at, and prints how to add it.
-        V.Info('[v-phone] qb-adminmenu detected. Add a button that runs: phoneadmin info [id]')
-        V.Info('[v-phone] full staff actions: /phoneadmin (info|open|battery|number|message|notify|app|outage|brick|wipe)')
+        V.Info('[v-phone] staff menu: /phoneadmin with no arguments. To add it to qb-adminmenu, '
+            .. "point a button at TriggerServerEvent('v-phone:admin:menu')")
     end)
 end

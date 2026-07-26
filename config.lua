@@ -1144,9 +1144,13 @@ Config.Admin = {
     -- that drives everything from its own menu.
     commands = true,
 
-    -- Add phone actions to the qb-core admin menu (qb-adminmenu), when it is running.
-    -- Gives staff "Open / Wipe / Charge / Set number" on a selected player without a
-    -- command. No effect on ox or ESX, which have no such menu to extend.
+    -- Print, at boot, the one line an operator needs to add the phone's staff menu to
+    -- qb-adminmenu.
+    --
+    -- It does not add entries to that menu itself, and it never could: qb-adminmenu builds
+    -- its menu from locals in its own client file, and nothing outside that file can reach
+    -- them. The phone's staff menu is its own, opened by `/phoneadmin` with no arguments,
+    -- drawn through ox_lib or qb-menu - whichever is running.
     qbAdminMenu = true,
 
     -- What staff may do. Turn any of these off to hide it from the command and the menu.
@@ -1431,8 +1435,20 @@ Config.Police = {
     -- kit", a warrant, a laptop - whatever your server calls it.
     item = nil,
 
-    -- The terminals. Interact within `radius` (a target if ox-target/qb-target is
-    -- running, otherwise a marker and a key press).
+    -- How the terminal is opened.
+    --
+    -- `key` is ALWAYS live, and that is deliberate. The target-script route was the only way
+    -- in when one was running, and on a server where the zone did not register - a target
+    -- version whose signature moved, a job check somewhere in the middle - the terminal was
+    -- simply unreachable with nothing on screen to say so. Walking up and pressing a key is
+    -- the route that cannot fail quietly.
+    key = 38,              -- E. Any control id from the FiveM list.
+    marker = true,         -- draw the small marker at each point
+    helpText = true,       -- and the "[E] Forensic terminal" prompt when you are in range
+    useTarget = true,      -- also register an ox_target/qb-target zone when one is running
+
+    -- The terminals. Interact within `radius` - by key press, and by target when a target
+    -- script is running.
     points = {
         { label = 'Mission Row - Digital Forensics', x = 484.6, y = -996.5, z = 30.7, radius = 1.5 },
         { label = 'Sandy Shores Sheriff - Tech Bench', x = 1853.0, y = 3689.5, z = 34.3, radius = 1.5 },

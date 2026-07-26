@@ -51,6 +51,13 @@ end)
 -- ══════════════════════════════════════════════════════════════
 -- The points on the map
 -- ══════════════════════════════════════════════════════════════
+-- Both routes, and the key one is not conditional.
+--
+-- This used to be an either/or: register a target zone if a target script is running, and only
+-- otherwise fall back to a marker and a key. That made a third-party script the single point of
+-- failure for reaching the terminal at all - and when its zone did not appear, there was nothing
+-- on screen to say why. The key press is always live now; the target zone is an addition for
+-- servers that prefer it.
 CreateThread(function()
     if not POLICE.enabled then return end
     local points = POLICE.points or {}
@@ -58,8 +65,10 @@ CreateThread(function()
 
     -- Prefer a target script; both expose the same idea under different names.
     local targetRes = nil
-    for _, res in ipairs({ 'ox_target', 'qb-target', 'qtarget' }) do
-        if GetResourceState(res) == 'started' then targetRes = res break end
+    if POLICE.useTarget ~= false then
+        for _, res in ipairs({ 'ox_target', 'qb-target', 'qtarget' }) do
+            if GetResourceState(res) == 'started' then targetRes = res break end
+        end
     end
 
     if targetRes == 'ox_target' then
@@ -75,7 +84,6 @@ CreateThread(function()
                 },
             })
         end
-        return
     end
 
     if targetRes == 'qb-target' or targetRes == 'qtarget' then
@@ -86,10 +94,10 @@ CreateThread(function()
                 { options = { { label = pt.label or 'Forensic terminal', icon = 'fas fa-fingerprint',
                                 action = openTerminal } }, distance = 1.8 })
         end
-        return
     end
 
-    -- No target script: a marker you walk into and open with E.
+    -- The marker and the key, whether or not a target script took the zones above.
+    local key = math.floor(tonumber(POLICE.key) or 38)   -- 38 is E
     CreateThread(function()
         while true do
             local sleep = 1000
@@ -99,13 +107,22 @@ CreateThread(function()
                 local d = #(coords - vec3(pt.x, pt.y, pt.z))
                 if d < 12.0 then
                     sleep = 0
-                    DrawMarker(2, pt.x, pt.y, pt.z + 0.9, 0, 0, 0, 0, 180.0, 0,
-                        0.22, 0.22, 0.14, 60, 130, 200, 160, false, true, 2, nil, nil, false)
-                    if d < (pt.radius or 1.5) then
-                        SetTextComponentFormat('STRING')
-                        AddTextComponentString('[E] ' .. (pt.label or 'Forensic terminal'))
-                        DisplayHelpTextFromStringLabel(0, 0, 1, -1)
-                        if IsControlJustReleased(0, 38) then openTerminal() end   -- E
+                    if POLICE.marker ~= false then
+                        DrawMarker(2, pt.x, pt.y, pt.z + 0.9, 0, 0, 0, 0, 180.0, 0,
+                            0.22, 0.22, 0.14, 60, 130, 200, 160, false, true, 2, nil, nil, false)
+                    end
+                    if d < (pt.radius or 1.5) and not terminalOpen then
+                        if POLICE.helpText ~= false then
+                            -- The modern trio. `SetTextComponentFormat` +
+                            -- `DisplayHelpTextFromStringLabel` are the old aliases and they draw
+                            -- nothing at all on current builds, which is one of the reasons this
+                            -- prompt was never seen.
+                            BeginTextCommandDisplayHelp('STRING')
+                            AddTextComponentSubstringPlayerName(
+                                ('[~INPUT_CONTEXT~] %s'):format(pt.label or L('ph.forensic_terminal')))
+                            EndTextCommandDisplayHelp(0, false, true, -1)
+                        end
+                        if IsControlJustReleased(0, key) then openTerminal() end
                     end
                 end
             end

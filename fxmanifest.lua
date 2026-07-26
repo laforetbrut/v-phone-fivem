@@ -61,6 +61,9 @@ client_scripts {
     'client/main.lua',
     -- The police forensics terminal: a point on the map and the NUI relays behind it.
     'client/police.lua',
+    -- The staff menu. qb-adminmenu cannot be extended from outside, so the phone brings its
+    -- own - see the comment at the top of the file.
+    'client/admin.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.

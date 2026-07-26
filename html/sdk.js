@@ -127,6 +127,9 @@
     repost: 'M4 9V8a3 3 0 0 1 3-3h10l-3-3M20 15v1a3 3 0 0 1-3 3H7l3 3M17 5l3 3M7 19l-3-3',
     home: 'M4 11.2 12 4l8 7.2M6.5 10v9.2h4.2V15h2.6v4.2h4.2V10',
     star2: 'M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.3L12 17l-5.6 3.2 1.3-6.3L3 9.6l6.3-.7z',
+    // Nested arcs, for the forensics terminal. `faceid` was standing in for this and it
+    // reads as a viewfinder bracket, which is not what a fingerprint looks like.
+    fingerprint: 'M12 3.4c-4.7 0-8.5 3.9-8.5 8.6v4M12 6.7c-2.9 0-5.2 2.4-5.2 5.3v5.6M12 10c-1.1 0-2 .9-2 2.1v7.1M12 3.4c4.7 0 8.5 3.9 8.5 8.6v4M12 6.7c2.9 0 5.2 2.4 5.2 5.3v5.6M12 10c1.1 0 2 .9 2 2.1v7.1',
   };
   const FILLED = { phone: 1, messages: 1, hangup: 1, answer: 1, send: 1, star: 1 };
 
