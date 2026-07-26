@@ -72,6 +72,12 @@ local function imageAllowed(url)
     for _, allowed in ipairs(hosts or SOC.imageHosts) do
         if host == allowed or host:sub(-(#allowed + 1)) == '.' .. allowed then return true end
     end
+
+    -- A photograph this phone took. Without this, picking one out of the gallery for an avatar,
+    -- a cover or a post was refused as `badhost` - the phone rejecting its own photograph
+    -- because the operator had not listed the CDN the phone itself uploads to.
+    if Bridge.MediaHasUrl and Bridge.MediaHasUrl(url) then return true end
+
     return false
 end
 

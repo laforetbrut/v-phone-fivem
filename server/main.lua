@@ -422,6 +422,23 @@ end)
 --- A wallpaper link is a URL a client will fetch, so the host has to be one the operator
 --- allowed. Rejected rather than sanitised: quietly rewriting somebody's link into one
 --- that works is worse than telling them it is not permitted.
+--- Did this phone upload that file itself?
+---
+--- The host allowlists exist to stop a player pasting a link to somewhere the operator did not
+--- choose. They have no business refusing a photograph the server took, uploaded and recorded
+--- seconds ago, and they will always refuse one unless the operator happens to have listed
+--- their own CDN - which nobody does, because the CDN is an implementation detail of this
+--- resource.
+---
+--- Shared rather than repeated: the wallpaper gate had this escape hatch and the social one did
+--- not, so a photo from the gallery could be a wallpaper and a message attachment but not an
+--- avatar, a cover or a post. Two copies of a rule is one copy too many.
+function Bridge.MediaHasUrl(url)
+    url = tostring(url or '')
+    if url == '' then return false end
+    return MySQL.scalar.await('SELECT 1 FROM vphone_media WHERE url = ? LIMIT 1', { url }) ~= nil
+end
+
 local function wallpaperAllowed(url)
     url = tostring(url or '')
     if url == '' then return true end                      -- clearing it is always fine
@@ -445,14 +462,8 @@ local function wallpaperAllowed(url)
         if host == allowed or host:sub(-(#allowed + 1)) == '.' .. allowed then return true end
     end
 
-    -- A file this phone uploaded itself is allowed whatever host it landed on. The list above
-    -- guards against a player pasting a link to somewhere the operator did not choose; it has
-    -- no business refusing a photograph the server took, uploaded and recorded seconds ago.
-    -- Without this a player could not set their own picture as a wallpaper unless the
-    -- operator happened to list their own CDN.
-    if MySQL.scalar.await('SELECT 1 FROM vphone_media WHERE url = ? LIMIT 1', { url }) then
-        return true
-    end
+    -- A file this phone uploaded itself is allowed whatever host it landed on.
+    if Bridge.MediaHasUrl(url) then return true end
 
     return false
 end

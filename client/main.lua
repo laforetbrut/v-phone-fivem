@@ -1238,6 +1238,24 @@ RegisterNUICallback('camMode', function(data, cb)
                 end
                 camShooting = false
                 ClearHelp(true)
+
+                -- Re-assert the camera, because the capture is not ours: screencapture does
+                -- the grab in its OWN NUI, and a second browser taking the screen can leave
+                -- focus and the phone camera where it found them rather than where we left
+                -- them. Framing the second photograph then failed - the camera would not move
+                -- any more - while the first had worked perfectly.
+                --
+                -- Idempotent: re-activating a camera that is already active costs nothing, and
+                -- doing it unconditionally is cheaper than trying to detect which of the two
+                -- browsers won.
+                if camActive and isOpen then
+                    SetNuiFocus(false, false)
+                    pcall(function()
+                        CellCamActivate(true, true)
+                        frontCam(front)
+                    end)
+                    if front then selfieApply() end
+                end
             end
 
             -- The handset is not on screen, so the keys have to be. `~INPUT_...~` rather
@@ -1437,8 +1455,19 @@ end)
 -- requested seconds, uploads it, and answers with the URL. The phone hides for the shot
 -- and comes back when it is done.
 RegisterNUICallback('record', function(data, cb)
-    if not (Config.Media and Config.Media.enabled == true)
-        or GetResourceState('screencapture') ~= 'started' then
+    -- **This read `Config.Media.enabled` and refused every recording.**
+    --
+    -- Media hosting is switched on with `set phone_media true`, which is a server convar - it
+    -- is not replicated, so a client cannot see it, and `Config.Media.enabled` is still false
+    -- in the file. The Video tab appeared, because the page is told by the server in the open
+    -- payload, and then the button it belonged to answered "not available on this server".
+    -- Exactly the mistake the camera made before it: the operator's switch is a convar the
+    -- SERVER resolves, so the server is the only thing that may answer this.
+    --
+    -- The gate is gone rather than corrected: `v-phone:media:video` already checks
+    -- `Bridge.MediaVideoEnabled()`, which reads the convar, so a second opinion here could
+    -- only ever disagree with the one that matters.
+    if GetResourceState('screencapture') ~= 'started' then
         cb({ error = 'off' }) return
     end
     local finished = false

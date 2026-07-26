@@ -8164,7 +8164,17 @@ body.inframe.dark .uisearch {
   color: var(--app-label);
   font-size: 15.5px;
   background: none;
+  /* The background was cleared and the BORDER was not, so the browser's own inset rectangle
+     was drawn inside the rounded pill - which is the grey box in every screenshot of this
+     field. Every other input in the phone goes through `.field`, which resets all three. */
+  border: 0;
+  outline: none;
+  padding: 0;
+  /* No font-family here: the sheet already has a global `input { font: inherit }`, which is
+     why `.field` does not set one either. */
+  -webkit-appearance: none;
 }
+.socsearch input::placeholder { color: var(--app-label3); }
 
 .socfollow {
   margin-left: auto;
