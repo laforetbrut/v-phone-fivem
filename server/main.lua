@@ -1485,10 +1485,13 @@ V.Callback('v-phone:open', function(src, resolve)
         -- for the server and not for the phone taking the photograph - so the camera fell
         -- through to screenshot-basic, found no upload target, and refused. Only the server
         -- knows, so only the server says.
-        media = (Bridge.MediaEnabled and Bridge.MediaEnabled()) or false,
         -- Whether Cipher should hand a plaintext copy to the server for lawful intercept.
         -- Off unless the operator turned it on, so E2E stays E2E by default.
         cipherIntercept = (Config.Police and Config.Police.cipher and Config.Police.cipher.intercept) == true,
+        -- Whether the Camera app works at all. This was simply never sent: the page reads
+        -- `state.camera`, found undefined, and reported "the camera is disabled on this
+        -- server" however the operator had set it - so the app has never opened for anyone.
+        camera = V.SettingBool('camera', false),
         -- Media hosting: whether the camera uploads to a CDN, and whether video recording
         -- is offered, and the clip length cap the record UI should honour.
         media = Bridge.MediaEnabled and Bridge.MediaEnabled() or false,

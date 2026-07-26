@@ -4260,12 +4260,39 @@ function openSwitcher() {
     '<div class="switchhint">' + esc(L('ph.switch_hint')) + '</div>';
   byId('switcher').classList.add('on');
 
-  [...byId('cards').querySelectorAll('.card')].forEach((c) => {
+  // The strip scrolls, but nothing was making it scroll. `overflow-x: auto` is enough on a
+  // touchscreen and useless with a mouse: there is no horizontal wheel and no drag, so the
+  // cards past the second one were unreachable. Both are wired here.
+  const strip = byId('cards');
+  strip.addEventListener('wheel', (e) => {
+    // A vertical wheel is what a player has, and sideways is the only axis here.
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    strip.scrollLeft += e.deltaY;
+  }, { passive: false });
+
+  // Drag to pan. `panned` is what keeps a drag from also being read as a tap on the card it
+  // started on, and the card's own flick-up-to-close still wins on the vertical axis.
+  let panX = null, panFrom = 0, panned = false;
+  strip.addEventListener('pointerdown', (e) => { panX = e.clientX; panFrom = strip.scrollLeft; panned = false; });
+  strip.addEventListener('pointermove', (e) => {
+    if (panX === null) return;
+    const dx = e.clientX - panX;
+    if (!panned && Math.abs(dx) < 6) return;
+    panned = true;
+    strip.scrollLeft = panFrom - dx;
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
+    strip.addEventListener(ev, () => { panX = null; }));
+
+  [...strip.querySelectorAll('.card')].forEach((c) => {
     let y0 = null;
     c.addEventListener('pointerdown', (e) => { y0 = e.clientY; });
     c.addEventListener('pointerup', (e) => {
       const flicked = y0 !== null && e.clientY - y0 < -60;
       y0 = null;
+      // A drag that moved the strip is not a tap on a card.
+      if (panned) { panned = false; return; }
       if (flicked) {
         // Flick a card away to close the app, as on a real phone.
         const id = c.dataset.app;
