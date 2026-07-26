@@ -2913,8 +2913,14 @@ RENDER.wallet = async () => {
     }
   };
   body(cardHtml + idHtml + UI.group(list.map((l) => UI.row({
-    icon: 'wallet', tint: '#5856D6', title: (L(l.i18n) !== l.i18n ? L(l.i18n) : (l.label || l.key)),
-    subtitle: l.issuer || '', value: l.held ? L('ph.lic_held') : L('ph.lic_none'),
+    // A translation if there is one, then the label the server resolved, and last the bare
+    // identifier with its separators tidied - `weapon_license` reads as `Weapon License`
+    // rather than as a column value, even on a server that has configured nothing.
+    icon: 'wallet', tint: '#5856D6',
+    title: L(l.i18n) !== l.i18n ? L(l.i18n)
+      : (l.label && l.label !== l.key ? l.label : placeName(l.key)),
+    subtitle: l.issuer || '',
+    value: l.held ? L('ph.lic_status_held') : L('ph.lic_status_none'),
     tone: l.held ? 'pos' : '',
   }))));
   wireCard();

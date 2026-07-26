@@ -237,8 +237,8 @@ local T = {
     ['ph.calls_cleared'] = "Call history cleared",
     ['ph.call_delete_ask'] = "Forget this call?",
     ['ph.call_deleted'] = "Call deleted",
-    ['ph.lic_held']     = 'Held',
-    ['ph.lic_none']     = 'None',
+    ['ph.lic_status_held']     = 'Held',
+    ['ph.lic_status_none']     = 'None',
 
     -- ── Jobs ──
     ['ph.my_job'] = "My job",

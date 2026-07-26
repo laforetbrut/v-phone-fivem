@@ -244,13 +244,25 @@ V.Callback('v-phone:wallet:data', function(src, resolve)
         if type(r) == 'table' then
             local key = tostring(r.type or r.name or r.key or '')
             if key ~= '' then
+                -- What to CALL it. `Config.Licences` first, because that is the operator
+                -- saying so outright; then whatever label the issuing script gave; then the
+                -- identifier, which the page tidies rather than printing raw.
+                --
+                -- A configured value starting `ph.` is a locale key rather than a label, so it
+                -- travels as `i18n` and is looked up in the reader's own language. One field
+                -- serves a single-language server and a bilingual one, which is worth more than
+                -- two fields that each only do half the job.
+                local configured = (Config.Licences or {})[key]
+                configured = (type(configured) == 'string' and configured ~= '') and configured or nil
+                local asLocaleKey = configured and configured:sub(1, 3) == 'ph.'
+
                 out[#out + 1] = {
                     key = key,
-                    label = tostring(r.label or key):sub(1, 40),
+                    label = tostring((not asLocaleKey and configured) or r.label or key):sub(1, 40),
                     -- The conventional key, so a server that wants "Permis de conduire"
                     -- rather than "driver" only has to add `ph.lic_driver` to its locale.
                     -- Absent is fine: the page falls back to the label.
-                    i18n = 'ph.lic_' .. key,
+                    i18n = asLocaleKey and configured or ('ph.lic_' .. key),
                     issuer = r.issuer and tostring(r.issuer):sub(1, 40) or nil,
                     -- The provider returns what is HELD, so everything it returns is held.
                     held = true,

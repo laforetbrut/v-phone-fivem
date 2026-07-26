@@ -4,6 +4,26 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.5] - 2026-07-26
+
+### Added (English first)
+
+- **`Config.Licences` — what the Wallet calls each licence.** A licence arrives from your framework as an identifier, because that is what the script issuing it stores: `driver`, `cdl`, `fish`. Almost none of them carry a label, and no per-licence locale key shipped, so the Wallet had nothing to show but the column value - a wallet listing `cdl` and `fish` is not a wallet. The value is either a **plain label**, used exactly as written, or a **locale key** (anything starting `ph.`), looked up in the reader's own language - one field, so a single-language server and a bilingual one are both served rather than each getting half of two. The resolution order is the operator's config, then a locale key, then whatever label the issuing script gave, then the identifier with its separators tidied: `weapon_license` reads as `Weapon License` even when nobody has configured anything. It ships with the fourteen identifiers qb-core, Qbox and ESX hand out between them, so most servers see real names on the first restart. A value that is not a non-empty string is ignored rather than drawn.
+
+### Changed
+
+- **The two licence status words left the per-licence namespace.** `ph.lic_held` and `ph.lic_none` sat in `ph.lic_*`, which is now where per-licence names live - so a framework issuing a licence literally called `held` or `none` would have had its name silently replaced by a status word. They are `ph.lic_status_held` and `ph.lic_status_none`. Nothing outside the phone read them.
+
+### Ajouts (miroir français)
+
+- **`Config.Licences` — comment le Portefeuille nomme chaque permis.** Un permis arrive du framework sous forme d'identifiant, parce que c'est ce que stocke le script qui le délivre : `driver`, `cdl`, `fish`. Presque aucun ne porte de libellé, et aucune clé de langue par permis n'était livrée : le Portefeuille n'avait donc que la valeur de colonne à afficher — et un portefeuille qui liste `cdl` et `fish` n'est pas un portefeuille. La valeur est soit un **libellé simple**, utilisé tel quel, soit une **clé de langue** (tout ce qui commence par `ph.`), cherchée dans la langue du lecteur — un seul champ, pour qu'un serveur monolingue et un serveur bilingue soient tous deux servis au lieu de recevoir chacun la moitié de deux champs. L'ordre de résolution est : la configuration de l'opérateur, puis une clé de langue, puis le libellé fourni par le script, puis l'identifiant avec ses séparateurs nettoyés — `weapon_license` se lit `Weapon License` même sans rien configurer. Livré avec les quatorze identifiants que qb-core, Qbox et ESX délivrent entre eux : la plupart des serveurs voient donc de vrais noms au premier redémarrage. Une valeur qui n'est pas une chaîne non vide est ignorée plutôt qu'affichée.
+
+### Modifications
+
+- **Les deux mots d'état des permis ont quitté l'espace de noms par permis.** `ph.lic_held` et `ph.lic_none` se trouvaient dans `ph.lic_*`, qui est désormais l'endroit où vivent les noms de permis — un framework délivrant un permis littéralement appelé `held` ou `none` aurait donc vu son nom remplacé en silence par un mot d'état. Ils s'appellent `ph.lic_status_held` et `ph.lic_status_none`. Rien en dehors du téléphone ne les lisait.
+
+---
+
 ## [1.2.4] - 2026-07-26
 
 ### Fixed (English first)

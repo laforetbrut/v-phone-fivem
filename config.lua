@@ -350,6 +350,45 @@ Config.Hold = {
 Config.NumberFormat = '555-####'
 
 -- ══════════════════════════════════════════════════════════════
+--  LICENCE NAMES
+-- ══════════════════════════════════════════════════════════════
+-- What the Wallet calls each licence.
+--
+-- A licence arrives from your framework as an identifier - `driver`, `cdl`, `fish` - because
+-- that is what the script that issues it stores. Most of them carry no label at all, so the
+-- Wallet had nothing to show but the identifier, and a wallet listing `cdl` and `fish` is not
+-- a wallet.
+--
+-- The key is the identifier your framework uses. The value is either:
+--
+--   * a plain label, used exactly as written - the quick way, and right for a server that runs
+--     in one language
+--   * a locale key (anything starting `ph.`), looked up in the player's own language - add
+--     `['ph.lic_cdl'] = ...` to each of your locale files and a bilingual server gets both
+--
+-- An identifier that is not listed here falls back to whatever label the issuing script gave
+-- it, and then to the identifier itself with its separators tidied - so `weapon_license` reads
+-- as `Weapon License` even when nobody has configured it.
+Config.Licences = {
+    -- The ones qb-core, Qbox and ESX hand out between them. Rename freely; delete what your
+    -- server does not use - an entry for a licence nobody holds costs nothing either way.
+    driver   = 'Driving licence',
+    cdl      = 'Heavy goods licence',
+    truck    = 'Heavy goods licence',
+    motorcycle = 'Motorcycle licence',
+    boat     = 'Boating licence',
+    pilot    = 'Pilot licence',
+    weapon   = 'Firearms licence',
+    business = 'Business licence',
+    fish     = 'Fishing permit',
+    hunting  = 'Hunting permit',
+    mining   = 'Mining permit',
+    taxi     = 'Taxi licence',
+    press    = 'Press card',
+    law      = 'Bar licence',
+}
+
+-- ══════════════════════════════════════════════════════════════
 --  HOW A NUMBER IS DISPLAYED
 -- ══════════════════════════════════════════════════════════════
 -- Grouping for READING, which is a different question from `Config.NumberFormat` above.
