@@ -22,6 +22,14 @@
 * { -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 input, textarea, [contenteditable="true"], .selectable {
   -webkit-user-select: text; user-select: text; }
+/* `normal` is the initial value, so this looks redundant - it is not. It is a GUARD.
+   Any `color-scheme` that resolves to dark on the root makes the browser paint an opaque
+   canvas underneath the document, beneath the CSS, where `background: transparent` below
+   cannot reach it and computed styles do not show it. In a NUI page that is a grey sheet
+   over the whole game. style.css is the last stylesheet the page loads, so this wins over
+   anything a theme or a stray <meta> tries to set. Do not remove it. */
+html { color-scheme: normal; }
+
 html, body { width: 100%; height: 100%; background: transparent; overflow: hidden;
   -webkit-font-smoothing: antialiased; }
 .hidden { display: none !important; }

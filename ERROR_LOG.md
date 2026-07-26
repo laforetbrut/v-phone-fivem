@@ -5,6 +5,47 @@ one coming back.
 
 ---
 
+## [2026-07-26 03:20] — The grey screen: a `<meta name="color-scheme">` in the NUI page
+
+**Context:** six failed fix cycles on a grey sheet covering the whole game. The user finally
+isolated it: `stop v-phone` and the game renders normally.
+
+**Error:** `html/index.html` declared `<meta name="color-scheme" content="light dark">`. On a
+machine whose OS is in dark mode, that opts the frame into the browser's own dark handling,
+and the browser paints an **opaque canvas beneath the document**. In a NUI page that canvas
+is a grey sheet over the entire game, present from the moment the resource starts — before
+any player loads, which is why it appeared during "Validating characters".
+
+**Root cause of missing it for so long:** the paint happens BELOW the CSS. Three separate
+things hid it:
+1. `html, body { background: transparent }` is a CSS background and cannot stop a canvas
+   painted underneath it, so the file looked correct.
+2. Every top-level element carries `hidden`, so a DOM audit found no painter — correctly,
+   because there is no element involved at all.
+3. **I inspected the live page and reported `getComputedStyle(html).backgroundColor` as
+   `rgba(0,0,0,0)`, and treated that as proof the page could not paint.** It was not proof.
+   Computed styles describe the CSS box; the color-scheme canvas is frame state below it and
+   is structurally invisible to that API. My measurement could never have detected this
+   mechanism, and I presented it as though it ruled the page out.
+
+An adversarial review had already nominated this exact tag and then refuted it, reasoning
+from FiveM's shipped Chromium version and the `kIfBaseNotTransparent` guard. The reasoning
+was careful and it was wrong — it rested on an inference about FiveM's base background
+colour that was never observed, only deduced from other pages behaving.
+
+**Fix:** removed the tag from `html/index.html` and from `apps/example/index.html` (the
+template every drop-in app is copied from, so it was propagating). Added an explicit
+`html { color-scheme: normal; }` guard at the top of `style.css`, which loads last and
+therefore wins over any theme or stray tag that tries to reintroduce it.
+
+**Prevention:** never conclude "this page cannot paint" from computed styles or from the DOM
+alone — both are blind to frame-level paint. And when a refutation rests on an inference
+about the host's behaviour rather than on something observed, record it as unresolved rather
+than closed. The cheap test beats the careful argument: this fix was always one deleted line,
+and the reviewer said so while refuting it.
+
+---
+
 ## [2026-07-26 03:10] — Wrote `player.PlayerData.citizenid` against the bridge's own player
 
 **Context:** writing the qb-phone compatibility bridge, whose handlers need the citizen id of

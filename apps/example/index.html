@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
   <title>Example phone app</title>
+  <!-- Do not add `<meta name="color-scheme">` to an app page. It opts the frame into the
+       browser's own light/dark handling, which paints an opaque canvas beneath the
+       document - under the CSS, so a transparent background does not stop it. Your app's
+       light and dark come from the phone: it puts `dark` on the body for you. -->
+
   <!-- The phone's own stylesheet, so the app looks like the phone rather than like a
        page that happens to be inside it. -->
   <link rel="stylesheet" href="../../html/style.css">

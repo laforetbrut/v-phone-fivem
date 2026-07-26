@@ -3,8 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
   <title>iFruit</title>
+
+  <!-- There is deliberately NO `<meta name="color-scheme">` here, and there must not be.
+       Declaring one opts the page into the browser's own light/dark handling, and a
+       Chromium that resolves it to dark paints an OPAQUE canvas under the whole document -
+       below the CSS, so `html, body { background: transparent }` does not stop it and it
+       does not show up in computed styles either. In a NUI page that canvas is a grey
+       sheet over the entire game: the phone appears to work, but the world behind it is
+       covered from the moment the resource starts.
+
+       The phone's light and dark are decided by the author classes `.screen.dark` and
+       `body.inframe.dark`, both toggled from JS. Nothing here reads the browser's scheme,
+       so nothing is lost by leaving this out. -->
+
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="theme-vars.css">
   <script src="theme.js"></script>
