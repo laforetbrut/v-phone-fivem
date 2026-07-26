@@ -829,6 +829,7 @@ local T = {
     ['ph.err_badpass'] = "Mot de passe incorrect",
     ['ph.soc_handle'] = 'Pseudo (lettres, chiffres, _)',
     ['ph.soc_avatar'] = "Lien d'avatar (facultatif)",
+    ['ph.soc_cover'] = "URL de l image de couverture",
     ['ph.soc_bio'] = 'Bio (facultatif)',
     ['ph.soc_create'] = 'Créer le compte',
     ['ph.soc_made'] = 'Bienvenue sur le réseau',
@@ -1000,6 +1001,8 @@ local T = {
     -- Appels, confidentialite et notifications, dans les Reglages
     ['ph.calls_privacy'] = 'Appels et confidentialite',
     ['ph.hide_number'] = 'Masquer mon numero',
+    ['ph.streamer'] = "Mode streameur",
+    ['ph.streamer_sub'] = "Masque les numeros a l ecran",
     ['ph.silence_unknown'] = 'Silence pour les inconnus',
     ['ph.calls_privacy_hint'] = 'Les appels masques s affichent en numero cache. Les inconnus arrivent quand meme dans vos appels manques ; ils ne sonnent simplement pas.',
     ['ph.silence_unknown_hint'] = 'Les appelants absents de vos contacts arrivent quand meme dans vos appels manques ; ils ne sonnent simplement pas.',

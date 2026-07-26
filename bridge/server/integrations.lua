@@ -509,6 +509,24 @@ function Bridge.Banking.Balances(src)
     return nil
 end
 
+--- The banking scripts whose own history this bridge can actually READ.
+---
+--- Detecting a script is not the same as being able to read it, and conflating the two cost
+--- the bank app its entire statement: `shouldRecord` treated "a banking script is running" as
+--- "somebody else is keeping the history", so on qb-banking - which has no branch below - the
+--- phone recorded nothing AND could read nothing, and the app showed "no activity" to a player
+--- who had been paid all evening.
+---
+--- Anything not in this list means the phone keeps its own lines. Add a script here only when
+--- `Transactions` genuinely returns its rows.
+local READABLE_HISTORY = { ['Renewed-Banking'] = true, ['qs-banking'] = true }
+
+--- Can the running banking script's own statement be read?
+function Bridge.Banking.HistoryReadable()
+    local script = choose('banking', BANKS)
+    return (script ~= nil) and (READABLE_HISTORY[script] == true)
+end
+
 --- Recent movements, when the server runs a banking script that keeps them. Returning
 --- nil is normal and the app simply shows the balance without a history.
 function Bridge.Banking.Transactions(src, citizenid)

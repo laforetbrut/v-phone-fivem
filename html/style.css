@@ -9258,6 +9258,14 @@ body.inframe.dark .uisearch {
 /* A hashtag and a mention inside a post body. Buttons rather than links because they act on
    the phone rather than navigating anywhere, and they inherit the body's own type so a
    sentence containing one does not change line height. */
+/* A profile's cover banner. 3:1, which is the shape people already crop a header to, and the
+   avatar below it overlaps by half so the header reads as one block rather than two. */
+.soccover { height: 96px; background-size: cover; background-position: center;
+  background-color: rgba(127, 127, 127, .18); border-radius: 0 0 16px 16px; margin-bottom: -34px; }
+.socprof.hascover { padding-top: 0; }
+.socprof.hascover .socbigav { position: relative; z-index: 1;
+  box-shadow: 0 0 0 4px var(--app-bg, #fff); }
+
 .soctag, .socmention { background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
   font: inherit; color: var(--ph-accent, #0a84ff); }
 .soctag:active, .socmention:active { opacity: .6; }

@@ -1518,7 +1518,7 @@ RENDER.phone = () => {
           tint: missed ? '#FF453A' : '#34C759',
           title: name,
           subtitle: (L('ph.call_' + dir) + '  ') + String(c.at || '').slice(5, 16),
-          value: c.number || '', chevron: true,
+          value: maskNum(c.number), chevron: true,
           data: { n: c.number || '', cid: c.id || '' },
         });
       }));
@@ -1560,7 +1560,7 @@ RENDER.phone = () => {
     const list = (state.contacts || []).filter((c) => phoneTab === 'contacts' || Number(c.favourite) === 1);
     body(list.length
       ? UI.group(list.map((c) => UI.row({
-          avatar: c.name, title: c.name, subtitle: c.number, chevron: true, data: { n: c.number },
+          avatar: c.name, title: c.name, subtitle: maskNum(c.number), chevron: true, data: { n: c.number },
         })))
       : UI.empty(L(phoneTab === 'contacts' ? 'ph.no_contacts' : 'ph.no_favourites'), 'contacts'));
     rows('.row[data-n]', (r) => r.addEventListener('click', () => placeCall(r.dataset.n)));
@@ -1948,7 +1948,7 @@ function forwardSms(m) {
     UI.field('fwdnum', L('ph.number'), '', 'maxlength="20"') +
     UI.button(L('ph.send'), 'fwdgo', 'tinted') +
     (all.length ? UI.group(all.map((c) => UI.row({
-      avatar: c.name, title: c.name, subtitle: c.number, data: { n: c.number },
+      avatar: c.name, title: c.name, subtitle: maskNum(c.number), data: { n: c.number },
     })), { header: L('app.contacts') }) : ''),
     () => {
       const go = async (number) => {
@@ -2051,9 +2051,26 @@ function voicemailOffer(number) {
 }
 
 // ── Messages ───────────────────────────────────────────────────
+// ══ Streamer mode ══════════════════════════════════════════════
+// A phone number on screen is a phone number in the stream, and viewers use those to call, to
+// text and to pretend to be somebody. This masks them wherever they are DISPLAYED.
+//
+// Display only, deliberately. Nothing is hidden from the server, calls and messages work
+// exactly as before, and a copy still yields the real number - the problem being solved is
+// what sits on camera, not what the phone knows.
+function maskNum(value) {
+  const text = String(value == null ? '' : value);
+  if (!text || !(state.prefs || {}).streamer) return text;
+  // The digits go, the shape stays: a masked number still reads as a number rather than as a
+  // blob, so a layout built around one does not jump.
+  return text.replace(/\d/g, '•');
+}
+
 function nameOfNumber(number) {
   const c = (state.contacts || []).find((x) => x.number === number);
-  return c ? c.name : (number || L('ph.unknown'));
+  // A contact's NAME is not masked: "Bob" is not a phone number, and hiding it would make the
+  // phone unusable on stream rather than safer. Only the bare number is.
+  return c ? c.name : (maskNum(number) || L('ph.unknown'));
 }
 
 RENDER.messages = async () => {
@@ -2365,7 +2382,7 @@ RENDER.contacts = () => {
     const list = q ? all.filter((c) => (c.name + ' ' + c.number).toLowerCase().includes(q)) : all;
     byId('clist').innerHTML = list.length
       ? UI.group(list.map((c) => UI.row({
-          avatar: c.name, title: c.name, subtitle: c.number, chevron: true,
+          avatar: c.name, title: c.name, subtitle: maskNum(c.number), chevron: true,
           value: c.system ? L('ph.required_contact') : '',
           data: { id: c.id, n: c.number },
         })))
@@ -2378,7 +2395,7 @@ RENDER.contacts = () => {
   }));
   body(searchHtml(L('ph.search_contacts')) +
     UI.group([UI.row({ icon: 'airdrop', tint: '#0A84FF', title: L('ph.share_my_number'),
-      subtitle: state.number || '', chevron: true, data: { me: '1' } })]) +
+      subtitle: maskNum(state.number), chevron: true, data: { me: '1' } })]) +
     '<div id="clist"></div>');
   rows('.row', (r) => { if (r.dataset.me) r.addEventListener('click',
     () => airdropShare('number', { name: '', number: state.number })); });
@@ -2389,7 +2406,7 @@ RENDER.contacts = () => {
 function contactSheet(c) {
   if (c.system) {
     const details = [
-      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.number'), value: c.number }),
+      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.number'), value: maskNum(c.number) }),
       c.email ? UI.row({ icon: 'mail', tint: '#0A84FF', title: L('ph.c_email'), value: c.email }) : '',
       c.address ? UI.row({ icon: 'map', tint: '#FF9500', title: L('ph.c_address'), subtitle: c.address }) : '',
       c.note ? UI.row({ icon: 'note', tint: '#8E8E93', title: L('ph.c_note'), subtitle: c.note }) : '',
@@ -2509,7 +2526,7 @@ RENDER.bank = async () => {
     // gets no row about either.
     ((fee > 0 || d.remaining !== undefined || d.number)
       ? UI.group([
-          d.number ? UI.row({ icon: 'phone', title: L('ph.bank_my_number'), value: d.number, mono: true }) : '',
+          d.number ? UI.row({ icon: 'phone', title: L('ph.bank_my_number'), value: maskNum(d.number), mono: true }) : '',
           fee > 0 ? UI.row({ icon: 'bank', title: L('ph.bank_fee'), value: fee + '%', mono: true }) : '',
           d.remaining !== undefined
             ? UI.row({ icon: 'timer', title: L('ph.bank_daily_left'), value: money(d.remaining), mono: true })
@@ -2801,7 +2818,7 @@ RENDER.wallet = async () => {
   // than drawing an empty rectangle.
   const cardHtml = (card && card.ok && card.card)
     ? '<div class="bankcard"><div class="brand"><span>FLEECA</span><span class="chip"></span></div>' +
-      '<div class="num">' + esc(card.card || '') + '</div>' +
+      '<div class="num">' + esc(maskNum(card.card)) + '</div>' +
       '<div class="foot"><span>' + esc(card.holder || '') + '</span>' +
       '<span class="bal">' + esc(money(card.bank)) + '</span></div></div>'
     : (card && card.ok ? UI.group([UI.row({ icon: 'bank', title: L('ph.no_card'), subtitle: L('ph.no_card_hint') })]) : '');
@@ -2915,6 +2932,7 @@ RENDER.jobs = async () => {
 // an unset preference reads, so a row the player has never touched still shows the truth.
 const SETTING_TOGGLES = {
   hidenumber:     { key: 'hideNumber' },
+  streamer:       { key: 'streamer' },
   silenceunknown: { key: 'silenceUnknown' },
   previews:       { key: 'previews', defaultOn: true },
   peek:           { key: 'peek', defaultOn: true },
@@ -2926,7 +2944,8 @@ RENDER.settings = () => {
     UI.group([
       UI.row({ icon: 'phone', tint: '#0A84FF', title: p.deviceName || L('ph.setup_default_device'),
         subtitle: p.ownerName || '', chevron: true, data: { t: 'device_name' } }),
-      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: state.number || '',
+      // The copy still carries the real number: masking is about the screen.
+      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: maskNum(state.number),
                data: { copy: state.number || '' } }),
       UI.row({ icon: 'folder', tint: '#5AC8FA', title: L('ph.grid'),
         value: (p.gridCols || 4) + ' x ' + (p.gridRows || 4), chevron: true, data: { t: 'grid' } }),
@@ -2981,6 +3000,8 @@ RENDER.settings = () => {
       })] : []),
       UI.row({ icon: 'phone', tint: '#FF9500', title: L('ph.silence_unknown'),
         toggle: !!p.silenceUnknown, data: { t: 'silenceunknown' } }),
+      UI.row({ icon: 'shield', tint: '#BF5AF2', title: L('ph.streamer'),
+        subtitle: L('ph.streamer_sub'), toggle: !!p.streamer, data: { t: 'streamer' } }),
     ], { header: L('ph.calls_privacy'),
          footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }) +
     UI.group([
@@ -6983,9 +7004,13 @@ async function socialSearch(appId, query) {
   host.innerHTML = list.length ? UI.group(list.map((a) =>
     '<button class="row lead socfind" data-who="' + esc(a.handle) + '" type="button">' +
       socAvatar(a, 'socav') +
-      '<span class="rowtext"><span class="rowtitle">' +
+      // `rmain`/`rt`/`rs`, which is what the row styles are actually called. This said
+      // `rowtext`/`rowtitle`/`rowsub` - three classes that appear nowhere in the stylesheet -
+      // so the two lines had no layout at all and collapsed into each other: a result read
+      // "ss@sss · 0 followers" on one line instead of a name above a handle.
+      '<span class="rmain"><span class="rt">' +
         esc(a.displayname || a.handle) + socVerified(a) + '</span>' +
-      '<span class="rowsub">@' + esc(a.handle) + ' · ' + a.followers + ' ' +
+      '<span class="rs">@' + esc(a.handle) + ' · ' + a.followers + ' ' +
         esc(L('ph.soc_followers')) + '</span></span>' +
       (a.me ? '' : '<span class="socfollow' + (a.followed ? ' on' : '') + '" data-follow="' +
         esc(a.handle) + '">' + esc(L(a.followed ? 'ph.soc_unfollow' : 'ph.soc_follow')) + '</span>') +
@@ -7063,7 +7088,10 @@ async function socialProfile(appId, handle) {
   const posts = r.posts || [];
 
   body(
-    '<div class="socprof">' + socAvatar(a, 'socbigav') +
+    // The cover banner, and only when there is one: an empty grey strip above every profile
+    // would cost the header its shape for nothing.
+    (a.cover ? '<div class="soccover" style="' + inlineBackground(a.cover) + '"></div>' : '') +
+    '<div class="socprof' + (a.cover ? ' hascover' : '') + '">' + socAvatar(a, 'socbigav') +
       '<div class="socname">' + esc(a.displayname || a.handle) + socVerified(a) + '</div>' +
       '<div class="sochandle">@' + esc(a.handle) + '</div>' +
       (a.bio ? '<div class="socbio">' + esc(a.bio) + '</div>' : '') +
@@ -7107,13 +7135,20 @@ function socialEdit(appId, account) {
   sheet(L('ph.soc_edit'),
     UI.field('socdn', L('ph.soc_displayname'), account.displayname || '', 'maxlength="40"') +
     UI.field('socav', L('ph.soc_avatar'), account.avatar || '', 'maxlength="300"') +
+    UI.field('soccov', L('ph.soc_cover'), account.cover || '', 'maxlength="300"') +
+    UI.button(L('ph.pick_photo'), 'soccovpick', 'plain') +
     UI.field('socbio', L('ph.soc_bio'), account.bio || '', 'maxlength="160"') +
     UI.button(L('ph.save'), 'socsave'),
     () => {
       const epoch = sheetEpoch;
+      // A cover is usually a photo the player already took, so the gallery is offered rather
+      // than making them find a URL for something that is on the phone already.
+      byId('soccovpick').addEventListener('click', () =>
+        pickPhoto((url) => { byId('soccov').value = url; }));
       byId('socsave').addEventListener('click', async () => {
         const r = await post('social', { op: 'setup', app: appId,
-          displayname: byId('socdn').value, avatar: byId('socav').value, bio: byId('socbio').value });
+          displayname: byId('socdn').value, avatar: byId('socav').value,
+          cover: byId('soccov').value, bio: byId('socbio').value });
         if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
         if (!closeSheet(false, epoch)) return;
         socialAcc[appId] = r.account;
@@ -7133,8 +7168,8 @@ async function socialDmList(appId) {
   body(threads.length ? UI.group(threads.map((t) =>
     '<button class="row lead socdmrow" data-who="' + esc(t.handle) + '" type="button">' +
       socAvatar(t, 'socav') +
-      '<span class="rowtext"><span class="rowtitle">' + esc(t.displayname || t.handle) + '</span>' +
-      '<span class="rowsub">' + esc((t.mine ? L('ph.you') + ' ' : '') + (t.body || L('ph.photo'))) + '</span></span>' +
+      '<span class="rmain"><span class="rt">' + esc(t.displayname || t.handle) + '</span>' +
+      '<span class="rs">' + esc((t.mine ? L('ph.you') + ' ' : '') + (t.body || L('ph.photo'))) + '</span></span>' +
       (t.unread ? '<span class="socunread">' + t.unread + '</span>' : '') +
     '</button>').join('')) : UI.empty(L('ph.soc_no_dm'), 'messages'));
   rows('.socdmrow', (b) => b.addEventListener('click', () => socialDmThread(appId, b.dataset.who)));
@@ -7497,9 +7532,9 @@ async function hushMatches() {
     '<button class="row lead hushmatch" data-i="' + i + '" type="button">' +
       (m.photo ? '<span class="socav" style="' + inlineBackground(m.photo) + '"></span>'
                : '<span class="socav">' + esc(String(m.name || '?').slice(0, 1)) + '</span>') +
-      '<span class="rowtext"><span class="rowtitle">' +
+      '<span class="rmain"><span class="rt">' +
         esc(m.name || '?') + (m.age ? ', ' + m.age : '') + '</span>' +
-      '<span class="rowsub">' + esc(m.bio || m.number || '') + '</span></span>' +
+      '<span class="rs">' + esc(m.bio || m.number || '') + '</span></span>' +
       svg('chevron') +
     '</button>').join('')) : UI.empty(L('ph.hush_no_matches'), 'hush'));
 
@@ -8906,7 +8941,23 @@ byId('qtorch').addEventListener('click', toggleTorch);
 // would cancel free look on the frame it started, and keyup never arrives either because
 // the keyboard is gone by then.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Alt' && !e.repeat) { e.preventDefault(); post('freelook', { on: true }); }
+  if (e.repeat) return;
+
+  // **AltGr is not Alt.** On Windows AltGr arrives as Ctrl+Alt, so a plain `key === 'Alt'`
+  // test matched it - and on a French keyboard AltGr is how you type @ and #. Reaching for
+  // the @ of a handle took the camera over instead of typing a character.
+  let altGr = false;
+  try { altGr = e.getModifierState('AltGraph'); } catch { /* older engines: ctrlKey covers it */ }
+  if (e.key === 'AltGraph' || altGr || e.ctrlKey) return;
+  if (e.key !== 'Alt') return;
+
+  // And never while typing. Alt in a text field is somebody reaching for a character or a
+  // shortcut, not for the camera, and free look drops the keyboard mid-word.
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+
+  e.preventDefault();
+  post('freelook', { on: true });
 });
 
 // What is painting outside the handset. Only with `set phone_debug true`.

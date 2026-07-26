@@ -531,7 +531,13 @@ local function shouldRecord()
     local mode = NOTIFY.record
     if mode == true then return true end
     if mode == false then return false end
-    return (Bridge.Banking and Bridge.Banking.Script and Bridge.Banking.Script()) == nil
+    -- The question is not "is a banking script running" - it is "can its history be read".
+    -- On qb-banking, okokBanking or esx_banking the answer is no, and treating those as
+    -- somebody else's problem left the statement permanently empty.
+    if Bridge.Banking and Bridge.Banking.HistoryReadable then
+        return not Bridge.Banking.HistoryReadable()
+    end
+    return true
 end
 
 --- Tell a player money moved, and file it if this phone is the only thing keeping a record.
@@ -723,7 +729,9 @@ function Bridge.BankBoot()
         end
         local reader = (GetResourceState('v-banking') == 'started') and 'v-banking'
             or ('the ' .. tostring(Bridge.framework or '?') .. ' bridge')
-        print(('[v-phone] bank: on, balance from %s, transfers %s')
-            :format(reader, transfersOn() and 'on' or 'off'))
+        local keeping = shouldRecord() and 'the phone keeps the statement'
+            or 'the banking script keeps the statement'
+        print(('[v-phone] bank: on, balance from %s, transfers %s, %s')
+            :format(reader, transfersOn() and 'on' or 'off', keeping))
     end)
 end

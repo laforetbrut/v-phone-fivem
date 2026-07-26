@@ -546,6 +546,7 @@ prefsOf = function(p, includeSecrets)
         -- roleplay tool. The pref is stored either way, so turning the server setting on
         -- later restores what each player had chosen.
         hideNumber = m.hideNumber == true,
+        streamer   = m.streamer == true,
         -- Calls from a number that is not in your contacts arrive silently: no ring, no
         -- phone opening itself. They still land in the call log as missed, which is the
         -- whole point - you can see who tried.
@@ -2081,6 +2082,9 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         if data.ringVolume ~= nil then prefs.ringVolume = math.max(0, math.min(1, num(data.ringVolume, 0.7))) end
         if data.dnd ~= nil then prefs.dnd = data.dnd == true end
         if data.hideNumber ~= nil then prefs.hideNumber = data.hideNumber == true end
+        -- Streamer mode: purely a display choice, so it changes nothing the server does. It
+        -- is stored per character because a streamer wants it on every time they log in.
+        if data.streamer ~= nil then prefs.streamer = data.streamer == true end
         if data.silenceUnknown ~= nil then prefs.silenceUnknown = data.silenceUnknown == true end
         if data.previews ~= nil then prefs.previews = data.previews == true end
         if data.peek ~= nil then prefs.peek = data.peek == true end

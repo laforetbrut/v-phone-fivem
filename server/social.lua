@@ -87,7 +87,7 @@ local function appOfKind(kind) return kind == 'photo' and 'snap' or 'bleeter' en
 
 local function accountOf(cid, app)
     return MySQL.single.await(
-        'SELECT citizenid, handle, displayname, avatar, bio, phone, verified FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
+        'SELECT citizenid, handle, displayname, avatar, cover, bio, phone, verified FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
         { cid, app })
 end
 
@@ -278,6 +278,10 @@ V.Callback('v-phone:soc:register', function(src, resolve, data)
     if #pw < 4 then resolve({ error = 'password' }) return end
     local avatar = tostring((data and data.avatar) or ''):sub(1, 300)
     if avatar ~= '' and not imageAllowed(avatar) then resolve({ error = 'badhost' }) return end
+    -- The cover banner. Same host gate as the avatar: it faces every visitor to the profile,
+    -- so it is exactly as public as a post's image and gets the same check.
+    local cover = tostring((data and data.cover) or ''):sub(1, 300)
+    if cover ~= '' and not imageAllowed(cover) then resolve({ error = 'badhost' }) return end
     local bio = tostring((data and data.bio) or ''):sub(1, 160)
 
     if accountOf(p.citizenid, app) then resolve({ error = 'exists' }) return end
@@ -410,10 +414,11 @@ V.Callback('v-phone:soc:setup', function(src, resolve, data)
 
     -- The handle is the account's name on the server and does not change here; only the
     -- display name, avatar and bio do.
-    MySQL.query.await(
-        'UPDATE vphone_social_accounts SET displayname = ?, avatar = ?, bio = ? WHERE citizenid = ? AND app = ?',
-        { displayname, avatar, bio, p.citizenid, app })
-    resolve({ ok = true, account = { handle = a.handle, displayname = displayname, avatar = avatar, bio = bio } })
+    MySQL.query.await([[UPDATE vphone_social_accounts
+        SET displayname = ?, avatar = ?, cover = ?, bio = ? WHERE citizenid = ? AND app = ?]],
+        { displayname, avatar, cover, bio, p.citizenid, app })
+    resolve({ ok = true, account = { handle = a.handle, displayname = displayname,
+                                     avatar = avatar, cover = cover, bio = bio } })
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -892,7 +897,7 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
         me = cid == p.citizenid,
         account = {
             handle = a.handle, displayname = a.displayname, avatar = a.avatar,
-            bio = a.bio, verified = num(a.verified, 0) == 1,
+            bio = a.bio, cover = a.cover, verified = num(a.verified, 0) == 1,
         },
         counts = {
             posts = num(counts.posts, 0),
@@ -918,7 +923,7 @@ V.Callback('v-phone:soc:search', function(src, resolve, data)
     local rows
     if q:gsub('%s', '') == '' then
         rows = MySQL.query.await([[
-            SELECT a.handle, a.displayname, a.avatar, a.bio, a.verified,
+            SELECT a.handle, a.displayname, a.avatar, a.cover, a.bio, a.verified,
                    (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
                    EXISTS(SELECT 1 FROM vphone_social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
                    (a.citizenid = ?) AS me
@@ -1473,6 +1478,7 @@ function SocialBoot(core)
         `handle`      VARCHAR(20) NOT NULL,
         `displayname` VARCHAR(40) NOT NULL DEFAULT '',
         `avatar`    VARCHAR(300) NOT NULL DEFAULT '',
+        `cover`     VARCHAR(300) NOT NULL DEFAULT '',
         `bio`       VARCHAR(160) NOT NULL DEFAULT '',
         `phone`     VARCHAR(20) NOT NULL DEFAULT '',
         `password`  VARCHAR(80) NOT NULL DEFAULT '',
@@ -1480,6 +1486,18 @@ function SocialBoot(core)
         PRIMARY KEY (`citizenid`, `app`),
         UNIQUE KEY `handle` (`app`, `handle`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so a column
+    -- added after release has to be added on its own or it never appears - the bank app lost
+    -- its whole statement to exactly this once already.
+    local hasCover = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_accounts'
+          AND COLUMN_NAME = 'cover' LIMIT 1]])
+    if not hasCover then
+        MySQL.query.await(
+            "ALTER TABLE `vphone_social_accounts` ADD COLUMN `cover` VARCHAR(300) NOT NULL DEFAULT '' AFTER `avatar`")
+        print('[v-phone] social: added vphone_social_accounts.cover')
+    end
 
     -- Accounts made before credentials existed keep working: they are marked verified and
     -- given the handle as a display name, so nobody is locked out by the upgrade.

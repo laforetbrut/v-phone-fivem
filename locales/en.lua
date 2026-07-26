@@ -827,6 +827,7 @@ local T = {
     ['ph.err_badpass'] = "Wrong password",
     ['ph.soc_handle'] = 'Handle (letters, numbers, _)',
     ['ph.soc_avatar'] = 'Avatar link (optional)',
+    ['ph.soc_cover'] = "Cover image URL",
     ['ph.soc_bio'] = 'Bio (optional)',
     ['ph.soc_create'] = 'Create the account',
     ['ph.soc_made'] = 'Welcome to the network',
@@ -998,6 +999,8 @@ local T = {
     -- Calls, privacy and notifications, in Settings
     ['ph.calls_privacy'] = 'Calls & Privacy',
     ['ph.hide_number'] = 'Hide my number',
+    ['ph.streamer'] = "Streamer mode",
+    ['ph.streamer_sub'] = "Hides phone numbers on screen",
     ['ph.silence_unknown'] = 'Silence unknown callers',
     ['ph.calls_privacy_hint'] = 'Hidden calls show as withheld. Unknown callers still reach your missed calls; they just do not ring.',
     ['ph.silence_unknown_hint'] = 'Callers who are not in your contacts still reach your missed calls; they just do not ring.',
