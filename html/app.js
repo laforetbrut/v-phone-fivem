@@ -2105,8 +2105,16 @@ function bubbleHtml(m) {
   }
   const sender = (!m.mine && threadGroup && m.from)
     ? '<div class="gsender">' + esc(nameOfNumber(m.from)) + '</div>' : '';
+  // Copying a code out of a message is the one action anybody ever takes on one, so it gets
+  // a button rather than a long press. Incoming only: there is no point offering to copy a
+  // code back out of something you sent yourself.
+  const code = (!m.mine && m.kind !== 'image') ? codeInText(m.body) : null;
+  const copy = code
+    ? '<button class="codecopy" type="button" data-code="' + esc(code) + '">' +
+        svg('copy') + esc(L('ph.copy_code')) + '</button>'
+    : '';
   return sender + '<div class="bub ' + (m.mine ? 'me' : 'them') +
-    (m.kind === 'image' ? ' imgb' : '') + '">' + inner + '</div>';
+    (m.kind === 'image' ? ' imgb' : '') + '">' + inner + '</div>' + copy;
 }
 
 function wireLocButtons() {
@@ -2120,6 +2128,10 @@ function wireLocButtons() {
 function paintThread(messages, service) {
   body(`<div class="thread" id="thread">${messages.map(bubbleHtml).join('')}</div>`);
   wireLocButtons();
+  rows('.codecopy', (b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyText(b.dataset.code, L('ph.code_copied'));
+  }));
   // A tap remains a tap. Message actions use the familiar mobile long-press gesture,
   // with a short horizontal swipe as a faster alternative.
   [...byId('thread').querySelectorAll('.bub')].forEach((b, i) => {
@@ -5102,6 +5114,53 @@ function airdropOffer(o) {
 }
 
 
+// ══ Verification codes ═════════════════════════════════════════
+// A code you have to read off one screen and type into another is the small daily annoyance
+// iOS solved years ago, so the phone does the same two things: offers to copy it from the
+// message, and offers to fill it where it is asked for.
+//
+// The detector is deliberately narrow. It wants a run of 4 to 8 digits AND a word nearby
+// that says what it is, in either shipped language, so an ordinary text containing a house
+// number or a price does not sprout a "copy code" button.
+const CODE_WORDS = /(code|verification|verif|vérification)/i;
+
+function codeInText(body) {
+  const text = String(body || '');
+  if (!CODE_WORDS.test(text)) return null;
+  const m = text.match(/(?:^|[^0-9])([0-9]{4,8})(?:[^0-9]|$)/);
+  return m ? m[1] : null;
+}
+
+// The newest code the phone has been sent, for the fill button on a code field. Reads the
+// conversation list, which already holds each thread's last message, so this needs no extra
+// server call - and it is ordered newest first by the server.
+function latestCode() {
+  for (const c of (state.conversations || [])) {
+    const code = codeInText(c.body);
+    if (code) return code;
+  }
+  return null;
+}
+
+// A one-tap chip that puts the code into a field. Rendered only when there is a code to
+// put there, so it never sits in the way promising something it cannot do.
+function codeFillChip(fieldId) {
+  const code = latestCode();
+  if (!code) return '';
+  return '<button class="linkbtn codefill" type="button" data-fill="' + esc(code) +
+    '" data-into="' + esc(fieldId) + '">' + esc(L('ph.use_code')) + ' ' + esc(code) + '</button>';
+}
+
+function wireCodeFill() {
+  rows('[data-fill]', (b) => b.addEventListener('click', () => {
+    const el = byId(b.dataset.into);
+    if (!el) return;
+    el.value = b.dataset.fill;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.focus();
+  }));
+}
+
 // ══ Clipboard ══════════════════════════════════════════════════
 // navigator.clipboard needs a secure context, and cfx-nui:// is not one, so this is the
 // textarea trick. It is the only thing that works in CEF, and a number you cannot copy
@@ -5949,9 +6008,11 @@ function socialReset(app, then) {
     }
     body(acctHead(app, (L('ph.soc_code_sent') || '').replace('%s', st.number)) +
       UI.field('rcode', L('ph.soc_code'), '', 'inputmode="numeric" maxlength="4"') +
+      codeFillChip('rcode') +
       UI.field('rpw', L('ph.soc_password'), '', 'type="password" maxlength="40"') +
       UI.field('rpw2', L('ph.soc_password2'), '', 'type="password" maxlength="40"') +
       UI.button(L('ph.soc_reset_go'), 'rgo'));
+    wireCodeFill();
     byId('rgo').addEventListener('click', async () => {
       if (byId('rpw').value !== byId('rpw2').value) { toast(L('ph.soc_pw_mismatch')); return; }
       const r = await post('social', { op: 'resetPassword', app,
@@ -5995,9 +6056,11 @@ function socialSignup(app, then) {
       body(
         acctHead(app, L('ph.soc_code_sub') + ' ' + (st.number || '')) + prog(2) +
         UI.field('scode', L('ph.soc_code'), '', 'maxlength="4" inputmode="numeric"') +
+        codeFillChip('scode') +
         UI.button(L('ph.soc_verify'), 'sc2') +
         '<button class="linkbtn" id="sc2r" type="button">' + esc(L('ph.soc_resend')) + '</button>'
       );
+      wireCodeFill();
       byId('scode').focus();
       byId('sc2').addEventListener('click', async () => {
         const r = await post('social', { op: 'verifyCode', app, code: byId('scode').value.trim() });

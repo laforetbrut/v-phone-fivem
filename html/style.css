@@ -9194,3 +9194,23 @@ body.inframe.dark .uisearch {
    its state - it simply stops looking interactive, because it is not. */
 .device.freelook { opacity: .72; }
 .device.freelook .screen { pointer-events: none; }
+
+/* ── Verification codes ────────────────────────────────────────
+   A code arrives to be typed somewhere else, so copying it is the only thing anybody does
+   with one. It gets a button under the bubble rather than a long press, because a gesture
+   you have to know about is not a feature. */
+.codecopy {
+  display: flex; align-items: center; gap: 5px;
+  margin: -2px 0 8px 2px; padding: 5px 11px 5px 9px;
+  border-radius: 14px;
+  background: var(--app-fill, rgba(104, 104, 116, .12));
+  color: var(--app-tint, #007AFF);
+  font-size: 13px; font-weight: 600; letter-spacing: -.01em;
+  align-self: flex-start;
+}
+.codecopy svg { width: 15px; height: 15px; }
+.codecopy:active { transform: scale(.96); }
+
+/* The offer to fill a code field from the newest text. Sits directly under the input, so
+   the code and the box it belongs in are the same glance. */
+.codefill { margin: -4px 0 10px; font-weight: 600; }
