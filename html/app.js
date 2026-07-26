@@ -2734,7 +2734,7 @@ RENDER.garage = async () => {
     icon: 'garage', tint: '#0A84FF', title: v.model || '',
     // The garage's real name when the server could resolve it, its key when it could not,
     // and "out" when the car is not in one at all.
-    subtitle: `${v.plate || ''}  ${v.garageLabel || v.garage || L('ph.out')}`,
+    subtitle: `${v.plate || ''}  ${placeName(v.garageLabel || v.garage) || L('ph.out')}`,
     value: v.live ? L('ph.veh_out') : L('ph.veh_stored'),
     chevron: true, data: { veh: String(i) },
   }))));
@@ -2783,7 +2783,7 @@ async function vehicleRemote(v) {
     group.push(UI.row({
       icon: 'location', tint: '#FF9500',
       title: L('ph.veh_locate'),
-      subtitle: v.live ? L('ph.veh_locate_out') : (v.garageLabel || v.garage || ''),
+      subtitle: v.live ? L('ph.veh_locate_out') : (placeName(v.garageLabel || v.garage) || ''),
       data: { a: 'locate' },
     }));
   }
@@ -4307,9 +4307,12 @@ RENDER.property = async () => {
   }
 
   body(UI.group(list.map((pr, i) => UI.row({
-    icon: 'house', tint: '#12A5BC', title: pr.label,
+    icon: 'house', tint: '#12A5BC', title: placeName(pr.label),
     subtitle: L('ph.tenancy_' + (pr.tenancy || 'own')) +
-      (pr.address ? '  ·  ' + pr.address : '') +
+      // Only when it says something the title does not: the bridge falls back to the key for
+      // both, so an unnamed house was repeating itself in two lines.
+      (pr.address && placeName(pr.address) !== placeName(pr.label)
+        ? '  ·  ' + placeName(pr.address) : '') +
       (Number(pr.arrears) > 0 ? '  ' + String(L('ph.arrears')).replace('%s', pr.arrears) : ''),
     value: pr.locked ? L('ph.locked') : (pr.x && pr.y ? L('ph.locate_short') : ''),
     tone: pr.locked ? 'neg' : '',
@@ -4323,11 +4326,39 @@ RENDER.property = async () => {
   }));
 };
 
+// A housing script's own key, made readable.
+//
+// `Bridge.Properties.Owned` uses the script's label when there is one and falls back to the
+// key, because a house with no name at all is worse than a house with an ugly one. Quasar
+// hands back nothing BUT a key - its labels live behind an escrowed core - so on those servers
+// the app was showing `2_grappeseed_main_street` in both the title and the address.
+//
+// Only ever applied to something that LOOKS like a key: underscores or dashes, and no spaces.
+// A label somebody actually wrote is left exactly as it is, because title-casing real prose is
+// how `Rue de la Paix` becomes `Rue De La Paix` - the same instinct as leaving an
+// already-punctuated phone number alone.
+function placeName(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return text;
+  // A space means a human wrote this. Nothing to fix.
+  if (/\s/.test(text)) return text;
+  if (!/[_-]/.test(text)) return text;
+
+  return text
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    // Each word gets a capital, and the rest of the word is left as it was: an operator who
+    // wrote `2_grappeseed_MAIN_street` meant that, and lowercasing it would be a second
+    // opinion nobody asked for.
+    .replace(/(^|\s)(\S)/g, (_, lead, first) => lead + first.toUpperCase());
+}
+
 // One house: where it is, and the rent if the script says it is owed.
 function propertySheet(pr) {
-  sheet(pr.label || '',
+  sheet(placeName(pr.label) || '',
     UI.group([
-      pr.address ? UI.row({ icon: 'map', title: pr.address }) : '',
+      pr.address && placeName(pr.address) !== placeName(pr.label)
+        ? UI.row({ icon: 'map', title: placeName(pr.address) }) : '',
       pr.tier !== undefined && pr.tier !== null
         ? UI.row({ icon: 'star', title: L('ph.property_tier'), value: String(pr.tier), mono: true }) : '',
       pr.price ? UI.row({ icon: 'bank', title: L('ph.property_price'), value: money(pr.price), mono: true }) : '',

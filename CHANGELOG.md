@@ -4,6 +4,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed (English first)
+
+- **A housing or garage script's own key no longer reaches the screen raw.** The Property app showed `2_grappeseed_main_street` as both the title and the address, because `Bridge.Properties.Owned` falls back to the key when the script gives no label - and Quasar gives nothing but a key, its labels living behind an escrowed core. Underscores and dashes become spaces and each word gets a capital, so that reads `2 Grappeseed Main Street`. The Garage app had the same defect for the same reason and gets the same treatment. **Only ever applied to something that looks like a key** - separators and no spaces - because a label a person actually wrote is theirs: title-casing real prose is how `Rue de la Paix` becomes `Rue De La Paix`. The rest of each word is left exactly as written, so `MAIN` stays `MAIN`. And the address line is dropped when it would only repeat the title, which is what an unnamed house was doing.
+
+### Correctifs (miroir français)
+
+- **La clé interne d'un script de logement ou de garage n'atteint plus l'écran telle quelle.** L'application Logement affichait `2_grappeseed_main_street` en titre et en adresse, parce que `Bridge.Properties.Owned` retombe sur la clé quand le script ne donne pas de libellé — et Quasar ne donne rien d'autre qu'une clé, ses libellés vivant derrière un cœur escrow. Les tirets bas et les tirets deviennent des espaces et chaque mot prend une majuscule : cela se lit `2 Grappeseed Main Street`. L'application Garage avait le même défaut pour la même raison et reçoit le même traitement. **Appliqué uniquement à ce qui ressemble à une clé** — des séparateurs et aucune espace — parce qu'un libellé écrit par une personne lui appartient : mettre de la vraie prose en capitales, c'est ainsi que `Rue de la Paix` devient `Rue De La Paix`. Le reste de chaque mot est laissé tel quel, donc `MAIN` reste `MAIN`. Et la ligne d'adresse est retirée quand elle ne ferait que répéter le titre, ce que faisait un logement sans nom.
+
+---
+
 ## [1.2.2] - 2026-07-26
 
 ### Added (English first)
