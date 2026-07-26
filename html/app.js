@@ -33,7 +33,7 @@ const RESOURCE_NAME = typeof GetParentResourceName === 'function'
 
 function isViewRead(name, payload) {
   const op = payload && payload.op;
-  if (['ambient', 'calls', 'conversation', 'app', 'card', 'places', 'airdropScan'].includes(name)) return true;
+  if (['ambient', 'calls', 'conversation', 'app', 'card', 'places', 'airdropScan', 'hospitals'].includes(name)) return true;
   if (name === 'health') return op == null || op === 'get';
   if (name === 'notes') return op === 'list';
   if (name === 'mail') return op === 'me' || op === 'list' || op === 'saved';
@@ -5151,12 +5151,52 @@ function ringHtml(label, value, max, colour) {
 
 let healthTab = 'today';
 
+// The hospitals, once. The list is the config: it cannot change while the server is up, so
+// re-fetching it every time somebody taps the tab would be waste. `null` means "not asked
+// yet", which is why the tab is offered on a first open rather than hidden until proven.
+let healthHospitals = null;
+
+// ── Hospitals ──────────────────────────────────────────────────
+// A list the operator wrote, and a waypoint. The phone cannot know where a server put its
+// hospitals - an MLO moves the door - so this shows what it was told and nothing more.
+function healthHospitalList() {
+  body(
+    UI.group(healthHospitals.map((h, i) => UI.row({
+      icon: 'heart', tint: '#FF453A', title: h.label,
+      subtitle: h.address || '',
+      // Only the ones with a position are worth a chevron: the rest are information.
+      value: (h.x && h.y) ? L('ph.locate_short') : '',
+      chevron: !!(h.x && h.y),
+      data: { h: String(i) },
+    })), { header: L('ph.hospitals'), footer: L('ph.hospitals_hint') })
+  );
+
+  rows('.row[data-h]', (r) => r.addEventListener('click', async () => {
+    const h = healthHospitals[Number(r.dataset.h)];
+    if (!h || !h.x || !h.y) return;
+    const set = await post('waypoint', { x: h.x, y: h.y });
+    toast(L(set && set.ok ? 'ph.veh_located' : 'ph.err_x'));
+    ui('key');
+  }));
+}
+
 RENDER.health = async () => {
-  tabbar([
+  // Asked once, before the tabs are drawn, so the tab is never offered on a server that
+  // listed no hospitals - and never missing on one that did. It costs nothing: the list is
+  // the config and the client already holds it, so this never reaches the server.
+  if (healthHospitals === null) {
+    const d = await post('hospitals');
+    healthHospitals = (d && d.hospitals) || [];
+  }
+
+  const tabs = [
     { id: 'today', icon: 'heart', label: 'ph.today' },
     { id: 'record', icon: 'id', label: 'ph.record' },
-  ], healthTab, (t) => { healthTab = t; RENDER.health(); });
+  ];
+  if (healthHospitals.length) tabs.push({ id: 'hospitals', icon: 'map', label: 'ph.hospitals' });
+  tabbar(tabs, healthTab, (t) => { healthTab = t; RENDER.health(); });
   if (healthTab === 'record') { healthRecord(); return; }
+  if (healthTab === 'hospitals') { healthHospitalList(); return; }
   loading();
   const d = await post('health');
   if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'heart')); return; }

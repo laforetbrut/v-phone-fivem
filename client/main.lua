@@ -924,6 +924,27 @@ RegisterNUICallback('health', function(data, cb)
     end)
 end)
 
+--- The hospitals, from the config. Answered here rather than through the server because the
+--- list IS the config: it is the same on every client, it never changes while the server is
+--- up, and a round trip to be told what this client already has in memory would be waste.
+--- The Music app's library is answered the same way and for the same reason.
+RegisterNUICallback('hospitals', function(_, cb)
+    local out = {}
+    for _, h in ipairs(Config.Hospitals or {}) do
+        if type(h) == 'table' and h.label then
+            out[#out + 1] = {
+                label = tostring(h.label):sub(1, 60),
+                address = h.address and tostring(h.address):sub(1, 80) or nil,
+                -- Both or neither: half a coordinate cannot be pointed at, and sending one
+                -- would put a marker in the sea.
+                x = (tonumber(h.x) and tonumber(h.y)) and tonumber(h.x) or nil,
+                y = (tonumber(h.x) and tonumber(h.y)) and tonumber(h.y) or nil,
+            }
+        end
+    end
+    cb({ ok = true, hospitals = out })
+end)
+
 RegisterNUICallback('photos', relay('v-phone:photo'))
 
 --- The social apps. One relay with a whitelist, because the page names an operation and

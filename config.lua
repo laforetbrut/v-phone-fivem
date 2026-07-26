@@ -838,6 +838,33 @@ Config.ExternalCharging = {
 -- ══════════════════════════════════════════════════════════════
 --  POLICE FORENSICS
 -- ══════════════════════════════════════════════════════════════
+--  HOSPITALS
+-- ══════════════════════════════════════════════════════════════
+-- The Health app's third tab. A list you control: what your server calls its hospitals, and
+-- where they are, because that is a map decision rather than something a phone can work out.
+--
+-- Tapping one sets a waypoint. Leave `x` and `y` off an entry and it is still listed with its
+-- address, it simply cannot be pointed at - useful for a clinic somebody has to be told
+-- about but that has no door on the map.
+--
+-- The defaults are the five medical centres GTA ships, at the coordinates FiveM scripts
+-- generally use for their doors. They are a starting point: check them against your own map
+-- and your own MLOs, because an interior replaced by an MLO often moves the entrance.
+-- Set this to `{}` and the tab disappears.
+Config.Hospitals = {
+    { label = 'Pillbox Hill Medical Center', address = 'Strawberry Avenue, Pillbox Hill',
+      x = 298.6,  y = -584.7 },
+    { label = 'Mount Zonah Medical Center',  address = 'Roy Lowenstein Boulevard, Rockford Hills',
+      x = -449.7, y = -340.8 },
+    { label = 'Central Los Santos Medical',  address = 'Elgin Avenue, Davis',
+      x = 341.0,  y = -1397.3 },
+    { label = 'Sandy Shores Medical Center', address = 'Alhambra Drive, Sandy Shores',
+      x = 1839.6, y = 3672.9 },
+    { label = 'Paleto Bay Care Center',      address = 'Paleto Boulevard, Paleto Bay',
+      x = -247.8, y = 6331.4 },
+}
+
+-- ══════════════════════════════════════════════════════════════
 --  PROPERTY
 -- ══════════════════════════════════════════════════════════════
 -- The Property app lists the houses a character owns and points at them on the map. It
