@@ -71,8 +71,9 @@ CreateThread(function()
         return
     end
     if mediaOn() then
-        print(('[v-phone] camera: on, uploading through screencapture (%s)')
-            :format(tostring(MEDIA.provider or 'custom')))
+        print(('[v-phone] camera: on, uploading through screencapture (%s), video %s')
+            :format(tostring(MEDIA.provider or 'custom'),
+                    MEDIA.video and 'on' or 'off (Config.Media.video)'))
         if apiKey() == '' then
             print('[v-phone] camera: no API key. Set `phone_media_key` or uploads will fail.')
         end

@@ -649,6 +649,9 @@ Config.Social = {
     hush = {
         enabled = true,
         dailyLikes = 30,    -- a ceiling, so liking everybody is not a strategy
+        -- Super likes per day. The cap IS the feature: a signal anybody can send at will says
+        -- nothing at all. One is what Tinder gives away.
+        dailySuper = 1,
         -- How long a pass is remembered before that profile can come round again. 0 means
         -- never show them twice.
         passDays = 7,
@@ -1093,13 +1096,27 @@ Config.Media = {
     -- Image encoding for photos: 'webp' (small), 'jpg', or 'png'.
     imageEncoding = 'webp',
 
-    video = {
-        -- Recording is capped here, and the player-facing limit is the smaller of this
-        -- and what the record UI offers. Fivemanage and the game both dislike long clips.
-        maxSeconds = 15,       -- hard ceiling, 1..30
-        maxWidth = 1280,
-        maxHeight = 720,
-    },
+    -- ── Video recording: OFF ───────────────────────────────────
+    -- `video = nil` removes it entirely: the Video tab is not drawn, the record button does
+    -- not exist, and the server refuses a recording request even if one arrives.
+    --
+    -- Turned off because it does not work well enough to ship. screencapture records in the
+    -- player's own browser and streams it to the server, and on a real connection that means
+    -- a visible stall while it runs plus a `stream-finalize` failure often enough to be the
+    -- normal outcome rather than an edge case - the clip is lost after the player has already
+    -- stood still for fifteen seconds.
+    --
+    -- Photographs are unaffected: they are a single frame and they work.
+    --
+    -- To try it again, restore the table below. Nothing else has to change - every part of the
+    -- feature is still here and reads this switch.
+    --
+    --  video = {
+    --      maxSeconds = 15,       -- hard ceiling, 1..30
+    --      maxWidth = 1280,
+    --      maxHeight = 720,
+    --  },
+    video = nil,
 
     -- ── Auto-deletion ──────────────────────────────────────────
     -- The phone tracks every file it uploaded in `vphone_media` and removes it after this

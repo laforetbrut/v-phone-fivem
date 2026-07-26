@@ -2051,6 +2051,15 @@ function voicemailOffer(number) {
 }
 
 // ── Messages ───────────────────────────────────────────────────
+// How far away, in words. The server rounds to ten metres and sends nil for somebody who is
+// not connected, so this only ever formats a number it was actually given.
+function hushDistanceText(metres) {
+  const m = Number(metres) || 0;
+  if (m < 100) return L('ph.hush_very_close');
+  if (m < 1000) return L('ph.hush_metres').replace('{n}', String(m));
+  return L('ph.hush_km').replace('{n}', (m / 1000).toFixed(1));
+}
+
 // ══ Streamer mode ══════════════════════════════════════════════
 // A phone number on screen is a phone number in the stream, and viewers use those to call, to
 // text and to pretend to be somebody. This masks them wherever they are DISPLAYED.
@@ -7573,46 +7582,124 @@ async function hushSwipe() {
   const pf = r.profile;
   if (!pf) { body(UI.empty(L('ph.hush_empty'), 'hush')); return; }
 
+  // Up to three photographs, tapped through. `photos` is what the server sends now; `photo`
+  // alone is what an older row has, so both are accepted.
+  const photos = (pf.photos && pf.photos.length) ? pf.photos : (pf.photo ? [pf.photo] : []);
+  let shot = 0;
+
   body(
     '<div class="hushdeck">' +
       '<div class="hushcard" id="hcard">' +
-        '<div class="hphoto"' + (pf.photo ? ' style="' + inlineBackground(pf.photo) + '"' : '') + '>' +
+        '<div class="hphoto" id="hphoto"' +
+          (photos[0] ? ' style="' + inlineBackground(photos[0]) + '"' : '') + '>' +
+          // Which of the photographs is showing, in the bars Tinder puts across the top.
+          (photos.length > 1
+            ? '<div class="hbars" id="hbars">' + photos.map((_, i) =>
+                '<i class="' + (i === 0 ? 'on' : '') + '"></i>').join('') + '</div>'
+            : '') +
           '<span class="hstamp yes">' + esc(L('ph.like')) + '</span>' +
           '<span class="hstamp no">' + esc(L('ph.pass')) + '</span>' +
+          // They already super liked you. Shown BEFORE the swipe, which is the entire point of
+          // a super like - after the fact it would just be trivia.
+          (pf.superOnMe ? '<div class="hsuperflag">' + svg('star') +
+            esc(L('ph.hush_super_you')) + '</div>' : '') +
           '<div class="hmeta">' +
             '<div class="hname">' + esc(pf.name || '?') + (pf.age ? ', ' + pf.age : '') + '</div>' +
+            // Rounded to ten metres by the server; nil when they are not connected, and then
+            // nothing is claimed at all.
+            (pf.distance !== undefined && pf.distance !== null
+              ? '<div class="hdist">' + svg('location') +
+                esc(hushDistanceText(pf.distance)) + '</div>' : '') +
             (pf.bio ? '<div class="hbio">' + esc(pf.bio) + '</div>' : '') +
           '</div>' +
         '</div>' +
       '</div>' +
     '</div>' +
     '<div class="hushrow">' +
+      '<button class="hushbtn back" id="hback" type="button" aria-label="' +
+        esc(L('ph.hush_rewind')) + '">' + svg('refresh') + '</button>' +
       '<button class="hushbtn no" id="hno" type="button" aria-label="' +
         esc(L('ph.pass')) + '">' + svg('xmark') + '</button>' +
+      '<button class="hushbtn super" id="hsuper" type="button" aria-label="' +
+        esc(L('ph.hush_super')) + '">' + svg('star') + '</button>' +
       '<button class="hushbtn yes" id="hyes" type="button" aria-label="' +
         esc(L('ph.like')) + '">' + svg('heart') + '</button>' +
     '</div>'
   );
   pushAnim();
 
-  const choose = async (like) => {
+  // Tap the photograph to see the next one. Deliberately a tap and not a swipe: a swipe on
+  // this card already means yes or no, and one gesture cannot mean two things.
+  if (photos.length > 1) {
+    byId('hphoto').addEventListener('click', () => {
+      shot = (shot + 1) % photos.length;
+      const el = byId('hphoto');
+      el.setAttribute('style', inlineBackground(photos[shot]));
+      [...byId('hbars').children].forEach((b, i) => b.classList.toggle('on', i === shot));
+    });
+  }
+
+  byId('hback').addEventListener('click', async () => {
+    const r2 = await post('social', { op: 'hushRewind' });
+    if (!r2 || !r2.ok) { toast(L('ph.err_' + ((r2 && r2.error) || 'x'))); return; }
+    ui('toggleon');
+    toast(L('ph.hush_rewound'));
+    hushSwipe();
+  });
+
+  const choose = async (like, superLike) => {
     const card = byId('hcard');
     if (card) {
       card.classList.add(like ? 'flyright' : 'flyleft');
       ui(like ? 'toggleon' : 'toggleoff');
     }
-    const c = await post('social', { op: 'hushChoice', ref: pf.ref, like });
-    if (c && c.error) { toast(L('ph.err_' + ((c && c.error) || 'x'))); return; }
+    const c = await post('social', { op: 'hushChoice', ref: pf.ref, like, super: !!superLike });
+    if (c && c.error) {
+      // A refused super like must NOT count as a swipe: the card has to come back, so the
+      // player can still pass or like normally instead of losing the profile to a cap.
+      if (card) card.classList.remove('flyright', 'flyleft');
+      toast(L('ph.err_' + ((c && c.error) || 'x')));
+      return;
+    }
     if (c && c.match) {
       ui('success');
-      banner({ app: 'hush', icon: 'hush', title: L('ph.hush_match'),
-               body: (c.name || '?') + (c.number ? '  ' + c.number : '') });
+      // The match moment, on the card rather than in a banner that slides away: this is the
+      // one thing on the app both sides asked for, and it deserves to be looked at.
+      hushMatchSheet(c);
+      return;
     }
     setTimeout(() => { if (socialActive('hush', epoch)) hushSwipe(); }, 240);
   };
   byId('hno').addEventListener('click', () => choose(false));
   byId('hyes').addEventListener('click', () => choose(true));
+  byId('hsuper').addEventListener('click', () => choose(true, true));
   wireHushDrag(byId('hcard'), choose);
+}
+
+// "It's a match". A sheet rather than a banner: a banner slides away while somebody is still
+// reading it, and this is the moment the whole app exists for.
+function hushMatchSheet(c) {
+  sheet(L('ph.hush_match'),
+    '<div class="hushmatch">' +
+      '<div class="hmtitle">' + esc(L('ph.hush_match_line').replace('{name}', c.name || '?')) + '</div>' +
+      (c.super ? '<div class="hmsuper">' + svg('star') + esc(L('ph.hush_super_sent')) + '</div>' : '') +
+      (c.number ? '<div class="hmnum">' + esc(maskNum(c.number)) + '</div>' : '') +
+    '</div>' +
+    (c.number ? UI.button(L('ph.hush_say_hi'), 'hmsay', 'tinted') : '') +
+    UI.button(L('ph.hush_keep_swiping'), 'hmnext', 'plain'),
+    () => {
+      const epoch2 = sheetEpoch;
+      if (byId('hmsay')) byId('hmsay').addEventListener('click', () => {
+        if (!closeSheet(false, epoch2)) return;
+        // Straight into the conversation the match already created on both phones.
+        const app = (state.apps || []).find((x) => x.id === 'messages');
+        if (app) { enterApp(app, null); openThread(c.number); }
+      });
+      byId('hmnext').addEventListener('click', () => {
+        if (!closeSheet(false, epoch2)) return;
+        hushSwipe();
+      });
+    });
 }
 
 // Drag the card and it follows the finger, tilting as it goes; let go past the
@@ -7694,7 +7781,8 @@ async function hushMatches() {
     if (!m || !m.number) { toast(L('ph.hush_no_number')); return; }
     sheet(m.name || '?',
       UI.row({ icon: 'phone', title: L('ph.call'), value: m.number, data: { act: 'call' } }) +
-      UI.row({ icon: 'messages', title: L('ph.message'), data: { act: 'sms' } }),
+      UI.row({ icon: 'messages', title: L('ph.message'), data: { act: 'sms' } }) +
+      UI.button(L('ph.hush_unmatch'), 'hunmatch', 'neg'),
       () => {
         const epoch2 = sheetEpoch;
         [...byId('sheet').querySelectorAll('[data-act]')].forEach((el) =>
@@ -7706,6 +7794,17 @@ async function hushMatches() {
             enterApp(messages, null);
             openThread(m.number);
           }));
+        // Confirmed, because it lands on both phones: the match is gone for the other person
+        // too, and neither of them can put it back.
+        byId('hunmatch').addEventListener('click', () => {
+          if (!closeSheet(false, epoch2)) return;
+          confirmSheet(L('ph.hush_unmatch_ask'), L('ph.hush_unmatch'), async () => {
+            const r2 = await post('social', { op: 'hushUnmatch', ref: m.ref });
+            if (!r2 || !r2.ok) { toast(L('ph.err_' + ((r2 && r2.error) || 'x'))); return; }
+            ui('toggleoff');
+            hushMatches();
+          });
+        });
       });
   }));
 }
@@ -7718,6 +7817,16 @@ async function hushProfile() {
   if (!me || me.error) { body(UI.empty(L('ph.err_' + ((me && me.error) || 'off')), 'hush')); return; }
   const pf = me.profile || { bio: '', photo: '', active: true };
 
+  // Who I am, and who I want to see. `seeking` defaults to everybody, because a default that
+  // narrows the deck without being asked to is a bug that looks like an empty app.
+  let gender = (pf.gender === 'm' || pf.gender === 'f') ? pf.gender : '';
+  let seeking = (pf.seeking === 'm' || pf.seeking === 'f') ? pf.seeking : 'all';
+
+  const segRow = (name, value, options) =>
+    '<div class="seg" data-seg="' + name + '">' + options.map((o) =>
+      '<button type="button" data-v="' + o.v + '"' +
+        (o.v === value ? ' class="on"' : '') + '>' + esc(o.t) + '</button>').join('') + '</div>';
+
   body(
     '<div class="socprof">' +
       (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
@@ -7725,8 +7834,30 @@ async function hushProfile() {
       '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
     '</div>' +
     UI.field('hbio', L('ph.hush_bio'), pf.bio || '', 'maxlength="160"') +
-    UI.field('hphoto', L('ph.hush_photo'), pf.photo || '', 'maxlength="300"') +
-    UI.button(L('ph.pick_photo'), 'hpick', 'plain') +
+    // Three photographs. The first is the one the card opens on; the others are tapped through.
+    '<div class="stsection">' + esc(L('ph.hush_photos')) + '</div>' +
+    [1, 2, 3].map((n) => {
+      const id = n === 1 ? 'hphoto' : 'hphoto' + n;
+      const value = n === 1 ? (pf.photo || '') : (pf['photo' + n] || '');
+      return UI.field(id, L('ph.hush_photo_n').replace('{n}', String(n)), value,
+                      'maxlength="300"') +
+        UI.button(L('ph.pick_photo'), 'hpick' + n, 'plain');
+    }).join('') +
+    '<div class="stsection">' + esc(L('ph.hush_iam')) + '</div>' +
+    segRow('gender', gender, [{ v: '', t: L('ph.hush_unsaid') },
+                              { v: 'm', t: L('ph.hush_man') },
+                              { v: 'f', t: L('ph.hush_woman') }]) +
+    '<div class="stsection">' + esc(L('ph.hush_seeking')) + '</div>' +
+    segRow('seeking', seeking, [{ v: 'all', t: L('ph.hush_everyone') },
+                                { v: 'm', t: L('ph.hush_men') },
+                                { v: 'f', t: L('ph.hush_women') }]) +
+    '<div class="stsection">' + esc(L('ph.hush_agerange')) + '</div>' +
+    '<div class="hushage">' +
+      UI.field('hmin', L('ph.hush_min_age'), String(pf.minAge || 18),
+               'type="number" min="18" max="99"') +
+      UI.field('hmax', L('ph.hush_max_age'), String(pf.maxAge || 99),
+               'type="number" min="18" max="99"') +
+    '</div>' +
     UI.group(UI.row({ icon: 'hush', title: L('ph.hush_active'),
                       toggle: pf.active !== false, data: { t: 'active' } })) +
     '<div class="groupfoot">' + esc(L('ph.hush_active_hint')) + '</div>' +
@@ -7734,7 +7865,15 @@ async function hushProfile() {
   );
 
   let active = pf.active !== false;
-  byId('hpick').addEventListener('click', () => pickPhoto((url) => { byId('hphoto').value = url; }));
+  [1, 2, 3].forEach((n) => byId('hpick' + n).addEventListener('click', () =>
+    pickPhoto((url) => { byId(n === 1 ? 'hphoto' : 'hphoto' + n).value = url; })));
+  rows('.seg[data-seg] button', (b) => b.addEventListener('click', () => {
+    const group = b.closest('.seg');
+    [...group.children].forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    if (group.dataset.seg === 'gender') gender = b.dataset.v; else seeking = b.dataset.v;
+    ui('key');
+  }));
   // The kit's switch is a styled span, not a checkbox, so the row owns the state.
   rows('.row[data-t="active"]', (el) => el.addEventListener('click', () => {
     active = !active;
@@ -7744,7 +7883,11 @@ async function hushProfile() {
   }));
   byId('hsave').addEventListener('click', async () => {
     const r = await post('social', { op: 'hushSetup',
-      bio: byId('hbio').value, photo: byId('hphoto').value, active });
+      bio: byId('hbio').value, photo: byId('hphoto').value,
+      photo2: byId('hphoto2').value, photo3: byId('hphoto3').value,
+      gender, seeking,
+      minAge: Number(byId('hmin').value) || 18, maxAge: Number(byId('hmax').value) || 99,
+      active });
     if (r && r.ok) { ui('success'); toast(L('ph.saved')); }
     else toast(L('ph.err_' + ((r && r.error) || 'x')));
   });

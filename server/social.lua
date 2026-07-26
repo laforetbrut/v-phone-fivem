@@ -416,10 +416,18 @@ V.Callback('v-phone:soc:setup', function(src, resolve, data)
     if displayname == '' then displayname = a.handle end
     local avatar = tostring((data and data.avatar) or ''):sub(1, 300)
     if avatar ~= '' and not imageAllowed(avatar) then resolve({ error = 'badhost' }) return end
+    -- The cover banner. This declaration was missing and the UPDATE below read `cover` as a
+    -- nil GLOBAL, so every profile save failed with "Column 'cover' cannot be null" - a hard
+    -- error, on a column that had only just been added.
+    --
+    -- Same host gate as the avatar: it faces every visitor to the profile, so it is exactly as
+    -- public as a post's image.
+    local cover = tostring((data and data.cover) or ''):sub(1, 300)
+    if cover ~= '' and not imageAllowed(cover) then resolve({ error = 'badhost' }) return end
     local bio = tostring((data and data.bio) or ''):sub(1, 160)
 
     -- The handle is the account's name on the server and does not change here; only the
-    -- display name, avatar and bio do.
+    -- display name, avatar, cover and bio do.
     MySQL.query.await([[UPDATE vphone_social_accounts
         SET displayname = ?, avatar = ?, cover = ?, bio = ? WHERE citizenid = ? AND app = ?]],
         { displayname, avatar, cover, bio, p.citizenid, app })
@@ -719,6 +727,27 @@ end)
 -- ══════════════════════════════════════════════════════════════
 local function hushOn() return socOn() and V.SettingBool('socialHush', SOC.hush.enabled) end
 
+--- The current year, for the age arithmetic in SQL. Read once: it is a constant for any
+--- session short enough to matter, and calling os.date per row would be silly.
+local THIS_YEAR = tonumber(os.date('%Y')) or 2026
+
+--- How far away another character is, in metres, or nil when they are not connected.
+---
+--- Rounded to ten metres before it leaves the server. A dating app has no business handing one
+--- player another's exact position, and "260 m" is as useful as "263.4 m" while being useless
+--- for finding somebody who has not agreed to be found.
+local function hushDistance(src, targetCid)
+    local target = Core.GetPlayerByCitizenId(targetCid)
+    if not target or not target.source then return nil end
+    local ok, metres = pcall(function()
+        local a = GetEntityCoords(GetPlayerPed(src))
+        local b = GetEntityCoords(GetPlayerPed(target.source))
+        return #(a - b)
+    end)
+    if not ok or not metres then return nil end
+    return math.floor(metres / 10) * 10
+end
+
 --- A date of birth becomes an age and nothing else: the card shows how old somebody is,
 --- never the day they were born.
 local function ageFrom(dob)
@@ -730,9 +759,14 @@ V.Callback('v-phone:soc:hushMe', function(src, resolve)
     if not hushOn() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
-    local row = MySQL.single.await(
-        'SELECT bio, photo, active FROM vphone_hush_profiles WHERE citizenid = ?', { p.citizenid })
-    resolve({ ok = true, profile = row and { bio = row.bio, photo = row.photo, active = num(row.active, 0) == 1 } or nil })
+    local row = MySQL.single.await([[SELECT bio, photo, photo2, photo3, gender, seeking,
+        min_age, max_age, active FROM vphone_hush_profiles WHERE citizenid = ?]], { p.citizenid })
+    resolve({ ok = true, profile = row and {
+        bio = row.bio, photo = row.photo, photo2 = row.photo2, photo3 = row.photo3,
+        gender = row.gender, seeking = row.seeking,
+        minAge = num(row.min_age, 18), maxAge = num(row.max_age, 99),
+        active = num(row.active, 0) == 1,
+    } or nil })
 end)
 
 V.Callback('v-phone:soc:hushSetup', function(src, resolve, data)
@@ -740,14 +774,38 @@ V.Callback('v-phone:soc:hushSetup', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
     local bio = tostring((data and data.bio) or ''):sub(1, SOC.bioMax)
-    local photo = tostring((data and data.photo) or ''):sub(1, 300)
-    if photo ~= '' and not imageAllowed(photo) then resolve({ error = 'badhost' }) return end
+    -- Three photographs, each through the host gate: they face every profile this one is
+    -- shown to, so they are as public as a post's image.
+    local photos = {}
+    for i, key in ipairs({ 'photo', 'photo2', 'photo3' }) do
+        local url = tostring((data and data[key]) or ''):sub(1, 300)
+        if url ~= '' and not imageAllowed(url) then resolve({ error = 'badhost' }) return end
+        photos[i] = url
+    end
     local active = (data and data.active == false) and 0 or 1
 
-    MySQL.query.await([[INSERT INTO vphone_hush_profiles (citizenid, bio, photo, active)
-        VALUES (?,?,?,?)
-        ON DUPLICATE KEY UPDATE bio=VALUES(bio), photo=VALUES(photo), active=VALUES(active)]],
-        { p.citizenid, bio, photo, active })
+    -- Who this profile is, and who it wants to see. Self-declared on both counts: the
+    -- framework's idea of a character's sex is a different question from who they are looking
+    -- for, and a dating app that decides the second one for somebody is not a dating app.
+    local gender = tostring((data and data.gender) or '')
+    gender = (gender == 'm' or gender == 'f') and gender or ''
+    local seeking = tostring((data and data.seeking) or 'all')
+    if seeking ~= 'm' and seeking ~= 'f' then seeking = 'all' end
+
+    -- The age range, bounded and ordered. 18 is the floor because everybody on this app is an
+    -- adult, and swapping a reversed pair is kinder than refusing it.
+    local minAge = math.max(18, math.min(99, math.floor(num(data and data.minAge, 18))))
+    local maxAge = math.max(18, math.min(99, math.floor(num(data and data.maxAge, 99))))
+    if minAge > maxAge then minAge, maxAge = maxAge, minAge end
+
+    MySQL.query.await([[INSERT INTO vphone_hush_profiles
+            (citizenid, bio, photo, photo2, photo3, gender, seeking, min_age, max_age, active)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE bio=VALUES(bio), photo=VALUES(photo), photo2=VALUES(photo2),
+            photo3=VALUES(photo3), gender=VALUES(gender), seeking=VALUES(seeking),
+            min_age=VALUES(min_age), max_age=VALUES(max_age), active=VALUES(active)]],
+        { p.citizenid, bio, photos[1], photos[2], photos[3], gender, seeking,
+          minAge, maxAge, active })
     resolve({ ok = true })
 end)
 
@@ -763,23 +821,61 @@ V.Callback('v-phone:soc:hushNext', function(src, resolve)
     -- A pass comes round again after `Config.Social.hush.passDays`, because a deck you
     -- can empty for ever is a deck that ends. A LIKE never does: that one is a decision.
     local passDays = math.max(0, math.floor(num(SOC.hush.passDays, 7)))
+    local me = MySQL.single.await(
+        'SELECT gender, seeking, min_age, max_age FROM vphone_hush_profiles WHERE citizenid = ?',
+        { p.citizenid }) or {}
+
+    -- **Both** preferences, not one.
+    --
+    -- Showing somebody a profile that would never want them back is how a dating app wastes
+    -- everybody's time: a card that cannot become a match is a card that should not be dealt.
+    -- So the deck filters on what THIS player is looking for and on whether the other profile
+    -- is looking for them. `seeking = 'all'` and a blank gender both mean "no opinion", which
+    -- has to pass rather than exclude - most profiles will not have filled this in.
+    local wants = tostring(me.seeking or 'all')
+    local myGender = tostring(me.gender or '')
+    local minAge = math.max(18, math.floor(num(me.min_age, 18)))
+    local maxAge = math.max(minAge, math.floor(num(me.max_age, 99)))
+
     local row = MySQL.single.await(([[
-        SELECT h.citizenid, h.bio, h.photo, c.firstname, c.dob
+        SELECT h.citizenid, h.bio, h.photo, h.photo2, h.photo3, h.gender,
+               c.firstname, c.dob
         FROM vphone_hush_profiles h
         JOIN vphone_characters c ON c.citizenid = h.citizenid
         WHERE h.active = 1 AND h.citizenid <> ?
           AND NOT EXISTS (SELECT 1 FROM vphone_hush_likes l
                           WHERE l.from_cid = ? AND l.to_cid = h.citizenid
                             AND (l.liked = 1%s))
+          -- What I am looking for.
+          AND (? = 'all' OR h.gender = '' OR h.gender = ?)
+          -- And what they are looking for, when either of us has said.
+          AND (h.seeking = 'all' OR ? = '' OR h.seeking = ?)
+          -- Age, both ways: mine of them, and theirs of me.
+          AND (c.dob IS NULL OR c.dob = ''
+               OR (%d - CAST(LEFT(c.dob, 4) AS UNSIGNED)) BETWEEN ? AND ?)
         ORDER BY RAND() LIMIT 1
     ]]):format(passDays > 0
         and (' OR l.at > DATE_SUB(NOW(), INTERVAL %d DAY)'):format(passDays)
-        or ' OR 1 = 1'), { p.citizenid, p.citizenid })
+        or ' OR 1 = 1', THIS_YEAR),
+        { p.citizenid, p.citizenid, wants, wants, myGender, myGender, minAge, maxAge })
     if not row then resolve({ ok = true, profile = nil }) return end
+
+    local photos = {}
+    for _, url in ipairs({ row.photo, row.photo2, row.photo3 }) do
+        if url and url ~= '' then photos[#photos + 1] = tostring(url) end
+    end
 
     resolve({ ok = true, profile = {
         ref = row.citizenid, name = row.firstname, age = ageFrom(row.dob),
-        bio = row.bio, photo = row.photo,
+        bio = row.bio, photo = row.photo, photos = photos,
+        -- How far away, in metres, when they are connected. A dating app without distance is a
+        -- pen-pal service, and on a server the answer is genuinely useful.
+        distance = hushDistance(src, row.citizenid),
+        -- Did they already super like me? Tinder shows this before the swipe, and it is the
+        -- whole point of a super like.
+        superOnMe = MySQL.scalar.await([[SELECT 1 FROM vphone_hush_likes
+            WHERE from_cid = ? AND to_cid = ? AND liked = 1 AND super = 1]],
+            { row.citizenid, p.citizenid }) ~= nil,
     } })
 end)
 
@@ -791,12 +887,26 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
     if target == '' or target == p.citizenid then resolve(false) return end
 
     local liked = data and data.like == true
+    local super = liked and (data and data.super == true) or false
+
+    -- A super like is capped hard and separately from ordinary likes. That cap IS the feature:
+    -- a signal everybody can send at will says nothing.
+    if super then
+        local cap = math.max(0, math.floor(num(SOC.hush.dailySuper, 1)))
+        local used = num(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_hush_likes
+            WHERE from_cid = ? AND super = 1 AND at > DATE_SUB(NOW(), INTERVAL 1 DAY)]],
+            { p.citizenid }), 0)
+        if used >= cap then resolve({ error = 'superlimit' }) return end
+    end
+
     -- A pass is recorded too, or the same face comes back every time the app opens. It
     -- is an UPDATE rather than an IGNORE because a pass expires: seeing somebody again
     -- has to restart their clock, otherwise the second pass never sticks.
-    MySQL.insert.await([[INSERT INTO vphone_hush_likes (from_cid, to_cid, liked) VALUES (?,?,?)
-        ON DUPLICATE KEY UPDATE liked = VALUES(liked), at = CURRENT_TIMESTAMP]],
-        { p.citizenid, target, liked and 1 or 0 })
+    MySQL.insert.await([[INSERT INTO vphone_hush_likes (from_cid, to_cid, liked, super)
+            VALUES (?,?,?,?)
+        ON DUPLICATE KEY UPDATE liked = VALUES(liked), super = VALUES(super),
+            at = CURRENT_TIMESTAMP]],
+        { p.citizenid, target, liked and 1 or 0, super and 1 or 0 })
 
     if not liked then resolve({ ok = true, match = false }) return end
 
@@ -827,7 +937,46 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
         phone.SendMessage(target, myNumber, L(src, 'soc.match_line'))
     end
     Core.Log('social', ('hush match %s <-> %s'):format(p.citizenid, target), nil, p.citizenid)
-    resolve({ ok = true, match = true, name = them and them.firstname or '?', number = theirNumber })
+    resolve({ ok = true, match = true, name = them and them.firstname or '?',
+              number = theirNumber, super = super })
+end)
+
+--- Undo the last pass.
+---
+--- Only a PASS. Undoing a like would let somebody take back a match after seeing who it was,
+--- and a match is the one thing on this app that both sides agreed to - it is not a decision
+--- one of them gets to reverse quietly.
+V.Callback('v-phone:soc:hushRewind', function(src, resolve)
+    if not hushOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    local row = MySQL.single.await([[SELECT to_cid FROM vphone_hush_likes
+        WHERE from_cid = ? AND liked = 0 ORDER BY at DESC LIMIT 1]], { p.citizenid })
+    if not row then resolve({ error = 'nothing' }) return end
+
+    MySQL.query.await('DELETE FROM vphone_hush_likes WHERE from_cid = ? AND to_cid = ?',
+        { p.citizenid, row.to_cid })
+    resolve({ ok = true })
+end)
+
+--- Undo a match, from either side.
+---
+--- Both rows go. Leaving the other half behind would put the person straight back in the deck
+--- as somebody who already liked you, so the next swipe would re-match you with somebody you
+--- had just walked away from.
+V.Callback('v-phone:soc:hushUnmatch', function(src, resolve, data)
+    if not hushOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local target = tostring((data and data.ref) or '')
+    if target == '' then resolve(false) return end
+
+    MySQL.query.await([[DELETE FROM vphone_hush_likes
+        WHERE (from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?)]],
+        { p.citizenid, target, target, p.citizenid })
+    Core.Log('social', ('hush unmatch %s <-> %s'):format(p.citizenid, target), nil, p.citizenid)
+    resolve({ ok = true })
 end)
 
 --- Everyone who liked you back. A dating app whose matches you can only ever see once,
@@ -855,6 +1004,7 @@ V.Callback('v-phone:soc:hushMatches', function(src, resolve)
         -- A match already exchanged numbers, so the number is theirs to have. Nothing
         -- else about the citizen behind it travels.
         out[#out + 1] = {
+            ref = r.cid,
             name = r.firstname or '?',
             age = ageFrom(r.dob),
             bio = r.bio or '',
@@ -1713,17 +1863,55 @@ function SocialBoot(core)
         `citizenid` VARCHAR(16) NOT NULL,
         `bio`       VARCHAR(160) NOT NULL DEFAULT '',
         `photo`     VARCHAR(300) NOT NULL DEFAULT '',
+        `photo2`    VARCHAR(300) NOT NULL DEFAULT '',
+        `photo3`    VARCHAR(300) NOT NULL DEFAULT '',
+        -- Self-declared, which is how a dating app works: the framework's idea of a
+        -- character's sex is not the same question as who they are looking for.
+        `gender`    VARCHAR(1) NOT NULL DEFAULT '',
+        `seeking`   VARCHAR(3) NOT NULL DEFAULT 'all',
+        `min_age`   TINYINT UNSIGNED NOT NULL DEFAULT 18,
+        `max_age`   TINYINT UNSIGNED NOT NULL DEFAULT 99,
         `active`    TINYINT(1) NOT NULL DEFAULT 1,
         PRIMARY KEY (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- Columns added after the table shipped, one at a time, because `CREATE TABLE IF NOT
+    -- EXISTS` does nothing to a table that already exists. This is the third time that has
+    -- caught something in this resource, so it is now the reflex.
+    local function hushColumn(column, definition)
+        local has = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_hush_profiles'
+              AND COLUMN_NAME = ? LIMIT 1]], { column })
+        if has then return end
+        MySQL.query.await(('ALTER TABLE `vphone_hush_profiles` ADD COLUMN `%s` %s')
+            :format(column, definition))
+        print(('[v-phone] hush: added %s'):format(column))
+    end
+    hushColumn('photo2', "VARCHAR(300) NOT NULL DEFAULT ''")
+    hushColumn('photo3', "VARCHAR(300) NOT NULL DEFAULT ''")
+    hushColumn('gender', "VARCHAR(1) NOT NULL DEFAULT ''")
+    hushColumn('seeking', "VARCHAR(3) NOT NULL DEFAULT 'all'")
+    hushColumn('min_age', 'TINYINT UNSIGNED NOT NULL DEFAULT 18')
+    hushColumn('max_age', 'TINYINT UNSIGNED NOT NULL DEFAULT 99')
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_hush_likes` (
         `from_cid` VARCHAR(16) NOT NULL,
         `to_cid`   VARCHAR(16) NOT NULL,
         `liked`    TINYINT(1) NOT NULL DEFAULT 0,
+        -- A super like is a like that says so. Its own table would buy nothing: it is the
+        -- same row, the same uniqueness, and the same expiry rules.
+        `super`    TINYINT(1) NOT NULL DEFAULT 0,
         `at`       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`from_cid`, `to_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    local hasSuper = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_hush_likes'
+          AND COLUMN_NAME = 'super' LIMIT 1]])
+    if not hasSuper then
+        MySQL.query.await('ALTER TABLE `vphone_hush_likes` ADD COLUMN `super` TINYINT(1) NOT NULL DEFAULT 0')
+        print('[v-phone] hush: added super')
+    end
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_follows` (
         `app`      VARCHAR(12) NOT NULL DEFAULT 'bleeter',

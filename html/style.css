@@ -8462,7 +8462,11 @@ body.inframe.dark .uisearch {
 .hushcard.wantyes .hstamp.yes { opacity: 1; }
 .hushcard.wantno .hstamp.no { opacity: 1; }
 
-.hushrow { display: flex; justify-content: center; gap: 26px; margin-top: 18px; }
+/* Four buttons now, not two: rewind, pass, super like, like. 4x62 + 3x26 does not fit a
+   phone this narrow, so the gap shrinks and the two secondary buttons shrink with it -
+   which is also the hierarchy Tinder uses, small for rewind and super, large for the
+   two that actually decide. */
+.hushrow { display: flex; justify-content: center; gap: 14px; margin-top: 18px; }
 
 .hushbtn {
   display: flex;
@@ -8480,6 +8484,103 @@ body.inframe.dark .uisearch {
 .hushbtn:active { transform: scale(.88); }
 .hushbtn.no { color: #ff453a; }
 .hushbtn.yes { color: #30d158; }
+
+.hushbtn.back, .hushbtn.super { width: 48px; height: 48px; align-self: center; }
+.hushbtn.back svg, .hushbtn.super svg { width: 21px; height: 21px; }
+.hushbtn.back { color: #ffd60a; }
+.hushbtn.super { color: #0a84ff; }
+.hushbtn.super svg { fill: #0a84ff; stroke: #0a84ff; }
+
+/* Which photograph of the three is showing. Across the top of the card, above the
+   gradient, the way every swipe app has done it since Tinder shipped it. */
+.hbars {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  left: 10px;
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+
+.hbars i {
+  height: 3px;
+  flex: 1;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .34);
+  transition: background var(--ph-fast) ease;
+}
+
+.hbars i.on { background: rgba(255, 255, 255, .95); }
+
+/* They super liked you, said before the swipe rather than after - which is the entire
+   point of a super like. */
+.hsuperflag {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, .92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.hsuperflag svg { width: 13px; height: 13px; fill: #fff; stroke: #fff; }
+
+/* How far away, under the name. Rounded to ten metres on the server. */
+.hushcard .hdist {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, .8);
+  font-size: 13px;
+}
+
+.hushcard .hdist svg { width: 13px; height: 13px; opacity: .85; }
+
+/* The age range, two fields side by side rather than stacked - they are one setting. */
+.hushage { display: flex; gap: 10px; }
+.hushage > * { flex: 1; min-width: 0; }
+
+/* "It's a match". The one moment the whole app exists for, so it gets the space. */
+.hushmatch { padding: 6px 0 14px; text-align: center; }
+
+.hushmatch .hmtitle {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.hushmatch .hmsuper {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, .16);
+  color: #0a84ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hushmatch .hmsuper svg { width: 13px; height: 13px; fill: #0a84ff; stroke: #0a84ff; }
+
+.hushmatch .hmnum {
+  margin-top: 10px;
+  color: var(--app-label2);
+  font-family: var(--ios-num, monospace);
+  font-size: 15px;
+}
 
 /* ══ The warrant terminal ══════════════════════════════════════
    A police tool, deliberately not the phone: a dark forensic console over the whole
