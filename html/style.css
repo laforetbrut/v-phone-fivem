@@ -9230,6 +9230,15 @@ body.inframe.dark .uisearch {
 .device.camlive .screen { background: transparent; }
 .device.camlive .app.camfull,
 .device.camlive .app.camfull .appbody { background: transparent; }
+/* The app surface carries `backdrop-filter: blur(28px)` and its own gradients - which is
+   right for every other app and fatal for a viewfinder: a blurred, tinted sheet is exactly
+   what must NOT be between the player and what they are framing. Neutralised for camlive
+   only; every other panel keeps its glass. */
+.device.camlive .app {
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 .device.camlive .camview {
   background: transparent;
   /* Keep the frame readable against a bright sky without tinting the picture. */

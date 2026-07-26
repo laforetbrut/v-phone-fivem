@@ -142,6 +142,10 @@ local function genCode() return string.format('%04d', math.random(0, 9999)) end
 -- apps they are logged into on this device.
 local Pending = {}       -- [src] = { [app] = { code, number, at } }
 local Authed  = {}       -- [src] = { [app] = true }, this session's warm copy
+local ResetTry = {}      -- [src] = { [app] = { n, at } }, the password-reset attempt counter.
+                         -- Declared here rather than beside the reset code below, because
+                         -- playerDropped clears it and that handler is above it - as a later
+                         -- local it was a nil global there, and every disconnect raised.
 
 -- Signing in USED to be session-only, so every script restart and every server reboot threw
 -- the player back to a password prompt on a phone they had never left. It is their own
@@ -315,8 +319,6 @@ end)
 -- Rate limited per source. Without it this is a way to spam a player's own Messages, and -
 -- more to the point - an attempt counter is what stops a four-digit code from being walked
 -- through at leisure.
-local ResetTry = {}      -- [src] = { [app] = { n = tries, at = when the window opened } }
-
 local function resetGate(src, app)
     ResetTry[src] = ResetTry[src] or {}
     local t = ResetTry[src][app]

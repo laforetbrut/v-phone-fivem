@@ -25,6 +25,8 @@ local sdkApps = {}           -- installed iframe apps allowed for this open sess
 local pendingUiActions = {}  -- prompts received while the asynchronous open is in flight
 local applyServerCall
 local camModeOff            -- defined with the camera mode, used by closePhone above it
+local selfieCam             -- the selfie's scripted cam, read by the camera-mode thread
+                            -- which sits above the block that assigns it
 local mediaOn = false        -- server-side capture and upload, decided by the server
 
 local function sdkAppId(value)
@@ -931,15 +933,35 @@ RegisterNUICallback('camMode', function(data, cb)
     DisplayRadar(false)
 
     CreateThread(function()
+        local heldFirstPerson = true
         while camActive and isOpen do
             -- Every frame, because the HUD redraws itself every frame. This covers the
             -- minimap, the wanted stars, the cash and the weapon wheel in one call, which is
             -- what a photograph should not contain.
             HideHudAndRadarThisFrame()
-            -- A player who switches back to third person mid-shot would photograph their own
-            -- back, so the mode is held rather than merely set once.
-            if GetFollowPedCamViewMode() ~= 4 then SetFollowPedCamViewMode(4) end
-            if GetFollowVehicleCamViewMode() ~= 4 then SetFollowVehicleCamViewMode(4) end
+
+            -- The selfie is the exception, and it has to be. First person hides the player's
+            -- own head, and the selfie camera is a scripted cam placed in front of that head
+            -- and pointed at it - so holding first person during a selfie aims the shot at
+            -- the inside of a model that is not being drawn. The hold is released while the
+            -- selfie cam is up and taken again when it comes down.
+            if selfieCam then
+                if heldFirstPerson then
+                    heldFirstPerson = false
+                    if camPrevPed then SetFollowPedCamViewMode(camPrevPed) end
+                    if camPrevVeh then SetFollowVehicleCamViewMode(camPrevVeh) end
+                end
+            else
+                if not heldFirstPerson then
+                    heldFirstPerson = true
+                    SetFollowPedCamViewMode(4)
+                    SetFollowVehicleCamViewMode(4)
+                end
+                -- A player who switches back to third person mid-shot would photograph their
+                -- own back, so the mode is held rather than merely set once.
+                if GetFollowPedCamViewMode() ~= 4 then SetFollowPedCamViewMode(4) end
+                if GetFollowVehicleCamViewMode() ~= 4 then SetFollowVehicleCamViewMode(4) end
+            end
             Wait(0)
         end
         camModeOff()
@@ -1041,7 +1063,7 @@ end)
 -- Selfie: a game camera placed in front of the ped's head, looking back, so a photo or a
 -- clip is of the player. screencapture / screenshot-basic capture whatever is rendered, so
 -- the same shot path works front or back - only the camera moves.
-local selfieCam = nil
+selfieCam = nil
 stopSelfie = function()
     if not selfieCam then return end
     RenderScriptCams(false, false, 0, true, true)
