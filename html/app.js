@@ -8225,6 +8225,10 @@ window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.action !== 'open' || window.__vphoneEdgeProbe || !d.debug) return;
   window.__vphoneEdgeProbe = true;
+  if (d.cameraWhy) {
+    console.info('[v-phone] camera inputs: convar=' + d.cameraWhy.convar +
+      ' config=' + d.cameraWhy.config + ' resolved=' + d.cameraWhy.resolved);
+  }
   console.info('[v-phone] payload: camera=' + JSON.stringify(d.camera) +
     ' media=' + JSON.stringify(d.media) + ' mediaVideo=' + JSON.stringify(d.mediaVideo) +
     ' -> camera app ' + (d.camera !== false ? 'ENABLED' : 'disabled'));

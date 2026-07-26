@@ -1480,6 +1480,14 @@ V.Callback('v-phone:open', function(src, resolve)
         -- `set phone_debug true` turns on the page's boot tracing. Off, the phone writes
         -- nothing to the browser console at all, which is what a live server wants.
         debug = GetConvar('phone_debug', '') == 'true',
+        -- The three inputs behind `camera`, sent so the page can print them. A previous
+        -- round had the startup report say `camera: on` while the payload said false, and
+        -- with only the conclusion visible there was no way to tell which input disagreed.
+        cameraWhy = GetConvar('phone_debug', '') == 'true' and {
+            convar = GetConvar('phone_camera', '(unset)'),
+            config = tostring(Config.Settings and Config.Settings.camera),
+            resolved = tostring(V.SettingBool('camera', true)),
+        } or nil,
         -- Whether server-side capture is live. The CLIENT used to decide this by reading
         -- `Config.Media.enabled` itself, which meant `set phone_media true` switched it on
         -- for the server and not for the phone taking the photograph - so the camera fell
