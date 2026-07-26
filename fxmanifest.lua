@@ -38,6 +38,10 @@ client_scripts {
     -- Works out whether the local player is somewhere the phone charges (a property it
     -- has a key to) and reports it up a state bag, per housing script.
     'bridge/client/charging.lua',
+    -- Answers the qb-phone client events a stock qb-core server fires: police dispatch,
+    -- invoices, transaction banners. Named explicitly rather than globbed - a `bridge/*/`
+    -- glob does not resolve when the resource is installed as a junction to a git checkout.
+    'bridge/client/qb-phone.lua',
     'client/main.lua',
     -- The police forensics terminal: a point on the map and the NUI relays behind it.
     'client/police.lua',
@@ -70,6 +74,9 @@ server_scripts {
     -- Everything another resource is meant to call. Loaded after the app it wraps, so
     -- every export it builds on already exists. See API.md.
     'server/api.lua',
+    -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
+    -- SendServiceMessage and Notify.
+    'bridge/server/qb-phone.lua',
     -- Staff actions and the /phoneadmin command, wrappers over the exports above.
     'server/admin.lua',
     -- The police forensics terminal: session auth and the read callbacks.

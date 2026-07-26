@@ -57,8 +57,8 @@ V.Module({
         { key = 'numberFormat', label = 'Number format', type = 'string', default = Config.NumberFormat,
           hint = 'Every # becomes a random digit; everything else is kept verbatim. Changing this only affects numbers minted afterwards, because an existing number is how other characters already reach that player.' },
 
-        { key = 'requireItem', label = 'A phone item is required', type = 'bool', default = false,
-          hint = 'On, the player must carry the `phone` item to open it. Off, everyone has one, which is the friendlier default for a young server.' },
+        { key = 'requireItem', label = 'A phone item is required', type = 'bool', default = true,
+          hint = 'On - the default - the player must carry the phone item to open it, and cannot be called without one. Off, everyone has a phone, which is friendlier on a young server.' },
 
         { key = 'maxLength', label = 'Message length limit', type = 'number', default = Config.Messages.maxLength,
           min = 20, max = 1000, step = 10 },
@@ -1213,14 +1213,29 @@ exports('SetScreenOn', function(src, on) Open[src] = on and true or nil end)
 -- Callbacks
 -- ══════════════════════════════════════════════════════════════
 -- Either handset counts. Shipping a setting that only accepts one of the two phone items
--- in the catalogue would look like the other one is broken.
-local PHONE_ITEMS = { 'phone', 'iphone' }
+-- in the catalogue would look like the other one is broken. `Config.PhoneItem` leads, so a
+-- server that renamed the item is not quietly ignored, and the list is de-duplicated in
+-- case it was renamed to one of the two already here.
+local PHONE_ITEMS = {}
+do
+    local seen = {}
+    for _, item in ipairs({ Config.PhoneItem or 'phone', 'phone', 'iphone' }) do
+        if not seen[item] then
+            seen[item] = true
+            PHONE_ITEMS[#PHONE_ITEMS + 1] = item
+        end
+    end
+end
 
 requireItem = function(src)
-    if not V.SettingBool('requireItem', false) then return true end
+    if not V.SettingBool('requireItem', true) then return true end
     local inv = V.Use('v-inventory')
     for _, item in ipairs(PHONE_ITEMS) do
-        if num(inv.GetItemCount(src, item), 0) > 0 then return true end
+        -- HasItem, not GetItemCount: `HasItem` is the only key both inventory providers
+        -- register (bridge/server/integrations.lua and the compat stub), so this works
+        -- whichever one won the merge. It also fails OPEN on a server with no inventory
+        -- v-phone recognises - better than locking every player out of their phone.
+        if inv.HasItem(src, item) then return true end
     end
     return false
 end
@@ -3028,6 +3043,24 @@ CreateThread(function()
         setBattery(src, batteryOf(src) + amount)
         Core.Notify(src, (L(src, 'ph.powerbank_used')):format(amount), 'success')
     end)
+end)
+
+-- The handset itself. With Config.Key = false this is the ONLY way into the phone, so it is
+-- registered whether or not requireItem is on: a server that hands everybody a phone still
+-- wants using the item to open it.
+--
+-- Every name in PHONE_ITEMS is registered, so `phone`, `iphone` and a renamed
+-- Config.PhoneItem all work. The item must be marked useable in the framework's own
+-- catalogue as well - on qb-core that is `useable = true` in qb-core/shared/items.lua.
+CreateThread(function()
+    while GetResourceState('v-inventory') ~= 'started' do Wait(200) end
+    Wait(1500)
+    local inv = V.Use('v-inventory')
+    for _, item in ipairs(PHONE_ITEMS) do
+        inv.RegisterUsableItem(item, function(src)
+            TriggerClientEvent('v-phone:client:open', src)
+        end)
+    end
 end)
 
 RegisterNetEvent('v-phone:server:screen', function(on)

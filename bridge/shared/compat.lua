@@ -352,7 +352,14 @@ STUBS['v-inventory'] = {
         -- server runs; it simply does nothing when used, which is honest.
     end,
     HasItem = function(_, src, item)
-        return Bridge and Bridge.HasItem and Bridge.HasItem(src, item) or true
+        -- Fail open only when there is nothing to ask. When the bridge IS here its answer is
+        -- the answer, including "no": `... and Bridge.HasItem(src, item) or true` collapses a
+        -- real `false` back to `true`, which would make requireItem pass for everybody.
+        --
+        -- This key is the one both this stub and bridge/server/integrations.lua register, so
+        -- whichever wins the provider merge has to behave the same. It did not.
+        if Bridge and Bridge.HasItem then return Bridge.HasItem(src, item) end
+        return true
     end,
     --- Consume an item. Upstream's v-inventory offers this and callers here expect it: the
     --- power bank spends itself, and a payphone eats a prepaid card. Without it in the stub

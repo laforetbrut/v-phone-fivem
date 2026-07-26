@@ -270,6 +270,12 @@ exports('SendMail', function(toCitizenid, fromAddress, subject, body)
     return true
 end)
 
+--- `QbMail(citizenid, mailData)` is defined in bridge/server/qb-phone.lua, next to the rest
+--- of the qb-core compatibility. It takes qb's `{ sender, subject, message }` shape, turns
+--- the sender into an address and the HTML body into text, and falls back to a service
+--- message when the recipient has no mailbox. Use it if you are porting a script written
+--- against qb-phone; use SendMail above for anything new.
+
 -- ══════════════════════════════════════════════════════════════
 -- What the phone tells you
 -- ══════════════════════════════════════════════════════════════

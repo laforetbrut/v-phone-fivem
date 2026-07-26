@@ -349,8 +349,15 @@ local function closePhone()
     SendNUIMessage({ action = 'close' })
 end
 
+-- The command stays registered whatever Config.Key says: it is how the phone is opened from
+-- the item, from an admin action, and from a console while testing.
 RegisterCommand('vphone', function() if isOpen then closePhone() else openPhone() end end, false)
-RegisterKeyMapping('vphone', 'Open the phone', 'keyboard', Config.Key or 'F1')
+
+-- No `or 'F1'` fallback. Config.Key = false means the server wants no binding at all, and a
+-- fallback would quietly hand one back - which is exactly the case the default now relies on.
+if Config.Key then
+    RegisterKeyMapping('vphone', 'Open the phone', 'keyboard', Config.Key)
+end
 
 -- The server can open or close the phone from an admin action or an API call. Close is
 -- also how a number change, a wipe or an import make the phone reload rather than show

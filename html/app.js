@@ -4268,7 +4268,11 @@ function renderShade() {
   if (!notifs.length) { list.innerHTML = '<div class="nempty">' + esc(L('ph.notif_empty')) + '</div>'; return; }
 
   // Grouped by app, groups in the order their newest notification arrived.
-  const order = [], byApp = {};
+  // Null prototype: an app id reaches here from a notification, and another resource's
+  // Notify decides that string. With a plain object, an id of '__proto__' or 'constructor'
+  // resolves to an inherited value instead of an absent key, and the .push below throws -
+  // which would leave the whole notification centre blank until the entry ages out.
+  const order = [], byApp = Object.create(null);
   notifs.forEach((n) => { if (!byApp[n.app]) { byApp[n.app] = []; order.push(n.app); } byApp[n.app].push(n); });
 
   list.innerHTML = order.map((appId) => {

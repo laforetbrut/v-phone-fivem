@@ -56,6 +56,29 @@ Config.Compat = {
     notify    = 'auto',   -- ox_lib, qb, esx, chat, custom
     numbers   = 'auto',   -- auto | framework (keep the number in the framework) | phone (keep it here)
 
+    -- ── Standing in for qb-phone ───────────────────────────────
+    -- A stock qb-core server has eighteen resources that talk to qb-phone: job mail, police
+    -- dispatch, invoices. Drop v-phone in without the stock phone and they all talk to
+    -- nobody. On (the default) v-phone answers them itself.
+    --
+    -- `auto` stands down if the REAL qb-phone is running, so the two never double up. Set
+    -- true to answer regardless, false to stay out of it entirely.
+    --
+    -- One thing this cannot cover on its own: `exports['qb-phone']:sendNewMailToOffline`.
+    -- An export belongs to a resource NAME, so that call needs the twenty-line resource in
+    -- compat/qb-phone - see COMPATIBILITY.md.
+    qbPhone   = 'auto',   -- auto | true | false
+
+    -- qb mail can carry a button that fires a client event; qb-drugs uses one to hand over
+    -- the delivery location. v-phone's Mail has no buttons, so the event is fired back at
+    -- the recipient instead.
+    --
+    -- Off by default, and deliberately: that payload arrives from a CLIENT, so switching
+    -- this on lets a player's own client name the event that gets fired at it. It is fired
+    -- only ever back at the sender, never at anybody else, but it is still their choice of
+    -- event name. Turn it on if you run qb-drugs and want deliveries to work.
+    qbPhoneMailButtons = false,
+
     -- The phone charges inside a property you have a key to, decided per housing script
     -- (Quasar included) in bridge/client/charging.lua. Off leaves only vehicles and the
     -- public chargers in Config.Chargers.
@@ -143,12 +166,18 @@ Config.Compat = {
 -- them can also be set from server.cfg without touching this file:
 --
 --     set phone_battery false
---     set phone_requireItem true
+--     set phone_requireItem false
 --
 -- The convar name is `phone_` followed by the key.
 Config.Settings = {
     enabled         = true,
-    requireItem     = false,   -- carry Config.PhoneItem to open the phone
+    -- On: the player carries Config.PhoneItem, or they have no phone. This is the default
+    -- because a phone every character owns for free is not an item, it is a menu.
+    -- `set phone_requireItem false` gives everybody one again.
+    --
+    -- Note it cuts both ways: a character with no handset cannot be CALLED either, which
+    -- is the point, but it also means messages sent to them wait until they hold one.
+    requireItem     = true,
     numberFormat    = '555-####',
     maxLength       = 500,     -- an SMS
     retentionDays   = 30,      -- how long messages are kept, 0 for ever
@@ -180,7 +209,16 @@ Config.Settings = {
 }
 
 -- Open / close the phone.
-Config.Key = 'F1'
+--
+-- `false` means there is no keybind at all: the phone opens by USING the item, the way any
+-- other object in the inventory works. That is the default, and it is the reason
+-- Config.Settings.requireItem is on - a key that opens a phone you do not own would make
+-- the item pointless.
+--
+-- Put a key name here ('F1', 'F3', ...) to offer a binding as well. The player can always
+-- rebind it in the game's own keybind settings. The `/vphone` command exists either way,
+-- which is what you want while testing.
+Config.Key = false
 
 -- ── In hand ────────────────────────────────────────────────────
 -- A phone you are using is a phone you are holding: a prop in the hand and an animation

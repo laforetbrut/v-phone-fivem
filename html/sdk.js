@@ -397,7 +397,10 @@
 
   /** The coloured app tile. `cls` adds context classes ('appx' inside a row). */
   UI.appIcon = function (name, cls) {
-    const t = TILES[name];
+    // hasOwn, not a truthiness test: TILES is a plain object literal, so TILES['__proto__']
+    // and TILES['constructor'] are truthy inherited values whose .bg and .d are undefined,
+    // and the tile would render `background:undefined`.
+    const t = Object.prototype.hasOwnProperty.call(TILES, name) ? TILES[name] : null;
     const open = '<span class="ic ' + (cls || '') + '" aria-hidden="true" style="background:' +
       (t ? t.bg : GREY) + '">';
     if (!t) return open + svg(name) + '</span>';

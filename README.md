@@ -127,7 +127,7 @@ Optional, from `server.cfg`:
 ```
 set phone_locale "en"        # or fr
 set phone_battery false      # any Config.Settings key, prefixed with phone_
-set phone_requireItem true   # the player must carry the phone item
+set phone_requireItem false  # everyone gets a phone, no item needed
 ```
 
 ## Support
@@ -285,7 +285,7 @@ Optionnel, depuis `server.cfg` :
 ```
 set phone_locale "fr"
 set phone_battery false      # n'importe quelle clé de Config.Settings, préfixée par phone_
-set phone_requireItem true   # le joueur doit porter l'objet téléphone
+set phone_requireItem false  # tout le monde a un téléphone, aucun objet requis
 ```
 
 ## Support

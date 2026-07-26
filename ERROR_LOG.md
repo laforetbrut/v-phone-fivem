@@ -5,6 +5,90 @@ one coming back.
 
 ---
 
+## [2026-07-26 03:10] — Wrote `player.PlayerData.citizenid` against the bridge's own player
+
+**Context:** writing the qb-phone compatibility bridge, whose handlers need the citizen id of
+the player who fired the event.
+
+**Error:** `bridge/server/qb-phone.lua` read `player.PlayerData and player.PlayerData.citizenid`
+and, in the contact swap, `p.charinfo.firstname`. `Core.GetPlayer` returns the bridge's own
+normalised player from `wrap()` (`bridge/server/framework.lua:174`), which carries
+`source`, `citizenid`, `name`, `job`, `lang` and two metadata functions — and nothing else.
+The raw qb-core object is read inside the qb branch and deliberately not carried out. So
+`PlayerData` was nil on every framework including qb-core, and both handlers returned early:
+every job mail and every contact swap silently did nothing, with no error in the console.
+
+**Root cause:** I wrote qb-core code inside a framework-agnostic bridge. The whole point of
+`wrap()` is that callers never see a framework's shape, and I reached for the shape anyway
+because the surrounding task was qb-core compatibility. The two are unrelated: being
+compatible with qb-core's EVENTS does not mean handling qb-core's OBJECTS.
+
+**Fix:** `player.citizenid`, and `a.name` / `b.name` for the display names, which `wrap()`
+already builds from `charinfo.firstname`/`lastname`.
+
+**Prevention:** before reading a field off anything `Core.GetPlayer` returned, read `wrap()`
+in `bridge/server/framework.lua` and use only the fields it builds. If a field is needed that
+`wrap()` does not expose, add it there — once, for every framework — rather than reaching
+past it at the call site. A nil field guarded by `if not x then return end` fails silently,
+which is why this one would have shipped.
+
+---
+
+## [2026-07-26 02:30] — `requireItem` was a landmine, not a setting
+
+**Context:** making the phone item required by default, which the setting already claimed to
+support. The intention was a one-line flip of `Config.Settings.requireItem`.
+
+**Error:** `server/main.lua` read `if num(inv.GetItemCount(src, item), 0) > 0 then` where
+`inv` is the merged `v-inventory` provider table. `GetItemCount` is not a key in it. The
+provider is merged from exactly two registrations — `bridge/server/integrations.lua:720`
+(`{ HasItem = Bridge.HasItem }`) and the stub table in `bridge/shared/compat.lua`
+(`RegisterUsableItem`, `HasItem`, `RemoveItem`, `ItemCount`). Turning the setting on would
+have raised `attempt to call a nil value (field 'GetItemCount')` on all eight call sites, the
+`v-phone:open` callback would never have resolved, and the client would have sat in
+`isOpening` until its ten-second guard cleared it — with no error shown to the player.
+
+**Root cause:** the setting shipped with a default of `false` and an early return
+(`if not V.SettingBool('requireItem', false) then return true end`) in front of the broken
+line. The guard meant the code below it never executed, so nothing — not a load, not a test,
+not a play session — ever reached it. A wrong name behind an off-by-default switch is
+invisible until the day somebody turns the switch on.
+
+**Fix:** `inv.HasItem(src, item)`, dropping the `num(...) > 0` wrapper because `HasItem`
+returns a boolean and `num(true, 0)` is `0`. `HasItem` is the better choice regardless: it is
+the only key BOTH providers register, so it does not depend on which registration won the
+merge, and `Bridge.HasItem` fails open on a server with no recognised inventory rather than
+locking every player out of their phone.
+
+**Prevention:** a config default of `false` is not coverage. Any code path that only runs
+when a setting is flipped must be executed at least once with it flipped — or the name it
+calls must be checked against the provider table it calls into. When adding a call on a
+provider table, grep the registration sites for the key before trusting the name.
+
+---
+
+## [2026-07-26 02:35] — A CHANGELOG section inserted into the middle of another one
+
+**Context:** adding entries for this change under the existing `## [1.2.0]` heading.
+
+**Error:** the new `### Changed` heading and its bullet landed between the first and second
+bullets of the existing `### Fixed` list, which silently re-filed nine unrelated entries —
+the whole vehicle-remote and music history — under `Changed`.
+
+**Root cause:** the insertion anchored on the section HEADING and offset a fixed number of
+lines, rather than finding where that section ENDS. It also assumed one version block per
+release; this changelog has two, English then French, each with its own `## [x.y.z]` heading.
+
+**Fix:** restored from git, then re-inserted by scanning forward from each heading to the
+next `###`/`##`/`---` and appending there, working bottom-up so earlier line numbers stay
+valid.
+
+**Prevention:** never insert into a structured document by line offset from a heading.
+Find the section boundary. And check the document's shape first — this one mirrors every
+release in two languages, which a single `## [1.2.0]` search does not reveal.
+
+---
+
 ## [2026-07-25 01:40] — `Core.Notify` was never defined
 
 **Context:** adding the prepaid card to the payphone feature, and following the existing

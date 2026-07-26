@@ -218,7 +218,7 @@ free calls with no item at all.
 
 ## Item checks
 
-`Config.Settings.requireItem` decides whether a player must carry `Config.PhoneItem`.
+`Config.Settings.requireItem` decides whether a player must carry `Config.PhoneItem`. It is **on by default**, and `Config.Key = false` means the item is the only way in: the phone opens when you use it, like any other object. Mark the item `useable` in your framework's own catalogue as well.
 
 | Inventory | Read as |
 |---|---|
@@ -234,6 +234,52 @@ Consuming one - the power bank, a prepaid card - goes through `Bridge.RemoveItem
 covers the same inventories plus the qb and ESX player objects directly. It **fails closed**,
 unlike the check above: a remove that cannot be confirmed grants nothing, so a card is never
 paid out for an item that never left the inventory.
+
+## The qb-phone drop-in
+
+A stock qb-core server has eighteen resources that talk to `qb-phone`: job mail, police
+dispatch, invoices, race results. Remove the stock phone, drop v-phone in, and every one of
+them is talking to nobody. v-phone answers them itself — `Config.Compat.qbPhone`, on by
+default, and it stands down automatically if the real qb-phone is running so the two never
+double up.
+
+One call cannot be covered from inside v-phone. A FiveM export belongs to a resource **name**,
+and `exports['qb-phone']:sendNewMailToOffline(...)` is a hard call in qb-cityhall,
+qb-vehiclesales and qb-weapons — it raises an error rather than passing quietly. So there is a
+twenty-line resource in `compat/qb-phone` whose only job is to own the name and forward:
+
+```
+1. copy compat/qb-phone to your resources folder, e.g. resources/[phone]/qb-phone
+2. in server.cfg:      ensure v-phone
+                       ensure qb-phone
+3. stop the stock qb-phone. Do not run both.
+```
+
+Order matters in the sense that `v-phone` must exist, but not in the sense you would expect:
+the bridge decides who is in charge lazily, the first time it is asked, so `ensure v-phone`
+before `ensure qb-phone` is correct and is what the snippet above does.
+
+| qb-phone | v-phone does |
+|---|---|
+| `sendNewMailToOffline` / `sendNewEventMail` (export) | mail, via `compat/qb-phone` |
+| `qb-phone:server:sendNewMail` | mail, addressed to the sender's own character |
+| `qb-phone:client:addPoliceAlert` | dispatch banner + waypoint, gated on `Config.Compat.policeJobs` |
+| `qb-phone:client:AcceptorDenyInvoice` | a banner stating the fine |
+| `qb-phone:client:RemoveBankMoney` / `AddTransaction` | a bank banner |
+| `qb-phone:client:CustomNotification` / `RaceNotify` / `NewMailNotify` | a banner |
+| `qb-phone:client:GiveContactDetails` | both players get each other's number |
+| `RefreshPhone`, `UpdateLapraces`, `UpdateMails`, `UpdateMessages`, `UpdateTweets` | nothing, deliberately — v-phone re-reads when an app opens |
+
+qb writes mail bodies as small HTML; it is converted to text, so nobody reads `<br>` in their
+inbox. v-phone addresses mail to a **mailbox**, so a character who has never opened the Mail
+app has nowhere to receive one — those fall back to a service message instead of being
+dropped.
+
+**What is genuinely lost.** Mail buttons: qb-drugs uses one to hand over a delivery location,
+and v-phone's Mail has no buttons. `Config.Compat.qbPhoneMailButtons` fires the event at the
+recipient instead — off by default, because that payload arrives from a client. The invoice
+accept/deny sheet becomes a notification. The crypto and racing histories the stock phone kept
+are not carried over.
 
 ## Wiring your own
 
@@ -386,7 +432,7 @@ en appels gratuits sans aucun item.
 
 ## Vérification de l'objet
 
-`Config.Settings.requireItem` décide si un joueur doit porter `Config.PhoneItem`.
+`Config.Settings.requireItem` décide si un joueur doit porter `Config.PhoneItem`. Il est **activé par défaut**, et `Config.Key = false` fait de l'objet le seul accès : le téléphone s'ouvre quand on l'utilise, comme n'importe quel autre objet. Marquez aussi l'objet `useable` dans le catalogue de votre framework.
 
 | Inventaire | Lu par |
 |---|---|
@@ -403,6 +449,54 @@ La consommation d'un objet — la batterie externe, une carte prépayée — pas
 directement. Contrairement à la vérification ci-dessus, elle **échoue en refusant** : un
 retrait qui ne peut être confirmé n'accorde rien, donc aucune carte n'est payée pour un objet
 qui n'a jamais quitté l'inventaire.
+
+## Le remplacement de qb-phone
+
+Un serveur qb-core standard a dix-huit ressources qui parlent à `qb-phone` : courriers de
+métier, alertes police, factures, résultats de course. Retirez le téléphone d'origine, posez
+v-phone, et toutes parlent dans le vide. v-phone y répond lui-même — `Config.Compat.qbPhone`,
+activé par défaut, et il se retire automatiquement si le vrai qb-phone tourne, pour que les
+deux ne fassent jamais double emploi.
+
+Un appel ne peut pas être couvert depuis v-phone. Un export FiveM appartient à un **nom** de
+ressource, et `exports['qb-phone']:sendNewMailToOffline(...)` est un appel dur dans
+qb-cityhall, qb-vehiclesales et qb-weapons — il lève une erreur au lieu de passer en silence.
+D'où une ressource de vingt lignes dans `compat/qb-phone` dont le seul rôle est de porter le
+nom et de transmettre :
+
+```
+1. copiez compat/qb-phone dans vos ressources, ex. resources/[phone]/qb-phone
+2. dans server.cfg :   ensure v-phone
+                       ensure qb-phone
+3. arrêtez le qb-phone d'origine. N'exécutez pas les deux.
+```
+
+L'ordre compte au sens où `v-phone` doit exister, mais pas au sens auquel on s'attend : le
+pont décide qui commande paresseusement, à la première sollicitation. `ensure v-phone` avant
+`ensure qb-phone` est donc correct, et c'est ce que fait l'extrait ci-dessus.
+
+| qb-phone | ce que fait v-phone |
+|---|---|
+| `sendNewMailToOffline` / `sendNewEventMail` (export) | un courrier, via `compat/qb-phone` |
+| `qb-phone:server:sendNewMail` | un courrier, adressé au personnage de l'expéditeur |
+| `qb-phone:client:addPoliceAlert` | bannière + point GPS, filtré par `Config.Compat.policeJobs` |
+| `qb-phone:client:AcceptorDenyInvoice` | une bannière annonçant l'amende |
+| `qb-phone:client:RemoveBankMoney` / `AddTransaction` | une bannière bancaire |
+| `qb-phone:client:CustomNotification` / `RaceNotify` / `NewMailNotify` | une bannière |
+| `qb-phone:client:GiveContactDetails` | chacun reçoit le numéro de l'autre |
+| `RefreshPhone`, `UpdateLapraces`, `UpdateMails`, `UpdateMessages`, `UpdateTweets` | rien, volontairement — v-phone relit à l'ouverture d'une app |
+
+qb écrit ses courriers en petit HTML ; c'est converti en texte, pour que personne ne lise
+`<br>` dans sa boîte. v-phone adresse le courrier à une **boîte aux lettres** : un personnage
+qui n'a jamais ouvert l'app Mail n'a nulle part où le recevoir, et ces courriers-là basculent
+en message de service plutôt que d'être perdus.
+
+**Ce qui est réellement perdu.** Les boutons de courrier : qb-drugs s'en sert pour donner un
+lieu de livraison, et le Mail de v-phone n'a pas de boutons. `Config.Compat.qbPhoneMailButtons`
+déclenche l'événement chez le destinataire à la place — désactivé par défaut, parce que cette
+charge utile vient d'un client. La feuille accepter/refuser d'une facture devient une
+notification. Les historiques crypto et course que gardait le téléphone d'origine ne sont pas
+repris.
 
 ## Brancher le vôtre
 

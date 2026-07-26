@@ -43,9 +43,13 @@
 
   // A module may also declare its identity explicitly, which is useful when a page is
   // previewed outside the game: <html data-vmod="v-inventory">
+  // The link is NOT created here. v-ui is optional, and on a server without it
+  // `https://cfx-nui-v-ui/theme-vars.css` is a stylesheet request to a resource that does
+  // not exist - one guaranteed failed fetch on every page load, for a palette nobody is
+  // going to push. apply() creates it the moment a theme actually arrives, which is the
+  // only moment it can be useful.
   function boot() {
     if (!document.documentElement.getAttribute('data-vmod')) stampModule();
-    ensureLink();
   }
 
   if (document.readyState === 'loading') {
