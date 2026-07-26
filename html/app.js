@@ -1118,11 +1118,14 @@ async function renderWidgets() {
     calendarWidget();
 }
 
+// Returns markup. It must not touch the DOM itself: it is concatenated into the widget
+// strip above, and a version of this that wrote `innerHTML` from inside was overwritten by
+// the assignment it was part of - leaving the word "undefined" on the home screen where the
+// date should have been.
 function calendarWidget() {
   const now = new Date();
-  const host = byId('widgets');
   const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
-  host.innerHTML += '<div class="widget cal">' +
+  return '<div class="widget cal">' +
       '<div class="wday">' + esc(L('ph.month_' + MONTHS[now.getMonth()])) + '</div>' +
       '<div class="wnum">' + esc(now.getDate()) + '</div>' +
       '<div class="wsub">' + esc(L('ph.day_' + weekday)) + '</div></div>';
@@ -2988,20 +2991,6 @@ function applyTheme() {
 }
 
 let landscape = false;
-let deviceBase = null;
-
-// The phone's own pixel size, measured once with any zoom cleared. Everything below is
-// derived from it, so the fit maths never reads a value the previous call already scaled.
-function deviceBaseSize(d) {
-  if (!deviceBase) {
-    const z = d.style.zoom;
-    d.style.zoom = '';
-    deviceBase = { w: d.offsetWidth || 372, h: d.offsetHeight || 784 };
-    d.style.zoom = z;
-  }
-  return deviceBase;
-}
-
 function applyDevice() {
   const p = state.prefs || {};
   const d = byId('device');
@@ -3009,39 +2998,27 @@ function applyDevice() {
   const viewport = window.visualViewport;
   const vw = (viewport && viewport.width) || window.innerWidth || 1280;
   const vh = (viewport && viewport.height) || window.innerHeight || 720;
-
-  const base = deviceBaseSize(d);
-  const footprintW = landscape ? base.h : base.w;
-  const footprintH = landscape ? base.w : base.h;
+  const rawW = d.offsetWidth || 372;
+  const rawH = d.offsetHeight || 784;
+  const footprintW = landscape ? rawH : rawW;
+  const footprintH = landscape ? rawW : rawH;
   const fit = Math.max(0.10, Math.min(1,
     (vw - 24) / (footprintW * size),
     (vh - 24) / (footprintH * size)));
   const scale = size * fit;
-
-  // ZOOM, not `transform: scale()`. A transform stretches an already-rasterised image, so
-  // every glyph went soft the moment the size slider left 100%. `zoom` changes layout: the
-  // phone is laid out and painted AT the target size, so text stays sharp at any setting.
-  //
-  // The catch is that zoom multiplies used values, including the offsets below - so those
-  // are divided by it to land where they were asked to. Percentages and translate(-50%)
-  // resolve against the already-zoomed box and need no correction.
-  d.style.zoom = String(scale);
-
-  const margX = (vw * 0.03) / scale;
-  const margY = (vh * 0.025) / scale;
-
+  d.style.setProperty('--device-fit', String(fit));
+  d.style.setProperty('--device-scale', String(scale));
   if (landscape) {
     // The phone lies on its side, centred so it cannot swing off-screen.
     d.style.left = '50%'; d.style.right = 'auto'; d.style.top = '50%'; d.style.bottom = 'auto';
     d.style.transformOrigin = 'center center';
-    d.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
+    d.style.transform = 'translate(-50%, -50%) rotate(-90deg) scale(' + scale + ')';
   } else {
-    d.style.top = 'auto';
-    d.style.bottom = margY + 'px';
+    d.style.top = 'auto'; d.style.bottom = '2.5vh';
     d.style.transformOrigin = (p.side === 'left') ? 'left bottom' : 'right bottom';
-    d.style.transform = 'none';
-    d.style.right = (p.side === 'left') ? 'auto' : margX + 'px';
-    d.style.left = (p.side === 'left') ? margX + 'px' : 'auto';
+    d.style.transform = 'scale(' + scale + ')';
+    d.style.right = (p.side === 'left') ? 'auto' : '3vw';
+    d.style.left = (p.side === 'left') ? '3vw' : 'auto';
   }
 }
 function setLandscape(on) { landscape = on === true; applyDevice(); }

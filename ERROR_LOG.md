@@ -5,6 +5,40 @@ one coming back.
 
 ---
 
+## [2026-07-26 05:10] — `undefined` on the home screen, and a black box behind the phone
+
+**Context:** two changes made in the same pass — showing the real date on the calendar widget,
+and switching the size setting from `transform: scale()` to `zoom` to stop text blurring.
+
+**Errors:** the home screen showed the literal word "undefined" where the date belonged, and a
+black rectangle appeared behind the phone whenever an app was opened.
+
+**Root causes, both mine:**
+
+1. `calendarWidget()` wrote `host.innerHTML += ...` and returned nothing, but it was CALLED
+   from inside the expression assigning `host.innerHTML`. So it appended the calendar, then
+   the outer assignment overwrote it, and `undefined` — the function's return value — was
+   concatenated into the markup. A helper that both mutates the DOM and is used as a value
+   is the whole bug in one line.
+2. `zoom` fixed the blur and broke the layout. Chromium's `zoom` has long-standing problems
+   with clipping and positioned descendants, and `.screen` relies on `overflow: hidden` to
+   keep app content inside the handset.
+
+**Fix:** the widget function now returns markup and touches nothing. The size setting is back
+on `transform: scale()`, restored from the commit before the change rather than rewritten,
+because that behaviour was known good.
+
+**Consequence, stated rather than hidden:** the phone is blurry again at any size but 100%.
+That is a cosmetic fault; a black box over the game is not, and I traded the wrong way round.
+A crisp fix has to scale the LAYOUT without `zoom` — driving the internal sizes from one
+custom property — which is a real change, not a one-liner.
+
+**Prevention:** never let a function both write the DOM and return a value used as markup.
+And when a change fixes something cosmetic by switching to a CSS feature with known engine
+bugs, that is not a safe trade — verify the layout it governs, or do not make it.
+
+---
+
 ## [2026-07-26 04:40] — Stripped the blur off every panel and made the phone see-through
 
 **Context:** the user reported the phone felt slow. `html/style.css` opens by forbidding
