@@ -8049,9 +8049,21 @@ document.addEventListener('focusout', (e) => {
 
 // ══ Lua → page ═════════════════════════════════════════════════
 window.addEventListener('message', (e) => {
-  // CEF host messages have no foreign Window source. An iframe must never be able to
-  // impersonate Lua with an { action: ... } payload.
-  if (e.source && e.source !== window) return;
+  // An app iframe must never be able to impersonate Lua with an { action: ... } payload.
+  //
+  // This used to read `if (e.source && e.source !== window) return`, on the assumption that a
+  // CEF host message always arrives with a null source. That assumption does not hold on
+  // every FiveM build, and where it fails the phone silently never opens: the message is
+  // dropped here, nothing throws, and the DOM keeps insisting the page is healthy.
+  //
+  // So test the thing actually being defended against instead. The only foreign windows a
+  // NUI page has are its own app iframes, and they are enumerable - reject those by identity
+  // and let anything else through, whatever the host chose to put in `source`.
+  if (e.source && e.source !== window) {
+    for (let i = 0; i < window.frames.length; i++) {
+      if (e.source === window.frames[i]) return;
+    }
+  }
   const d = e.data || {};
   if (d.__phone) return;                       // SDK traffic, handled above
   if (d.action === 'open') {
@@ -8770,7 +8782,13 @@ window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.action !== 'open' || window.__vphoneOpenSeen) return;
   window.__vphoneOpenSeen = true;
-  console.info('[v-phone] open received');
+  // Report how the host addressed the message. The main handler above rejects foreign
+  // windows, and getting that test wrong drops every message in silence - so record
+  // once what `source` actually is on this build rather than assuming.
+  var src = (e.source === null) ? 'null'
+    : (e.source === window) ? 'window' : 'foreign(' + (typeof e.source) + ')';
+  console.info('[v-phone] open received | e.source=' + src +
+    ' | frames=' + window.frames.length + ' | origin=' + (e.origin || '(empty)'));
 
   // Silent when the phone is on screen, loud when it is not. "The page opened but I see
   // nothing" is otherwise indistinguishable from "the page never opened", and the DOM will

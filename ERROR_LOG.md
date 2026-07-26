@@ -5,6 +5,43 @@ one coming back.
 
 ---
 
+## [2026-07-26 04:05] — The phone opened into nothing: an anti-iframe guard dropped Lua's own message
+
+**Context:** with the grey screen gone and the open callback fixed, the phone went into the
+player's hand and no interface appeared.
+
+**Error:** `html/app.js` opened its message handler with
+`if (e.source && e.source !== window) return;` — a guard so an app iframe cannot impersonate
+Lua. It assumes a CEF host message always arrives with a null source. On this FiveM build it
+does not, so every `SendNUIMessage` was discarded at the first line. Nothing threw, the page
+was healthy, and `#device` simply kept its `hidden` class forever.
+
+**Root cause of missing it for two passes:** the guard fails by RETURNING, not by raising, so
+there was nothing to find in any log. Worse, I reasoned my way past it twice:
+1. I concluded from an empty `cef_console.txt` that no exception had occurred and therefore
+   the handler had run to completion. Wrong twice over — FiveM's cef_console captures
+   `console.*` but not uncaught errors, and a silent early return produces no error anyway.
+2. My own boot trace was a SEPARATE listener with no guard of its own, so it logged
+   "open received" for a message the real handler had already rejected. The instrument
+   disagreed with the thing it was measuring, and I read it as agreement.
+
+What finally settled it was measuring the element rather than the code path: a check 600ms
+after open reported `still has .hidden; display:none; zero size`, which is only reachable if
+`classList.remove('hidden')` was never executed.
+
+**Fix:** test the thing actually being defended against. The only foreign windows a NUI page
+has are its own app iframes, and `window.frames` enumerates them, so reject by identity
+against that list and accept anything else whatever the host puts in `source`. Verified both
+directions in a real browser: a host-style post reveals the device, and a message from a live
+child iframe is still rejected with the phone left hidden and its number unchanged.
+
+**Prevention:** a guard that drops input silently is invisible to logs by construction — when
+a message-driven feature does nothing, suspect the filter before the handler. And an
+instrument must sit on the same side of the guard as the code it reports on, or it measures
+something else and lends false confidence.
+
+---
+
 ## [2026-07-26 03:45] — `prefsOf` called 140 lines before it was declared
 
 **Context:** with the grey screen finally gone, the phone could be opened for the first time.
