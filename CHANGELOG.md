@@ -4,6 +4,36 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.10] - 2026-07-26
+
+### Added (English first)
+
+- **Drag an app to the right edge to make a new home screen page.** A second page used to require the first one to be FULL, because pages were a flat list sliced by capacity: nothing in the model could mean "start a page here", so a player who wanted two tidy pages of six had no way to ask. A `break` item is that something. Hold at the right edge of the last page mid-drag and the page appears with the app in hand as its first icon. A break that would leave an unreachable empty page - first in the list, or two in a row - is dropped, on the page AND on the server, so nothing can accumulate.
+
+### Fixed
+
+- **Uninstalling an app from the store silently did nothing.** `local keep = found.optional and want or (not want)` - and `a and b or c` returns `c` whenever `b` is false, however true `a` is. Removing a download gives `optional = true, want = false`, so `true and false` is false and `false or (not false)` is **true**: the app was written straight back into the installed list every single time. Written as a branch now, because the idiom cannot express this and pretending it could is how it went unnoticed. Found by executing the callback rather than reading it.
+- **An app still could not be taken out of a folder**, because 1.2.9's fix was unreachable code. `paintPages` returns early on any tap while arrange mode is on, so a folder could not be OPENED in the one mode where its contents can be changed - the badges were there and nobody could ever see them. A tap on a folder (as opposed to a drag) now opens it while arranging, and the drag it interrupted is put back rather than committed, since nothing moved.
+- **A page break was dropped on the next reload.** `cleanLayout` validated every item as an app or a folder and threw away anything else, so a page made by dragging to the edge survived until the layout was read back and then vanished. Both halves normalise breaks the same way now.
+- **`/phonemusic` refused the person trying to use it.** It reused the `v-phone:diag` gate, which insists on debug tracing being on - right for a tool that prints the whole boot picture, wrong for one somebody typed on purpose to explain a silence. It asks the staff ace alone now.
+- **Photos did not survive a restart.** `SetMetadata` fires its query and returns, which is right for anything the cache can answer for until the next tick and wrong for something a player would notice losing: an un-awaited write dies in the queue if the process tears down first. The player saw the photo - the cache had it - and the row never landed. Every photo write is waited on now: a new shot, an edit, and one accepted over FruitDrop. The same failure mode is already documented in `kv.lua` for battery levels; photos should have been on the same footing from the start.
+- **A dropped app could land several positions from where the finger let go**, once breaks existed: the drop index was `page * arrPerPage`, which assumes pages are sliced by capacity alone. Both indices are walked now rather than computed.
+
+### Ajouts (miroir français)
+
+- **Faites glisser une application vers le bord droit pour créer une nouvelle page d'accueil.** Une deuxième page exigeait auparavant que la première soit PLEINE, parce que les pages étaient une liste plate découpée par capacité : rien dans le modèle ne pouvait signifier « nouvelle page ici », donc un joueur voulant deux pages nettes de six n'avait aucun moyen de le demander. Un élément `break` est ce quelque chose. Maintenez au bord droit de la dernière page pendant un déplacement et la page apparaît avec l'application en main comme première icône. Un saut qui laisserait une page vide inaccessible — en tête de liste, ou deux d'affilée — est écarté, dans la page ET sur le serveur, pour que rien ne s'accumule.
+
+### Correctifs
+
+- **Désinstaller une application depuis le store ne faisait rien, en silence.** `local keep = found.optional and want or (not want)` — et `a and b or c` renvoie `c` dès que `b` est faux, aussi vrai que soit `a`. Retirer un téléchargement donne `optional = true, want = false` : `true and false` vaut faux, et `false or (not false)` vaut **vrai**. L'application était donc réécrite dans la liste des installées à chaque fois. Écrit en branche désormais, parce que l'idiome ne peut pas exprimer cela et que prétendre le contraire est la raison pour laquelle c'est passé inaperçu. Trouvé en exécutant le callback, pas en le relisant.
+- **Une application ne pouvait toujours pas sortir d'un dossier**, parce que le correctif de la 1.2.9 était du code inatteignable. `paintPages` retourne immédiatement sur tout tap en mode réorganisation : un dossier ne pouvait donc pas être OUVERT dans le seul mode où son contenu peut changer — les badges existaient et personne ne pouvait les voir. Un tap sur un dossier (par opposition à un glissement) l'ouvre maintenant pendant la réorganisation, et le déplacement interrompu est remis en place plutôt que validé, puisque rien n'a bougé.
+- **Un saut de page était supprimé au rechargement suivant.** `cleanLayout` validait chaque élément comme application ou dossier et jetait le reste : une page créée en glissant vers le bord survivait jusqu'à la relecture de la disposition, puis disparaissait. Les deux moitiés normalisent maintenant les sauts de la même façon.
+- **`/phonemusic` refusait la personne qui essayait de s'en servir.** Elle réutilisait la porte de `v-phone:diag`, qui exige que le traçage debug soit actif — correct pour un outil qui imprime tout le tableau de démarrage, faux pour une commande tapée exprès afin d'expliquer un silence. Elle ne demande plus que l'ace staff.
+- **Les photos ne survivaient pas à un redémarrage.** `SetMetadata` lance sa requête et rend la main, ce qui est correct pour tout ce que le cache peut assumer jusqu'au tick suivant et faux pour ce dont un joueur remarquerait la perte : une écriture non attendue meurt dans la file si le processus s'arrête avant. Le joueur voyait la photo — le cache l'avait — et la ligne n'a jamais atterri. Toute écriture de photo est désormais attendue : une nouvelle prise, une modification, et une photo acceptée par FruitDrop. Le même mode de défaillance est déjà documenté dans `kv.lua` pour les niveaux de batterie ; les photos auraient dû être traitées pareil dès le début.
+- **Une application déposée pouvait atterrir à plusieurs positions de là où le doigt l'avait lâchée**, dès que les sauts existaient : l'index de dépôt valait `page * arrPerPage`, ce qui suppose des pages découpées par la seule capacité. Les deux index sont maintenant parcourus au lieu d'être calculés.
+
+---
+
 ## [1.2.9] - 2026-07-26
 
 ### Added (English first)

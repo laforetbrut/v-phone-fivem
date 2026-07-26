@@ -523,9 +523,11 @@ end
 --- installed, no error, no music" gave nobody anything to work with: every one of the answers
 --- below is a thing that silently produces silence, and this prints all of them at once.
 RegisterCommand('phonemusic', function()
-    V.Request('v-phone:diag', function(res)
+    -- The ACE, not the debug flag: this command exists to explain a silence, and refusing it
+    -- because tracing is off is refusing the one person trying to diagnose the problem.
+    V.Request('v-phone:staff', function(res)
         if not res or res.error then
-            print('[v-phone] music: staff only (ace vphone.admin), with debug enabled.')
+            print('[v-phone] music: staff only (ace vphone.admin).')
             return
         end
 

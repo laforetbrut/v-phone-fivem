@@ -182,6 +182,15 @@ local function wrap(src, citizenid, name, job)
     p.lang = GetConvar('phone_locale', LOCALE_FALLBACK or 'fr')
     function p.GetMetadata(key) return Bridge.KvGet(citizenid, key) end
     function p.SetMetadata(key, value) return Bridge.KvSet(citizenid, key, value) end
+
+    --- The same write, WAITED ON.
+    ---
+    --- `SetMetadata` fires the query and returns, which is right for anything the cache can
+    --- answer for until the next tick. It is wrong for something a player would notice losing:
+    --- an un-awaited query dies in the queue if the process tears down first, which is exactly
+    --- how a photo taken a few seconds before a restart was gone afterwards. The player saw it
+    --- in their gallery - the cache had it - and the row never landed.
+    function p.SetMetadataSync(key, value) return Bridge.KvSetSync(citizenid, key, value) end
     return p
 end
 

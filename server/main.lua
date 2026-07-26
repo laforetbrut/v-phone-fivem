@@ -606,6 +606,17 @@ local function cleanLayout(value)
                         apps = apps,
                     }
                 end
+            elseif raw.t == 'break' then
+                -- An explicit end of page. Without this branch the `else` below asked for an
+                -- app id, found none, and dropped it - so every page a player made by dragging
+                -- to the right edge survived until the next reload and then vanished.
+                --
+                -- Normalised here as well as in the page: never first, never twice in a row.
+                -- Either would leave an empty page nobody can get past or remove.
+                local last = items[#items]
+                if #items > 0 and not (last and last.t == 'break') then
+                    items[#items + 1] = { t = 'break' }
+                end
             else
                 local id = cleanAppId(raw.id)
                 if id then items[#items + 1] = { t = 'app', id = id } end
@@ -2527,7 +2538,8 @@ V.Callback('v-phone:photo', function(src, resolve, data)
             if sh.album == from then sh.album = to changed = true end
         end
     end
-    if changed then p.SetMetadata('photos', shots) end
+    -- Waited on: an album, a filter or a crop is an edit the player made on purpose.
+    if changed then p.SetMetadataSync('photos', shots) end
 
     -- The albums that actually exist, worked out from the photos rather than kept in a
     -- second list that could disagree with them.
@@ -2823,7 +2835,8 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
         if type(shots) ~= 'table' then shots = {} end
         table.insert(shots, 1, { url = o.payload.url, album = '', filter = '' })
         while #shots > 60 do table.remove(shots) end
-        rp.SetMetadata('photos', shots)
+        -- Waited on: a photo just accepted over FruitDrop.
+        rp.SetMetadataSync('photos', shots)
     else
         local nm = o.payload.name ~= '' and o.payload.name or o.payload.number
         MySQL.insert.await(
@@ -2896,7 +2909,21 @@ V.Callback('v-phone:install', function(src, resolve, data)
     -- Two lists because the two kinds start from opposite defaults: a stock app is
     -- recorded when it LEAVES, an optional one when it ARRIVES.
     local key = found.optional and 'added' or 'removed'
-    local keep = found.optional and want or (not want)
+
+    -- **`a and b or c` is wrong when `b` can be false**, and that is exactly the shape this was:
+    --
+    --     local keep = found.optional and want or (not want)
+    --
+    -- Uninstalling a download gives `optional = true, want = false`, so `true and false` is
+    -- false, and `false or (not false)` is TRUE - the app was written back into the added list
+    -- and the uninstall silently did nothing at all. Every time. Written as a branch, because
+    -- the idiom cannot express this and pretending otherwise is how it went unnoticed.
+    local keep
+    if found.optional then
+        keep = want            -- a download is listed while it is installed
+    else
+        keep = not want        -- a shipped app is listed while it is REMOVED
+    end
 
     local out = {}
     for _, rid in ipairs(prefs[key] or {}) do
@@ -3748,6 +3775,22 @@ exports('IsOnCall',      function(src) return CallOf[src] ~= nil end)
 -- the only two questions that matter - did the server file that registers this callback
 -- load, and does the provider behind it return anything - and it lives in main.lua on
 -- purpose, because a file that failed to load cannot report that it failed to load.
+--- Is this source staff? The ace alone, with no debug requirement.
+---
+--- `v-phone:diag` also insists on debug being on, which is right for a tool that prints the
+--- whole boot picture and wrong for one somebody typed on purpose: `/phonemusic` exists to
+--- explain a silence, and it answered "staff only, with debug enabled" to the person trying to
+--- diagnose it.
+local function isStaff(src)
+    if src == 0 then return true end
+    local ace = (Config.Admin and Config.Admin.ace) or 'vphone.admin'
+    return IsPlayerAceAllowed(src, ace) or IsPlayerAceAllowed(src, 'qbadmin.menu')
+end
+
+V.Callback('v-phone:staff', function(src, resolve)
+    resolve(isStaff(src) and { ok = true } or { error = 'forbidden' })
+end)
+
 V.Callback('v-phone:diag', function(src, resolve)
     -- A diagnostic tool, not a player feature: it names the framework, the resources and
     -- what each provider returns, which is operator information. Off unless the operator

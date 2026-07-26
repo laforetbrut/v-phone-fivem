@@ -835,8 +835,27 @@ function paintPages(items) {
   byId('pages').style.setProperty('--gcols', String(gCols));
   byId('pages').style.setProperty('--grows', String(gRows));
   arrPerPage = gCols * gRows;
+
+  // Pages end for two reasons: the page is full, or the player said so.
+  //
+  // A page used to end ONLY when it was full, because pages were a flat list sliced by
+  // capacity. That meant a second page could not exist until the first held sixteen apps -
+  // there was nothing in the model that could mean "start a new page here". A `break` item is
+  // that something, and it is the player's own arrangement rather than a consequence of how
+  // many apps they happen to have installed.
   const pages = [];
-  for (let i = 0; i < items.length; i += arrPerPage) pages.push(items.slice(i, i + arrPerPage));
+  let current = [];
+  items.forEach((it) => {
+    if (it && it.t === 'break') {
+      // An empty page is a real thing to want: somewhere to drop the next app.
+      pages.push(current);
+      current = [];
+      return;
+    }
+    if (current.length >= arrPerPage) { pages.push(current); current = []; }
+    current.push(it);
+  });
+  pages.push(current);
   if (!pages.length) pages.push([]);
   page = Math.max(0, Math.min(pages.length - 1, page));
 
@@ -847,6 +866,7 @@ function paintPages(items) {
                                : tileHTML(appById(it.id) || { id: it.id, icon: 'dot', label: it.id }, i);
     }).join('') + '</div>').join('') + '</div>';
   // data-idx is the position in `items`, counting only real tiles, so a drop can read it.
+  // Breaks are not tiles and are not counted - `itemIndexOfTile` maps back the other way.
   let k = -1;
   [...byId('pages').querySelectorAll('.tile')].forEach((t) => {
     if (t.classList.contains('gap')) return;
@@ -886,6 +906,14 @@ function layoutItems() {
 
   (Array.isArray(saved) ? saved : []).forEach((it) => {
     if (!it) return;
+    if (it.t === 'break') {
+      // Kept, but never at the very start and never twice in a row: either would make a page
+      // that holds nothing and can never be reached past, and the player would have no way to
+      // get rid of it. A break at the END is allowed - that IS the empty new page.
+      const last = items[items.length - 1];
+      if (items.length && !(last && last.t === 'break')) items.push({ t: 'break' });
+      return;
+    }
     if (it.t === 'folder') {
       const inside = (it.apps || []).filter((id) => byId2[id] && !seen.has(id));
       inside.forEach((id) => seen.add(id));
@@ -1017,7 +1045,15 @@ function moveGhost(e) {
   g.style.left = p.x + 'px'; g.style.top = p.y + 'px';
 }
 
+// Where the drag started, so a tap can be told from a drag. A tap on a FOLDER in arrange mode
+// has to open it: that is the only way to reach the badges that take an app back out, and
+// without this the 1.2.9 "remove from folder" work was unreachable code - `paintPages` returns
+// early on any tap while editing, so a folder could not be opened at all in the one mode where
+// its contents can be changed.
+let arrDownAt = null;
+
 function beginDrag(tile, e) {
+  arrDownAt = { x: e.clientX, y: e.clientY };
   const items = layoutItems();
   const idx = Number(tile.dataset.idx);
   if (Number.isNaN(idx)) return;
@@ -1032,6 +1068,34 @@ function beginDrag(tile, e) {
   g.classList.add('on');
   moveGhost(e);
   paintArrange();
+}
+
+// The position in `arr.items` of a painted tile.
+//
+// `data-idx` is a count of real tiles, which is what a drop reads. `arr.items` also holds
+// `break` entries, so the same tile has two different indices depending on which list you mean -
+// and mixing them up moves an app to the wrong place rather than failing visibly.
+function itemsIndexOfTile(tile) {
+  const list = (arr && arr.items) || layoutItems();
+  if (!tile) {
+    // No tiles on this page at all: it is an empty page, so the insertion point is just past
+    // the break that made it.
+    let seen = 0;
+    for (let i = 0; i < list.length; i += 1) {
+      if (list[i] && list[i].t === 'break') seen += 1;
+      if (seen > page - 1 && page > 0) return i + 1;
+    }
+    return list.length;
+  }
+  const want = Number(tile.dataset.idx);
+  if (!Number.isFinite(want)) return 0;
+  let tiles = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    if (list[i] && list[i].t === 'break') continue;
+    if (tiles === want) return i;
+    tiles += 1;
+  }
+  return list.length;
 }
 
 function paintArrange() {
@@ -1056,13 +1120,33 @@ function onDragMove(e) {
   if (!cur) return;
 
   // Edge of the screen, held: flip to the next page, so a drag can cross pages.
+  //
+  // On the LAST page, the right edge makes a NEW one. A second page used to require sixteen
+  // apps on the first, because pages were a flat list sliced by capacity and nothing could mean
+  // "start a page here" - so a player who wanted two tidy pages of six had no way to ask.
   const p = ptOf(e), w = byId('screen').clientWidth;
-  const edge = (p.x < 24 && page > 0) ? -1 : (p.x > w - 24 && page < pages.length - 1) ? 1 : 0;
+  const atLast = page >= pages.length - 1;
+  const edge = (p.x < 24 && page > 0) ? -1
+    : (p.x > w - 24) ? 1
+    : 0;
   if (edge && !arr.edgeTimer) {
-    arr.edgeTimer = setTimeout(() => { arr.edgeTimer = null; flipPage(edge); }, 420);
+    arr.edgeTimer = setTimeout(() => {
+      arr.edgeTimer = null;
+      if (edge === 1 && atLast) newPageDuringDrag();
+      else flipPage(edge);
+    }, 420);
   } else if (!edge && arr.edgeTimer) { clearTimeout(arr.edgeTimer); arr.edgeTimer = null; }
 
-  const base = page * arrPerPage;
+  // **Not `page * arrPerPage` any more.**
+  //
+  // That arithmetic assumed pages were a flat list sliced by capacity, so the first item on page
+  // n was always at n * perPage. A `break` breaks that: a page can hold six apps and end, and
+  // then every index past it is wrong - which would land a dropped app several positions away
+  // from where the finger let go.
+  //
+  // So the mapping is walked instead of computed. `data-idx` counts real TILES; `arr.items`
+  // holds tiles and breaks, and the two spaces differ by however many breaks came first.
+  const base = itemsIndexOfTile(cur.querySelector('.tile'));
 
   // Nearest real tile, worked out first: if the finger is deep inside one, that is a
   // folder gesture and the grid must HOLD STILL - the reorder gap only opens in the seams
@@ -1090,21 +1174,46 @@ function onDragMove(e) {
 
   // Seam: a plain reorder. Drop before the first tile the pointer is above-or-left of.
   if (arr.hoverEl) { arr.hoverEl = null; clearFolder(); }
-  let ins = base + tiles.length;
+  // Past the last tile on this page by default, then walked back to the first seam the pointer
+  // is above-or-left of. Each candidate asks the tile for ITS own items index rather than
+  // counting from `base`, so a break earlier in the list cannot shift the answer.
+  let ins = tiles.length
+    ? itemsIndexOfTile(tiles[tiles.length - 1]) + 1
+    : base;
   for (let i = 0; i < tiles.length; i++) {
     const r = tiles[i].getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    if (e.clientY < cy - 6 || (Math.abs(e.clientY - cy) <= r.height / 2 && e.clientX < cx)) { ins = base + i; break; }
+    if (e.clientY < cy - 6 || (Math.abs(e.clientY - cy) <= r.height / 2 && e.clientX < cx)) {
+      ins = itemsIndexOfTile(tiles[i]);
+      break;
+    }
   }
   if (ins !== arr.insert) { arr.insert = ins; paintArrange(); }
 }
 
-function onDragEnd() {
+function onDragEnd(e) {
   if (!arr) return;
   const a = arr;
   if (a.edgeTimer) clearTimeout(a.edgeTimer);
   if (a.folderTimer) clearTimeout(a.folderTimer);
   byId('dragghost').classList.remove('on');
+
+  // A tap, not a drag, and on a folder: open it rather than dropping it back where it was.
+  // The layout is put back untouched, because nothing was actually moved.
+  const moved = (e && arrDownAt)
+    ? Math.hypot(e.clientX - arrDownAt.x, e.clientY - arrDownAt.y) : 99;
+  arrDownAt = null;
+  if (moved < 8 && a.item && a.item.t === 'folder') {
+    arr = null;
+    const items = layoutItems();
+    paintPages(items);
+    byId('pages').classList.toggle('jiggle', editing);
+    // Its index in the restored layout, which is where it was before the drag lifted it out.
+    const at = items.findIndex((it) => it && it.t === 'folder' && it.name === a.item.name
+      && (it.apps || []).join(',') === (a.item.apps || []).join(','));
+    if (at >= 0) openFolder(at);
+    return;
+  }
 
   if (a.folderIdx != null && a.item.t === 'app') {
     const tgt = a.items[a.folderIdx];
@@ -1152,15 +1261,39 @@ function initArrange() {
     if (arr) { e.preventDefault(); onDragMove(e); }
   }, { passive: false });
 
-  window.addEventListener('pointerup', () => {
+  window.addEventListener('pointerup', (e) => {
     if (hold) { clearTimeout(hold); hold = null; }
-    if (arr) { onDragEnd(); downTile = null; return; }
+    if (arr) { onDragEnd(e); downTile = null; return; }
     // A tap on empty space in arrange mode leaves it, the way iOS does.
     if (editing && !downTile) exitArrange();
     downTile = null;
   });
 
   byId('arrangedone').addEventListener('click', exitArrange);
+}
+
+// A new page, made mid-drag by holding at the right edge of the last one.
+//
+// The break goes at the END of the working list, so the page being built is empty and the tile
+// in hand is the first thing on it. `layoutItems` drops a break that would leave an unreachable
+// empty page, so letting go without dropping anything here cannot leave a stray page behind.
+function newPageDuringDrag() {
+  if (!arr) return;
+  const last = arr.items[arr.items.length - 1];
+  if (last && last.t === 'break') {
+    // Already on a fresh empty page: nothing to add, just go there.
+    flipPage(1);
+    return;
+  }
+  arr.items.push({ t: 'break' });
+  arr.insert = arr.items.length;
+  paintArrange();
+  // paintArrange repaints from `arr.items`, so the new page exists by now.
+  page = byId('pages').querySelectorAll('.page').length - 1;
+  slideTrack();
+  const n = byId('pages').querySelectorAll('.page').length;
+  byId('dots').innerHTML = [...Array(n)].map((_, i) => `<i class="${i === page ? 'on' : ''}"></i>`).join('');
+  ui('folder');
 }
 
 function flipPage(dir) {

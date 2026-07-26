@@ -162,7 +162,9 @@ V.Callback('v-phone:media:photo', function(src, resolve)
         if type(shots) ~= 'table' then shots = {} end
         table.insert(shots, 1, { url = url, album = '', filter = '' })
         while #shots > 60 do table.remove(shots) end
-        p.SetMetadata('photos', shots)
+        -- Waited on: a photo is data the player just made, and a fire-and-forget write
+        -- is lost if the server goes down before the query lands.
+        p.SetMetadataSync('photos', shots)
 
         resolve({ ok = true, url = url, stored = true })
     end, 'blob')
