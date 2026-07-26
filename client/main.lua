@@ -805,31 +805,56 @@ local SOCIAL_OPS = {
 -- The page owns the keyboard while the phone is open, so it is the only side that sees Alt
 -- go down. It says so here; the guard thread notices the release, because by then focus has
 -- been dropped and the control reads normally again.
--- Hold Alt: the mouse goes back to the camera, the page keeps the keyboard.
+-- Hold Alt: the mouse goes back to the camera.
 --
--- `SetNuiFocus(true, false)` is the whole trick - focus without a cursor. Dropping focus
--- entirely was the first attempt and it lasted one frame: with no keyboard the page could
--- not tell Lua the key had come back up, and Lua could not read it either, because the game
--- never sees a key the browser is holding. So it restored focus immediately, every time.
+-- Two attempts failed before this one, both for the same reason - each assumed a side could
+-- see something it could not.
 --
--- Keeping the keyboard means the page reports the release itself, which is the only side
--- that actually knows.
-RegisterNUICallback('freelook', function(data, cb)
-    local on = not (data and data.on == false)
-    if isOpen and on ~= freeLook then
-        freeLook = on
-        if on then
-            SetNuiFocus(true, false)
-        else
-            SetNuiFocus(true, true)
-        end
+--   1. Read the press in Lua. It never fired: while the phone holds focus, the browser has
+--      the keyboard and the control never registers.
+--   2. Drop focus and watch control 19 for the release. It lasted one frame: the game had
+--      only just been handed input and had not yet registered the key as down, so the very
+--      next frame read it as released.
+--
+-- So: drop focus completely, which is the only state that actually returns the camera, then
+-- WAIT before believing anything the control says. Once the game has had a few frames it
+-- reports Alt correctly, and the release is real.
+local function endFreeLook()
+    if not freeLook then return end
+    freeLook = false
+    if isOpen then
+        SetNuiFocus(true, true)
         SetNuiFocusKeepInput(true)
-        SendNUIMessage({ action = 'freelook', on = on })
-        if GetConvar('phone_debug', '') == 'true' then
-            print('[v-phone] free look ' .. (on and 'on' or 'off'))
-        end
+        SendNUIMessage({ action = 'freelook', on = false })
     end
+    if GetConvar('phone_debug', '') == 'true' then print('[v-phone] free look off') end
+end
+
+RegisterNUICallback('freelook', function(data, cb)
     cb({ ok = true })
+    if data and data.on == false then endFreeLook() return end
+    if not isOpen or freeLook then return end
+
+    freeLook = true
+    SetNuiFocusKeepInput(false)
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = 'freelook', on = true })
+    if GetConvar('phone_debug', '') == 'true' then print('[v-phone] free look on') end
+
+    CreateThread(function()
+        -- Give the game time to see the key the browser was holding a moment ago. Below
+        -- roughly 150ms it reports Alt as up and free look ends before it began.
+        local settle = GetGameTimer() + 250
+        while freeLook and isOpen and GetGameTimer() < settle do Wait(0) end
+        -- A player who taps Alt rather than holds it gets a few seconds of camera and then
+        -- the phone back, instead of a cursor that never returns.
+        local giveUp = GetGameTimer() + 8000
+        while freeLook and isOpen do
+            if not IsControlPressed(0, 19) or GetGameTimer() > giveUp then break end
+            Wait(0)
+        end
+        endFreeLook()
+    end)
 end)
 
 RegisterNUICallback('social', function(data, cb)

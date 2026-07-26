@@ -8106,14 +8106,13 @@ byId('qtorch').addEventListener('click', toggleTorch);
 // Hold Alt for the camera. The page keeps the keyboard throughout - Lua drops only the
 // cursor - so it is the page that sees the key come back up and says so. Nothing else can:
 // the game cannot read a key the browser is holding.
+// The press only. Lua owns the release, and the page must not guess at it: dropping NUI
+// focus fires `blur` on this document, so a blur handler here would cancel free look on the
+// very frame it started. keyup never arrives either, for the same reason - the keyboard is
+// gone by then. One edge, reported by the only side that can see it.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Alt' && !e.repeat) { e.preventDefault(); post('freelook', { on: true }); }
 });
-document.addEventListener('keyup', (e) => {
-  if (e.key === 'Alt') { e.preventDefault(); post('freelook', { on: false }); }
-});
-// Losing focus with Alt down would otherwise strand the cursor off.
-window.addEventListener('blur', () => post('freelook', { on: false }));
 
 // What is painting outside the handset. Only with `set phone_debug true`.
 //

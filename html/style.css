@@ -1730,6 +1730,14 @@ input { font: inherit; }
     inset 0 0 0 .5px rgba(255, 255, 255, .08),
     inset 0 0 0 1.5px rgba(0, 0, 0, .9);
   isolation: isolate;
+  /* `overflow: hidden` alone does not hold here. Opening an app puts
+     `filter: blur(18px) brightness(.72)` and `transform: scale(1.08)` on the wallpaper
+     (.screen.app-open .wallpaper), and a filtered element gets its own composited surface
+     which Chromium does not reliably clip to a rounded overflow ancestor. The wallpaper is
+     scaled BEYOND the screen, so what escaped was a dark blurred rectangle sitting behind
+     the handset - and only ever with an app open, which is exactly how it was reported.
+     `contain: paint` makes the clip a promise rather than a hope. */
+  contain: paint;
 }
 
 .wallpaper {
