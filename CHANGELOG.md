@@ -4,6 +4,28 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.3.2] - 2026-07-26
+
+### Fixed (English first)
+
+- **A clock value was printed beside the author of every social post.** `84090000` next to a name is eight digits sliced out of a millisecond epoch, because **oxmysql hands every DATETIME and TIMESTAMP column back as a number**, not as the `2026-07-26 14:21:33` string the SQL suggests - its type cast says so outright: `case "DATETIME": ... return new Date(value).getTime()`. Anything treating one as a string prints the raw value.
+- **It was the same bug in seven other places.** This had already been found once, in the mail list, and fixed there and only there - so the same digits were sitting in the calls list, on notes, on voicemail, in Cipher, on a bank statement line and in the forensics terminal. There is one helper now and every screen that shows a time goes through it. It accepts a millisecond epoch, a ten-digit second epoch and a SQL datetime string, because which one arrives depends on the driver and on the column - and a banking script's own wording is passed through untouched rather than mangled.
+
+- **The camera's upload could hang for ten seconds and then complain in the console.** `v-phone:media:photo` waited on screencapture's callback with a fifteen-second guard against a request that gives up at ten - so the guard could only ever fire *after* the caller had already printed "no answer from the server", the one line it exists to prevent. The guard is under the caller's patience now, the export call is guarded so a build whose signature moved answers instead of vanishing, and a server without screencapture is told so at once rather than waited on.
+
+### Added
+
+- **`Config.Clock.timezone`.** The clock read the player's own machine, so somebody connecting from another country saw their time rather than the city's - two characters standing next to each other disagreed about what time it was. Naming an IANA zone gives everybody the same clock; empty keeps the old behaviour, and a name the browser does not recognise falls back to the machine rather than stopping the clock. Ships as `Europe/Paris`.
+
+### Correctifs / Ajouts (miroir francais)
+
+- **Une valeur d'horloge s'affichait a cote de l'auteur de chaque publication.** `84090000` a cote d'un nom, ce sont huit chiffres decoupes dans un epoch en millisecondes : **oxmysql renvoie toute colonne DATETIME et TIMESTAMP sous forme de nombre**, pas sous la forme `2026-07-26 14:21:33` que le SQL laisse supposer.
+- **L'envoi de l'appareil photo pouvait attendre dix secondes puis se plaindre dans la console.** Le garde-fou du serveur etait a quinze secondes contre une requete qui abandonne a dix : il ne pouvait se declencher qu'apres le message qu'il est cense eviter. Il est desormais sous la patience de l'appelant, l'appel a l'export est protege, et un serveur sans screencapture recoit une reponse immediate.
+- **`Config.Clock.timezone`** : l'horloge lisait la machine du joueur, donc quelqu'un qui se connecte d'un autre pays voyait son heure et non celle de la ville. Un fuseau IANA donne la meme heure a tout le monde. Livre avec `Europe/Paris`.
+- **C'etait le meme bug a sept autres endroits.** Il avait deja ete trouve une fois, dans la liste des mails, et corrige la et seulement la - les memes chiffres etaient donc dans le journal d'appels, sur les notes, sur le repondeur, dans Cipher, sur une ligne de releve bancaire et dans le terminal scientifique. Il y a desormais un seul helper et tous les ecrans qui affichent une heure passent par lui.
+
+---
+
 ## [1.3.1] - 2026-07-26
 
 ### Fixed (English first)

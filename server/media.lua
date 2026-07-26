@@ -127,6 +127,10 @@ end
 V.Callback('v-phone:media:photo', function(src, resolve)
     if not mediaOn() then resolve({ error = 'off' }) return end
     if apiKey() == '' and MEDIA.provider == 'fivemanage' then resolve({ error = 'nokey' }) return end
+    -- The resource that does the capturing. Without it there is no callback to wait for, and
+    -- waiting anyway is what put "no answer from the server after 10s" in the console: an
+    -- absent dependency should be an answer, not a silence.
+    if GetResourceState('screencapture') ~= 'started' then resolve({ error = 'noupload' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
 
@@ -139,6 +143,10 @@ V.Callback('v-phone:media:photo', function(src, resolve)
     -- dataType to 'base64', and its `createRequestBody` only builds a FormData - the only
     -- path that sets a multipart Content-Type - when dataType is 'blob'. On 'base64' it posts
     -- the raw string with nothing but our own headers, which Fivemanage rightly rejects.
+    -- Guarded. An export that throws - a screencapture build whose signature moved, a client
+    -- that dropped mid-capture - never reaches its callback, and an unguarded call takes the
+    -- error with it, leaving the caller waiting on a request that can no longer be answered.
+    local started = pcall(function()
     exports['screencapture']:remoteUpload(src, MEDIA.endpoint, {
         encoding = MEDIA.imageEncoding or 'webp',
         headers = uploadHeaders(),
@@ -168,9 +176,19 @@ V.Callback('v-phone:media:photo', function(src, resolve)
 
         resolve({ ok = true, url = url, stored = true })
     end, 'blob')
+    end)
+
+    if not started then
+        if not done then done = true; resolve({ error = 'noupload' }) end
+        return
+    end
 
     -- A capture that never calls back must not hang the caller for ever.
-    SetTimeout(15000, function()
+    --
+    -- **Under the caller's own patience, not over it.** This was fifteen seconds against a
+    -- request that gives up at ten, so the guard could only ever fire after the client had
+    -- already printed "no answer from the server" - the one line it exists to prevent.
+    SetTimeout(8000, function()
         if not done then done = true; resolve({ error = 'timeout' }) end
     end)
 end)

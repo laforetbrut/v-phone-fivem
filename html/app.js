@@ -156,15 +156,45 @@ const money = (n) => {
 };
 
 // ══ Clock ══════════════════════════════════════════════════════
+// Real time, in the zone the server names.
+//
+// It used to read the player's own machine, which shows somebody connecting from another
+// country their time rather than the city's - two players standing next to each other saw
+// different clocks. `Config.Clock.timezone` names one zone for everybody; empty keeps the old
+// behaviour. An unknown zone name makes `Intl` throw, so it is tried once and remembered.
+let clockZoneChecked = '';
+let clockZoneOk = false;
+
+function clockZone() {
+  const zone = String(state.clockZone || '').trim();
+  if (!zone) return '';
+  if (zone !== clockZoneChecked) {
+    clockZoneChecked = zone;
+    try {
+      new Intl.DateTimeFormat('en-GB', { timeZone: zone }).format(new Date());
+      clockZoneOk = true;
+    } catch {
+      // A typo in the config must not stop the clock. It falls back to the machine.
+      clockZoneOk = false;
+    }
+  }
+  return clockZoneOk ? zone : '';
+}
+
 function tick() {
   const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  byId('clock').textContent = `${hh}:${mm}`;
-  byId('lockclock').textContent = `${hh}:${mm}`;
+  const zone = clockZone();
+  const opts = zone ? { timeZone: zone } : {};
+  // `en-GB` for the time, so it is 24-hour whatever the player's own locale prefers - the
+  // status bar of this phone has always shown 24-hour.
+  const hhmm = new Intl.DateTimeFormat('en-GB',
+    Object.assign({ hour: '2-digit', minute: '2-digit', hour12: false }, opts)).format(d);
+  byId('clock').textContent = hhmm;
+  byId('lockclock').textContent = hhmm;
   const ccClock = byId('ccclock');
-  if (ccClock) ccClock.textContent = `${hh}:${mm}`;
-  byId('lockdate').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  if (ccClock) ccClock.textContent = hhmm;
+  byId('lockdate').textContent = d.toLocaleDateString(undefined,
+    Object.assign({ weekday: 'long', day: 'numeric', month: 'long' }, opts));
 }
 setInterval(tick, 10000);
 
@@ -2042,7 +2072,7 @@ RENDER.phone = () => {
           icon: dir === 'out' ? 'callout' : (missed ? 'callmissed' : 'callin'),
           tint: missed ? '#FF453A' : '#34C759',
           title: name,
-          subtitle: (L('ph.call_' + dir) + '  ') + String(c.at || '').slice(5, 16),
+          subtitle: (L('ph.call_' + dir) + '  ') + shortWhen(c.at),
           value: maskNum(c.number), chevron: true,
           data: { n: c.number || '', cid: c.id || '' },
         });
@@ -2178,7 +2208,7 @@ RENDER.notes = async () => {
   if (!list.length) { body(UI.empty(L('ph.no_notes'), 'note')); return; }
   body(UI.group(list.map((n) => UI.row({
     icon: 'note', tint: '#FFCC00', title: n.title || L('ph.untitled'),
-    subtitle: String(n.at || '').slice(5, 16), chevron: true, data: { id: n.id },
+    subtitle: shortWhen(n.at), chevron: true, data: { id: n.id },
   }))));
   rows('.row', (el) => el.addEventListener('click', () => {
     const n = list.find((x) => String(x.id) === el.dataset.id);
@@ -2210,29 +2240,40 @@ function noteEdit(n) {
   });
 }
 
-// When a mail arrived, as a person would write it.
+// A timestamp out of the database, as milliseconds. NaN when there is nothing usable.
 //
-// The column is a MySQL TIMESTAMP, and oxmysql hands one back as a millisecond epoch NUMBER -
-// so `String(m.at).slice(0, 16)` printed `1765078898000` under the sender's address. It looked
-// like a bug because it was one: a raw clock value on a screen a player reads.
+// **oxmysql hands every DATETIME and TIMESTAMP column back as a millisecond epoch NUMBER**, not
+// as the `2026-07-26 14:21:33` string the SQL suggests. Its type cast is explicit about it:
 //
-// Both shapes are handled, because which one arrives depends on the driver and on the column: a
-// number is an epoch, a string is already a date and only needs trimming.
-function mailWhen(at) {
-  if (at == null || at === '') return '';
+//     case "DATETIME": case "TIMESTAMP": ... return value ? new Date(value).getTime() : null
+//
+// Anything that treats one as a string therefore prints a raw clock value. This was fixed once,
+// here, for the mail list - and left as a local fix, so the same digits then turned up beside
+// every social post, in Cipher and on a bank statement line. One helper now, and every screen
+// that shows a time goes through it.
+//
+// Both shapes are accepted regardless: a column an older schema declared as text still arrives
+// as a string, and there is no reason for a display helper to care which.
+function whenMs(at) {
+  if (at == null || at === '') return NaN;
   const asNumber = (typeof at === 'number') ? at
-    : (/^\d{10,}$/.test(String(at)) ? Number(at) : null);
+    : (/^\d{10,}$/.test(String(at).trim()) ? Number(at) : null);
   if (asNumber !== null) {
     // Ten digits is seconds, thirteen is milliseconds. Guessing wrong puts the date in 1970 or
     // in the year 57000, so it is worth the one comparison.
-    const ms = asNumber < 1e11 ? asNumber * 1000 : asNumber;
-    const d = new Date(ms);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-      + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return asNumber < 1e11 ? asNumber * 1000 : asNumber;
   }
-  // '2026-07-26 14:21:33' -> '2026-07-26 14:21'
-  return String(at).slice(0, 16);
+  // '2026-07-26 14:21:33' - the T is what makes it parse the same way in every engine.
+  return Date.parse(String(at).replace(' ', 'T'));
+}
+
+// A time, as a person would write it: 26 Jul 14:21.
+function shortWhen(at) {
+  const ms = whenMs(at);
+  if (!Number.isFinite(ms)) return '';
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Mail ───────────────────────────────────────────────────────
@@ -2373,7 +2414,7 @@ async function mailList() {
     const who = (m.folder === 'inbox') ? m.from_addr : (m.to_addr || L('ph.mail_noto'));
     return UI.row({
       avatar: who, title: who,
-      subtitle: (m.subject || L('ph.mail_nosubject')) + '  -  ' + String(m.at || '').slice(5, 16),
+      subtitle: (m.subject || L('ph.mail_nosubject')) + '  -  ' + shortWhen(m.at),
       badge: (m.folder === 'inbox' && !Number(m.seen)) ? L('ph.vm_new_short') : undefined,
       value: Number(m.saved) ? '\u2605' : '',
       chevron: true, data: { b: m.box_id },
@@ -2405,7 +2446,7 @@ function mailRead(m) {
       '<div class="mailsubj">' + esc(m.subject || L('ph.mail_nosubject')) + '</div>' +
       '<div class="mailmeta"><b>' + esc(m.from_addr) + '</b></div>' +
       '<div class="mailmeta">' + esc(L('ph.mail_to')) + ' ' + esc(m.to_addr || '') + '</div>' +
-      '<div class="mailmeta">' + esc(mailWhen(m.at)) + '</div>' +
+      '<div class="mailmeta">' + esc(shortWhen(m.at)) + '</div>' +
     '</div>' +
     '<div class="mailbody">' + esc(m.body || '') + '</div>' +
     (m.image ? '<button class="mailimg" id="mimg" type="button" style="'
@@ -2797,7 +2838,7 @@ function renderVoicemail() {
     host.innerHTML = UI.group(list.map((v) => UI.row({
       icon: 'voicemail', tint: Number(v.seen) ? '#8E8E93' : '#0A84FF',
       title: v.number ? nameOfNumber(v.number) : L('ph.unknown'),
-      subtitle: String(v.at || '').slice(5, 16),
+      subtitle: shortWhen(v.at),
       badge: Number(v.seen) ? undefined : L('ph.vm_new_short'),
       chevron: true, data: { id: v.id },
     })));
@@ -2816,7 +2857,7 @@ function voicemailSheet(v) {
   const who = v.number ? nameOfNumber(v.number) : L('ph.unknown');
   sheet(who,
     '<div class="vmbody">' + esc(v.body || '') + '</div>' +
-    '<div class="vmwhen">' + esc(String(v.at || '').slice(0, 16)) + '</div>' +
+    '<div class="vmwhen">' + esc(shortWhen(v.at)) + '</div>' +
     (v.number ? UI.button(L('ph.call'), 'vmcall', 'tinted') : '') +
     UI.button(L('ph.delete'), 'vmdel', 'destructive'),
     () => {
@@ -3520,7 +3561,17 @@ function wireMailto() {
 // that hands back a preformatted string keeps its string, because reformatting something
 // whose format is unknown is how dates end up wrong.
 function txWhen(t) {
-  if (t.at) return String(t.at);
+  if (t.at) {
+    // `String(t.at)` was printing the raw value, which for a DATETIME column oxmysql has
+    // already turned into a millisecond epoch is thirteen digits on a statement. A value that
+    // parses as a time is formatted; anything else is a banking script's own wording and is
+    // passed through untouched, which is the point of this branch.
+    const ms = whenMs(t.at);
+    if (!Number.isFinite(ms)) return String(t.at);
+    const d = new Date(ms);
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
   if (!t.ts) return '';
   const d = new Date(t.ts * 1000);
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
@@ -7434,10 +7485,9 @@ function cipherError(result) {
 }
 
 function cipherTime(value) {
-  if (!value) return '';
-  const parsed = new Date(String(value).replace(' ', 'T'));
-  if (Number.isNaN(parsed.getTime())) return String(value).slice(11, 16);
-  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const ms = whenMs(value);
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function cipherInitial(peer) {
@@ -8202,8 +8252,11 @@ const socVerified = (row) => (row && row.verified)
 // "il y a 3 min" beats a timestamp nobody reads. The server sends SQL datetimes in
 // server time, so this compares the two as text-free numbers rather than parsing a zone.
 function socWhen(at) {
-  const t = Date.parse(String(at || '').replace(' ', 'T'));
-  if (!t) return esc(String(at || '').slice(5, 16));
+  const t = whenMs(at);
+  // Nothing rather than digits. The old fallback sliced characters 5 to 16 out of whatever it
+  // was given, which for the millisecond epoch oxmysql actually sends is `84090000` - eight
+  // digits of a clock value, printed next to the author of every post.
+  if (!Number.isFinite(t)) return '';
   const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
   if (mins < 1) return L('ph.soc_now');
   if (mins < 60) return mins + ' ' + L('ph.soc_min');
@@ -11160,7 +11213,7 @@ function fpost(name, data) {
 }
 
 const fesc = (s) => esc(String(s == null ? '' : s));
-const fwhen = (at) => fesc(String(at || '').slice(0, 16).replace('T', ' '));
+const fwhen = (at) => fesc(shortWhen(at));
 
 // A case reference for the visit. Not an identifier of anything - it exists so the terminal
 // stamps what it shows, which is what makes it read as evidence handling.

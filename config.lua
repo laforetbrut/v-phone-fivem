@@ -1096,6 +1096,22 @@ Config.DeadZones = {
 -- that mattered scrolls past too. Problems always print - a framework that was named but is
 -- not running, a table that could not be read, a callback with no handler. These switches
 -- only govern the lines that are merely true.
+-- ══════════════════════════════════════════════════════════════
+--  THE CLOCK
+-- ══════════════════════════════════════════════════════════════
+-- What the status bar, the lock screen and the control centre show.
+--
+-- It reads the PLAYER'S OWN MACHINE by default, which means somebody connecting from another
+-- country sees their time and not the city's - two characters standing next to each other
+-- disagree about what time it is. Naming a zone here gives everybody the same clock.
+--
+-- Any IANA name: 'Europe/Paris', 'America/New_York', 'Australia/Sydney'. Empty keeps the
+-- player's own machine. A name the browser does not recognise falls back to the machine
+-- rather than stopping the clock.
+Config.Clock = {
+    timezone = 'Europe/Paris',
+}
+
 Config.Log = {
     -- The boot summary: framework detected, which app groups are on, the bank, the payphones,
     -- the admin command, each app folder loaded. Useful exactly once, when setting a server up.

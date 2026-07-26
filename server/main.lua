@@ -1792,6 +1792,10 @@ V.Callback('v-phone:open', function(src, resolve)
             from = math.floor(num(S('darkFrom', 20), 20)),
             to   = math.floor(num(S('darkTo', 6), 6)),
         },
+        -- Which clock the status bar shows. Empty means the player's own machine, which is
+        -- what it always did - and which shows a player in another country their time rather
+        -- than the city's. See Config.Clock.
+        clockZone = tostring((Config.Clock and Config.Clock.timezone) or ''),
         voicemail = V.SettingBool('voicemail', true),
         -- Unread voicemail, so the Phone icon can carry a badge like Messages does.
         vmUnread = tonumber(MySQL.scalar.await(
