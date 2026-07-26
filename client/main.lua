@@ -819,8 +819,17 @@ local SOCIAL_OPS = {
 RegisterNUICallback('freelook', function(_, cb)
     if isOpen and not freeLook then
         freeLook = true
+        -- keepInput OFF first. The phone runs with `SetNuiFocusKeepInput(true)` so the
+        -- player can still walk while browsing, and leaving it on means dropping focus does
+        -- not hand the mouse back - the cursor stays owned and the camera never moves. That
+        -- is why the page kept reporting Alt: focus was never actually released, so the
+        -- browser still had the keyboard to report it with.
+        SetNuiFocusKeepInput(false)
         SetNuiFocus(false, false)
         SendNUIMessage({ action = 'freelook', on = true })
+        if GetConvar('phone_debug', '') == 'true' then
+            print('[v-phone] free look on')
+        end
     end
     cb({ ok = true })
 end)

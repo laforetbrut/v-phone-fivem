@@ -8111,29 +8111,41 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// What is painting outside the handset. Runs once, only with `set phone_debug true`, and
-// only when an app is open - the report is useless from the home screen. It names the
-// element occupying the pixels just beyond each edge of the device, which is the one thing
-// a screenshot cannot tell me and guessing at it has already cost two wrong fixes.
+// What is painting outside the handset. Only with `set phone_debug true`.
+//
+// The first version of this waited for an app to be open before reporting, and said nothing
+// at all - a silent probe is worse than no probe. This one reports on a timer regardless,
+// says whether an app was open when it looked, and wraps everything so a thrown error is
+// printed rather than swallowed by the timer that called it.
 window.addEventListener('message', (e) => {
   const d = e.data || {};
-  if (d.action !== 'open' || window.__vphoneEdgeProbe) return;
+  if (d.action !== 'open' || window.__vphoneEdgeProbe || !d.debug) return;
   window.__vphoneEdgeProbe = true;
-  if (!d.debug) return;
-  setTimeout(function probe() {
-    const dev = document.getElementById('device');
-    if (!dev || !byId('app').classList.contains('on')) { setTimeout(probe, 1500); return; }
-    const r = dev.getBoundingClientRect();
-    const name = (el) => el ? (el.id ? '#' + el.id : '') +
-      '.' + String(el.className || el.tagName).slice(0, 30) : 'none';
-    const at = (x, y) => name(document.elementFromPoint(x, y));
-    console.info('[v-phone] outside the device -> ' +
-      'left:' + at(Math.max(1, r.left - 8), r.top + r.height / 2) +
-      ' | right:' + at(Math.min(innerWidth - 1, r.right + 8), r.top + r.height / 2) +
-      ' | above:' + at(r.left + r.width / 2, Math.max(1, r.top - 8)) +
-      ' | below:' + at(r.left + r.width / 2, Math.min(innerHeight - 1, r.bottom + 8)) +
-      ' | device rect ' + [r.x, r.y, r.width, r.height].map(Math.round).join(','));
-  }, 2000);
+
+  let shots = 0;
+  const probe = () => {
+    try {
+      const dev = document.getElementById('device');
+      if (!dev) { console.error('[v-phone] probe: no #device'); return; }
+      const r = dev.getBoundingClientRect();
+      const appEl = document.getElementById('app');
+      const appOpen = !!appEl && appEl.classList.contains('on');
+      const name = (el) => !el ? 'none'
+        : (el.id ? '#' + el.id : '') + '.' + String(el.className || el.tagName).slice(0, 28);
+      const at = (x, y) => name(document.elementFromPoint(
+        Math.min(Math.max(1, x), innerWidth - 1), Math.min(Math.max(1, y), innerHeight - 1)));
+      console.info('[v-phone] probe ' + (++shots) + ' appOpen=' + appOpen +
+        ' rect=' + [r.x, r.y, r.width, r.height].map(Math.round).join(',') +
+        ' | L=' + at(r.left - 10, r.top + r.height / 2) +
+        ' | R=' + at(r.right + 10, r.top + r.height / 2) +
+        ' | T=' + at(r.left + r.width / 2, r.top - 10) +
+        ' | B=' + at(r.left + r.width / 2, r.bottom + 10));
+    } catch (err) {
+      console.error('[v-phone] probe threw: ' + err);
+    }
+    if (shots < 4) setTimeout(probe, 4000);
+  };
+  setTimeout(probe, 2500);
 });
 
 document.addEventListener('keydown', (e) => {
