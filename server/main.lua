@@ -1491,7 +1491,7 @@ V.Callback('v-phone:open', function(src, resolve)
         -- Whether the Camera app works at all. This was simply never sent: the page reads
         -- `state.camera`, found undefined, and reported "the camera is disabled on this
         -- server" however the operator had set it - so the app has never opened for anyone.
-        camera = V.SettingBool('camera', false),
+        camera = V.SettingBool('camera', true),
         -- Media hosting: whether the camera uploads to a CDN, and whether video recording
         -- is offered, and the clip length cap the record UI should honour.
         media = Bridge.MediaEnabled and Bridge.MediaEnabled() or false,

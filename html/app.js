@@ -4925,8 +4925,16 @@ function clipShareSheet(url) {
     });
 }
 
+// Is the Camera app usable? The server always sends an explicit boolean, so ABSENT means
+// "this server did not say", not "off". Treating a missing field as off is what made the app
+// report itself disabled on a server whose own startup log said `camera: on` - one missing
+// key in a payload became a feature nobody could turn on.
+//
+// An operator who switches it off gets `false`, which is caught here. Nothing else is.
+const cameraOn = () => state.camera !== false;
+
 RENDER.camera = async () => {
-  if (!state.camera) { body(UI.empty(L('ph.camera_off'), 'camera')); return; }
+  if (!cameraOn()) { body(UI.empty(L('ph.camera_off'), 'camera')); return; }
   const d = await post('photos', { op: 'list' });
   const shots = (d && d.photos) || [];
   const last = shots[0];
@@ -8185,7 +8193,7 @@ byId('navback').addEventListener('click', () => {
 
 byId('qcam').addEventListener('click', () => {
   const camera = (state.apps || []).find((a) => a.id === 'camera');
-  if (!state.camera || !camera) {
+  if (!cameraOn() || !camera) {
     toast(L('ph.camera_off'));
     return;
   }
@@ -8217,6 +8225,9 @@ window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.action !== 'open' || window.__vphoneEdgeProbe || !d.debug) return;
   window.__vphoneEdgeProbe = true;
+  console.info('[v-phone] payload: camera=' + JSON.stringify(d.camera) +
+    ' media=' + JSON.stringify(d.media) + ' mediaVideo=' + JSON.stringify(d.mediaVideo) +
+    ' -> camera app ' + (d.camera !== false ? 'ENABLED' : 'disabled'));
 
   let done = 0;
   const report = (why) => {
