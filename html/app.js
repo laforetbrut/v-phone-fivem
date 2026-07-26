@@ -2005,10 +2005,17 @@ RENDER.messages = () => {
     (groups.length ? UI.group(groups.map((g) => UI.row({
       icon: 'contacts', tint: '#34C759', title: g.name, chevron: true, data: { g: g.id, gn: g.name },
     })), { header: L('ph.groups') }) : '') +
-    (list.length ? UI.group(list.map((c) => UI.row({
-      avatar: nameOfNumber(c.number), title: nameOfNumber(c.number), subtitle: c.body,
-      badge: c.unread > 0 ? c.unread : null, chevron: true, data: { n: c.number },
-    }))) : '')
+    (list.length ? UI.group(list.map((c) => {
+      // A service thread - a verification code, a receipt - has no citizen behind it, so it
+      // is addressed by name and opened by its own key. Passing its label through
+      // nameOfNumber would try to resolve "Bleeter" as a phone number and come back empty.
+      const title = c.service ? (c.name || c.number) : nameOfNumber(c.number);
+      return UI.row({
+        avatar: title, title, subtitle: c.body,
+        badge: c.unread > 0 ? c.unread : null, chevron: true,
+        data: { n: c.service ? c.other : c.number },
+      });
+    })) : '')
   );
   rows('.row[data-n]', (r) => r.addEventListener('click', () => openThread(r.dataset.n)));
   rows('.row[data-g]', (r) => r.addEventListener('click', () =>
@@ -2036,9 +2043,12 @@ async function openThread(number, draft) {
   beginView();
   thread = number;
   threadGroup = null;
-  setNav(nameOfNumber(number), L('app.messages'), {
-    icon: 'phone', onClick: () => post('call', { number }),
-  }, () => {
+  // A service thread is opened by its `svc:Label` key rather than by a number. Show the
+  // label, and offer no call button: there is nobody on the other end to ring.
+  const isService = String(number || '').slice(0, 4) === 'svc:';
+  setNav(isService ? String(number).slice(4) : nameOfNumber(number), L('app.messages'),
+    isService ? null : { icon: 'phone', onClick: () => post('call', { number }) },
+  () => {
     thread = null;
     foot('');
     RENDER.messages();
@@ -5874,6 +5884,7 @@ function socialLogin(app, then) {
     acctHead(app, L('ph.soc_login_sub')) +
     UI.field('lpw', L('ph.soc_password'), '', 'type="password" maxlength="40"') +
     UI.button(L('ph.soc_signin'), 'lgo') +
+    '<button class="linkbtn" id="lreset" type="button">' + esc(L('ph.soc_forgot')) + '</button>' +
     '<button class="linkbtn" id="lforget" type="button">' + esc(L('ph.soc_switch')) + '</button>'
   );
   byId('lgo').addEventListener('click', async () => {
@@ -5883,12 +5894,56 @@ function socialLogin(app, then) {
     if (r && r.ok) then();
     else toast(L('ph.err_' + ((r && r.error) || 'x')));
   });
+  // Forgot it: the same texted code that made the account, then a new password.
+  byId('lreset').addEventListener('click', () => socialReset(app, then));
   // "Not you?" logs the stored account out for this session and starts a fresh sign-up.
   byId('lforget').addEventListener('click', async () => {
     await post('social', { op: 'logout', app });
     if (!socialActive(app, epoch)) return;
     socialSignup(app, then);
   });
+}
+
+// Forgot the password. The account is tied to this character's line, so proving you hold
+// the handset is the whole check: a code goes to Messages, and the new password is set in
+// the same step that answers it - a verified code left lying around between two screens is
+// a verified code somebody else can use.
+function socialReset(app, then) {
+  const epoch = viewEpoch;
+  const st = { step: 1, number: '' };
+
+  const render = () => {
+    if (!socialActive(app, epoch)) return;
+    if (st.step === 1) {
+      body(acctHead(app, L('ph.soc_reset_sub')) + UI.button(L('ph.soc_reset_send'), 'rsend') +
+        '<button class="linkbtn" id="rback" type="button">' + esc(L('ph.back')) + '</button>');
+      byId('rback').addEventListener('click', () => socialLogin(app, then));
+      byId('rsend').addEventListener('click', async () => {
+        const r = await post('social', { op: 'resetCode', app });
+        if (!socialActive(app, epoch)) return;
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        st.number = r.number || '';
+        st.step = 2;
+        render();
+      });
+      return;
+    }
+    body(acctHead(app, (L('ph.soc_code_sent') || '').replace('%s', st.number)) +
+      UI.field('rcode', L('ph.soc_code'), '', 'inputmode="numeric" maxlength="4"') +
+      UI.field('rpw', L('ph.soc_password'), '', 'type="password" maxlength="40"') +
+      UI.field('rpw2', L('ph.soc_password2'), '', 'type="password" maxlength="40"') +
+      UI.button(L('ph.soc_reset_go'), 'rgo'));
+    byId('rgo').addEventListener('click', async () => {
+      if (byId('rpw').value !== byId('rpw2').value) { toast(L('ph.soc_pw_mismatch')); return; }
+      const r = await post('social', { op: 'resetPassword', app,
+        code: byId('rcode').value.trim(), password: byId('rpw').value });
+      if (r && r.ok) socialAcc[app] = r.account;
+      if (!socialActive(app, epoch)) return;
+      if (r && r.ok) { toast(L('ph.soc_reset_done')); then(); }
+      else toast(L('ph.err_' + ((r && r.error) || 'x')));
+    });
+  };
+  render();
 }
 
 // Sign-up: number -> texted code -> username, display name and password. Three steps, a

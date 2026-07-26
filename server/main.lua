@@ -704,9 +704,21 @@ local function conversations(cid)
     local out = {}
     for _, r in ipairs(last) do
         if r.number and r.number ~= '' then Numbers[r.other] = r.number end
+
+        -- A service message - a verification code, a receipt - is written with a sender of
+        -- `svc:Label` rather than a citizen id, because no character sent it. The join above
+        -- therefore finds no row and no number, and the thread was falling back to showing
+        -- the raw `svc:Bleeter` as if it were a phone number nobody could call.
+        --
+        -- Named for what it is instead, and flagged so the page does not offer to ring it.
+        local service = type(r.other) == 'string' and r.other:sub(1, 4) == 'svc:'
+        local label = service and r.other:sub(5) or nil
+
         out[#out + 1] = {
             other  = r.other,
-            number = r.number or r.other,
+            number = service and label or (r.number or r.other),
+            name    = label,
+            service = service or nil,
             body   = r.body or '',
             at     = r.at,
             unread = unread[r.other] or 0,

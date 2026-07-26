@@ -224,6 +224,32 @@ end
 -- key actually changes state rather than every frame it is held.
 local freeLook = false
 
+-- Escape closes the phone, and that is the whole problem: the page handles the key, the
+-- phone closes, `isOpen` goes false and the guard thread below exits - on the same frame the
+-- game is still processing that keypress. The block vanished exactly when it was needed, so
+-- the phone shut and the pause menu opened behind it.
+--
+-- So the block outlives the phone by a fraction of a second. `swallowUntil` is set when the
+-- phone closes and a small thread keeps refusing the pause menu until it passes.
+local swallowUntil = 0
+
+local function swallowPause(ms)
+    swallowUntil = GetGameTimer() + (ms or 500)
+    CreateThread(function()
+        while GetGameTimer() < swallowUntil do
+            for _, group in ipairs({ 0, 1, 2 }) do
+                DisableControlAction(group, 199, true)
+                DisableControlAction(group, 200, true)
+            end
+            if IsPauseMenuActive() then
+                SetFrontendActive(false)
+                SetPauseMenuActive(false)
+            end
+            Wait(0)
+        end
+    end)
+end
+
 local function startGuard()
     freeLook = false
     CreateThread(function()
@@ -267,6 +293,9 @@ local function startGuard()
         end
         -- The phone closed while Alt was down: do not leave the cursor released.
         freeLook = false
+        -- And hold the pause menu shut a moment longer, because the keypress that closed
+        -- the phone is very often the one the frontend is about to act on.
+        swallowPause(500)
     end)
 end
 
@@ -772,6 +801,8 @@ local SOCIAL_OPS = {
     hushMe = true, hushSetup = true, hushNext = true, hushChoice = true, hushMatches = true,
     -- The account system: SMS verification, sign-up, login, logout.
     requestCode = true, verifyCode = true, register = true, login = true, logout = true,
+    -- Forgot the password: the same texted code, then a new one.
+    resetCode = true, resetPassword = true,
     -- People: a profile, the directory, following.
     profile = true, search = true, follow = true,
     -- What a post can carry beyond a like.

@@ -91,6 +91,20 @@ local function accountOf(cid, app)
         { cid, app })
 end
 
+--- The stored hash, fetched on its own.
+---
+--- `accountOf` deliberately does not select it, which is right - an account row is read on
+--- nearly every screen and the hash has no business travelling with it. But `soc:login`
+--- called `checkPw(a.password, ...)` against that row, and `a.password` was therefore always
+--- nil, so `checkPw` returned false before it compared anything. Every sign-in failed,
+--- including with the correct password, and the only way back into an account was a reset
+--- that did not exist yet.
+local function passwordOf(cid, app)
+    return MySQL.scalar.await(
+        'SELECT password FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
+        { cid, app })
+end
+
 -- ── Credentials ────────────────────────────────────────────────
 -- A roleplay password, not a real one: FNV-1a with a per-account salt is enough to keep
 -- it out of the database in the clear and to make one account's hash useless against
@@ -162,6 +176,7 @@ AddEventHandler('playerDropped', function()
     local src = source
     Pending[src] = nil
     Authed[src] = nil
+    ResetTry[src] = nil
 end)
 
 local function phoneNumberOf(src)
@@ -285,9 +300,84 @@ V.Callback('v-phone:soc:login', function(src, resolve, data)
     if not APPS[app] then resolve(false) return end
     local a = accountOf(p.citizenid, app)
     if not a then resolve({ error = 'noaccount' }) return end
-    if not checkPw(a.password, tostring((data and data.password) or '')) then
+    if not checkPw(passwordOf(p.citizenid, app), tostring((data and data.password) or '')) then
         resolve({ error = 'badpass' }) return
     end
+    setAuthed(src, p.citizenid, app, true)
+    resolve({ ok = true, account = publicAccount(a) })
+end)
+
+-- ── Forgetting the password ────────────────────────────────────
+-- The account is tied to this character's phone line, and the code goes to that line. So
+-- "forgot my password" is answered the same way the account was created in the first place:
+-- prove you hold the handset, then set a new one.
+--
+-- Rate limited per source. Without it this is a way to spam a player's own Messages, and -
+-- more to the point - an attempt counter is what stops a four-digit code from being walked
+-- through at leisure.
+local ResetTry = {}      -- [src] = { [app] = { n = tries, at = when the window opened } }
+
+local function resetGate(src, app)
+    ResetTry[src] = ResetTry[src] or {}
+    local t = ResetTry[src][app]
+    if not t or (os.time() - t.at) > 600 then
+        t = { n = 0, at = os.time() }
+        ResetTry[src][app] = t
+    end
+    t.n = t.n + 1
+    return t.n <= 5
+end
+
+V.Callback('v-phone:soc:resetCode', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = tostring((data and data.app) or '')
+    if not APPS[app] then resolve(false) return end
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+    if not resetGate(src, app) then resolve({ error = 'toomany' }) return end
+
+    local number = phoneNumberOf(src)
+    if not number or number == '' then resolve({ error = 'nonumber' }) return end
+
+    local code = genCode()
+    Pending[src] = Pending[src] or {}
+    Pending[src][app] = { code = code, number = number, at = os.time(), reset = true }
+    smsCode(src, app, code)
+    resolve({ ok = true, number = number })
+end)
+
+--- The code, and the password to put in its place. One call, so a verified code cannot be
+--- left lying around between "it was right" and "here is the new one".
+V.Callback('v-phone:soc:resetPassword', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = tostring((data and data.app) or '')
+    if not APPS[app] then resolve(false) return end
+
+    local pend = Pending[src] and Pending[src][app]
+    if not pend or not pend.reset then resolve({ error = 'nocode' }) return end
+    if (os.time() - pend.at) > 300 then
+        Pending[src][app] = nil
+        resolve({ error = 'expired' }) return
+    end
+    if not resetGate(src, app) then resolve({ error = 'toomany' }) return end
+
+    local code = tostring((data and data.code) or ''):gsub('%s', '')
+    if code ~= pend.code then resolve({ error = 'badcode' }) return end
+
+    local pw = tostring((data and data.password) or '')
+    if #pw < 4 then resolve({ error = 'password' }) return end
+
+    local a = accountOf(p.citizenid, app)
+    if not a then resolve({ error = 'noaccount' }) return end
+
+    MySQL.query.await('UPDATE vphone_social_accounts SET password = ? WHERE citizenid = ? AND app = ?',
+        { hashPw(pw), p.citizenid, app })
+
+    -- The code is spent, the attempt counter is cleared, and the new password signs them in:
+    -- making somebody type what they just chose is ceremony, not security.
+    Pending[src][app] = nil
+    ResetTry[src] = nil
     setAuthed(src, p.citizenid, app, true)
     resolve({ ok = true, account = publicAccount(a) })
 end)
