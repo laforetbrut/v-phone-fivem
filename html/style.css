@@ -7954,6 +7954,19 @@ body.inframe.dark .uisearch {
 
 /* ── The tab bar ─────────────────────────────────────────────
    It sits in the app footer, which is already clear of the home indicator. */
+/* The footer sits ABOVE the home indicator's hit area, which is a 220px-wide invisible
+   box reaching 26px up from the bottom (.homebar::before, z-index 60). The social tab bar's
+   buttons are 38px tall with almost no bottom padding, so its middle tabs landed inside that
+   box and the home bar swallowed every tap on them - the buttons looked fine and did
+   nothing. The app tab bars (.tabbar) escaped only because their 22px bottom padding lifts
+   them clear.
+
+   pointer-events is the important half: the bar itself lets clicks through, so an empty
+   stretch of footer still reaches the home indicator and the swipe-up gesture keeps working.
+   Only the buttons claim their own pixels, which is how iOS behaves too. */
+#appfoot { position: relative; z-index: 61; pointer-events: none; }
+#appfoot > * { pointer-events: auto; }
+
 .soctabs {
   display: flex;
   align-items: center;

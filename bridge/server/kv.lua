@@ -68,6 +68,34 @@ function Bridge.KvSet(citizenid, key, value)
     return true
 end
 
+--- The same write, but WAITED ON.
+---
+--- `Bridge.KvSet` fires the query and returns immediately, which is right during play: the
+--- cache already holds the new value and nothing is waiting on the disk. It is wrong at
+--- shutdown. `onResourceStop` writes every player's battery and then the process tears down,
+--- and an un-awaited query dies in the queue with it - which is why a server restart handed
+--- everybody a phone at 100%: the level was never written, so the next boot read nothing and
+--- fell back to full.
+---
+--- Use this anywhere the caller must know the row landed before it moves on.
+function Bridge.KvSetSync(citizenid, key, value)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' or not key then return false end
+
+    cache[citizenid] = cache[citizenid] or {}
+    cache[citizenid][key] = value == nil and false or value
+
+    if value == nil then
+        MySQL.query.await('DELETE FROM vphone_kv WHERE citizenid = ? AND `key` = ?',
+            { citizenid, key })
+        return true
+    end
+    MySQL.query.await([[INSERT INTO vphone_kv (citizenid, `key`, value) VALUES (?,?,?)
+                        ON DUPLICATE KEY UPDATE value = VALUES(value)]],
+        { citizenid, key, encode(value) })
+    return true
+end
+
 --- Dropped players keep nothing warm. A character that comes back reads from the table,
 --- which is the only copy that was ever authoritative.
 AddEventHandler('playerDropped', function()

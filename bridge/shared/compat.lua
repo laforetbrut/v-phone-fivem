@@ -176,6 +176,19 @@ STUBS['v-world'] = {
     --- needs no change.
     GetChargers = function() return (Config and Config.Chargers) or {} end,
     GetDeadZones = function() return (Config and Config.DeadZones) or {} end,
+    --- The Maps app asks v-world for the places it can pin. Upstream those are rows an
+    --- admin placed; there is no such table here, and inventing garage coordinates for
+    --- every server would put wrong pins on real maps.
+    ---
+    --- They return empty rather than being absent: `stubIsLive` reports v-world as started,
+    --- so `V.Use('v-world')` hands back THIS table, and a missing key is a nil call that
+    --- takes the whole `v-phone:places` callback down with it.
+    GetGarages = function() return {} end,
+    GetShopLocations = function() return {} end,
+    GetStations = function() return {} end,
+    GetMechShops = function() return {} end,
+    GetCityHalls = function() return {} end,
+    GetDealers = function() return {} end,
     SeedApps = function() end,
     SeedChargers = function() end,
     SeedDeadZones = function() end,

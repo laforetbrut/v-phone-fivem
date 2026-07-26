@@ -1165,6 +1165,8 @@ end
 -- this slowly would be sixty threads doing arithmetic.
 local TICK = 20
 local Open = {}          -- [source] = true while the screen is on
+local BatterySaved = {}  -- [source] = last whole percent written, so a tick that
+                         -- changed nothing does not write a row
 
 CreateThread(function()
     while true do
@@ -1203,6 +1205,17 @@ CreateThread(function()
                     end
                     if CallOf[src] and (batteryOf(src) <= 0 or not hasBars(src)) then
                         endCall(CallOf[src], batteryOf(src) <= 0 and 'flat' or 'nosignal')
+                    end
+
+                    -- Persist whenever the whole-percent value moves. Saving on disconnect
+                    -- and at shutdown is not enough on its own: a crash, a kill, or a host
+                    -- that pulls the process leaves none of those running, and the level
+                    -- silently reverts to full on the next boot. One small row per player
+                    -- per percent of drain is a cheap way never to have that conversation.
+                    local now = batteryOf(src)
+                    if BatterySaved[src] ~= now then
+                        BatterySaved[src] = now
+                        p.SetMetadata('battery', now)
                     end
                 end
             end
@@ -1449,6 +1462,9 @@ V.Callback('v-phone:open', function(src, resolve)
         -- falls back on its own if a file will not load, so this is a preference and
         -- not a promise.
         soundFiles = Config.Sounds.files ~= false,
+        -- `set phone_debug true` turns on the page's boot tracing. Off, the phone writes
+        -- nothing to the browser console at all, which is what a live server wants.
+        debug = GetConvar('phone_debug', '') == 'true',
         -- Whether Cipher should hand a plaintext copy to the server for lawful intercept.
         -- Off unless the operator turned it on, so E2E stays E2E by default.
         cipherIntercept = (Config.Police and Config.Police.cipher and Config.Police.cipher.intercept) == true,
@@ -2555,7 +2571,12 @@ V.Callback('v-phone:places', function(src, resolve)
     local world = V.Use('v-world')
     local out = {}
     for _, src2 in ipairs(PLACE_SOURCES) do
-        for _, r in ipairs(world[src2.getter]() or {}) do
+        -- Belt and braces alongside the stub's own entries: a third-party v-world, or a
+        -- future one that drops a getter, must cost this app its pins and not the whole
+        -- callback. An unanswered callback leaves the page waiting instead of showing
+        -- an empty map.
+        local getter = world[src2.getter]
+        for _, r in ipairs((type(getter) == 'function' and getter() or nil) or {}) do
             -- A disabled row is one the operator switched off; it should not be on a map
             -- either, or the phone contradicts the world.
             if r.enabled ~= 0 and r.enabled ~= false and r.x then
@@ -3112,7 +3133,10 @@ end)
 AddEventHandler('playerDropped', function()
     local src = source
     local p = Core.GetPlayer(src)
-    if p and Battery[src] then p.SetMetadata('battery', math.floor(Battery[src])) end
+    if p and Battery[src] then
+        Bridge.KvSetSync(p.citizenid, 'battery', math.floor(Battery[src]))
+    end
+    BatterySaved[src] = nil
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
     ExternalCharge[src] = nil
     FrameLast[src] = nil
@@ -3134,11 +3158,15 @@ end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() or not Core then return end
+    -- KvSetSync, not SetMetadata: the normal write fires the query and returns, and at
+    -- shutdown the process tears down before the queue drains. That is why a restart used
+    -- to hand everybody a phone at 100% - the level was never written, so the next boot
+    -- read nothing and fell back to full.
     for _, raw in ipairs(GetPlayers()) do
         local src = tonumber(raw)
         local player = src and Core.GetPlayer(src)
         if player and Battery[src] then
-            player.SetMetadata('battery', math.floor(Battery[src]))
+            Bridge.KvSetSync(player.citizenid, 'battery', math.floor(Battery[src]))
         end
     end
 end)

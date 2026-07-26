@@ -2976,6 +2976,20 @@ function applyTheme() {
 }
 
 let landscape = false;
+let deviceBase = null;
+
+// The phone's own pixel size, measured once with any zoom cleared. Everything below is
+// derived from it, so the fit maths never reads a value the previous call already scaled.
+function deviceBaseSize(d) {
+  if (!deviceBase) {
+    const z = d.style.zoom;
+    d.style.zoom = '';
+    deviceBase = { w: d.offsetWidth || 372, h: d.offsetHeight || 784 };
+    d.style.zoom = z;
+  }
+  return deviceBase;
+}
+
 function applyDevice() {
   const p = state.prefs || {};
   const d = byId('device');
@@ -2983,27 +2997,39 @@ function applyDevice() {
   const viewport = window.visualViewport;
   const vw = (viewport && viewport.width) || window.innerWidth || 1280;
   const vh = (viewport && viewport.height) || window.innerHeight || 720;
-  const rawW = d.offsetWidth || 372;
-  const rawH = d.offsetHeight || 784;
-  const footprintW = landscape ? rawH : rawW;
-  const footprintH = landscape ? rawW : rawH;
+
+  const base = deviceBaseSize(d);
+  const footprintW = landscape ? base.h : base.w;
+  const footprintH = landscape ? base.w : base.h;
   const fit = Math.max(0.10, Math.min(1,
     (vw - 24) / (footprintW * size),
     (vh - 24) / (footprintH * size)));
   const scale = size * fit;
-  d.style.setProperty('--device-fit', String(fit));
-  d.style.setProperty('--device-scale', String(scale));
+
+  // ZOOM, not `transform: scale()`. A transform stretches an already-rasterised image, so
+  // every glyph went soft the moment the size slider left 100%. `zoom` changes layout: the
+  // phone is laid out and painted AT the target size, so text stays sharp at any setting.
+  //
+  // The catch is that zoom multiplies used values, including the offsets below - so those
+  // are divided by it to land where they were asked to. Percentages and translate(-50%)
+  // resolve against the already-zoomed box and need no correction.
+  d.style.zoom = String(scale);
+
+  const margX = (vw * 0.03) / scale;
+  const margY = (vh * 0.025) / scale;
+
   if (landscape) {
     // The phone lies on its side, centred so it cannot swing off-screen.
     d.style.left = '50%'; d.style.right = 'auto'; d.style.top = '50%'; d.style.bottom = 'auto';
     d.style.transformOrigin = 'center center';
-    d.style.transform = 'translate(-50%, -50%) rotate(-90deg) scale(' + scale + ')';
+    d.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
   } else {
-    d.style.top = 'auto'; d.style.bottom = '2.5vh';
+    d.style.top = 'auto';
+    d.style.bottom = margY + 'px';
     d.style.transformOrigin = (p.side === 'left') ? 'left bottom' : 'right bottom';
-    d.style.transform = 'scale(' + scale + ')';
-    d.style.right = (p.side === 'left') ? 'auto' : '3vw';
-    d.style.left = (p.side === 'left') ? '3vw' : 'auto';
+    d.style.transform = 'none';
+    d.style.right = (p.side === 'left') ? 'auto' : margX + 'px';
+    d.style.left = (p.side === 'left') ? margX + 'px' : 'auto';
   }
 }
 function setLandscape(on) { landscape = on === true; applyDevice(); }
@@ -8769,31 +8795,23 @@ window.addEventListener('message', (e) => {
   else if (d.action === 'call' && !d.call) faceClear();
 });
 
-// ══ Boot trace ═════════════════════════════════════════════════
-// The only logging in this file, and it earns its place: without it a page that never
-// loaded and a page that loaded fine are indistinguishable in FiveM's cef_console.txt,
-// because nothing else here ever writes to the console. Two lines turn "the phone does
-// not open" from a guess into a reading.
-//
-// They fire once each. If you see `booted` but never `open`, Lua's message is not
-// reaching the page; if you see neither, the page itself never ran.
-console.info('[v-phone] page booted');
+// ══ Boot trace ════════════════════════════════════════════════════════════
+// Silent unless the server asks for it: `set phone_debug true`, forwarded to the page in
+// the open payload. These two lines found a bug that produced no error anywhere - the page
+// was healthy, the message arrived, and a guard three lines in was dropping it - so they
+// are worth keeping. They are not worth printing on a working server.
 window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.action !== 'open' || window.__vphoneOpenSeen) return;
   window.__vphoneOpenSeen = true;
-  // Report how the host addressed the message. The main handler above rejects foreign
-  // windows, and getting that test wrong drops every message in silence - so record
-  // once what `source` actually is on this build rather than assuming.
-  var src = (e.source === null) ? 'null'
-    : (e.source === window) ? 'window' : 'foreign(' + (typeof e.source) + ')';
-  console.info('[v-phone] open received | e.source=' + src +
+  if (!d.debug) return;
+
+  console.info('[v-phone] open received | e.source=' +
+    ((e.source === null) ? 'null' : (e.source === window) ? 'window' : 'foreign') +
     ' | frames=' + window.frames.length + ' | origin=' + (e.origin || '(empty)'));
 
-  // Silent when the phone is on screen, loud when it is not. "The page opened but I see
-  // nothing" is otherwise indistinguishable from "the page never opened", and the DOM will
-  // happily report that everything is fine while the handset sits at zero opacity or off
-  // the edge of the viewport.
+  // Only speaks when the phone is open and cannot be seen, which is otherwise
+  // indistinguishable from the page never having run at all.
   setTimeout(() => {
     const el = document.getElementById('device');
     if (!el) { console.error('[v-phone] #device is missing from the page'); return; }
@@ -8805,12 +8823,8 @@ window.addEventListener('message', (e) => {
     if (parseFloat(cs.opacity) < 0.01) why.push('opacity:' + cs.opacity);
     if (r.width < 1 || r.height < 1) why.push('zero size');
     if (r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) {
-      why.push('off-screen at ' + Math.round(r.x) + ',' + Math.round(r.y) +
-               ' in ' + innerWidth + 'x' + innerHeight);
+      why.push('off-screen at ' + Math.round(r.x) + ',' + Math.round(r.y));
     }
-    if (!why.length) return;
-    console.error('[v-phone] the phone is open but not visible: ' + why.join('; ') +
-      ' | transform=' + cs.transform +
-      ' | animation=' + cs.animationName + ' ' + el.getAnimations().map(a => a.playState).join(','));
+    if (why.length) console.error('[v-phone] open but not visible: ' + why.join('; '));
   }, 600);
 });
