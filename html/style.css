@@ -497,7 +497,14 @@ input { font: inherit; }
 .bignum .bs { font-size: 14px; color: var(--app-label2); margin-top: 4px; }
 
 /* ══ Messages ═════════════════════════════════════════════════ */
-.thread { display: flex; flex-direction: column; gap: 3px; padding: 8px 0 12px; }
+/* Both chat surfaces, one rule.
+   `.bubs` is the social apps' direct-message list and it had no rule of its own, so the
+   bubbles were plain blocks: no column, which made `align-self` on `.bub` do nothing and left
+   every message left-aligned whoever sent it, and no padding, which jammed the first one into
+   the top-left corner. Sharing the selector with Messages is also what stops the two drifting
+   apart the next time either is touched. */
+.thread,
+.bubs { display: flex; flex-direction: column; gap: 3px; padding: 8px 0 12px; }
 .bub { max-width: 74%; padding: 9px 14px; border-radius: 20px; font-size: 16px;
   line-height: 1.32; word-break: break-word; position: relative;
   animation: ph-bub .3s var(--spring) backwards; }
@@ -1039,7 +1046,10 @@ input { font: inherit; }
 .compose { padding-bottom: 26px; }
 
 /* ══ Message media ════════════════════════════════════════════ */
-.bub .mimg { max-width: 100%; border-radius: 14px; display: block; }
+/* A picture in a bubble. `.bubimg` is what the social DMs call theirs; without this it drew
+   at the file's own size, which is the same unstyled-class bug one element along. */
+.bub .mimg,
+.bub .bubimg { display: block; max-width: 100%; border-radius: 14px; }
 .bub.imgb { padding: 4px; background: none; }
 .bub .mcap { padding: 6px 8px 2px; font-size: 13px; }
 .gsender { font-size: 11px; color: var(--app-label2); margin: 2px 6px 1px; }

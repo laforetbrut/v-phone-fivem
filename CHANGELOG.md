@@ -4,6 +4,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.3.1] - 2026-07-26
+
+### Fixed (English first)
+
+- **Direct messages in the social apps had no layout.** `.bubs` - the list the bubbles sit in - had no rule anywhere in the stylesheet, so it was a plain block: `align-self` on a bubble does nothing outside a flex container, which left every message left-aligned whoever sent it, and with no padding the first one was jammed into the top-left corner. It now shares the Messages app's own thread rule rather than getting a copy, so the two cannot drift apart. A picture in a DM was unbounded for the same reason and is now sized like every other bubble image.
+
+### Correctifs (miroir francais)
+
+- **Les messages prives des applications sociales n'avaient aucune mise en page.** `.bubs` - la liste qui contient les bulles - n'avait aucune regle dans la feuille de style : `align-self` sur une bulle ne fait rien hors d'un conteneur flex, donc tous les messages etaient alignes a gauche quel qu'en soit l'expediteur, et sans marge le premier etait colle dans le coin superieur gauche. La regle est desormais partagee avec le fil de l'application Messages plutot que dupliquee, pour que les deux ne divergent pas. Une image en message prive n'etait pas bornee pour la meme raison.
+
+---
+
 ## [1.3.0] - 2026-07-26
 
 ### Changed (English first)
