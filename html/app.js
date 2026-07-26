@@ -1241,7 +1241,11 @@ function closeApp(instant) {
   // must not survive it. Cheap to call when no camera was open.
   if (byId('device').classList.contains('camlive')) {
     byId('device').classList.remove('camlive');
+    byId('device').classList.remove('hidden');
     post('camMode', { on: false });
+    // `landscape` is module state and survived the visit, so a phone turned sideways in the
+    // camera stayed sideways everywhere afterwards with no control left to turn it back.
+    if (landscape) setLandscape(false);
   }
   beginView();
   const app = byId('app');
@@ -4960,10 +4964,8 @@ RENDER.camera = async () => {
   const entering = !byId('device').classList.contains('camlive');
   byId('device').classList.add('camlive');
   if (entering) {
-    // The ENGINE frames the shot: CellCamActivate gives GTA's own phone-camera view, with
-    // its own aspect and field of view, and the picture is that view. So the phone stops
-    // being a fake viewfinder and becomes what it should have been all along - the controls.
-    // Orientation is left alone; portrait works, and it is the default.
+    // The engine frames the shot and the handset leaves the screen while it does. The phone
+    // is drawn again the moment the camera closes, which Lua signals.
     post('camMode', { on: true, front: camFront });
   }
 
@@ -8506,6 +8508,17 @@ window.addEventListener('message', (e) => {
     banner(d.banner || {});
   } else if (d.action === 'buzz') {
     buzzDevice();
+  } else if (d.action === 'camHide') {
+    // Framing happens in the world, not on the screen: Lua has taken the cursor and the
+    // game is the viewfinder, so the handset gets out of the way entirely.
+    byId('device').classList.toggle('hidden', d.on === true);
+    return;
+  } else if (d.action === 'camShoot') {
+    // The on-screen shutter, fired from Lua's key handler. Same path as the button, so
+    // there is one capture and one set of error messages.
+    const b = byId('shoot');
+    if (b) b.click();
+    return;
   } else if (d.action === 'shutter') {
     const device = byId('device');
     device.classList.remove('capturing');

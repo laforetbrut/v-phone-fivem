@@ -119,6 +119,7 @@ local T = {
     ['ph.delete']    = 'Supprimer',
     ['ph.thread_delete'] = 'Supprimer cette conversation ?',
     ['ph.copy_code']        = 'Copier le code',
+    ['ph.cam_prompt'] = 'Clic gauche pour photographier~n~E pour retourner la caméra~n~Échap pour fermer',
     ['ph.code_copied']      = 'Code copié',
     ['ph.use_code']         = 'Utiliser le code',
     ['ph.send']      = 'Envoyer',

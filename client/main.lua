@@ -902,18 +902,18 @@ end)
 --- megabytes per shot, and the operator's upload target is the whole reason the camera
 --- setting has one.
 -- ══ Camera mode ═══════════════════════════════════════════════
--- GTA has a phone camera of its own, and it is the right tool. `CellCamActivate` puts the
--- game into that view: correct framing, correct field of view, and `CellFrontCamActivate`
--- flips it to the selfie the engine already knows how to compose.
+-- GTA already has a phone camera, and using it is the whole answer. `CellCamActivate` puts
+-- the game into that view - correct aspect, correct field of view - and
+-- `CellFrontCamActivate` is the selfie the engine composes itself.
 --
--- The first attempt here built it by hand instead - force first person, and a scripted cam
--- for the selfie placed in front of the ped's head. Both were wrong for the same reason:
--- first person hides the player's own head, so the selfie aimed at a model that was not
--- being drawn, and the shot never matched the frame because a gameplay camera is not a
--- camera viewfinder. Every public phone resource uses these natives; there was no reason to
--- invent a worse version.
+-- **The phone is hidden while framing, and that is deliberate.** A NUI page cannot receive a
+-- live feed of the game, so an in-phone viewfinder would mean capturing a frame several times
+-- a second and shipping it back - expensive, and the phone appears inside its own preview.
+-- Every public phone resource hides the handset instead and lets the game BE the viewfinder.
+-- Three attempts here tried to keep it on screen with a see-through display; each failed,
+-- because the app surface, the wallpaper and the camview all paint their own background.
 --
--- The HUD and radar go every frame, because nothing on screen should end up in the picture.
+-- So: the phone goes, the world is the shot, and the prompts say which key does what.
 local camActive, camFront = false, false
 
 camModeOff = function()
@@ -923,6 +923,12 @@ camModeOff = function()
     CellFrontCamActivate(false)
     CellCamActivate(false, false)
     DisplayRadar(true)
+    -- Bring the handset back unless the phone itself is on its way out.
+    if isOpen then
+        SendNUIMessage({ action = 'camHide', on = false })
+        SetNuiFocus(true, true)
+        SetNuiFocusKeepInput(true)
+    end
 end
 
 RegisterNUICallback('camMode', function(data, cb)
@@ -937,13 +943,43 @@ RegisterNUICallback('camMode', function(data, cb)
     CellFrontCamActivate(camFront)
     DisplayRadar(false)
 
+    -- The handset leaves the screen and the cursor goes with it: the player is framing a
+    -- photograph with the mouse now, not clicking buttons.
+    SendNUIMessage({ action = 'camHide', on = true })
+    SetNuiFocus(false, false)
+
     CreateThread(function()
+        local shot = false
         while camActive and isOpen do
             HideHudAndRadarThisFrame()
-            -- The components a photograph must never contain, named individually because
-            -- HideHudAndRadarThisFrame alone leaves some of them drawing.
             for _, id in ipairs({ 1, 2, 3, 4, 6, 7, 8, 9, 13, 19, 20, 22 }) do
                 HideHudComponentThisFrame(id)
+            end
+
+            -- Instructions on screen, because the phone that would have carried them is not
+            -- being drawn. Left click shoots, E flips, Escape or Backspace leaves.
+            SetTextComponentFormat('STRING')
+            AddTextComponentString(L('ph.cam_prompt'))
+            DisplayHelpTextFromStringLabel(0, 0, 0, -1)
+
+            DisableControlAction(0, 24, true)      -- attack: it must not fire a weapon
+            DisableControlAction(0, 25, true)      -- aim
+            DisableControlAction(0, 200, true)     -- pause
+            DisableControlAction(0, 199, true)
+
+            if IsDisabledControlJustPressed(0, 24) and not shot then
+                shot = true
+                -- Straight to the same capture the shutter button used, so there is one path
+                -- and one set of error messages.
+                SendNUIMessage({ action = 'camShoot' })
+                SetTimeout(1200, function() shot = false end)
+            end
+            if IsControlJustPressed(0, 38) then       -- E: flip
+                camFront = not camFront
+                CellFrontCamActivate(camFront)
+            end
+            if IsDisabledControlJustPressed(0, 200) or IsControlJustPressed(0, 177) then
+                break
             end
             Wait(0)
         end
@@ -951,8 +987,7 @@ RegisterNUICallback('camMode', function(data, cb)
     end)
 end)
 
---- The selfie. `CellFrontCamActivate` is the engine's own flip, so the framing stays a
---- camera's rather than a scripted cam pointed at a bone.
+--- The selfie, from the phone's own button when it is showing.
 RegisterNUICallback('camFacing', function(data, cb)
     cb({ ok = true })
     camFront = data and data.front == true
@@ -971,7 +1006,10 @@ RegisterNUICallback('shoot', function(_, cb)
         finished = true
         result = type(result) == 'table' and result or { error = 'x' }
 
-        if focusReleased and isOpen and openRequest == captureRequest then
+        -- Not while the camera is framing. In camera mode Lua has deliberately taken the
+        -- cursor away so the mouse aims the shot, and handing it back after every capture
+        -- would drop a cursor into the middle of the next one.
+        if focusReleased and isOpen and not camActive and openRequest == captureRequest then
             SetNuiFocus(true, true)
             SetNuiFocusKeepInput(true)
         end

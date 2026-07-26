@@ -117,6 +117,7 @@ local T = {
     ['ph.delete']    = 'Delete',
     ['ph.thread_delete'] = 'Delete this conversation?',
     ['ph.copy_code']        = 'Copy code',
+    ['ph.cam_prompt'] = 'Left click to shoot~n~E to flip the camera~n~Esc to close',
     ['ph.code_copied']      = 'Code copied',
     ['ph.use_code']         = 'Use code',
     ['ph.send']      = 'Send',
