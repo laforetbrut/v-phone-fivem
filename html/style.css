@@ -7202,6 +7202,17 @@ html.keyboard-nav .homebar:focus {
    Native applications share the wallpaper as their optical backdrop. Camera,
    Calculator, Cipher and Music keep their purpose-built surfaces. */
 .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {
+  /* No backdrop-filter on this one, deliberately, and it is the exception to the note
+     at the top of this file. On the small panels the blur is what makes them read as
+     frosted. Here the element is the WHOLE app surface, 352x764, transparent, and
+     FiveM's CEF turns a backdrop-filter that size into an opaque box - which is the
+     black square that appeared behind the phone whenever an app was open, and only
+     then. Proved by asking the page what each layer paints rather than what is under
+     a pixel: a filter overflow is painted but never hit-tested.
+
+     Nothing is lost. The gradients below still tint the surface, and the wallpaper
+     behind it already carries blur(18px) brightness(.72) of its own, so the frosting
+     was coming from there all along. */
   --app-card: rgba(255, 255, 255, .56);
   --app-fill: rgba(104, 104, 116, .105);
   --app-sep: rgba(60, 60, 67, .20);
@@ -7216,8 +7227,6 @@ html.keyboard-nav .homebar:focus {
     linear-gradient(160deg,
       rgba(247, 249, 255, .86),
       rgba(235, 238, 247, .70));
-  -webkit-backdrop-filter: blur(28px) saturate(158%);
-  backdrop-filter: blur(28px) saturate(158%);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {

@@ -805,20 +805,15 @@ local SOCIAL_OPS = {
 -- The page owns the keyboard while the phone is open, so it is the only side that sees Alt
 -- go down. It says so here; the guard thread notices the release, because by then focus has
 -- been dropped and the control reads normally again.
--- Hold Alt: the mouse goes back to the camera.
+-- Alt TOGGLES the camera. One tap frees the mouse, another gives the phone back.
 --
--- Two attempts failed before this one, both for the same reason - each assumed a side could
--- see something it could not.
+-- Holding was the original idea and it does not work, for a reason worth writing down: only
+-- the page can see Alt go down (the browser owns the keyboard), and only the game can see it
+-- come back up (by then focus is gone and the page has no keyboard). Neither side sees both
+-- edges, so "held" is a state nothing can observe reliably - the release was read as instant
+-- every time, and free look ended on the frame it began.
 --
---   1. Read the press in Lua. It never fired: while the phone holds focus, the browser has
---      the keyboard and the control never registers.
---   2. Drop focus and watch control 19 for the release. It lasted one frame: the game had
---      only just been handed input and had not yet registered the key as down, so the very
---      next frame read it as released.
---
--- So: drop focus completely, which is the only state that actually returns the camera, then
--- WAIT before believing anything the control says. Once the game has had a few frames it
--- reports Alt correctly, and the release is real.
+-- A toggle needs one edge from each side, which is exactly what is available.
 local function endFreeLook()
     if not freeLook then return end
     freeLook = false
@@ -830,9 +825,8 @@ local function endFreeLook()
     if GetConvar('phone_debug', '') == 'true' then print('[v-phone] free look off') end
 end
 
-RegisterNUICallback('freelook', function(data, cb)
+RegisterNUICallback('freelook', function(_, cb)
     cb({ ok = true })
-    if data and data.on == false then endFreeLook() return end
     if not isOpen or freeLook then return end
 
     freeLook = true
@@ -842,15 +836,22 @@ RegisterNUICallback('freelook', function(data, cb)
     if GetConvar('phone_debug', '') == 'true' then print('[v-phone] free look on') end
 
     CreateThread(function()
-        -- Give the game time to see the key the browser was holding a moment ago. Below
-        -- roughly 150ms it reports Alt as up and free look ends before it began.
-        local settle = GetGameTimer() + 250
-        while freeLook and isOpen and GetGameTimer() < settle do Wait(0) end
-        -- A player who taps Alt rather than holds it gets a few seconds of camera and then
-        -- the phone back, instead of a cursor that never returns.
-        local giveUp = GetGameTimer() + 8000
+        -- The game has just been handed input and the player may still be holding the tap
+        -- that got us here. Wait for Alt to be UP before watching for the next press, or the
+        -- same keystroke toggles straight back off.
+        while freeLook and isOpen and IsControlPressed(0, 19) do Wait(0) end
+        Wait(120)
+
+        -- Now the next tap ends it. Escape does too, since a player whose cursor is gone
+        -- reaches for that first.
         while freeLook and isOpen do
-            if not IsControlPressed(0, 19) or GetGameTimer() > giveUp then break end
+            -- 199 and 200 are DISABLED by the guard thread, so the plain read never sees
+            -- them; the disabled form does. 19 is not blocked, so either works for Alt.
+            if IsControlJustPressed(0, 19)
+                or IsDisabledControlJustPressed(0, 200) or IsControlJustPressed(0, 200)
+                or IsDisabledControlJustPressed(0, 199) or IsControlJustPressed(0, 199) then
+                break
+            end
             Wait(0)
         end
         endFreeLook()
