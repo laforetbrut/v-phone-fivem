@@ -1012,6 +1012,60 @@ function openFolder(i) {
     }));
 }
 
+// Taking an app out of a folder, by pressing and holding the folder itself.
+//
+// There is already a badge inside the folder view while arrange mode is on, and it draws
+// correctly - but reaching it means opening a folder DURING a drag, and that path has now failed
+// three times in players' hands for reasons that do not reproduce off the game. So this is a
+// second route that cannot depend on any of it: a long press on the folder, no arrange mode, no
+// drag, a plain list with a button per app.
+//
+// Two ways to do one thing is usually a smell. Here it is the honest answer: the gesture-based
+// one is nicer when it works, and a player whose apps are stuck in a folder needs a way out that
+// is not conditional on a gesture behaving.
+function folderManageSheet(i) {
+  const it = layoutItems()[i];
+  if (!it || it.t !== 'folder') return;
+
+  sheet(it.name || L('ph.folder'),
+    UI.group(it.apps.map((id) => {
+      const a = appById(id);
+      return UI.row({
+        icon: a ? a.icon : 'dot',
+        title: a ? L(a.label) : id,
+        value: L('ph.folder_take_out'),
+        tone: 'neg',
+        data: { out: id },
+      });
+    })) +
+    '<div class="groupfoot">' + esc(L('ph.folder_manage_hint')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      [...byId('sheet').querySelectorAll('[data-out]')].forEach((el) =>
+        el.addEventListener('click', async () => {
+          const id = el.dataset.out;
+          const items = layoutItems();
+          const folder = items[i];
+          if (!folder || folder.t !== 'folder') return;
+
+          folder.apps = folder.apps.filter((x) => x !== id);
+          // A folder holding one app is a folder for no reason: it becomes that app again.
+          if (folder.apps.length === 1) items[i] = { t: 'app', id: folder.apps[0] };
+          else if (!folder.apps.length) items.splice(i, 1);
+          items.splice(i + 1, 0, { t: 'app', id });
+
+          await saveLayout(items);
+          renderHome();
+          ui('folder');
+          if (!closeSheet(false, epoch)) return;
+          // Still a folder with something in it? Stay on it, so several apps can be taken out
+          // in a row without hunting for the folder again.
+          const now = layoutItems()[i];
+          if (now && now.t === 'folder') folderManageSheet(i);
+        }));
+    });
+}
+
 byId('folderview').addEventListener('click', (e) => {
   if (e.target.id === 'folderview') byId('folderview').classList.remove('on');
 });
@@ -1055,10 +1109,20 @@ let arrDownAt = null;
 function beginDrag(tile, e) {
   arrDownAt = { x: e.clientX, y: e.clientY };
   const items = layoutItems();
+  // `data-idx` counts real TILES; `items` also holds page breaks. Reading `items[idx]` was
+  // correct until breaks existed and picks the wrong entry the moment one does - which would
+  // lift the item next to the one under the finger.
   const idx = Number(tile.dataset.idx);
   if (Number.isNaN(idx)) return;
-  const item = items[idx];
-  arr = { item, items: items.filter((_, i) => i !== idx), insert: idx,
+  let real = -1, at = -1;
+  for (let i = 0; i < items.length; i += 1) {
+    if (items[i] && items[i].t === 'break') continue;
+    real += 1;
+    if (real === idx) { at = i; break; }
+  }
+  if (at < 0) return;
+  const item = items[at];
+  arr = { item, items: items.filter((_, i) => i !== at), insert: at,
           hoverEl: null, since: 0, folderIdx: null, folderTimer: null, edgeTimer: null };
 
   const g = byId('dragghost');
@@ -1251,7 +1315,19 @@ function initArrange() {
     if (editing) { downTile = tile; if (tile) beginDrag(tile, e); return; }
     if (!tile) return;
     downTile = tile;
-    hold = setTimeout(() => { hold = null; enterArrange(); beginDrag(tile, e); }, 380);
+    hold = setTimeout(() => {
+      hold = null;
+      // A held FOLDER opens its contents to be managed. Arranging a folder among the other
+      // icons is what dragging it does; what a held folder is for is what is inside it, and
+      // that had no route at all.
+      if (tile.classList.contains('isfolder')) {
+        ui('folder');
+        folderManageSheet(Number(tile.dataset.idx));
+        return;
+      }
+      enterArrange();
+      beginDrag(tile, e);
+    }, 380);
   });
 
   window.addEventListener('pointermove', (e) => {
@@ -1899,6 +1975,31 @@ function noteEdit(n) {
   });
 }
 
+// When a mail arrived, as a person would write it.
+//
+// The column is a MySQL TIMESTAMP, and oxmysql hands one back as a millisecond epoch NUMBER -
+// so `String(m.at).slice(0, 16)` printed `1765078898000` under the sender's address. It looked
+// like a bug because it was one: a raw clock value on a screen a player reads.
+//
+// Both shapes are handled, because which one arrives depends on the driver and on the column: a
+// number is an epoch, a string is already a date and only needs trimming.
+function mailWhen(at) {
+  if (at == null || at === '') return '';
+  const asNumber = (typeof at === 'number') ? at
+    : (/^\d{10,}$/.test(String(at)) ? Number(at) : null);
+  if (asNumber !== null) {
+    // Ten digits is seconds, thirteen is milliseconds. Guessing wrong puts the date in 1970 or
+    // in the year 57000, so it is worth the one comparison.
+    const ms = asNumber < 1e11 ? asNumber * 1000 : asNumber;
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+      + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  // '2026-07-26 14:21:33' -> '2026-07-26 14:21'
+  return String(at).slice(0, 16);
+}
+
 // ── Mail ───────────────────────────────────────────────────────
 // A mail client, not a second Messages: an address you own, folders, group recipients,
 // drafts you can come back to, replies that quote who they answer, and a keep flag that
@@ -2069,7 +2170,7 @@ function mailRead(m) {
       '<div class="mailsubj">' + esc(m.subject || L('ph.mail_nosubject')) + '</div>' +
       '<div class="mailmeta"><b>' + esc(m.from_addr) + '</b></div>' +
       '<div class="mailmeta">' + esc(L('ph.mail_to')) + ' ' + esc(m.to_addr || '') + '</div>' +
-      '<div class="mailmeta">' + esc(String(m.at || '').slice(0, 16)) + '</div>' +
+      '<div class="mailmeta">' + esc(mailWhen(m.at)) + '</div>' +
     '</div>' +
     '<div class="mailbody">' + esc(m.body || '') + '</div>' +
     (m.image ? '<button class="mailimg" id="mimg" type="button" style="'

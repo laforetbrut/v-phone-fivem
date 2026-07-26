@@ -1040,6 +1040,25 @@ Config.Log = {
     debug = false,
 }
 
+-- ══════════════════════════════════════════════════════════════
+--  A PHONE HEARD RINGING
+-- ══════════════════════════════════════════════════════════════
+-- A ringing phone is a sound in the room, not a private notification. Somebody standing next to
+-- a player whose phone goes off should hear it - that is how a phone gives its owner away, and
+-- it is worth having for exactly that reason.
+Config.RingOut = {
+    enabled = true,
+
+    -- How far it carries, in metres. GTA's own phone ring is a quiet sound; much past ten
+    -- metres and it is inaudible anyway, so this mostly decides who gets told about it.
+    range = 12.0,
+
+    -- A phone on Do Not Disturb, or with its ring volume at zero, makes no sound for its owner
+    -- and makes none here either. Silencing a phone that still rings out loud would be worse
+    -- than not having the feature.
+    respectSilent = true,
+}
+
 Config.Admin = {
     -- The ACE permission a command or menu action is checked against. `command.PLAYERID`
     -- style aces and qb-core's `qbadmin.menu` / god group are both accepted; this is the

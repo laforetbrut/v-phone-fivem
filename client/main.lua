@@ -566,6 +566,46 @@ RegisterCommand('phonemusic', function()
     end)
 end, false)
 
+-- Somebody nearby has a phone ringing.
+--
+-- The owner's own ring is `PlaySoundFrontend`, which is 2D and private to their client. This is
+-- the same GTA sound placed ON THEIR PED, so it arrives from the right direction and fades with
+-- distance - which is the whole point: a ringing phone should give its owner away.
+--
+-- Looped here rather than by the engine, because `Remote_Ring` is a single ring and a phone rings
+-- until it is answered. The loop ends when the server says so, or when the ped goes away.
+local ringingPeds = {}
+
+RegisterNetEvent('v-phone:client:ringOut', function(who, on)
+    who = tonumber(who)
+    if not who then return end
+
+    if not on then
+        ringingPeds[who] = nil
+        return
+    end
+    if ringingPeds[who] then return end
+    ringingPeds[who] = true
+
+    CreateThread(function()
+        while ringingPeds[who] do
+            local other = GetPlayerFromServerId(who)
+            local ped = other ~= -1 and GetPlayerPed(other) or 0
+            -- Out of scope, or gone: stop rather than ringing at nothing for the length of a
+            -- call somebody else is having on the far side of the map.
+            if not ped or ped == 0 or not DoesEntityExist(ped) then
+                ringingPeds[who] = nil
+                break
+            end
+            local id = GetSoundId()
+            PlaySoundFromEntity(id, 'Remote_Ring', ped, 'Phone_SoundSet_Michael', false, 0)
+            Wait(1400)
+            StopSound(id)
+            ReleaseSoundId(id)
+        end
+    end)
+end)
+
 RegisterNetEvent('v-phone:client:emergency', function(alert)
     if type(alert) ~= 'table' then return end
     SendNUIMessage({ action = 'emergency', alert = alert, strings = strings() })

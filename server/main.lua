@@ -1024,9 +1024,48 @@ local function logCall(c, answered)
     end
 end
 
+--- Tell the people near a ringing phone that it is ringing.
+---
+--- The ring the owner hears is `PlaySoundFrontend`, which is 2D and private to that client. For
+--- anybody else to hear it, THEIR client has to place the sound on the ringing player's ped - so
+--- the server has to say who is ringing and to whom it matters.
+---
+--- Sent only to players in earshot rather than broadcast: the sound is positional and would be
+--- inaudible anyway, and a call on a full server should not be an event to two hundred clients.
+local function ringOut(who, on)
+    local cfg = Config.RingOut or {}
+    if cfg.enabled == false then return end
+
+    -- A silenced phone stays silent to the room as well. Anything else would make Do Not
+    -- Disturb a setting that hides a call from its owner and announces it to everybody else.
+    if on and cfg.respectSilent ~= false then
+        local p = Core.GetPlayer(who)
+        local prefs = p and prefsOf(p)
+        if not prefs then return end
+        if prefs.dnd == true then return end
+        if (tonumber(prefs.ringVolume) or 0.7) <= 0 then return end
+    end
+
+    local at = coordsOf(who)
+    if not at then return end
+    local range = math.max(2.0, math.min(80.0, tonumber(cfg.range) or 12.0))
+
+    for _, raw in ipairs(GetPlayers()) do
+        local other = tonumber(raw)
+        if other and other ~= who then
+            local theirs = coordsOf(other)
+            if theirs and #(at - theirs) <= range then
+                TriggerClientEvent('v-phone:client:ringOut', other, who, on and true or false)
+            end
+        end
+    end
+end
+
 local function endCall(id, reason)
     local c = Calls[id]
     if not c then return end
+    -- Whether it was answered, missed or cancelled, the ringing has stopped.
+    if c.b then ringOut(c.b, false) end
     speakerOff(id)
     -- Log it once, as it ends, from the state it reached: active means it connected.
     logCall(c, c.state == 'active')
@@ -1116,6 +1155,9 @@ local function startCall(src, p, toNumber, anonymous, video)
     end
 
     TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber, video = callRecord.video })
+    -- Heard in the room, unless the recipient silenced their phone.
+    if not silent then ringOut(target, true) end
+
     TriggerClientEvent('v-phone:client:callIn', target, {
         id = id,
         number = Calls[id].anonymous and '' or Calls[id].aNum,
@@ -1138,6 +1180,9 @@ local function answerCall(src)
     local c = id and Calls[id]
     if not c or c.state ~= 'ringing' or c.b ~= src then return false end
     c.state, c.at = 'active', os.time()
+    -- Answered, so the room stops hearing it ring. `endCall` also does this, for the call that
+    -- is never answered.
+    ringOut(src, false)
 
     TriggerClientEvent('v-phone:client:callActive', c.a, { id = id })
     TriggerClientEvent('v-phone:client:callActive', c.b, { id = id })
@@ -2599,6 +2644,32 @@ local function airOfferTtl()
     return math.max(1, tonumber(Config.Airdrop and Config.Airdrop.offerTtl) or 30)
 end
 
+--- What to CALL somebody else's phone.
+---
+--- `prefs.deviceName` defaults to the bare string 'iFruit' when a player never set one, so a
+--- FruitDrop list showed "iFruit" for every device in the room - which is no help at all when
+--- the whole point of the list is picking the right person.
+---
+--- A custom name is used exactly as it stands. Otherwise the phone is named after its owner, the
+--- way the setup screen would have done: their setup name if they gave one, and the first word
+--- of the character's name if they did not.
+---
+--- Localised for the READER, not the owner: `forSrc` is the person looking at the list, and it
+--- is their phone that has to make sense of it. The pattern is the same one the setup screen
+--- uses, so a phone named here reads identically to one named there.
+local function deviceNameOf(p, forSrc)
+    local prefs = prefsOf(p)
+    local plain = L(forSrc, 'ph.setup_default_device')
+    local name = tostring((prefs and prefs.deviceName) or '')
+    if name ~= '' and name ~= plain and name ~= 'iFruit' then return name end
+
+    local who = tostring((prefs and prefs.ownerName) or '')
+    if who == '' then who = tostring(p.name or '') end
+    local first = who:match('^%S+')
+    if not first or first == '' then return plain end
+    return (L(forSrc, 'ph.setup_device_pattern'):gsub('{name}', first))
+end
+
 -- Who this player could AirDrop to right now: online, Bluetooth on, and close enough.
 V.Callback('v-phone:airdropScan', function(src, resolve)
     local me = Core.GetPlayer(src)
@@ -2620,7 +2691,7 @@ V.Callback('v-phone:airdropScan', function(src, resolve)
                 if c and #(c0 - c) <= airRange() then
                     out[#out + 1] = {
                         id = tid,
-                        name = prefsOf(tp).deviceName or tp.name or 'iFruit',
+                        name = deviceNameOf(tp, src),
                     }
                 end
             end
@@ -2754,7 +2825,10 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
         or (payload.name ~= '' and (payload.name .. ' - ' .. payload.number) or payload.number)
     TriggerClientEvent('v-phone:client:airdrop', to,
         {
-            offerId = offerId, from = me.name or 'iFruit', kind = kind, preview = preview,
+            -- The same name the sender's own device shows in a scan, so the two sides agree:
+            -- picking "Jimmy's iFruit" and then being told the offer is from "Jim Halpert" is
+            -- two names for one phone.
+            offerId = offerId, from = deviceNameOf(me, to), kind = kind, preview = preview,
             ttlMs = math.floor(airOfferTtl() * 1000),
         })
     resolve({ ok = true })

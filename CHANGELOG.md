@@ -4,6 +4,32 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.12] - 2026-07-26
+
+### Added (English first)
+
+- **A ringing phone is heard by the people around it.** The ring its owner hears is a 2D frontend sound, private to that client - so a phone going off gave nothing away, which is the opposite of what a ringing phone is for. The server now tells whoever is within `Config.RingOut.range` and their client places GTA's own phone ring **on the ringing player's ped**, so it arrives from the right direction and fades with distance. A phone on Do Not Disturb, or with its ring volume at zero, stays silent to the room as well: silencing a phone that then rings out loud would be worse than not having the feature. Sent only to players in earshot rather than broadcast, because a call on a full server should not be an event to two hundred clients.
+- **An app can be taken out of a folder by pressing and holding the folder.** A plain list, a button per app, no arrange mode and no drag. The badge inside the folder view stays - it draws correctly - but reaching it means opening a folder mid-drag, and that path has now failed three times in players' hands for reasons that do not reproduce off the game. Two routes to one thing is usually a smell; here it is the honest answer, because somebody whose apps are stuck in a folder needs a way out that does not depend on a gesture behaving.
+
+### Fixed
+
+- **A mail showed a row of digits where its date belongs.** `1765078898000` under the sender's address: the column is a MySQL TIMESTAMP and oxmysql hands one back as a millisecond epoch NUMBER, so trimming it to sixteen characters printed the clock value. Both shapes are handled now - a number is an epoch, seconds or milliseconds told apart by magnitude, and a string is already a date and only needs trimming.
+- **AirDrop listed every device as "iFruit".** `deviceName` defaults to that bare string when a player never set one, which is no help at all when the point of the list is picking the right person. A phone with no name of its own is now named after its owner, using the same pattern the setup screen uses and localised for whoever is reading the list. The offer says the same name, so picking "Jimmy's iFruit" and then being told the offer is from "Jim Halpert" cannot happen.
+- **Picking up a tile could lift the wrong one**, once page breaks existed: `beginDrag` read `items[data-idx]`, and `data-idx` counts tiles while the list also holds breaks. Correct until 1.2.10 introduced them, wrong the moment one exists. It walks the list now, as the drop already did.
+
+### Ajouts (miroir français)
+
+- **Un téléphone qui sonne est entendu par les gens autour.** La sonnerie que son propriétaire entend est un son 2D « frontend », privé à son client : un téléphone qui sonnait ne trahissait donc personne, ce qui est l'inverse de ce à quoi sert une sonnerie. Le serveur prévient désormais qui se trouve dans `Config.RingOut.range` et leur client place la sonnerie de téléphone de GTA **sur le ped du joueur qui sonne** : elle vient donc de la bonne direction et s'atténue avec la distance. Un téléphone en Ne pas déranger, ou avec le volume de sonnerie à zéro, reste silencieux pour la pièce aussi : réduire au silence un téléphone qui sonnerait ensuite tout haut serait pire que de ne pas avoir la fonctionnalité. Envoyé aux seuls joueurs à portée d'oreille plutôt qu'en diffusion générale, parce qu'un appel sur un serveur plein ne doit pas être un événement pour deux cents clients.
+- **On peut sortir une application d'un dossier en appuyant longuement sur le dossier.** Une liste simple, un bouton par application, sans mode réorganisation ni glissement. Le badge dans la vue dossier reste — il s'affiche correctement — mais l'atteindre suppose d'ouvrir un dossier pendant un déplacement, et ce chemin a échoué trois fois entre les mains des joueurs pour des raisons qui ne se reproduisent pas hors du jeu. Deux chemins pour une seule chose est généralement un défaut ; ici c'est la réponse honnête, parce que quelqu'un dont les applications sont bloquées dans un dossier a besoin d'une sortie qui ne dépende pas du bon comportement d'un geste.
+
+### Correctifs
+
+- **Un mail affichait une suite de chiffres à la place de sa date.** `1765078898000` sous l'adresse de l'expéditeur : la colonne est un TIMESTAMP MySQL et oxmysql le renvoie sous forme de NOMBRE epoch en millisecondes, si bien que le tronquer à seize caractères imprimait la valeur d'horloge. Les deux formes sont désormais traitées — un nombre est un epoch, secondes ou millisecondes distinguées par l'ordre de grandeur, et une chaîne est déjà une date qu'il suffit de tronquer.
+- **AirDrop listait chaque appareil comme « iFruit ».** `deviceName` retombe sur cette chaîne nue quand un joueur n'en a jamais défini, ce qui n'aide en rien alors que l'intérêt de la liste est de choisir la bonne personne. Un téléphone sans nom propre porte maintenant celui de son propriétaire, avec le même motif que l'écran de configuration et localisé pour qui lit la liste. L'offre annonce le même nom : choisir « iFruit de Jimmy » puis s'entendre dire que l'offre vient de « Jim Halpert » ne peut plus arriver.
+- **Attraper une tuile pouvait en soulever une autre**, dès que les sauts de page existaient : `beginDrag` lisait `items[data-idx]`, et `data-idx` compte les tuiles alors que la liste contient aussi les sauts. Correct jusqu'à ce que la 1.2.10 les introduise, faux dès qu'il en existe un. La liste est maintenant parcourue, comme le dépôt le faisait déjà.
+
+---
+
 ## [1.2.11] - 2026-07-26
 
 ### Fixed (English first)
