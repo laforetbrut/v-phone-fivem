@@ -8612,6 +8612,10 @@ body.inframe.dark .uisearch {
    Three attempts hung this off a gesture and all three failed in players' hands. A visible
    control in the place the player is already looking cannot be missed, cannot race a click, and
    does not depend on a mode being on. */
+/* The folder's own controls, side by side under its apps. */
+.folderacts { display: flex; justify-content: center; gap: 8px; }
+.foldername { cursor: pointer; }
+
 .foldermanage {
   display: block;
   margin: 18px auto 0;
@@ -8654,6 +8658,109 @@ body.inframe.dark .uisearch {
 /* The same restless wobble the home screen uses, so arrange mode reads the same inside a
    folder as outside one. */
 #folderview.arranging .tile .wrap { animation: ph-jiggle .28s ease-in-out infinite alternate; }
+
+/* ══ The emergency alert ═══════════════════════════════════════
+   A city-wide warning, drawn over everything with the phone SHUT - so it is its own surface,
+   not part of the handset.
+
+   It shipped in 1.2.9 with no rules at all: an unstyled div stack around an unstyled svg,
+   which is a screen-filling warning triangle above three lines of unformatted text. The
+   look is the real thing it is modelled on - a wireless emergency alert: amber, banded,
+   loud, and impossible to mistake for a notification. */
+.emergency {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-family: var(--ios-ui, system-ui, sans-serif);
+  background: radial-gradient(ellipse at 50% 35%, rgba(70, 42, 4, .62), rgba(6, 5, 3, .88));
+}
+.emergency.on { display: flex; }
+
+.emergencycard {
+  position: relative;
+  display: flex;
+  width: min(420px, 92vw);
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  padding: 30px 24px 22px;
+  color: #fff8ea;
+  text-align: center;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #2a1c05, #14100a);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .62), inset 0 0 0 1px rgba(255, 179, 0, .34);
+  animation: ph-emergency-in .34s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+/* The hazard band across the top, the one part of this that is pure signal. */
+.emergencycard::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 5px;
+  content: "";
+  background: repeating-linear-gradient(115deg, #ffb300 0 14px, #1a1206 14px 28px);
+}
+
+.emergencyicon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 15px;
+  place-items: center;
+  color: #ffb300;
+  border-radius: 50%;
+  background: rgba(255, 179, 0, .13);
+  box-shadow: 0 0 0 1px rgba(255, 179, 0, .3);
+  animation: ph-emergency-pulse 1.5s ease-in-out infinite;
+}
+.emergencyicon svg { width: 30px; height: 30px; }
+
+.emergencykind {
+  color: #ffb300;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.emergencytitle {
+  margin: 7px 0 0;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.015em;
+}
+
+.emergencybody {
+  margin: 9px 0 4px;
+  color: rgba(255, 248, 234, .78);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* The acknowledge button. `UI.button(..., 'tinted')` is phone chrome, so it is re-tinted
+   here rather than left to inherit a blue that belongs to a different surface. */
+.emergencycard .uibtn {
+  margin-top: 17px;
+  color: #201502;
+  font-weight: 700;
+  background: #ffb300;
+}
+
+@keyframes ph-emergency-in {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes ph-emergency-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 179, 0, .3); }
+  50%      { box-shadow: 0 0 0 1px rgba(255, 179, 0, .5), 0 0 26px rgba(255, 179, 0, .3); }
+}
 
 /* ══ The warrant terminal ══════════════════════════════════════
    A police tool, deliberately not the phone: a dark forensic console over the whole

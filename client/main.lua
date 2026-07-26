@@ -1022,6 +1022,47 @@ RegisterNUICallback('music', function(data, cb)
     end
 end)
 
+-- ══════════════════════════════════════════════════════════════
+-- A charger that wants paying
+-- ══════════════════════════════════════════════════════════════
+-- The server offers, the page answers. Neither the price nor which charger it is comes from
+-- this side - see server/charging.lua - so these two relays carry nothing but yes and no.
+RegisterNUICallback('chargePay', function(_, cb)
+    V.Request('v-phone:charge:pay', function(res) cb(res or { error = 'x' }) end, {})
+end)
+
+RegisterNUICallback('chargeDecline', function(_, cb)
+    V.Request('v-phone:charge:decline', function(res) cb(res or { error = 'x' }) end, {})
+end)
+
+--- Somebody is standing at a paid charger.
+---
+--- It arrives as a real phone notification rather than a prompt on the world: the phone is
+--- what is being charged, the money is on the phone, and a player whose handset is away should
+--- still find out - which is what `peek` is for. The page raises the accept/refuse sheet when
+--- it is open, and keeps the notification either way so a dismissed offer can be found again.
+RegisterNetEvent('v-phone:client:chargeOffer', function(d)
+    if type(d) ~= 'table' then return end
+    if d.clear then
+        SendNUIMessage({ action = 'chargeClear' })
+        return
+    end
+    if not d.offer then return end
+
+    local b = {
+        app = 'settings', icon = 'settings',
+        title = L('ph.charge_offer_title'),
+        body = L('ph.charge_offer_body'):format(tostring(d.price or 0), tostring(d.label or '')),
+        hasItem = true,
+    }
+    SendNUIMessage({ action = 'chargeOffer', offer = d, banner = b })
+    if isOpen then
+        if not notificationMuted('banner', b) then buzz(false) end
+    else
+        peek('banner', b)
+    end
+end)
+
 RegisterNUICallback('payRent', function(data, cb)
     if GetResourceState('v-housing') ~= 'started' then cb({ error = 'off' }) return end
     V.Request('v-housing:payRent', function(res) cb(res or { error = 'x' }) end, data)

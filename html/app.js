@@ -975,14 +975,26 @@ function openFolder(i) {
   ui('folder');
 
   // The way out, as a button rather than a gesture.
+  //
+  // `onclick` rather than `addEventListener`: openFolder runs every time a folder is opened and
+  // listeners would stack, so the same folder would raise the sheet several times over.
+  const leave = () => byId('folderview').classList.remove('on', 'arranging');
   const manage = byId('foldermanage');
   if (manage) {
     manage.textContent = L('ph.folder_manage');
-    manage.onclick = () => {
-      byId('folderview').classList.remove('on', 'arranging');
-      folderManageSheet(i);
-    };
+    manage.onclick = () => { leave(); folderManageSheet(i); };
   }
+
+  const rename = byId('folderrename');
+  if (rename) {
+    rename.textContent = L('ph.folder_rename');
+    rename.onclick = () => { leave(); folderRenameSheet(i); };
+  }
+
+  // And the title itself, which is where a phone puts this. The button above is what makes it
+  // reachable; this is the gesture people will try first.
+  const title = byId('foldername');
+  if (title) title.onclick = () => { leave(); folderRenameSheet(i); };
 
   // Out of the folder, onto the home screen, in the position the folder occupies.
   const takeOut = (id) => {
@@ -1036,6 +1048,47 @@ function openFolder(i) {
 // Two ways to do one thing is usually a smell. Here it is the honest answer: the gesture-based
 // one is nicer when it works, and a player whose apps are stuck in a folder needs a way out that
 // is not conditional on a gesture behaving.
+// Renaming a folder.
+//
+// A folder is created with the default name and there was no way to change it, so a player with
+// three folders had three called "Folder". The name lives on the layout item, so this is one
+// field and a save - and clearing the field is a reset, because `layoutItems` falls back to the
+// default name for a folder that has none.
+function folderRenameSheet(i) {
+  const it = (i >= 0) ? layoutItems()[i] : null;
+  if (!it || it.t !== 'folder') { toast(L('ph.folder_gone')); return; }
+
+  sheet(L('ph.folder_rename'),
+    UI.field('frname', L('ph.folder_name'), it.name || '', 'maxlength="24"') +
+    UI.button(L('ph.save'), 'frgo') +
+    '<div class="groupfoot">' + esc(L('ph.folder_rename_hint')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      const go = async () => {
+        const name = byId('frname').value.trim();
+        const items = layoutItems();
+        const folder = items[i];
+        // The layout can have changed under an open sheet - the folder may have been emptied by
+        // its last app being taken out - so this is checked again rather than assumed.
+        if (!folder || folder.t !== 'folder') {
+          if (closeSheet(false, epoch)) toast(L('ph.folder_gone'));
+          return;
+        }
+        folder.name = name;
+        await saveLayout(items);
+        renderHome();
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        toast(L('ph.folder_renamed'));
+      };
+      byId('frgo').addEventListener('click', go);
+      // Enter saves. A one-field sheet where the keyboard cannot finish the job is a sheet that
+      // makes the player hunt for a button they are already done with.
+      byId('frname').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      byId('frname').focus();
+    });
+}
+
 function folderManageSheet(i) {
   const it = (i >= 0) ? layoutItems()[i] : null;
   // Says so rather than doing nothing. Four reports of "nothing happens" is the argument for
@@ -1043,6 +1096,13 @@ function folderManageSheet(i) {
   if (!it || it.t !== 'folder') { toast(L('ph.folder_gone')); return; }
 
   sheet(it.name || L('ph.folder'),
+    UI.group([UI.row({
+      icon: 'note',
+      title: L('ph.folder_rename'),
+      subtitle: it.name || L('ph.folder'),
+      chevron: true,
+      data: { rename: '1' },
+    })]) +
     UI.group(it.apps.map((id) => {
       const a = appById(id);
       return UI.row({
@@ -1056,6 +1116,10 @@ function folderManageSheet(i) {
     '<div class="groupfoot">' + esc(L('ph.folder_manage_hint')) + '</div>',
     () => {
       const epoch = sheetEpoch;
+      const ren = byId('sheet').querySelector('[data-rename]');
+      if (ren) ren.addEventListener('click', () => {
+        if (closeSheet(false, epoch)) folderRenameSheet(i);
+      });
       [...byId('sheet').querySelectorAll('[data-out]')].forEach((el) =>
         el.addEventListener('click', async () => {
           const id = el.dataset.out;
@@ -1940,7 +2004,7 @@ function healthRecord() {
     const r = (d && d.record) || {};
     body(
       UI.hero({
-        appicon: 'health',
+        appicon: 'heart',
         eyebrow: L('ph.steps'),
         value: String(r.steps || 0),
         subtitle: L('ph.steps_today'),
@@ -3565,7 +3629,7 @@ async function vehicleRemote(v) {
   if (controls.neon) group.push(UI.row({ icon: 'sparkles', tint: '#AF52DE', title: L('ph.veh_neon'), chevron: true, data: { a: 'neon' } }));
   if (controls.doors) group.push(UI.row({ icon: 'garage', tint: '#0A84FF', title: L('ph.veh_doors'), chevron: true, data: { a: 'doors' } }));
   if (controls.horn) group.push(UI.row({ icon: 'speaker', tint: '#FF9500', title: L('ph.veh_horn'), data: { a: 'horn' } }));
-  if (controls.engine) group.push(UI.row({ icon: 'battery', tint: '#FF453A', title: L('ph.veh_engine'), chevron: true, data: { a: 'engine' } }));
+  if (controls.engine) group.push(UI.row({ icon: 'fuel', tint: '#FF453A', title: L('ph.veh_engine'), chevron: true, data: { a: 'engine' } }));
   if (controls.alarm) group.push(UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.veh_alarm'), data: { a: 'alarm' } }));
 
   sheet(v.model || plate,
@@ -3608,8 +3672,8 @@ async function vehicleRemote(v) {
               });
           } else if (a === 'engine') {
             sheet(L('ph.veh_engine'), UI.group([
-              UI.row({ icon: 'battery', tint: '#34C759', title: L('ph.veh_engine_on'), data: { e: 'on' } }),
-              UI.row({ icon: 'battery', tint: '#FF453A', title: L('ph.veh_engine_off'), data: { e: 'off' } }),
+              UI.row({ icon: 'fuel', tint: '#34C759', title: L('ph.veh_engine_on'), data: { e: 'on' } }),
+              UI.row({ icon: 'fuel', tint: '#FF453A', title: L('ph.veh_engine_off'), data: { e: 'off' } }),
             ]), () => {
               qrows('sheet', '.row', (x) => x.addEventListener('click',
                 () => vehicleSend(plate, 'engine', x.dataset.e)));
@@ -4332,6 +4396,22 @@ function musicArt(track, cls) {
     '<i></i>' + svg('music') + '</span>';
 }
 
+// A playlist's own artwork.
+//
+// `musicArt` seeds a palette from a TRACK; a playlist has a name, an icon and sometimes a tint
+// of its own, so this is the same span with those three instead. It exists because the playlist
+// header used to roll its own markup with classes nothing styled - see the header below.
+function musicPlaylistArt(playlist, cls) {
+  const pl = playlist || {};
+  // Only a hex colour reaches the style attribute. The tint round-trips through app storage,
+  // which this page writes, so anything else is dropped rather than interpolated into CSS.
+  const raw = String(pl.tint || '').trim();
+  const tint = /^#[0-9a-fA-F]{3,8}$/.test(raw) ? raw : '';
+  const palette = MUSIC_PALETTES[musicSeed({ title: pl.name || 'music' })];
+  return '<span class="musicart ' + esc(cls || '') + '" style="--ma:' + (tint || palette[0]) +
+    ';--mb:' + (tint || palette[1]) + '">' + '<i></i>' + svg(pl.icon || 'music') + '</span>';
+}
+
 async function musicStorage(key, fallback) {
   const r = await post('appStorage', { app: 'music', op: 'get', key });
   try {
@@ -4858,17 +4938,27 @@ async function musicRenderPlaylists(model) {
 
   // ── One playlist ────────────────────────────────────────────
   if (open) {
-    setNav(open.name, () => { musicPlaylistOpen = null; RENDER.music(); },
+    // `setNav(title, backLabel, action, onBack)`.
+    //
+    // The closure was passed as the LABEL, so the back button rendered its own source code as
+    // its text - `() => { musicPlaylistOpen = null; RENDER.music(); }` across two lines of the
+    // nav bar - and, because the fourth argument was missing, pressing it left the app entirely
+    // instead of going back to the list of playlists.
+    setNav(open.name, L('ph.playlists'),
       open.readonly ? null : { icon: 'add', label: L('ph.playlist_add_track'),
-        onClick: () => musicAddToPlaylist(model, open) });
+        onClick: () => musicAddToPlaylist(model, open) },
+      () => { musicPlaylistOpen = null; RENDER.music(); });
     body(
-      '<div class="musicplhead">' +
-      '<div class="musicplart" style="--tint:' + esc(open.tint || '#FF2D55') + '">' +
-      svg(open.icon || 'music') + '</div>' +
-      '<div><b>' + esc(open.name) + '</b>' +
-      '<small>' + esc(L('ph.playlist_count').replace('{n}', String(open.tracks.length))) +
-      (open.readonly ? ' · ' + esc(L('ph.playlist_locked')) : '') + '</small></div>' +
-      '</div>' +
+      // The header uses `musictrackdetail`, which is the styled one.
+      //
+      // It used to use `musicplhead` and `musicplart` - two class names that appear nowhere in
+      // the stylesheet. An unstyled div around an unstyled svg is a picture at its intrinsic
+      // size, so the playlist icon filled the screen and the name ran straight into the track
+      // count with no space between them.
+      '<div class="musictrackdetail">' + musicPlaylistArt(open, 'sheetart') +
+      '<div><h2>' + esc(open.name) + '</h2><p>' +
+      esc(L('ph.playlist_count').replace('{n}', String(open.tracks.length)) +
+          (open.readonly ? ' · ' + L('ph.playlist_locked') : '')) + '</p></div></div>' +
       (open.tracks.length
         ? UI.button(L('ph.play_all'), 'plplay', 'tinted') +
           '<div class="musictracklist">' +
@@ -6776,6 +6866,42 @@ function airdropShare(kind, payload) {
 }
 
 // The receiver's prompt. Nothing is written until they accept.
+// ── A charging point that wants paying ─────────────────────────
+// One payment buys the whole stop; leaving the zone is what makes the next one cost. None of
+// that is decided here - the price, which charger it is and whether it has already been paid
+// for all live on the server, and this sheet sends nothing but yes or no. See
+// server/charging.lua.
+let chargeSheetEpoch = null;
+
+function chargeOfferSheet(o) {
+  o = o || {};
+  const price = Math.max(0, Math.round(Number(o.price) || 0));
+  sheet(L('ph.charge_offer_title'),
+    '<div class="airbig">' + svg('settings') + '<span>' + esc(o.label || '') + '</span></div>' +
+    '<div class="airfrom">' +
+      esc(L('ph.charge_offer_line').replace('{price}', String(price))) + '</div>' +
+    UI.button(L('ph.charge_pay').replace('{price}', String(price)), 'chgok', 'tinted') +
+    UI.button(L('ph.charge_later'), 'chgno', 'plain') +
+    '<div class="groupfoot">' + esc(L('ph.charge_offer_hint')) + '</div>',
+    () => {
+      chargeSheetEpoch = sheetEpoch;
+      byId('chgok').addEventListener('click', async () => {
+        const epoch = sheetEpoch;
+        const r = await post('chargePay', {});
+        if (!closeSheet(false, epoch)) return;
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        ui('money');
+        toast(L('ph.charge_paid'));
+      });
+      byId('chgno').addEventListener('click', () => {
+        // Told to the server, not just dismissed: a refusal it does not hear about is a
+        // refusal it asks about again four seconds later.
+        post('chargeDecline', {});
+        closeSheet();
+      });
+    });
+}
+
 function airdropOffer(o) {
   o = o || {};
   const icon = o.kind === 'photo' ? 'images'
@@ -8426,7 +8552,7 @@ function socialRender(appId) {
   beginView();
   foot('');
   const tabs = appId === 'hush'
-    ? [{ id: 'swipe', icon: 'hush', label: L('app.hush') },
+    ? [{ id: 'swipe', icon: 'sparkles', label: L('app.hush') },
        { id: 'matches', icon: 'heart', label: L('ph.hush_matches') },
        { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }]
     : [{ id: 'feed', icon: 'home', label: L('ph.soc_feed') },
@@ -8995,7 +9121,7 @@ async function hushProfile() {
       UI.field('hmax', L('ph.hush_max_age'), String(pf.maxAge || 99),
                'type="number" min="18" max="99"') +
     '</div>' +
-    UI.group(UI.row({ icon: 'hush', title: L('ph.hush_active'),
+    UI.group(UI.row({ appicon: 'hush', title: L('ph.hush_active'),
                       toggle: pf.active !== false, data: { t: 'active' } })) +
     '<div class="groupfoot">' + esc(L('ph.hush_active_hint')) + '</div>' +
     UI.button(L('ph.save'), 'hsave')
@@ -10736,6 +10862,16 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'airdrop') {
     const offer = d.offer || {};
     enqueuePrompt(() => airdropOffer(offer), offer.ttlMs);
+  } else if (d.action === 'chargeOffer') {
+    const offer = d.offer || {};
+    enqueuePrompt(() => chargeOfferSheet(offer), Math.max(5, Number(offer.seconds) || 45) * 1000);
+  } else if (d.action === 'chargeClear') {
+    // They walked out of the zone, or staff closed the stop. The sheet goes with it - but only
+    // if the sheet on screen is still THIS one, which is what the epoch answers.
+    if (chargeSheetEpoch != null) {
+      closeSheet(false, chargeSheetEpoch);
+      chargeSheetEpoch = null;
+    }
   } else if (d.action === 'airdropResult') {
     const r = d.result || {};
     toast(r.ok ? (L('ph.airdrop_took') + (r.name ? ' ' + r.name : '')) : L('ph.airdrop_declined'));

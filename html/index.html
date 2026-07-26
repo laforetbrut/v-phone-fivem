@@ -159,13 +159,18 @@
         <section class="folderview" id="folderview" role="dialog" aria-modal="true" aria-label="App folder">
           <div class="foldername" id="foldername"></div>
           <div class="folderapps" id="folderapps"></div>
-          <!-- A visible button, always there.
+          <!-- Visible buttons, always there.
                Taking an app out of a folder has been reported four times. Every attempt so far
                hung it off a GESTURE - a tap during a drag, then a long press - and every one of
                them failed in players' hands for reasons that do not reproduce here. Opening a
-               folder is the one part of this that has never been in question, so the control
-               goes where the player already is, as a button they can see. -->
-          <button class="foldermanage" id="foldermanage" type="button"></button>
+               folder is the one part of this that has never been in question, so the controls
+               go where the player already is, as buttons they can see. Renaming follows the
+               same rule: the folder title is tappable like a phone, but the button is what
+               guarantees it can be reached. -->
+          <div class="folderacts">
+            <button class="foldermanage" id="folderrename" type="button"></button>
+            <button class="foldermanage" id="foldermanage" type="button"></button>
+          </div>
         </section>
 
         <!-- Control centre -->

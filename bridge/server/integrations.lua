@@ -447,6 +447,77 @@ Bridge.Banking = {}
 --- one would show every salary twice.
 function Bridge.Banking.Script() return choose('banking', BANKS) end
 
+--- Put money into a JOB or SOCIETY account, and say whether it landed.
+---
+--- What a paid charger takes has to go somewhere, and "somewhere" on a roleplay server is a
+--- society account rather than a person: the airport's kiosks pay the airport, the hospital's
+--- pay the hospital. That account lives in a BANKING script, not in the framework - which is
+--- the opposite of `Bridge.AddMoney`, where asking a banking script would credit twice.
+---
+--- Returns false when there is nowhere to put it. The caller decides what that means; the
+--- charger treats it as "the operator is scenery" and still charges the player, because the
+--- alternative is a kiosk that stops working when an operator changes their banking script.
+---
+--- Signatures verified against each script rather than assumed:
+---   * qb-banking       AddMoney(accountName, amount, reason) -> truthy, false if no account
+---   * Renewed-Banking  addAccountMoney(account, amount) -> boolean, plus handleTransaction
+---                      for the statement line
+---   * esx_addonaccount the shared-account event, which is how every ESX script does this
+--- okokBanking is escrowed and has no source to read, so its call is a best-effort attempt at
+--- the signature its documentation gives. A server it does not work on fills the hook.
+function Bridge.AddSociety(account, amount, reason)
+    account = tostring(account or ''):gsub('%s', '')
+    amount = math.floor(tonumber(amount) or 0)
+    reason = tostring(reason or 'v-phone')
+    if account == '' or amount <= 0 then return false end
+
+    -- The operator's own wiring wins.
+    local custom = Config.Compat.hooks.society
+    if custom then
+        local ok, done = pcall(custom, account, amount, reason)
+        return ok and done == true
+    end
+
+    local bank = choose('banking', BANKS)
+
+    if bank == 'qb-banking' then
+        -- Answers false for an account that does not exist, which is the answer wanted: a
+        -- typo in a config is not a reason to invent a balance.
+        return callExport(bank, 'AddMoney', account, amount, reason) and true or false
+    end
+
+    if bank == 'Renewed-Banking' then
+        if callExport(bank, 'addAccountMoney', account, amount) ~= true then return false end
+        -- The statement line is separate there, and its absence is only cosmetic - so a
+        -- failure to write it does not turn a credit that DID happen into a false.
+        callExport(bank, 'handleTransaction', account, 'v-phone', amount, reason,
+                   'v-phone', account, 'deposit')
+        return true
+    end
+
+    if bank == 'okokBanking' or bank == 'qs-banking' then
+        return callExport(bank, 'AddMoney', account, amount) and true or false
+    end
+
+    -- ESX keeps society money in esx_addonaccount, reached by an event rather than an export.
+    -- The callback is synchronous in every build of it, which is why the result can be read
+    -- back out of the closure.
+    if started('esx_addonaccount') then
+        local landed = false
+        local ok = pcall(function()
+            TriggerEvent('esx_addonaccount:getSharedAccount', account, function(shared)
+                if shared and shared.addMoney then
+                    shared.addMoney(amount)
+                    landed = true
+                end
+            end)
+        end)
+        if ok and landed then return true end
+    end
+
+    return false
+end
+
 --- Cash and bank, as two plain numbers. Anything richer is that script's own UI.
 function Bridge.Banking.Balances(src)
     local custom = Config.Compat.hooks.balances

@@ -83,6 +83,10 @@ server_scripts {
     -- Staff-imposed network outages and out-of-service handsets. Before main.lua, whose
     -- `signalAt` and `hasBars` both read it on every signal tick.
     'server/outage.lua',
+    -- Paid public chargers: who has paid for the stop they are standing in. Before main.lua,
+    -- whose `chargeRateAt` asks `PaidChargeOk` on every battery tick - the same arrangement
+    -- as outage.lua above.
+    'server/charging.lua',
     'server/main.lua',
     -- Payphones: prepaid credit, the card, and the metered call. Loaded after main.lua,
     -- whose call machinery it drives.

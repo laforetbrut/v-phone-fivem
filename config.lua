@@ -121,6 +121,11 @@ Config.Compat = {
     -- public chargers in Config.Chargers.
     chargeAtProperty = true,
 
+    -- And in any vehicle, which is the other one the server can see for itself. Off makes
+    -- a car journey drain the battery like walking does, so a long drive has a cost - and
+    -- it leaves properties and the public chargers as the only ways to fill up.
+    chargeInVehicle = true,
+
     -- With `notify = 'custom'`, the client event the phone fires instead. It receives
     -- (message, kind) where kind is inform | success | error.
     notifyEvent = 'myserver:notify',
@@ -217,6 +222,10 @@ Config.Compat = {
         -- CLIENT side: true when the local player is inside a property they can charge
         -- in. Only fill this if your housing script is none of the supported ones.
         atHome = nil,         -- () -> boolean, runs on the client
+        -- Put money into a JOB or society account - what a paid charger charges goes here.
+        -- qb-banking, Renewed-Banking, okokBanking and esx_addonaccount are handled; fill
+        -- this only if your banking script is none of them. Return true only if it landed.
+        society = nil,        -- (account, amount, reason) -> boolean
     },
 
     -- Print what the phone decided at boot, and log every social/phone write. Useful
@@ -993,13 +1002,68 @@ Config.Battery = {
 -- Charging happens at these, and also in any vehicle and inside a property you hold a key
 -- to. Those two are code, because they follow the player rather than a coordinate.
 -- SEED DATA ONLY: chargers live in `world_chargers` and are edited from the admin panel.
+--
+-- A charger can COST money. Give a row a `price` and the phone asks before it charges - see
+-- Config.PaidCharging below. `account` overrides where that money goes, so the airport's
+-- kiosks can pay the airport and the hospital's can pay the hospital.
 Config.Chargers = {
-    { id = 'ch_lsia',      label = 'LSIA, arrivals hall',    x = -1037.0, y = -2737.0, z = 20.2, radius = 8.0 },
+    { id = 'ch_lsia',      label = 'LSIA, arrivals hall',    x = -1037.0, y = -2737.0, z = 20.2, radius = 8.0,
+      -- The paid example. Delete `price` and this charger is free like the rest.
+      price = 40, account = 'airport' },
     { id = 'ch_legion',    label = 'Legion Square kiosk',    x = 195.0,   y = -933.0,  z = 30.7, radius = 6.0 },
     { id = 'ch_pillbox',   label = 'Pillbox Hill Medical',   x = 306.0,   y = -595.0,  z = 43.3, radius = 8.0 },
     { id = 'ch_paleto',    label = 'Paleto Bay, sheriff',    x = -448.0,  y = 6013.0,  z = 31.7, radius = 6.0 },
     { id = 'ch_sandy',     label = 'Sandy Shores, clinic',   x = 1839.0,  y = 3672.0,  z = 34.3, radius = 8.0 },
     { id = 'ch_vespucci',  label = 'Vespucci boardwalk',     x = -1223.0, y = -1493.0, z = 4.4,  radius = 6.0 },
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  PAID CHARGING
+-- ══════════════════════════════════════════════════════════════
+-- A public charger that takes money.
+--
+-- The phone asks, the player accepts or refuses, and one payment buys the whole stop: they
+-- charge for as long as they like and pay again only if they LEAVE the zone and come back.
+-- Nothing here is per-minute, on purpose - a meter that ticks while somebody is stood at a
+-- kiosk is a thing to watch rather than a thing to forget about.
+--
+-- The offer is sent from the server, from the ped's real position, and accepting is checked
+-- again there: a client cannot claim to be at a charger it is not standing at.
+Config.PaidCharging = {
+    -- Off leaves every charger free, whatever prices the rows above carry.
+    enabled = true,
+
+    -- What a stop costs at a charger whose row names no `price` of its own. 0 means the
+    -- default is free and only the rows that say otherwise charge.
+    price = 0,
+
+    -- Which purse pays: 'cash' or 'bank'. A kiosk that takes a card is 'bank'.
+    money = 'cash',
+
+    -- Where the money GOES: a job or society account name. The phone credits it through
+    -- your banking script (qb-banking, Renewed-Banking, okokBanking, esx_addonaccount) or
+    -- through Config.Compat.hooks.society.
+    --
+    -- '' pays nobody: the money leaves the player and the operator is scenery. A charger
+    -- row's own `account` wins over this, so different sites can pay different owners.
+    account = '',
+
+    -- A refusal is remembered this long, so walking past a charger you have already said no
+    -- to does not ask again every few seconds. Seconds.
+    refusedFor = 90,
+
+    -- How long the offer stands before it expires on its own. Seconds.
+    offerSeconds = 45,
+
+    -- How often the server looks for a player standing at a paid charger. The offer cannot
+    -- arrive faster than this, so it is the responsiveness of the whole feature - and it is
+    -- a handful of distance checks per player, which is nothing.
+    checkSeconds = 4,
+
+    -- Charge nothing when the battery is already this full. Somebody who walks past with a
+    -- nearly-full phone is not a customer, and being asked anyway is just noise. 101 asks
+    -- always; 100 skips only a phone that is completely full.
+    skipAbove = 95,
 }
 
 -- Where the network does not reach. `bars` is the CEILING inside the zone: 0 means no

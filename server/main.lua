@@ -1380,7 +1380,10 @@ local function chargeRateAt(src, ped, coords)
     local ext = ExternalCharge[src]
     if ext and ext > 0 then return ext end
 
-    if IsPedInAnyVehicle(ped) then return 1.0 end
+    -- A car is a charger unless the operator says otherwise, which is the other half of
+    -- `chargeAtProperty`: a server that wants a long drive to cost battery turns this off and
+    -- leaves properties and the public chargers as the only ways to fill up.
+    if Config.Compat.chargeInVehicle ~= false and IsPedInAnyVehicle(ped) then return 1.0 end
 
     -- Inside a property is decided on the CLIENT, because only the housing script knows,
     -- and reported up a replicated state bag. See bridge/client/charging.lua, which knows
@@ -1392,6 +1395,11 @@ local function chargeRateAt(src, ped, coords)
     for _, c in ipairs(Config.Chargers or {}) do
         if c.enabled ~= false and c.enabled ~= 0 then
             if #(coords - vector3(c.x + 0.0, c.y + 0.0, c.z + 0.0)) <= (c.radius or 3.0) then
+                -- A charger with a price gives nothing until it has been paid for. A free one
+                -- answers true without anything being stored, so a server that never sets a
+                -- price behaves exactly as it did before paid charging existed.
+                -- See server/charging.lua.
+                if PaidChargeOk and not PaidChargeOk(src, c) then return 0.0 end
                 return math.max(0.1, (tonumber(c.rate) or 20) / 20.0)
             end
         end
@@ -4075,6 +4083,7 @@ AddEventHandler('playerDropped', function()
     BatterySaved[src] = nil
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
     ExternalCharge[src] = nil
+    if PaidChargeDrop then PaidChargeDrop(src) end
     FrameLast[src] = nil
     MessageLastSend[src], MessageBusy[src] = nil, nil
     CipherUnlocked[src], CipherAttempts[src], CipherLastSend[src] = nil, nil, nil
