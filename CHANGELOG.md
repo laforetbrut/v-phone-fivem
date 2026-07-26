@@ -4,6 +4,20 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.13] - 2026-07-26
+
+### Added (English first)
+
+- **`Config.PowerbankItem`.** The item that recharges a phone was hardcoded as `powerbank`, so a server that already calls it `battery_pack` had an item that did nothing and nothing to say why - while the handset next to it has been configurable since 1.0. It is named now, and `powerbank` is registered as well whatever you set, so an existing item is never orphaned. The item that was **used** is the one consumed, not whichever the config happens to name first: a player carrying both would otherwise lose the wrong one.
+- **The power bank is documented.** There was nothing about it anywhere - a player could not discover the item existed, and an operator could not discover it had to be declared. The README now carries it beside the handset, with the entry for qb-core, ox_inventory and ESX, the `useable = true` trap that only bites on qb-core, and a pointer to `SetCharging` for a wall socket or an electric car that needs no item at all. The section is called **Creating the items** rather than naming only the phone.
+
+### Ajouts (miroir français)
+
+- **`Config.PowerbankItem`.** L'item qui recharge un téléphone était codé en dur sous le nom `powerbank` : un serveur qui l'appelle déjà `battery_pack` avait donc un item qui ne faisait rien et rien pour l'expliquer — alors que le combiné juste à côté est configurable depuis la 1.0. Il est nommé désormais, et `powerbank` reste enregistré quoi que vous mettiez, pour qu'un item existant ne soit jamais orphelin. L'item **utilisé** est celui qui est consommé, et non celui que la configuration nomme en premier : un joueur portant les deux perdrait sinon le mauvais.
+- **La batterie externe est documentée.** Il n'y avait rien à son sujet nulle part : un joueur ne pouvait pas découvrir que l'item existait, et un opérateur ne pouvait pas découvrir qu'il fallait le déclarer. Le README la porte maintenant à côté du combiné, avec l'entrée pour qb-core, ox_inventory et ESX, le piège du `useable = true` qui ne mord que sur qb-core, et un renvoi vers `SetCharging` pour une prise murale ou une voiture électrique qui n'ont besoin d'aucun item. La section s'appelle **Créer les items** plutôt que de ne nommer que le téléphone.
+
+---
+
 ## [1.2.12] - 2026-07-26
 
 ### Added (English first)

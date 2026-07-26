@@ -45,6 +45,17 @@ Config.MigrateLegacyTables = false
 --- The inventory item a player must carry, when `Config.Settings.requireItem` is on.
 Config.PhoneItem = 'phone'
 
+--- The item that recharges a phone, and how much it gives back.
+---
+--- Configurable for the same reason the handset is: a server that already calls this something
+--- else should be able to say so rather than being told what its own items are named. The name
+--- was hardcoded, which meant an existing `battery_pack` or `powerbank_v2` simply did not work
+--- and nothing said why.
+---
+--- `powerbank` is registered as well whatever you set, so an existing item keeps working.
+--- How much charge it returns is `Config.Settings.powerbankCharge`.
+Config.PowerbankItem = 'powerbank'
+
 Config.Compat = {
     -- ── Which script answers what ──────────────────────────────
     -- Each of these is `auto`, `off`, or the exact resource name to use.

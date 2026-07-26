@@ -183,7 +183,7 @@ it is off by default so a live console stays readable.)
 `set phone_requireItem false` in server.cfg, and everybody has a phone. That is a legitimate
 choice and plenty of servers make it.
 
-If you *do* want the item, see [Creating the phone item](#creating-the-phone-item) below - it
+If you *do* want the item, see [Creating the items](#creating-the-items) below - it
 is one row of SQL or one table entry, per framework.
 
 ### 6. Optional convars
@@ -211,7 +211,7 @@ add_ace group.admin vphone.admin allow
 qb-core's own `qbadmin.menu` is accepted too, so existing staff usually work without this. See
 [Admin commands](#admin-commands).
 
-## Creating the phone item
+## Creating the items
 
 Only needed when `Config.Settings.requireItem` is on (it is, by default). The item name the
 phone looks for is `Config.PhoneItem`, `phone` out of the box - and `phone` and `iphone` are
@@ -303,6 +303,56 @@ exports['v-phone']:Open()
 
 `Config.Compat.inventory` also takes a resource name instead of `'auto'`, for a fork whose name
 the bridge does not recognise.
+
+### The power bank
+
+Optional, and nothing breaks without it: a flat phone simply stays flat until the player finds a
+charger. With the item, using it returns `Config.Settings.powerbankCharge` percent (45 by
+default) and consumes it.
+
+`Config.PowerbankItem` names it - `powerbank` out of the box, and that name keeps working
+whatever you set, so an item you already have is never orphaned.
+
+qb-core, in `qb-core/shared/items.lua`:
+
+```lua
+['powerbank'] = {
+    ['name'] = 'powerbank',
+    ['label'] = 'Power bank',
+    ['weight'] = 400,
+    ['type'] = 'item',
+    ['image'] = 'powerbank.png',
+    ['unique'] = false,
+    ['useable'] = true,
+    ['shouldClose'] = true,
+    ['description'] = 'Recharges a phone',
+},
+```
+
+ox_inventory (Qbox, ox_core, or ESX running ox_inventory), in `ox_inventory/data/items.lua`:
+
+```lua
+['powerbank'] = {
+    label = 'Power bank',
+    weight = 400,
+    stack = true,
+    close = true,
+    description = 'Recharges a phone',
+},
+```
+
+ESX with its own inventory:
+
+```sql
+INSERT INTO items (name, label, weight, rare, can_remove)
+VALUES ('powerbank', 'Power bank', 1, 0, 1);
+```
+
+**`useable = true` matters on qb-core.** The phone registers the item itself, but qb only offers
+the click in the inventory when its own catalogue says the item is usable.
+
+Another resource can charge a phone without any item at all - a wall socket, an electric car -
+with `exports['v-phone']:SetCharging(src, true, rate)`. See [API.md](API.md).
 
 ## Phone numbers
 
@@ -665,7 +715,7 @@ ligne : elle est désactivée par défaut pour qu'une console de production rest
 `set phone_requireItem false` dans server.cfg, et tout le monde a un téléphone. C'est un choix
 parfaitement valable et beaucoup de serveurs le font.
 
-Si vous **voulez** l'item, voir [Créer l'item téléphone](#créer-litem-téléphone) plus bas : une
+Si vous **voulez** l'item, voir [Créer les items](#créer-les-items) plus bas : une
 ligne de SQL ou une entrée de table, selon le framework.
 
 ### 6. Convars optionnels
@@ -693,7 +743,7 @@ add_ace group.admin vphone.admin allow
 Le `qbadmin.menu` de qb-core est aussi accepté, donc un staff existant fonctionne généralement
 sans cette ligne. Voir [Commandes admin](#commandes-admin).
 
-## Créer l'item téléphone
+## Créer les items
 
 Nécessaire seulement si `Config.Settings.requireItem` est actif (c'est le cas par défaut). Le
 nom d'item que le téléphone cherche est `Config.PhoneItem`, soit `phone` d'origine — et `phone`
@@ -786,6 +836,56 @@ exports['v-phone']:Open()
 
 `Config.Compat.inventory` accepte aussi un nom de ressource au lieu de `'auto'`, pour un fork
 dont le bridge ne connaît pas le nom.
+
+### La batterie externe
+
+Facultative, et rien ne casse sans elle : un téléphone vide reste vide jusqu'à ce que le joueur
+trouve un chargeur. Avec l'item, l'utiliser rend `Config.Settings.powerbankCharge` pour cent (45
+par défaut) et le consomme.
+
+`Config.PowerbankItem` le nomme — `powerbank` d'origine, et ce nom continue de fonctionner quoi
+que vous mettiez, pour qu'un item que vous avez déjà ne soit jamais orphelin.
+
+qb-core, dans `qb-core/shared/items.lua` :
+
+```lua
+['powerbank'] = {
+    ['name'] = 'powerbank',
+    ['label'] = 'Batterie externe',
+    ['weight'] = 400,
+    ['type'] = 'item',
+    ['image'] = 'powerbank.png',
+    ['unique'] = false,
+    ['useable'] = true,
+    ['shouldClose'] = true,
+    ['description'] = 'Recharge un téléphone',
+},
+```
+
+ox_inventory (Qbox, ox_core, ou ESX avec ox_inventory), dans `ox_inventory/data/items.lua` :
+
+```lua
+['powerbank'] = {
+    label = 'Batterie externe',
+    weight = 400,
+    stack = true,
+    close = true,
+    description = 'Recharge un téléphone',
+},
+```
+
+ESX avec son propre inventaire :
+
+```sql
+INSERT INTO items (name, label, weight, rare, can_remove)
+VALUES ('powerbank', 'Batterie externe', 1, 0, 1);
+```
+
+**`useable = true` compte sur qb-core.** Le téléphone enregistre l'item lui-même, mais qb ne
+propose le clic dans l'inventaire que si son propre catalogue déclare l'item utilisable.
+
+Une autre ressource peut recharger un téléphone sans aucun item — une prise murale, une voiture
+électrique — avec `exports['v-phone']:SetCharging(src, true, rate)`. Voir [API.md](API.md).
 
 ## Numéros de téléphone
 

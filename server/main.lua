@@ -3941,19 +3941,38 @@ end)
 -- A power bank is one charge, and then it is gone. Registered only if the item exists,
 -- so a server that removed it from the catalogue does not get a usable item pointing at
 -- nothing.
+-- Every name the power bank might be called, the same shape as PHONE_ITEMS: the operator's
+-- choice leads, and `powerbank` is registered too so an existing item keeps working.
+local POWERBANK_ITEMS = {}
+do
+    local seen = {}
+    for _, item in ipairs({ Config.PowerbankItem or 'powerbank', 'powerbank' }) do
+        item = tostring(item or '')
+        if item ~= '' and not seen[item] then
+            seen[item] = true
+            POWERBANK_ITEMS[#POWERBANK_ITEMS + 1] = item
+        end
+    end
+end
+
 CreateThread(function()
     while GetResourceState('v-inventory') ~= 'started' do Wait(200) end
     Wait(1500)
-    V.Use('v-inventory').RegisterUsableItem('powerbank', function(src)
-        local amount = math.floor(tonumber(V.Setting('powerbankCharge', 45)) or 45)
-        if batteryOf(src) >= 100 then
-            Core.Notify(src, L(src, 'ph.battery_full'), 'info')
-            return
-        end
-        if not V.Use('v-inventory').RemoveItem(src, 'powerbank', 1) then return end
-        setBattery(src, batteryRaw(src) + amount)
-        Core.Notify(src, (L(src, 'ph.powerbank_used')):format(amount), 'success')
-    end)
+    local inv = V.Use('v-inventory')
+    for _, item in ipairs(POWERBANK_ITEMS) do
+        inv.RegisterUsableItem(item, function(src)
+            local amount = math.floor(tonumber(V.Setting('powerbankCharge', 45)) or 45)
+            if batteryOf(src) >= 100 then
+                Core.Notify(src, L(src, 'ph.battery_full'), 'info')
+                return
+            end
+            -- The item that was USED is the one taken, not whichever name the config happens to
+            -- name first: a player carrying both would otherwise have the wrong one consumed.
+            if not inv.RemoveItem(src, item, 1) then return end
+            setBattery(src, batteryRaw(src) + amount)
+            Core.Notify(src, (L(src, 'ph.powerbank_used')):format(amount), 'success')
+        end)
+    end
 end)
 
 -- The handset itself. With Config.Key = false this is the ONLY way into the phone, so it is
