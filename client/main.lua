@@ -28,9 +28,11 @@ local camModeOff            -- defined with the camera mode, used by closePhone 
 -- The camera's state, declared here because `startGuard` sits above the block that owns it
 -- and watches these. Lua binds lexically: from up there, a later `local` is a nil global.
 local camActive = false
+local camHidHud, camHidRadar = false, false   -- only restore what we hid
 local camTick = 0           -- last frame the camera thread ran, so the guard can notice it
                             -- is flagged on with nothing running it
 local refreshPose           -- re-plays the hold animation; the camera block below needs it
+local selfieReset           -- clears the selfie framing; forceReset calls it from above
 local frontCam              -- the selfie toggle, defined with the camera block; forceReset
                             -- calls it from above and would otherwise reach a nil global that
                             -- its own pcall would then hide
@@ -479,8 +481,12 @@ local function forceReset()
         frontCam(false)
         CellCamActivate(false, false)
         DestroyMobilePhone()
-        DisplayRadar(true)
+        ClearHelp(true)
+        if camHidHud then DisplayHud(true) end
+        if camHidRadar then DisplayRadar(true) end
     end)
+    camHidHud, camHidRadar = false, false
+    selfieReset()
 
     -- Focus back to the game, both kinds, in case only one was cleared.
     SetNuiFocus(false, false)
@@ -962,6 +968,31 @@ local camActive = false
 --
 -- This is ASSIGNED to the forward declaration at the top of the file: forceReset calls it from
 -- above, and a `local function` here would be a nil global up there.
+-- The selfie framing controls. GTA exposes five of them and none has a Lua name, so each is
+-- reached by hash. The ranges are the documented ones - feeding a value outside them does
+-- nothing visible, so they are clamped rather than trusted.
+local SELFIE = {
+    pitch  = { hash = 0xD6ADE981781FCA09, min = -1.0, max = 1.0 },   -- head pitch, up/down
+    roll   = { hash = 0xF1E22DC13F5EEBAD, min = -1.0, max = 1.0 },   -- head roll, tilt
+    horiz  = { hash = 0x1B0B4AEED5B9B41C, min = -1.0, max = 1.0 },   -- shift left/right
+    vert   = { hash = 0x3117D84EFA60F77B, min =  0.0, max = 2.0 },    -- raise/lower
+    dist   = { hash = 0x53F4892D18EC90A4, min = -1.0, max = 1.0 },   -- arm's length
+}
+
+local selfie = { pitch = 0.0, roll = 0.0, horiz = 0.0, vert = 1.0, dist = 0.0 }
+
+selfieReset = function()
+    selfie.pitch, selfie.roll, selfie.horiz, selfie.vert, selfie.dist = 0.0, 0.0, 0.0, 1.0, 0.0
+end
+
+local function selfieApply()
+    for key, axis in pairs(SELFIE) do
+        local v = math.max(axis.min, math.min(axis.max, selfie[key]))
+        selfie[key] = v
+        pcall(Citizen.InvokeNative, axis.hash, v + 0.0)
+    end
+end
+
 frontCam = function(on)
     pcall(Citizen.InvokeNative, 0x2491A93618B7D838, on == true)
 end
@@ -980,8 +1011,14 @@ camModeOff = function()
         frontCam(false)
         CellCamActivate(false, false)
         DestroyMobilePhone()
-        DisplayRadar(true)
+        ClearHelp(true)
+        -- Only what we hid. Restoring the radar for a player whose own HUD script had
+        -- deliberately hidden it is not this resource's business - npwd's guard.
+        if camHidHud then DisplayHud(true) end
+        if camHidRadar then DisplayRadar(true) end
     end)
+    camHidHud, camHidRadar = false, false
+    selfieReset()
 
     -- And the pose. `CreateMobilePhone` and `CellCamActivate` disturb the ped's task, so the
     -- hold animation is left frozen when the camera closes - the phone sits in the hand doing
@@ -1018,35 +1055,77 @@ RegisterNUICallback('camMode', function(data, cb)
     clearHand()
     ClearPedSecondaryTask(PlayerPedId())
 
+    -- Hide the HUD and radar only if something else has not already done it, and remember
+    -- which, so the way out restores exactly what was taken. Turning the radar back on for a
+    -- player whose own HUD script had deliberately hidden it is not this resource's business.
+    camHidHud = not IsHudHidden()
+    camHidRadar = not IsRadarHidden()
+
     pcall(function()
         CreateMobilePhone(1)
         CellCamActivate(true, true)
         frontCam(front)
-        DisplayRadar(false)
+        if camHidHud then DisplayHud(false) end
+        if camHidRadar then DisplayRadar(false) end
     end)
 
     CreateThread(function()
         while camActive and isOpen do
             camTick = GetGameTimer()
 
+            -- In selfie mode the mouse aims the SELFIE rather than the player: the front
+            -- camera is pinned to the head, so turning the ped does not move the shot and the
+            -- framing felt stuck. Look left/right and up/down are taken here instead and fed
+            -- into the head pitch and the horizontal offset; the scroll wheel is arm's length.
+            if front then
+                DisableControlAction(0, 1, true)
+                DisableControlAction(0, 2, true)
+                local dx = GetDisabledControlNormal(0, 1)
+                local dy = GetDisabledControlNormal(0, 2)
+                if dx ~= 0.0 or dy ~= 0.0 then
+                    selfie.horiz = selfie.horiz + dx * 0.06
+                    selfie.pitch = selfie.pitch - dy * 0.06
+                end
+                if IsControlJustPressed(0, 241) or IsControlJustPressed(0, 15) then
+                    selfie.dist = selfie.dist + 0.12
+                elseif IsControlJustPressed(0, 242) or IsControlJustPressed(0, 14) then
+                    selfie.dist = selfie.dist - 0.12
+                end
+                -- Q and E tilt the head, which is the one thing a real selfie does that
+                -- pointing the phone cannot.
+                if IsControlPressed(0, 44) then selfie.roll = selfie.roll - 0.02 end
+                if IsControlPressed(0, 38) then selfie.roll = selfie.roll + 0.02 end
+                selfieApply()
+            end
+
             -- 27 is arrow up, 176 is Enter, 177 is Backspace: qb-phone's bindings.
             if IsControlJustPressed(1, 27) then
                 front = not front
+                selfieReset()
                 frontCam(front)
+                if front then selfieApply() end
             elseif IsControlJustPressed(1, 177) then
                 break
             elseif IsControlJustPressed(1, 176) then
+                -- Clear the help box and give it a frame to go before the shutter fires,
+                -- or the instructions are baked into the photograph.
+                ClearHelp(true)
+                Wait(0)
                 -- One capture path, the same one the shutter button uses, so there is one set
                 -- of error messages rather than two.
                 SendNUIMessage({ action = 'camShoot' })
                 Wait(1200)
             end
 
-            -- The handset is not on screen, so the keys have to be. Drawn every frame
-            -- because HideHudAndRadarThisFrame clears the help box along with everything else.
-            SetTextComponentFormat('STRING')
-            AddTextComponentString(L('ph.cam_prompt'))
-            DisplayHelpTextFromStringLabel(0, 0, 0, -1)
+            -- The handset is not on screen, so the keys have to be. `~INPUT_...~` rather
+            -- than key names: the game substitutes whatever the player actually has bound, so
+            -- this stays true for somebody who rebound them - which hardcoded "ENTER" did not.
+            BeginTextCommandDisplayHelp(front and 'FOURSTRINGS' or 'THREESTRINGS')
+            AddTextComponentString(L('ph.cam_shoot_hint'))
+            AddTextComponentString(L('ph.cam_flip_hint'))
+            AddTextComponentString(L('ph.cam_exit_hint'))
+            if front then AddTextComponentString(L('ph.cam_selfie_hint')) end
+            EndTextCommandDisplayHelp(0, true, false, -1)
 
             HideHudComponentThisFrame(6)
             HideHudComponentThisFrame(7)
