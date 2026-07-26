@@ -3190,6 +3190,11 @@ RegisterNetEvent('v-phone:server:screen', function(on)
     if state then state:set('phoneOpen', on and true or false, true) end
 
     -- And announced, so a script can react rather than poll.
+    --
+    -- `Core` is nil until the bridge publishes it, and this event fires from a client that may
+    -- have opened its phone before then - which raised here every time, taking the announcement
+    -- and the state bag write with it.
+    if not Core then return end
     local p = Core.GetPlayer(src)
     TriggerEvent(on and 'v-phone:phoneOpened' or 'v-phone:phoneClosed', src, p and p.citizenid or nil)
 end)

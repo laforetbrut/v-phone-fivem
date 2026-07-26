@@ -30,6 +30,7 @@ local camModeOff            -- defined with the camera mode, used by closePhone 
 local camActive = false
 local camTick = 0           -- last frame the camera thread ran, so the guard can notice it
                             -- is flagged on with nothing running it
+local refreshPose           -- re-plays the hold animation; the camera block below needs it
 local frontCam              -- the selfie toggle, defined with the camera block; forceReset
                             -- calls it from above and would otherwise reach a nil global that
                             -- its own pcall would then hide
@@ -224,7 +225,7 @@ end
 
 -- The pose depends on what the phone is doing: to the ear on an active call, otherwise
 -- one-handed at reading height. Re-applied when the state changes.
-local function refreshPose()
+refreshPose = function()
     if not isOpen then return end
     playHold((call and call.state == 'active') and Config.Hold.call or Config.Hold.browse)
 end
@@ -955,6 +956,16 @@ end)
 -- qb-phone binds, so anybody who has used a QBCore server already knows them.
 local camActive = false
 
+-- The selfie toggle has no name in FiveM's native list, so there is no global for it and it
+-- can only be reached by hash - the same wrapper qb-phone declares. pcall'd inside, because the
+-- hash is undocumented and a rejection must cost the selfie rather than the phone.
+--
+-- This is ASSIGNED to the forward declaration at the top of the file: forceReset calls it from
+-- above, and a `local function` here would be a nil global up there.
+frontCam = function(on)
+    pcall(Citizen.InvokeNative, 0x2491A93618B7D838, on == true)
+end
+
 camModeOff = function()
     if not camActive then return end
     camActive = false
@@ -971,6 +982,14 @@ camModeOff = function()
         DestroyMobilePhone()
         DisplayRadar(true)
     end)
+
+    -- And the pose. `CreateMobilePhone` and `CellCamActivate` disturb the ped's task, so the
+    -- hold animation is left frozen when the camera closes - the phone sits in the hand doing
+    -- nothing. z-phone re-plays its animation at exactly this point for the same reason.
+    if isOpen then
+        phoneAnim = nil        -- force playHold to restart rather than think it is already on
+        refreshPose()
+    end
 end
 
 RegisterNUICallback('camMode', function(data, cb)
