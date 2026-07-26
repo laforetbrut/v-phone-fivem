@@ -5,6 +5,40 @@ one coming back.
 
 ---
 
+## [2026-07-26 09:10] — The battery emptied in half an hour whatever it was set to
+
+**Context:** the user reported the battery draining far too fast. I raised `hoursToEmpty`
+twice — 8 to 48, then 48 to 72 — and wrote out the arithmetic each time. It made no
+difference, because the setting was never involved.
+
+**Error:** the drain loop read its starting value through `batteryOf`, which FLOORS:
+
+    setBattery(src, batteryOf(src) - drainPerTick * mult)
+
+At 72 hours a tick removes 0.0077%. So: floor(100) - 0.0077 = 99.99 stored; next tick
+floor(99.99) = **99**, minus 0.0077 = 98.99; then 98. A whole percent every twenty seconds,
+independent of the configured rate. Simulated in real Lua across 8h/3x and 72h/1.5x, screen on
+and off: every combination emptied in 0.56 h. The user said "barely 30 minutes".
+
+**Root cause:** one function serving two purposes. `batteryOf` exists to give the status bar a
+whole number, and it was also the only reader, so arithmetic inherited the rounding. The
+rounding then WAS the drain, and it swamped the real one by two orders of magnitude.
+
+**Why I did not see it for two rounds:** I checked the formula, and the formula was right. I
+computed 1.39%/hour by hand, wrote it in a comment as if that settled it, and never ran the
+loop. A closed-form calculation cannot show you that the value you feed back in is not the
+value you wrote out. Simulating twenty seconds of it would have.
+
+**Fix:** `batteryRaw` returns the unrounded stored level, and every arithmetic site uses it —
+the drain, the charge, the power bank and the AddBattery export, which had the same flaw in the
+other direction. `batteryOf` keeps its job: display.
+
+**Prevention:** never do arithmetic on a value that has passed through a display formatter. And
+when a rate is wrong by an order of magnitude, simulate the loop rather than re-deriving the
+formula — the formula was correct every time I checked it.
+
+---
+
 ## [2026-07-26 08:05] — Every photo upload rejected: multipart never happened
 
 **Context:** with the Camera app finally reachable, taking a photo failed with

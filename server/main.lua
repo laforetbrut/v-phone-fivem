@@ -1127,6 +1127,19 @@ local function pushPower(src)
     })
 end
 
+--- The exact stored level, unrounded.
+---
+--- `batteryOf` floors, which is right for a status bar and catastrophic for arithmetic. The
+--- drain loop did `setBattery(src, batteryOf(src) - drainPerTick)`: at 0.0077% a tick that is
+--- floor(100) - 0.0077 = 99.99 stored, then floor(99.99) = 99 next tick, then 98.99, then 98.
+--- A whole percent every twenty seconds regardless of the configured rate, so any setting at
+--- all emptied a phone in about half an hour.
+local function batteryRaw(src)
+    local v = tonumber(Battery[src])
+    if not v then return 100.0 end
+    return math.max(0.0, math.min(100.0, v))
+end
+
 local function setBattery(src, level)
     level = math.max(0, math.min(100, level))
     local was = batteryOf(src)
@@ -1138,7 +1151,7 @@ local function setBattery(src, level)
 end
 
 exports('GetBattery', function(src) return batteryOf(src) end)
-exports('AddBattery', function(src, delta) return setBattery(src, batteryOf(src) + (tonumber(delta) or 0)) end)
+exports('AddBattery', function(src, delta) return setBattery(src, batteryRaw(src) + (tonumber(delta) or 0)) end)
 exports('GetSignal',  function(src) return Signal[src] or 4 end)
 exports('HasSignal',  function(src) return hasBars(src) end)
 
@@ -1220,9 +1233,9 @@ CreateThread(function()
                     if not batteryEnabled then
                         setBattery(src, 100)
                     elseif rate > 0 then
-                        setBattery(src, batteryOf(src) + chargePerTick * rate)
+                        setBattery(src, batteryRaw(src) + chargePerTick * rate)
                     else
-                        setBattery(src, batteryOf(src) - drainPerTick * (Open[src] and mult or 1.0))
+                        setBattery(src, batteryRaw(src) - drainPerTick * (Open[src] and mult or 1.0))
                     end
                     if batteryOf(src) == oldBattery
                         and (Signal[src] ~= oldSignal or Charging[src] ~= oldCharging) then
@@ -3143,7 +3156,7 @@ CreateThread(function()
             return
         end
         if not V.Use('v-inventory').RemoveItem(src, 'powerbank', 1) then return end
-        setBattery(src, batteryOf(src) + amount)
+        setBattery(src, batteryRaw(src) + amount)
         Core.Notify(src, (L(src, 'ph.powerbank_used')):format(amount), 'success')
     end)
 end)
