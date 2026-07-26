@@ -5,6 +5,73 @@ one coming back.
 
 ---
 
+## [2026-07-26 10:30] — One nil call, five wrong fixes, and a probe that lied
+
+**Context:** the Camera app showed no preview, and after taking a photograph the player was
+stranded in the phone with no cursor and no way out. Five fixes were shipped for this. None of
+them touched the cause.
+
+**Error:** `client/main.lua` called `CellFrontCamActivate` at four sites and defined it at
+none. It is not a FiveM native — it has no name in the native list and can only be reached by
+hash. So it was a nil global, and the call raised on the first line after
+`CellCamActivate`, aborting the rest of the handler:
+
+    camActive = true
+    CellCamActivate(true, true)
+    CellFrontCamActivate(camFront)      -- raises here
+    SendNUIMessage({ action = 'camLive', on = true })   -- never sent
+    SetNuiFocus(false, false)                          -- never ran
+    CreateThread(...)                                  -- never spawned
+
+That one line caused BOTH symptoms. No `camLive` meant the class that makes the screen
+see-through was never applied, so there was no preview — and **the CSS was never under test at
+all**. No thread meant no shutter key and no exit key. And `camActive` latched true, which is
+exactly the condition I had added to `shoot` to stop it restoring the cursor, so the cursor
+never came back.
+
+**Why five fixes missed it:** I diagnosed by symptom and fixed the first plausible mechanism
+each time — a convar read on the wrong side, an absent payload field, a specificity loss, a
+backdrop-filter, a bezel pseudo-element. Every one of those was a real defect. None was
+reachable, because the code that would have exercised them was dead. I never checked that the
+handler ran to completion.
+
+**And my own probe lied to me, three times, the same way.** It read `backgroundColor`. Three
+of the layers that were blacking the screen paint a background-IMAGE — `.bezel`'s titanium
+gradient, `.camui`'s `#000` under a gradient, and a dark-mode-only app surface at
+`style.css:7193` that is (0,6,0) and silently out-specified my (0,4,0) reset. The `background`
+shorthand zeroes background-color, so all three reported as transparent. I wrote "none of the
+six paint any more" and believed it.
+
+**Fixes, in the order they were applied:**
+- `frontCam(on)` wrapper over `Citizen.InvokeNative(0x2491A93618B7D838, ...)`, pcall'd, since
+  the hash is undocumented and a rejection should cost the selfie and not the phone.
+- Every camera path now assigns state and restores focus BEFORE touching the engine, with the
+  natives inside `pcall`. `closePhone` releases focus before `camModeOff` for the same reason.
+- A watchdog in the guard thread: `camActive` is cleared only by `camModeOff`, which only the
+  camera thread calls, so a thread that never spawns leaves the flag with no owner. If it is
+  set with no heartbeat for 1.5s, the guard ends camera mode.
+- `forceReset` — the documented way out of a stuck phone — now clears the camera too; it was
+  freeing the cursor while leaving the game in cellphone-camera view.
+- Controls 1 and 2 are released during camera mode. The guard blocked look left/right and
+  up/down the whole time, so even a working viewfinder could not be aimed.
+- The CSS became ONE flagged rule over seven selectors plus the wallpaper, replacing six that
+  competed on specificity. Verified in a browser on `backgroundImage` as well as colour, in
+  DARK mode where the (0,6,0) rule lives: ten elements and pseudo-elements, all reporting they
+  paint nothing.
+
+**Prevention:**
+- When a feature does nothing at all, prove the entry point runs to its last line before
+  theorising about anything it was supposed to do. A raise mid-handler looks exactly like
+  fifteen different configuration bugs.
+- Never call a name that is not defined in the file and not a documented native. A grep for
+  the definition costs one command.
+- A probe that reads `backgroundColor` cannot see a gradient. Read `backgroundImage` too, and
+  check pseudo-elements, or the probe will keep confirming what you hoped.
+- Assign state and hand back control before calling into the engine. Anything after a native
+  that can raise is code that might not run.
+
+---
+
 ## [2026-07-26 09:10] — The battery emptied in half an hour whatever it was set to
 
 **Context:** the user reported the battery draining far too fast. I raised `hoursToEmpty`

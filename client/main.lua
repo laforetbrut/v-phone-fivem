@@ -25,6 +25,14 @@ local sdkApps = {}           -- installed iframe apps allowed for this open sess
 local pendingUiActions = {}  -- prompts received while the asynchronous open is in flight
 local applyServerCall
 local camModeOff            -- defined with the camera mode, used by closePhone above it
+-- The camera's state, declared here because `startGuard` sits above the block that owns it
+-- and watches these. Lua binds lexically: from up there, a later `local` is a nil global.
+local camActive, camFront = false, false
+local camTick = 0           -- last frame the camera thread ran, so the guard can notice it
+                            -- is flagged on with nothing running it
+local frontCam              -- the selfie toggle, defined with the camera block; forceReset
+                            -- calls it from above and would otherwise reach a nil global that
+                            -- its own pcall would then hide
 local selfieCam             -- the selfie's scripted cam, read by the camera-mode thread
                             -- which sits above the block that assigns it
 local mediaOn = false        -- server-side capture and upload, decided by the server
@@ -265,7 +273,10 @@ local function startGuard()
             -- the cursor was gone, the game had the mouse, and this line threw the movement
             -- away every frame.
             for _, c in ipairs(Config.Hold.block) do
-                if not (freeLook and (c == 1 or c == 2)) then
+                -- 1 and 2 are look left/right and up/down. Blocked while browsing, released
+                -- for free look AND for the camera: a viewfinder the mouse cannot aim is a
+                -- photograph of wherever the player last happened to be looking.
+                if not ((freeLook or camActive) and (c == 1 or c == 2)) then
                     DisableControlAction(0, c, true)
                 end
             end
@@ -285,6 +296,14 @@ local function startGuard()
             if IsPauseMenuActive() then
                 SetFrontendActive(false)
                 SetPauseMenuActive(false)
+            end
+
+            -- Camera mode flagged on with nothing running it: the thread never spawned, or
+            -- it died on a native. That state has no exit keys and no cursor, and it is the
+            -- phone a player had to reconnect to leave. End it from here, which is the one
+            -- loop guaranteed to be running whenever the phone is open.
+            if camActive and (GetGameTimer() - camTick) > 1500 then
+                camModeOff()
             end
 
             local ped = PlayerPedId()
@@ -408,9 +427,12 @@ local function closePhone()
     activeSdkApp = nil
     if not call then stopRinging() end
     stopSelfie()
-    camModeOff()
+    -- Focus first. camModeOff touches the engine, and anything that raises in there used to
+    -- abort the rest of this function - leaving the handset drawn, the prop in hand and no
+    -- cursor. The phone key must always be able to close the phone.
     SetNuiFocusKeepInput(false)
     SetNuiFocus(false, false)
+    camModeOff()
     clearHand()
     if menuClaimed then
         menuClaimed = false
@@ -448,6 +470,16 @@ local function forceReset()
     phoneTorch = false
     activeSdkApp = nil
     stopRinging()
+
+    -- The camera too. This is the documented way out of a stuck phone, and it used to free
+    -- the cursor while leaving the game in the cellphone camera view with the HUD hidden.
+    camActive = false
+    camFront = false
+    pcall(function()
+        frontCam(false)
+        CellCamActivate(false, false)
+        DisplayRadar(true)
+    end)
 
     -- Focus back to the game, both kinds, in case only one was cleared.
     SetNuiFocus(false, false)
@@ -916,20 +948,34 @@ end)
 --
 -- The cursor still leaves, because the mouse has to aim. The keys below stand in for the
 -- buttons the player can see but cannot click.
-local camActive, camFront = false, false
+-- The selfie toggle has no name in FiveM's native list, so there is no global for it and it
+-- can only be reached by hash. `CellFrontCamActivate` was called at four sites and defined at
+-- none - a nil call that aborted the whole camMode handler on its first line, which is why
+-- neither the preview nor the exit keys nor the focus release ever happened.
+--
+-- pcall'd because the hash is undocumented: four public resources ship it, and none of that
+-- proves it is live on every build. A rejection should cost the selfie, not the phone.
+frontCam = function(on)
+    pcall(Citizen.InvokeNative, 0x2491A93618B7D838, on == true)
+end
 
 camModeOff = function()
     if not camActive then return end
     camActive = false
     camFront = false
-    CellFrontCamActivate(false)
-    CellCamActivate(false, false)
-    DisplayRadar(true)
+    -- Focus and the page come back BEFORE any native. closePhone calls this on its way out,
+    -- and a native that raised here aborted closePhone with the handset still drawn and no
+    -- cursor - which is the state a player had to reconnect to escape.
     if isOpen then
         SendNUIMessage({ action = 'camLive', on = false })
         SetNuiFocus(true, true)
         SetNuiFocusKeepInput(true)
     end
+    pcall(function()
+        frontCam(false)
+        CellCamActivate(false, false)
+        DisplayRadar(true)
+    end)
 end
 
 RegisterNUICallback('camMode', function(data, cb)
@@ -940,18 +986,25 @@ RegisterNUICallback('camMode', function(data, cb)
 
     camActive = true
     camFront = data.front == true
-    CellCamActivate(true, true)
-    CellFrontCamActivate(camFront)
-    DisplayRadar(false)
+    camTick = GetGameTimer()
 
     -- The handset STAYS on screen - the preview is meant to be in it. Only the cursor goes,
     -- because the mouse has to aim the shot; the keys below do what its buttons would.
+    --
+    -- Sent BEFORE the natives, deliberately. This used to sit after them, so one nil call
+    -- took the preview, the exit keys and the cursor with it.
     SendNUIMessage({ action = 'camLive', on = true })
     SetNuiFocus(false, false)
+    pcall(function()
+        CellCamActivate(true, true)
+        frontCam(camFront)
+        DisplayRadar(false)
+    end)
 
     CreateThread(function()
         local shot = false
         while camActive and isOpen do
+            camTick = GetGameTimer()
             HideHudAndRadarThisFrame()
             for _, id in ipairs({ 1, 2, 3, 4, 6, 7, 8, 9, 13, 19, 20, 22 }) do
                 HideHudComponentThisFrame(id)
@@ -977,7 +1030,7 @@ RegisterNUICallback('camMode', function(data, cb)
             end
             if IsControlJustPressed(0, 38) then       -- E: flip
                 camFront = not camFront
-                CellFrontCamActivate(camFront)
+                frontCam(camFront)
             end
             if IsDisabledControlJustPressed(0, 200) or IsControlJustPressed(0, 177) then
                 break
@@ -992,7 +1045,7 @@ end)
 RegisterNUICallback('camFacing', function(data, cb)
     cb({ ok = true })
     camFront = data and data.front == true
-    if camActive then CellFrontCamActivate(camFront) end
+    if camActive then frontCam(camFront) end
 end)
 
 RegisterNUICallback('shoot', function(_, cb)
