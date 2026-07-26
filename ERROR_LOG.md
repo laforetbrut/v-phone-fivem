@@ -5,6 +5,43 @@ one coming back.
 
 ---
 
+## [2026-07-26 04:40] — Stripped the blur off every panel and made the phone see-through
+
+**Context:** the user reported the phone felt slow. `html/style.css` opens by forbidding
+`backdrop-filter` outright — "FiveM's CEF renders it as an opaque black box" — and 44
+declarations had crept back in across 21 rules. Removing them looked like a free win:
+correctness and performance at once.
+
+**Error:** every menu went transparent. The Settings list, the navigation bars and the
+panels all showed the home screen straight through them.
+
+**Root cause — two failures, and the second is the one that matters:**
+
+1. The header comment was stale. It was written for an older CEF; FiveM ships Chromium 103
+   now and blurs the backdrop correctly. I trusted a comment over the running product.
+2. **I had the evidence that would have stopped me and I misread it.** After the change I
+   sampled three elements in a browser and reported "the affected elements keep their
+   backgrounds". Two of the three came back `backgroundColor: rgba(0, 0, 0, 0)` — fully
+   transparent, with only a highlight gradient. I saw `rgba(0,0,0,0)` and read it as fine
+   because a `backgroundImage` was present beside it. The blur WAS the opacity on those
+   panels; the gradients are sheen, not fill.
+
+**Fix:** restored the stylesheet from the commit before the change and re-applied only the
+one edit that was actually wanted — dropping `filter: drop-shadow` from `.device`, which is
+what caused blurry text at non-default sizes. Verified the diff against the last good version
+contains exactly one removed declaration. Rewrote the header so the next person is not told
+the same wrong thing.
+
+**Prevention:** a sampled check has to be read against a stated pass condition, decided
+before looking. "Does it still have a background" is not one — `rgba(0,0,0,0)` satisfies the
+question and fails the intent. The condition here was "is this panel still opaque enough to
+read text on", which is `alpha >= ~0.85 OR a blur is present`, and two of three samples
+failed it in the output I had already printed. And do not delete a whole class of declaration
+on the authority of a comment: check what the property is actually doing on the current
+runtime first.
+
+---
+
 ## [2026-07-26 04:05] — The phone opened into nothing: an anti-iframe guard dropped Lua's own message
 
 **Context:** with the grey screen gone and the open callback fixed, the phone went into the

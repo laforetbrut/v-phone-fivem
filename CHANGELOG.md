@@ -35,9 +35,6 @@ All notable changes to v-phone are documented here.
 
 - **The phone item is now required by default, and there is no key.** `Config.Settings.requireItem` is on and `Config.Key` is `false`: the phone opens by using the item, the way any other object does. A phone every character owns for free is not an item, it is a menu. Put a key name back in `Config.Key` to also offer a binding, or `set phone_requireItem false` to give everybody one again. Mark the item `useable` in your framework's own catalogue — on qb-core that is `qb-core/shared/items.lua`. It cuts both ways: a character with no handset cannot be called either, and messages sent to them wait until they hold one.
 
-### Performance
-
-- **Forty-four `backdrop-filter` declarations removed.** This stylesheet opens by forbidding the property outright, because FiveM’s CEF renders it as an opaque black box — the glass here is composed from a tint, a rim and a sheen rather than sampled. They had crept back in across twenty-one rules, costing a backdrop render surface each while showing the wrong thing. Every one of those rules already carried its own background, so the look is unchanged and there is now nothing between the phone and the frame it sits on.
 
 ---
 
@@ -72,9 +69,6 @@ All notable changes to v-phone are documented here.
 
 - **L'objet téléphone est désormais requis par défaut, et il n'y a plus de touche.** `Config.Settings.requireItem` est activé et `Config.Key` vaut `false` : le téléphone s'ouvre en utilisant l'objet, comme n'importe quel autre. Un téléphone que chaque personnage possède gratuitement n'est pas un objet, c'est un menu. Remettez un nom de touche dans `Config.Key` pour proposer aussi un raccourci, ou `set phone_requireItem false` pour en redonner un à tout le monde. Marquez l'objet `useable` dans le catalogue de votre framework — sur qb-core, c'est `qb-core/shared/items.lua`. Cela vaut dans les deux sens : un personnage sans combiné ne peut pas non plus être appelé, et les messages qu'on lui envoie attendent qu'il en tienne un.
 
-### Performance
-
-- **Quarante-quatre déclarations `backdrop-filter` supprimées.** Cette feuille de style s’ouvre en interdisant la propriété, parce que le CEF de FiveM la rend en boîte noire opaque — ici le verre est composé d’une teinte, d’un liseré et d’un reflet, pas échantillonné. Elles étaient revenues dans vingt-et-une règles, coûtant une surface de rendu chacune tout en affichant la mauvaise chose. Chacune de ces règles avait déjà son propre fond : l’apparence est inchangée, et il n’y a plus rien entre le téléphone et l’image sur laquelle il se pose.
 
 ---
 
