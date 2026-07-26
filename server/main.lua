@@ -610,6 +610,7 @@ prefsOf = function(p, includeSecrets)
         wallpaperUrl = V.SettingBool('customWallpaper', true)
                        and m.wallpaperUrl and tostring(m.wallpaperUrl) or nil,
         wallFit   = (m.wallFit == 'contain') and 'contain' or Config.WallpaperFit,
+        wallFocus = tonumber(m.wallFocus) or nil,
         -- The operator's size, not the player's, and the stored value is ignored rather
         -- than clamped: a character who had set 80% before this was locked would otherwise
         -- keep a permanently soft phone with no control left to fix it.
@@ -2101,6 +2102,13 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
             prefs.wallpaperUrl = (url ~= '') and url or nil
         end
         if data.wallFit ~= nil then prefs.wallFit = (data.wallFit == 'contain') and 'contain' or 'cover' end
+        -- Which band of the picture the wallpaper shows, 0 to 100. A 16:9 photograph on a
+        -- portrait screen loses most of its width, and centred it usually loses the subject
+        -- with it - so the framing chosen in the gallery travels with the photo.
+        if data.wallFocus ~= nil then
+            local n = tonumber(data.wallFocus)
+            prefs.wallFocus = n and math.floor(math.max(0, math.min(100, n))) or nil
+        end
         -- `size` is deliberately not accepted from the page any more. The slider is gone
         -- because anything but 100% scales a rasterised phone and blurs every glyph, so
         -- there is nothing for a client to set and no reason to trust it if there were.

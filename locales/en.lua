@@ -90,6 +90,7 @@ local T = {
     ['ph.crop_square'] = "Square",
     ['ph.crop_tall'] = "Tall",
     ['ph.crop_focus'] = "Framing",
+    ['ph.crop_saved'] = "Saved to this photo",
     ['ph.app_bank'] = "Bank",
     ['ph.bank_transfer'] = "Transfer",
     ['ph.err_nochar'] = "The server does not know your character yet",

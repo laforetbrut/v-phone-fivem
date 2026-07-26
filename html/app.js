@@ -3160,12 +3160,15 @@ function applyWallpaper() {
     // class list cannot leave a stripe of the old one showing at the edges.
     w.style.backgroundImage = 'url("' + p.wallpaperUrl + '")';
     w.style.backgroundSize = (p.wallFit === 'contain') ? 'contain' : 'cover';
-    w.style.backgroundPosition = 'center';
+    // The band chosen when the photo was framed in the gallery, not blindly the middle.
+    w.style.backgroundPosition = (p.wallFocus === undefined || p.wallFocus === null)
+      ? 'center' : ('50% ' + focusOf(p.wallFocus) + '%');
     w.style.backgroundRepeat = 'no-repeat';
     w.style.backgroundColor = '#000';
     screen.style.backgroundImage = 'url("' + p.wallpaperUrl + '")';
     screen.style.backgroundSize = (p.wallFit === 'contain') ? 'contain' : 'cover';
-    screen.style.backgroundPosition = 'center';
+    screen.style.backgroundPosition = (p.wallFocus === undefined || p.wallFocus === null)
+      ? 'center' : ('50% ' + focusOf(p.wallFocus) + '%');
     screen.style.backgroundRepeat = 'no-repeat';
     screen.style.backgroundColor = '#000';
   } else {
@@ -5392,6 +5395,7 @@ function photoSheet(shots, i, albums) {
           [...byId('scrops').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
           paint();
           await post('photos', { op: 'edit', index: i + 1, crop: crop === 'none' ? '' : crop });
+          toast(L('ph.crop_saved'));
         }));
       const slider = byId('sfocus');
       if (slider) {
@@ -5399,6 +5403,7 @@ function photoSheet(shots, i, albums) {
         slider.addEventListener('input', () => { focus = focusOf(slider.value); paint(); });
         ['change', 'pointerup'].forEach((ev) => slider.addEventListener(ev, async () => {
           await post('photos', { op: 'edit', index: i + 1, focus });
+          toast(L('ph.crop_saved'));
         }));
       }
       [...byId('sheet').querySelectorAll('#sfilters button')].forEach((b) =>
@@ -5407,6 +5412,7 @@ function photoSheet(shots, i, albums) {
           byId('shotbig').style.filter = filterCss(f);
           [...byId('sfilters').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
           await post('photos', { op: 'edit', index: i + 1, filter: f === 'none' ? '' : f });
+          toast(L('ph.crop_saved'));
         }));
       byId('salbum').addEventListener('click', () => {
         const list = (albums || []).slice();
@@ -5431,7 +5437,9 @@ function photoSheet(shots, i, albums) {
       byId('sshare').addEventListener('click', () => airdropShare('photo', { url }));
       byId('swall').addEventListener('click', async () => {
         const epoch = sheetEpoch;
-        const r = await post('prefs', { wallpaperUrl: url });
+        // The framing goes with it: a portrait crop exists so the wallpaper shows the right
+        // part of a wide photograph, and losing it here would make the whole exercise moot.
+        const r = await post('prefs', { wallpaperUrl: url, wallFocus: focus });
         if (!closeSheet(false, epoch)) return;
         if (r && r.ok) { state.prefs = r.prefs; applyWallpaper(); toast(L('ph.wall_set')); }
         else toast(L('ph.err_' + ((r && r.error) || 'x')));

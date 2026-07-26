@@ -92,6 +92,7 @@ local T = {
     ['ph.crop_square'] = "Carre",
     ['ph.crop_tall'] = "Plein ecran",
     ['ph.crop_focus'] = "Cadrage",
+    ['ph.crop_saved'] = "Enregistre sur cette photo",
     ['ph.app_bank'] = "Banque",
     ['ph.bank_transfer'] = "Virement",
     ['ph.err_nochar'] = "Le serveur ne connait pas encore votre personnage",

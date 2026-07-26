@@ -971,7 +971,7 @@ input { font: inherit; }
    one immediately with eighteen rows. The sheet caps its height and the result
    list inside it is the part that scrolls. */
 .sheet { max-height: 78%; }
-.sheet.on { display: flex; flex-direction: column; }
+.sheet.on { display: flex; flex-direction: column; overflow-y: auto; }
 .sheet #appres { flex: 1; min-height: 0; overflow-y: auto; }
 .sheet #appres::-webkit-scrollbar { width: 0; }
 
@@ -9238,12 +9238,20 @@ body.inframe.dark .uisearch {
   cursor: grab; }
 .shotzoom.panning img { cursor: grabbing; }
 /* A cropped preview is the frame, not the picture: the img fills it with object-fit and the
-   frame carries the aspect ratio. Centred so a tall crop does not sit against one edge. */
-.shotzoom { margin-bottom: 12px; }
+   frame carries the aspect ratio.
+   `flex: 0 0 auto` is not decoration. A sheet is `display: flex; flex-direction: column` with
+   a max-height, so every child is a flex item that the browser may SHRINK to make the content
+   fit - and a box whose height comes from an aspect ratio shrinks all the way down. That is
+   why a square crop rendered as a wide strip on a full sheet. */
+.shotzoom { flex: 0 0 auto; margin-bottom: 12px; }
 /* The gap belongs to the frame, not the picture inside it: as the img's own margin it sat
    inside the black background and drew a 12px band under every photograph. */
 .shotzoom img { margin-bottom: 0; }
-.shotzoom[data-nozoom="1"] { margin-left: auto; margin-right: auto; max-width: 100%; }
+/* The HEIGHT is fixed and the width follows from the ratio, rather than the other way round.
+   Auto margins on a flex item's cross axis switch off `align-items: stretch`, so asking for a
+   centred box with only a ratio to go on left it 0px wide: nothing told it how big to be. */
+.shotzoom[data-nozoom="1"] { height: 210px; width: auto; max-width: 100%;
+  margin-left: auto; margin-right: auto; }
 .shotzoom[data-nozoom="1"] img { cursor: default; }
 /* What a transfer will actually cost, under the amount field. Tabular figures so the
    number does not jitter while it is being typed. */
