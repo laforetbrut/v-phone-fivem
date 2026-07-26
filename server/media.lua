@@ -22,7 +22,18 @@ local function num(v, d) return tonumber(v) or d or 0 end
 -- Availability
 -- ══════════════════════════════════════════════════════════════
 local function mediaOn()
-    return MEDIA.enabled == true and GetResourceState('screencapture') == 'started'
+    -- `set phone_media true` in server.cfg, same as every other setting in this resource.
+    -- Media hosting is the one feature whose configuration is genuinely sensitive - it
+    -- carries an API key - so it should be switchable from the file that already holds the
+    -- key, without editing a tracked config.lua to turn it on.
+    --
+    -- The convar wins when set; otherwise Config.Media.enabled decides. Off either way
+    -- leaves the camera taking local gallery photos and hides video recording.
+    local convar = GetConvar('phone_media', '')
+    local on = MEDIA.enabled == true
+    if convar ~= '' then on = (convar == 'true' or convar == '1') end
+
+    return on and GetResourceState('screencapture') == 'started'
 end
 
 Bridge = Bridge or {}

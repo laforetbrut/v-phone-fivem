@@ -843,6 +843,10 @@ Config.Police = {
 -- never reaches a client. Install it: https://github.com/itschip/screencapture
 Config.Media = {
     -- Off leaves the camera taking local gallery photos only, and hides video recording.
+    --
+    -- `set phone_media true` in server.cfg overrides this either way. Prefer it: this is the
+    -- one feature whose configuration carries a secret, and the convar lets you switch it on
+    -- in the same file that holds the key, without editing a tracked file to do it.
     enabled = false,
 
     -- 'fivemanage' is the one wired here. 'custom' posts to `endpoint` with `headers`,
