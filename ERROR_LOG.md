@@ -5,6 +5,39 @@ one coming back.
 
 ---
 
+## [2026-07-26 03:45] — `prefsOf` called 140 lines before it was declared
+
+**Context:** with the grey screen finally gone, the phone could be opened for the first time.
+It refused with "Something went wrong".
+
+**Error:** `[v-phone] callback v-phone:open failed: server/main.lua:363: attempt to call a nil
+value (global 'prefsOf')`. `appsFrom` reads a player's purchased apps at line 363, but
+`prefsOf` was `local function prefsOf(...)` at line 503. Before that line the name is not in
+scope, so Lua resolved it as a GLOBAL, which is nil. The open callback raised, never resolved,
+and the client sat until its ten-second guard fired and showed the generic `ph.err_x`.
+
+**Root cause:** the purchased-apps lookup came in with the paid FruitStore apps in 1.2.0 and
+was placed in `appsFrom`, which lives near the top of the file, while `prefsOf` lives with the
+preferences block much further down. The file already has a forward-declaration block at line
+30 for exactly this — `Signal`, `batteryOf`, `requireItem`, `phoneReachable`, `speakerOff` —
+with a comment spelling out this precise failure. `prefsOf` was simply never added to it.
+
+It survived because nobody had opened the phone since: every session since 1.2.0 landed was
+spent on the grey screen, so the open callback was never reached on a running server.
+
+**Fix:** added `local prefsOf` to the forward-declaration block and changed the definition
+from `local function prefsOf(...)` to `prefsOf = function(...)`, matching the file's own
+convention. Verified by running both patterns in real Lua: the first reproduces the exact
+error text, the second works.
+
+**Prevention:** a repo-wide scan for the same class — any `local function` called earlier in
+its own file than it is defined, excluding names in a forward-declaration block — now runs
+clean across all eight server and client files. Run it after moving code between blocks. Lua
+gives no warning for this: it silently reads a nil global, and inside a callback that means a
+request that never answers rather than a visible crash.
+
+---
+
 ## [2026-07-26 03:20] — The grey screen: a `<meta name="color-scheme">` in the NUI page
 
 **Context:** six failed fix cycles on a grey sheet covering the whole game. The user finally

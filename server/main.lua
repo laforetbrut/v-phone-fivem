@@ -36,6 +36,7 @@ local batteryOf
 local requireItem
 local phoneReachable
 local speakerOff
+local prefsOf
 
 local function num(v, d) return tonumber(v) or d or 0 end
 
@@ -500,7 +501,9 @@ local function passcodeDigest(p, code)
     }) or '')
 end
 
-local function prefsOf(p, includeSecrets)
+-- Assigned, not declared: `local prefsOf` is at the top of this file because appsFrom reads
+-- a player's purchased apps long before this point.
+prefsOf = function(p, includeSecrets)
     local m = p.GetMetadata('phone')
     if type(m) ~= 'table' then m = {} end
     -- `glass` is iOS 27's transparency slider: 0 is ultra clear, 100 is fully tinted.
