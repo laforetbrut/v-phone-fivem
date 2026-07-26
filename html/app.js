@@ -2618,7 +2618,9 @@ function addFavouriteSheet() {
 RENDER.garage = async () => {
   loading();
   const d = await post('app', { app: 'garage' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'garage')); return; }
+  // The server's own reason, not a blanket "unavailable": "no garage script here" and "you
+  // own no cars" are different things and used to read identically.
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'garage')); return; }
   const list = Array.isArray(d) ? d : (d.vehicles || []);
   if (!list.length) { body(UI.empty(L('ph.no_vehicles'), 'garage')); return; }
   body(UI.group(list.map((v, i) => UI.row({
@@ -2741,7 +2743,7 @@ RENDER.wallet = async () => {
   // one player hands another instead of a citizen id.
   const card = await post('card');
   const d = await post('app', { app: 'wallet' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'wallet')); return; }
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'wallet')); return; }
   const list = Array.isArray(d) ? d : (d.licenses || []);
   // No card until one has been ordered from the bank, so say where to get one rather
   // than drawing an empty rectangle.
@@ -2778,7 +2780,7 @@ RENDER.jobs = async () => {
   ], jobsTab, (t) => { jobsTab = t; RENDER.jobs(); });
   loading();
   const d = await post('app', { app: 'jobs' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'jobs')); return; }
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'jobs')); return; }
 
   if (jobsTab === 'open') {
     const list = d.jobs || [];
@@ -4061,7 +4063,7 @@ RENDER.music = async () => {
 RENDER.property = async () => {
   loading();
   const d = await post('app', { app: 'property' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'house')); return; }
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'house')); return; }
   const list = d.rows || [];
   if (!list.length) { body(UI.empty(L('ph.no_property'), 'house')); return; }
   body(UI.group(list.map((pr, i) => UI.row({

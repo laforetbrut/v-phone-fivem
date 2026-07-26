@@ -77,6 +77,9 @@ server_scripts {
     -- The bank app: statement, transfers, beneficiaries. After api.lua, whose
     -- SendServiceMessage tells a recipient that money arrived.
     'server/bank.lua',
+    -- Garage, Property, Wallet and Jobs: read-only views over the bridge's providers,
+    -- which is what those apps needed instead of a companion resource nobody has.
+    'server/apps.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',

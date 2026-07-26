@@ -1,0 +1,284 @@
+-- v-phone | server/apps.lua
+--
+-- **Garage, Property, Wallet and Jobs, read through the bridge.**
+--
+-- The same fault the Bank app had, three more times. Upstream each of these is a view over a
+-- companion resource - `v-vehicles`, `v-housing`, `v-licenses`, `v-cityhall` - and none of
+-- them exist outside the author's own suite, so every one of these apps answered "not
+-- available on this server" on qb-core, qbx, ESX and ox alike. The providers they needed were
+-- already in `bridge/server/integrations.lua`, written and covering the whole ecosystem, and
+-- called by nothing at all.
+--
+-- This file is the missing half: it hands each app what the bridge already knows, in the
+-- shape the page already draws. No new features, no new tables, nothing stored. Every one of
+-- these is a READ - taking a car out of a garage or issuing a licence belongs to the script
+-- that owns it, and still does.
+--
+-- A provider that finds nothing returns nil, and that stays a distinct answer: "this server
+-- has no garage script the phone can read" is not the same as "you own no cars", and the app
+-- says the right one.
+
+local function num(v, d) return tonumber(v) or d or 0 end
+
+--- Read something from a provider without letting a broken schema take the app down.
+---
+--- The bank app taught this: one failing query answered `nil` through the callback layer and
+--- the phone could only say "something went wrong". A named reason on the server console and
+--- a specific code on the phone costs two lines.
+local function safely(what, fn, ...)
+    local ok, result = pcall(fn, ...)
+    if ok then return result end
+    print(('[v-phone] %s could not be read: %s'):format(what, result))
+    return nil
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- Garage
+-- ══════════════════════════════════════════════════════════════
+-- Quasar answers for the player through `GetPlayerVehicles`; qb, ox and ESX each keep a
+-- table with a different schema. `Bridge.Vehicles.Owned` already flattens all four, so the
+-- only work left here is agreeing on what "stored" means, which every one of them spells
+-- differently.
+--
+--   qb    `state`  0 out, 1 in a garage, 2 impounded
+--   ox    `stored` the garage it is in, or nil when it is out
+--   esx   `stored` a boolean
+--
+-- Quasar's export returns its own rows, so its keys are read defensively rather than assumed.
+local function vehicleRow(v)
+    if type(v) ~= 'table' then return nil end
+
+    local plate = tostring(v.plate or v.number_plate or ''):gsub('^%s+', ''):gsub('%s+$', '')
+    local model = v.model or v.vehicle or v.name or v.spawncode or ''
+    -- A model can arrive as a hash on some garage scripts, which is not a name but is at
+    -- least stable to show; better a number than an empty row.
+    model = tostring(model)
+
+    -- Worked out from whichever field the script filled in. Unknown means stored: a car the
+    -- phone cannot place is more likely parked than abandoned in the street, and claiming it
+    -- is out when it is not sends a player looking for it.
+    local out
+    if v.state ~= nil and tonumber(v.state) then
+        out = math.floor(num(v.state, 1)) == 0
+    elseif type(v.stored) == 'boolean' then
+        out = v.stored == false
+    elseif v.stored ~= nil then
+        out = tostring(v.stored) == ''
+    else
+        out = false
+    end
+
+    -- The garage it belongs to, under any of the names the scripts use for it.
+    local garage = v.garage or v.parking or v.depotname
+    if garage == nil and type(v.stored) == 'string' then garage = v.stored end
+
+    return {
+        plate = plate,
+        model = model,
+        garage = garage and tostring(garage) or nil,
+        live = out,
+        -- Shown by the remote sheet when the script bothered to keep them.
+        fuel = v.fuel and math.floor(num(v.fuel, 0)) or nil,
+        engine = v.engine and math.floor(num(v.engine, 0)) or nil,
+        body = v.body and math.floor(num(v.body, 0)) or nil,
+    }
+end
+
+V.Callback('v-phone:garage:data', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    local rows = safely('garage', function()
+        return Bridge.Vehicles and Bridge.Vehicles.Owned
+            and Bridge.Vehicles.Owned(p.citizenid, src)
+    end)
+    -- nil is "nothing here can be read", which is a different sentence from "no cars".
+    if type(rows) ~= 'table' then resolve({ error = 'nogarage' }) return end
+
+    local out = {}
+    for _, v in ipairs(rows) do
+        local row = vehicleRow(v)
+        if row and row.plate ~= '' then out[#out + 1] = row end
+    end
+    resolve({ ok = true, vehicles = out })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Property
+-- ══════════════════════════════════════════════════════════════
+V.Callback('v-phone:property:data', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    local rows = safely('property', function()
+        return Bridge.Properties and Bridge.Properties.Owned
+            and Bridge.Properties.Owned(p.citizenid, src)
+    end)
+    if type(rows) ~= 'table' then resolve({ error = 'nohousing' }) return end
+
+    local out = {}
+    for _, r in ipairs(rows) do
+        if type(r) == 'table' then
+            local label = r.label or r.name or r.house or r.property or r.address
+            if label ~= nil then
+                out[#out + 1] = {
+                    label = tostring(label):sub(1, 60),
+                    address = r.address and tostring(r.address):sub(1, 80) or nil,
+                    -- Owned unless the script says otherwise. Housing scripts disagree on
+                    -- the spelling, so both are accepted and anything else is a tenancy.
+                    tenancy = (r.tenancy == 'rent' or r.rented == true or r.rent == true)
+                        and 'rent' or 'own',
+                }
+            end
+        end
+    end
+    resolve({ ok = true, rows = out })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Wallet: the licences
+-- ══════════════════════════════════════════════════════════════
+V.Callback('v-phone:wallet:data', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    local rows = safely('licences', function()
+        return Bridge.Licences and Bridge.Licences.Held
+            and Bridge.Licences.Held(src, p.citizenid)
+    end)
+    if type(rows) ~= 'table' then resolve({ error = 'nolicences' }) return end
+
+    local out = {}
+    for _, r in ipairs(rows) do
+        if type(r) == 'table' then
+            local key = tostring(r.type or r.name or r.key or '')
+            if key ~= '' then
+                out[#out + 1] = {
+                    key = key,
+                    label = tostring(r.label or key):sub(1, 40),
+                    -- The conventional key, so a server that wants "Permis de conduire"
+                    -- rather than "driver" only has to add `ph.lic_driver` to its locale.
+                    -- Absent is fine: the page falls back to the label.
+                    i18n = 'ph.lic_' .. key,
+                    issuer = r.issuer and tostring(r.issuer):sub(1, 40) or nil,
+                    -- The provider returns what is HELD, so everything it returns is held.
+                    held = true,
+                }
+            end
+        end
+    end
+    resolve({ ok = true, licenses = out })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Jobs
+-- ══════════════════════════════════════════════════════════════
+-- Two halves: the character's own employment, which the framework already told the bridge
+-- when it wrapped the player, and the list of openings, which is the server's job table.
+--
+-- Neither the salary nor the ladder is on the player - a framework only says which grade you
+-- hold - so both are looked up in the job table by name. A server whose job table cannot be
+-- read still gets a correct employment card, just without the pay.
+local function jobsList()
+    local all = safely('jobs', function()
+        return Bridge.Jobs and Bridge.Jobs.All and Bridge.Jobs.All()
+    end)
+    return type(all) == 'table' and all or nil
+end
+
+--- The grades of one job, lowest first, as the app's ladder.
+local function ladderOf(all, name)
+    if type(all) ~= 'table' then return nil end
+    for _, job in ipairs(all) do
+        if type(job) == 'table' and tostring(job.name or '') == name then
+            local out = {}
+            for _, g in ipairs(job.grades or {}) do
+                if type(g) == 'table' then
+                    out[#out + 1] = {
+                        grade = math.floor(num(g.grade or g.level, 0)),
+                        label = tostring(g.label or g.name or ''),
+                        salary = math.floor(num(g.salary or g.payment, 0)),
+                    }
+                end
+            end
+            table.sort(out, function(a, b) return a.grade < b.grade end)
+            return out, job
+        end
+    end
+    return nil
+end
+
+V.Callback('v-phone:jobs:data', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    local job = p.job or {}
+    local all = jobsList()
+    local ladder, found = ladderOf(all, tostring(job.name or ''))
+
+    -- The pay for the grade actually held, from the ladder rather than from a guess.
+    local salary = 0
+    for _, step in ipairs(ladder or {}) do
+        if step.grade == math.floor(num(job.grade, 0)) then salary = step.salary end
+    end
+
+    local openings = {}
+    for _, j in ipairs(all or {}) do
+        if type(j) == 'table' and j.name then
+            local grades = j.grades or {}
+            -- The entry-level wage is what an opening is worth advertising.
+            local entry, ranks = 0, 0
+            local lowest
+            for _, g in ipairs(grades) do
+                if type(g) == 'table' then
+                    ranks = ranks + 1
+                    local lvl = math.floor(num(g.grade or g.level, 0))
+                    if lowest == nil or lvl < lowest then
+                        lowest = lvl
+                        entry = math.floor(num(g.salary or g.payment, 0))
+                    end
+                end
+            end
+            openings[#openings + 1] = {
+                name = tostring(j.name),
+                label = tostring(j.label or j.name),
+                salary = entry,
+                ranks = ranks > 0 and ranks or nil,
+            }
+        end
+    end
+    table.sort(openings, function(a, b) return a.label < b.label end)
+
+    resolve({
+        ok = true,
+        me = {
+            name = tostring(job.name or 'unemployed'),
+            label = tostring(job.label or (found and found.label) or job.name or ''),
+            grade = math.floor(num(job.grade, 0)),
+            gradeLabel = tostring(job.gradeLabel or ''),
+            onDuty = job.onDuty ~= false,
+            boss = job.boss == true,
+            salary = salary,
+            ladder = ladder or {},
+        },
+        jobs = openings,
+    })
+end)
+
+-- One line at boot saying which of these the phone can actually answer, because an app that
+-- reports "not available" without saying why cost several rounds of guessing once already.
+CreateThread(function()
+    Wait(3000)
+    local function state(label, fn)
+        local ok, result = pcall(fn)
+        return label .. '=' .. ((ok and type(result) == 'table') and 'yes' or 'no')
+    end
+    print(('[v-phone] bridge apps: %s %s %s %s'):format(
+        state('garage', function()
+            return Bridge.Vehicles.Owned('__probe__', nil) end),
+        state('property', function()
+            return Bridge.Properties.Owned('__probe__', nil) end),
+        state('licences', function()
+            return Bridge.Licences.Held(nil, '__probe__') end),
+        state('jobs', function() return Bridge.Jobs.All() end)))
+end)

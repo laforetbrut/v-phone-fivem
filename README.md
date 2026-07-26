@@ -109,6 +109,8 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 
 Inventory, banking, garage and housing scripts are detected too - see [COMPATIBILITY.md](COMPATIBILITY.md) for the full list and the exact resource names.
 
+The Bank, Garage, Property, Wallet and Jobs apps need **no companion resource**: they read whatever your framework and your scripts already keep, through the bridge.
+
 ## Installation
 
 1. Install [oxmysql](https://github.com/overextended/oxmysql). It is the only hard requirement.
@@ -267,6 +269,8 @@ Tout ce qui suit est détecté automatiquement. Nommer explicitement une ressour
 | Un framework | métiers, argent, licences, noms de personnage | [qb-core](https://github.com/qbcore-framework/qb-core) · [qbx_core](https://github.com/Qbox-project/qbx_core) · [ox_core](https://github.com/overextended/ox_core) · [es_extended](https://github.com/esx-framework/esx_core) |
 
 Les scripts d'inventaire, de banque, de garage et de logement sont aussi détectés - voir [COMPATIBILITY.md](COMPATIBILITY.md) pour la liste complète et les noms exacts.
+
+Les applications Banque, Garage, Logement, Portefeuille et Emplois n'ont besoin d'**aucune ressource compagnon** : elles lisent ce que votre framework et vos scripts conservent déjà, via le bridge.
 
 ## Installation
 

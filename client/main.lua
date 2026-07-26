@@ -562,11 +562,17 @@ end
 local APP_SOURCE = {
     bank   = { res = 'v-banking',  callback = 'v-banking:getData',
                fallback = 'v-phone:bank:data' },
-    garage = { res = 'v-vehicles', callback = 'v-vehicles:myVehicles' },
-    wallet = { res = 'v-licenses', callback = 'v-licenses:mine' },
-    jobs     = { res = 'v-cityhall', callback = 'v-phone:jobs' },
+    garage = { res = 'v-vehicles', callback = 'v-vehicles:myVehicles',
+               fallback = 'v-phone:garage:data' },
+    wallet = { res = 'v-licenses', callback = 'v-licenses:mine',
+               fallback = 'v-phone:wallet:data' },
+    jobs     = { res = 'v-cityhall', callback = 'v-phone:jobs',
+                 fallback = 'v-phone:jobs:data' },
+    -- Music is the one with no bridge to fall back to: a player's tracks are their own
+    -- phone storage, answered locally by `musicAppData` above, so it never gets here.
     music    = { res = 'v-music',    callback = 'v-music:list' },
-    property = { res = 'v-housing',  callback = 'v-housing:mine' },
+    property = { res = 'v-housing',  callback = 'v-housing:mine',
+                 fallback = 'v-phone:property:data' },
 }
 
 --- The music app answers from the CONFIG and the local deck, not from a server callback.
