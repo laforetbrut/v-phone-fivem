@@ -1480,6 +1480,12 @@ V.Callback('v-phone:open', function(src, resolve)
         -- `set phone_debug true` turns on the page's boot tracing. Off, the phone writes
         -- nothing to the browser console at all, which is what a live server wants.
         debug = GetConvar('phone_debug', '') == 'true',
+        -- Whether server-side capture is live. The CLIENT used to decide this by reading
+        -- `Config.Media.enabled` itself, which meant `set phone_media true` switched it on
+        -- for the server and not for the phone taking the photograph - so the camera fell
+        -- through to screenshot-basic, found no upload target, and refused. Only the server
+        -- knows, so only the server says.
+        media = (Bridge.MediaEnabled and Bridge.MediaEnabled()) or false,
         -- Whether Cipher should hand a plaintext copy to the server for lawful intercept.
         -- Off unless the operator turned it on, so E2E stays E2E by default.
         cipherIntercept = (Config.Police and Config.Police.cipher and Config.Police.cipher.intercept) == true,

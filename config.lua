@@ -189,8 +189,15 @@ Config.Settings = {
     -- session and keeps checking it still ends the night with charge, and somebody who
     -- never puts it away eventually has to find a charger. The old 8/3 pair emptied a
     -- phone in under three hours of use, which read as broken rather than as a mechanic.
-    hoursToEmpty    = 48,
-    screenDrain     = 2,
+    -- 72 hours idle, and the screen costs 1.5x rather than 2x, so a phone that is actually
+    -- being looked at lasts about 48 hours of use. 48/2x gave exactly 24 and that is the
+    -- number to clear, not to land on.
+    --
+    -- The arithmetic, so it can be checked rather than trusted: the drain tick runs every 20
+    -- seconds, 180 times an hour, and takes 100/(hours*180) percent each time. At 72 that is
+    -- 1.39% an hour closed and 2.08% with the screen on - 72 hours and 48 hours to empty.
+    hoursToEmpty    = 72,
+    screenDrain     = 1.5,
     chargeMinutes   = 45,
     powerbankCharge = 45,
     autoDark        = true,
@@ -710,8 +717,8 @@ Config.Airdrop = { range = 12.0, offerTtl = 30 }
 Config.Battery = {
     -- These are the fallbacks the code uses when Config.Settings has no answer; keep them
     -- in step with it or the two disagree the moment somebody clears a setting.
-    hoursToEmpty = 48.0,    -- idle, phone closed: two full days
-    screenMultiplier = 2.0, -- with the screen on, so a day of actual use
+    hoursToEmpty = 72.0,    -- idle, phone closed: three days
+    screenMultiplier = 1.5, -- with the screen on, so about two days of actual use
     chargeMinutes = 45.0,   -- flat to full at a charger
     lowAt = 20,             -- first warning
     criticalAt = 5,

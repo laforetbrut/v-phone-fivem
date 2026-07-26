@@ -531,7 +531,7 @@ input { font: inherit; }
   height: 18px; min-height: 18px; padding: 0 16px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .keypad { display: grid; grid-template-columns: repeat(3, 74px); gap: 14px 22px;
-  justify-content: center; padding: 14px 0 6px; }
+  justify-content: center; padding: 10px 0 2px; }
 .key { width: 74px; height: 74px; border-radius: 50%; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 1px;
   background: var(--key-bg); transition: filter .1s ease, transform .1s ease; }
@@ -543,7 +543,10 @@ input { font: inherit; }
    whether or not the delete button is showing. As a flex row it drifted off-centre the
    moment the (hidden) delete button left the layout. */
 .dialrow { display: grid; grid-template-columns: repeat(3, 74px); gap: 14px 22px;
-  justify-content: center; align-items: center; padding: 10px 0 4px; }
+  /* 18px under the call button, not 4. With 4 the green circle sat hard against the tab bar
+     and read as crowding it - a 74px target needs to look deliberate, not squeezed in
+     against the next control. */
+  justify-content: center; align-items: center; padding: 10px 0 18px; }
 .dialrow .callbtn { grid-column: 2; }
 .dialrow .delbtn { grid-column: 3; }
 .dialrow .dialspace { grid-column: 1; }

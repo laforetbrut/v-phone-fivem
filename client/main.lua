@@ -24,6 +24,7 @@ local activeSdkEpoch = 0     -- rejects late shell requests that arrive out of o
 local sdkApps = {}           -- installed iframe apps allowed for this open session
 local pendingUiActions = {}  -- prompts received while the asynchronous open is in flight
 local applyServerCall
+local mediaOn = false        -- server-side capture and upload, decided by the server
 
 local function sdkAppId(value)
     local id = tostring(value or '')
@@ -332,6 +333,7 @@ local function openPhone()
 
         isOpen = true
         myNumber = state.number
+        mediaOn = state.media == true
         SetNuiFocus(true, true)          -- focus is per-resource: only the page owner may take it
         -- Keep game input flowing so the player can still walk and drive; the guard thread
         -- disables only aim/shoot/look so the cursor and the world do not fight.
@@ -671,6 +673,7 @@ RegisterNUICallback('refresh', function(_, cb)
     V.Request('v-phone:open', function(res)
         if res and res.ok then
             myNumber = res.number
+            mediaOn = res.media == true
             syncSdkApps(res.apps)
         end
         cb(res or { error = 'x' })
@@ -921,8 +924,10 @@ RegisterNUICallback('shoot', function(_, cb)
     -- The media backend (screencapture + a CDN, key server-side) is preferred when the
     -- operator turned it on: the server does the capture and the upload, so the phone only
     -- has to get out of the shot. It falls through to screenshot-basic when media is off.
-    local useMedia = Config.Media and Config.Media.enabled == true
-        and GetResourceState('screencapture') == 'started'
+    -- `mediaOn` comes from the server with the open payload. Reading Config here was the
+    -- bug: the operator's switch is a convar the server resolves, and a client that reads
+    -- the file instead disagrees with it.
+    local useMedia = mediaOn and GetResourceState('screencapture') == 'started'
 
     if useMedia then
         SendNUIMessage({ action = 'shutter' })
