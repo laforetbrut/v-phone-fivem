@@ -473,9 +473,11 @@ local POST_COLUMNS = [[
 -- ══════════════════════════════════════════════════════════════
 --- Who wrote a post, and which app it belongs to.
 local function postAuthor(id)
-    local row = MySQL.single.await('SELECT citizenid, kind FROM vphone_social_posts WHERE id = ?', { id })
+    local row = MySQL.single.await('SELECT citizenid, app, kind FROM vphone_social_posts WHERE id = ?', { id })
     if not row then return nil end
-    return row.citizenid, appOfKind(row.kind)
+    -- `app` on the row, with the old rule as the fallback for a row written before the
+    -- column existed and somehow missed by the backfill.
+    return row.citizenid, (row.app ~= '' and row.app) or appOfKind(row.kind)
 end
 
 --- File a notification, unless it is somebody being told about their own action.
@@ -609,18 +611,22 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- The feed
 -- ══════════════════════════════════════════════════════════════
--- One table, two kinds. Bleeter shows 'text', Snapmatic shows 'photo': the same feed with
--- different content types and different chrome, which is all those two apps ever were.
+-- One table, two apps. The same feed with different chrome, filtered on `s.app` - which is
+-- what the post was actually filed under, rather than on its content type. Bleeter carries
+-- text AND pictures, like the thing it is modelled on; Snapmatic carries pictures only,
+-- because it is a photo app.
 V.Callback('v-phone:soc:feed', function(src, resolve, data)
     if not socOn() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
+    -- The client still says which feed it wants by content type, because that is how the two
+    -- apps are told apart on screen; the server turns it into an app name once, here.
     local photo = (data and data.kind == 'photo')
-    local app = appOfKind(photo and 'photo' or 'text')
+    -- `appOf` already falls back to 'bleeter', so this is the client's app when it named one
+    -- and the content type's app otherwise - which keeps an older page working.
+    local app = (data and data.app) and appOf(data) or appOfKind(photo and 'photo' or 'text')
 
-    -- The photo feed (Snapmatic) shows photos AND videos; the text feed (Bleeter) shows
-    -- text. A clip lives with the pictures.
-    local kindWhere = photo and 's.kind IN (?, ?)' or 's.kind = ?'
+    local kindWhere = 's.app = ?'
 
     -- Two feeds, one query: everything, or only the accounts you follow plus your own.
     -- A "following" tab that quietly showed strangers would not be worth having.
@@ -635,8 +641,9 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
     -- later placeholder along by one, which is the kind of bug that answers with somebody
     -- else's rows rather than with an error.
     local args = { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid, app }
-    if photo then args[#args + 1] = 'photo'; args[#args + 1] = 'video'
-    else args[#args + 1] = 'text' end
+    -- One placeholder now, for `s.app = ?`. It used to be one or two depending on the feed,
+    -- and a miscount here shifts every later binding silently.
+    args[#args + 1] = app
     if following then
         args[#args + 1] = p.citizenid
         args[#args + 1] = p.citizenid
@@ -657,15 +664,18 @@ end)
 V.Callback('v-phone:soc:post', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
-    -- text -> Bleeter, photo/video -> the app the client named (Bleeter or Snapmatic), or
-    -- Snapmatic by default for media. A clip is a photo that moves; it shares the account,
-    -- the host gate and the feed, with its media URL in `image`.
+    -- The app the client named, and it is now recorded on the row rather than inferred back
+    -- out of `kind` later. A clip is a photo that moves: it shares the account, the host
+    -- gate and the feed, with its media URL in `image`.
+    --
+    -- Snapmatic is a photo app, so a text post addressed to it is filed on Bleeter instead -
+    -- that is the only case where the client's choice is overruled, and it is overruled
+    -- towards the app that can actually show the thing.
     local raw = (data and data.kind) or 'text'
     local kind = (raw == 'photo' or raw == 'video') and raw or 'text'
     local wantApp = tostring((data and data.app) or '')
-    local mediaApp = (kind == 'text') and 'bleeter'
-        or ((wantApp == 'bleeter' or wantApp == 'snap') and wantApp)
-        or appOfKind('photo')
+    local mediaApp = (wantApp == 'bleeter' or wantApp == 'snap') and wantApp or appOfKind(kind)
+    if kind == 'text' then mediaApp = 'bleeter' end
     if not accountOf(p.citizenid, mediaApp) then resolve({ error = 'noaccount' }) return end
     local body = tostring((data and data.body) or '')
         :sub(1, math.floor(num(V.Setting('socialMaxLength', SOC.postMax), 280)))
@@ -682,8 +692,8 @@ V.Callback('v-phone:soc:post', function(src, resolve, data)
     end
 
     local id = MySQL.insert.await(
-        'INSERT INTO vphone_social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
-        { p.citizenid, kind, body, image })
+        'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image) VALUES (?,?,?,?,?)',
+        { p.citizenid, mediaApp, kind, body, image })
     Core.Log('social', ('%s posted %s #%d'):format(p.citizenid, kind, id), nil, p.citizenid)
     -- Hashtags into their own table, and anybody the post named gets told. Both read the
     -- body that was actually stored, not the one that arrived, so a truncated post cannot
@@ -1040,21 +1050,21 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
     if not a then resolve({ error = 'nouser' }) return end
 
     local counts = MySQL.single.await([[
-        SELECT (SELECT COUNT(*) FROM vphone_social_posts s WHERE s.citizenid = ? AND s.kind = ?) AS posts,
+        SELECT (SELECT COUNT(*) FROM vphone_social_posts s WHERE s.citizenid = ? AND s.app = ?) AS posts,
                (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = ? AND f.to_cid = ?) AS followers,
                (SELECT COUNT(*) FROM vphone_social_follows f2 WHERE f2.app = ? AND f2.from_cid = ?) AS following
-    ]], { cid, kind, app, cid, app, cid }) or {}
+    ]], { cid, app, app, cid, app, cid }) or {}
 
     local posts = MySQL.query.await(([[
         SELECT %s FROM vphone_social_posts s
         JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
-        WHERE s.citizenid = ? AND s.kind = ?
+        WHERE s.citizenid = ? AND s.app = ?
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS), {
         -- Five: POST_COLUMNS binds the reader's own id once per EXISTS - liked, reposted,
         -- saved, following - plus once for `mine`.
         p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
-        app, cid, kind, socFeedSize(),
+        app, cid, app, socFeedSize(),
     }) or {}
 
     resolve({
@@ -1334,11 +1344,11 @@ V.Callback('v-phone:soc:tag', function(src, resolve, data)
         FROM vphone_social_posts s
         JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
         JOIN vphone_social_tags t ON t.post_id = s.id AND t.app = ?
-        WHERE t.tag = ?
+        WHERE t.tag = ? AND s.app = ?
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS),
         { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
-          app, app, tag, socFeedSize() }) or {}
+          app, app, tag, app, socFeedSize() }) or {}
 
     resolve({ ok = true, tag = tag, posts = cleanPosts(rows) })
 end)
@@ -1402,11 +1412,13 @@ V.Callback('v-phone:soc:saved', function(src, resolve, data)
         FROM vphone_social_saves sv
         JOIN vphone_social_posts s ON s.id = sv.post_id
         JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
-        WHERE sv.citizenid = ?
+        -- The POST's app, not just the author's account. Somebody with an account on both
+        -- would otherwise see their saved Bleeter posts inside Snapmatic.
+        WHERE sv.citizenid = ? AND s.app = ?
         ORDER BY sv.at DESC, sv.post_id DESC LIMIT ?
     ]]):format(POST_COLUMNS),
         { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
-          app, p.citizenid, socFeedSize() }) or {}
+          app, p.citizenid, app, socFeedSize() }) or {}
 
     resolve({ ok = true, posts = cleanPosts(rows) })
 end)
@@ -1431,15 +1443,18 @@ V.Callback('v-phone:soc:explore', function(src, resolve, data)
         SELECT %s
         FROM vphone_social_posts s
         JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
-        WHERE s.kind IN ('photo', 'video')
+        -- Both: the app it was posted to, and that it is actually a picture. Explore is a
+        -- grid, so a text post on the same app has nothing to show in it.
+        WHERE s.app = ? AND s.kind IN ('photo', 'video')
           AND s.citizenid <> ?
           AND NOT EXISTS(SELECT 1 FROM vphone_social_follows f
                          WHERE f.app = ? AND f.from_cid = ? AND f.to_cid = s.citizenid)
           AND s.at >= (NOW() - INTERVAL ? HOUR)
         ORDER BY likes DESC, s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS),
+        -- a.app, s.app, s.citizenid, f.app, f.from_cid, hours, limit - in that order.
         { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
-          app, p.citizenid, app, p.citizenid, hours, socFeedSize() }) or {}
+          app, app, p.citizenid, app, p.citizenid, hours, socFeedSize() }) or {}
 
     resolve({ ok = true, posts = cleanPosts(rows) })
 end)
@@ -1702,12 +1717,17 @@ end)
 
 --- Post as the system/an event, for modules that want to put something on Bleeter (a
 --- news module, a race result). `handle` must be an account that exists.
-exports('SocialPostAs', function(cid, kind, body, image)
+--- `app` is optional and defaults to what the kind implies, so existing callers keep
+--- working; pass 'bleeter' with a photo to put a picture on Bleeter.
+exports('SocialPostAs', function(cid, kind, body, image, app)
     cid = tostring(cid or '')
-    if not accountOf(cid, appOfKind(kind == 'photo' and 'photo' or 'text')) then return false end
+    kind = (kind == 'photo') and 'photo' or 'text'
+    app = (app == 'bleeter' or app == 'snap') and app or appOfKind(kind)
+    if kind == 'text' then app = 'bleeter' end
+    if not accountOf(cid, app) then return false end
     return MySQL.insert.await(
-        'INSERT INTO vphone_social_posts (citizenid, kind, body, image) VALUES (?,?,?,?)',
-        { cid, kind == 'photo' and 'photo' or 'text', tostring(body or ''):sub(1, 280),
+        'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image) VALUES (?,?,?,?,?)',
+        { cid, app, kind, tostring(body or ''):sub(1, 280),
           tostring(image or ''):sub(1, 300) }) ~= nil
 end)
 
@@ -1816,12 +1836,35 @@ function SocialBoot(core)
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_posts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
+        -- WHICH APP this post belongs to.
+        --
+        -- It used to be derived from `kind`: text meant Bleeter, photo meant Snapmatic. That
+        -- worked exactly as long as the two apps carried different content types, and broke
+        -- the moment Bleeter learnt to post pictures - every photograph, wherever it was
+        -- written, appeared on Snapmatic and never on Bleeter. A post's app is a fact about
+        -- the post, not something to infer from its media type, so it is stored.
+        `app`       VARCHAR(8)  NOT NULL DEFAULT 'bleeter',
         `kind`      VARCHAR(8)  NOT NULL DEFAULT 'text',
         `body`      VARCHAR(1000) NOT NULL DEFAULT '',
         `image`     VARCHAR(300) NOT NULL DEFAULT '',
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (`id`), KEY `kind_idx` (`kind`, `id`)
+        PRIMARY KEY (`id`), KEY `app_idx` (`app`, `id`), KEY `kind_idx` (`kind`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so the
+    -- column is added on its own - and then BACKFILLED from what the old rule would have
+    -- said. Every existing photo really was on Snapmatic and every existing text really was
+    -- on Bleeter, because that was the only behaviour there had ever been, so this is a
+    -- faithful record of where those posts already are rather than a guess.
+    local hasApp = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_posts'
+          AND COLUMN_NAME = 'app' LIMIT 1]])
+    if not hasApp then
+        MySQL.query.await("ALTER TABLE `vphone_social_posts` ADD COLUMN `app` VARCHAR(8) NOT NULL DEFAULT 'bleeter'")
+        MySQL.query.await("UPDATE `vphone_social_posts` SET `app` = 'snap' WHERE `kind` IN ('photo', 'video')")
+        MySQL.query.await('ALTER TABLE `vphone_social_posts` ADD INDEX `app_idx` (`app`, `id`)')
+        print('[v-phone] social: added posts.app and backfilled it from kind')
+    end
 
     -- What somebody did to your post, or to you. The one thing a social app cannot be
     -- without: a like nobody is told about may as well not have happened.
