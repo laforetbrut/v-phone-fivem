@@ -34,6 +34,7 @@ All notable changes to v-phone are documented here.
 ### Changed
 
 - **The phone item is now required by default, and there is no key.** `Config.Settings.requireItem` is on and `Config.Key` is `false`: the phone opens by using the item, the way any other object does. A phone every character owns for free is not an item, it is a menu. Put a key name back in `Config.Key` to also offer a binding, or `set phone_requireItem false` to give everybody one again. Mark the item `useable` in your framework's own catalogue — on qb-core that is `qb-core/shared/items.lua`. It cuts both ways: a character with no handset cannot be called either, and messages sent to them wait until they hold one.
+- **A phone lasts a real day now.** The battery emptied in eight hours idle and under three with the screen on, which reads as a broken phone rather than as a mechanic. It is 48 hours in a pocket and 24 with the screen on — a long session ends with charge left, and somebody who never puts it away still has to find a charger.
 
 
 ---
@@ -68,6 +69,7 @@ All notable changes to v-phone are documented here.
 ### Modifications
 
 - **L'objet téléphone est désormais requis par défaut, et il n'y a plus de touche.** `Config.Settings.requireItem` est activé et `Config.Key` vaut `false` : le téléphone s'ouvre en utilisant l'objet, comme n'importe quel autre. Un téléphone que chaque personnage possède gratuitement n'est pas un objet, c'est un menu. Remettez un nom de touche dans `Config.Key` pour proposer aussi un raccourci, ou `set phone_requireItem false` pour en redonner un à tout le monde. Marquez l'objet `useable` dans le catalogue de votre framework — sur qb-core, c'est `qb-core/shared/items.lua`. Cela vaut dans les deux sens : un personnage sans combiné ne peut pas non plus être appelé, et les messages qu'on lui envoie attendent qu'il en tienne un.
+- **Le téléphone tient une vraie journée.** La batterie se vidait en huit heures au repos et en moins de trois écran allumé, ce qui se lit comme un téléphone cassé plutôt que comme une mécanique. C'est 48 heures en poche et 24 écran allumé — une longue session se termine avec de la charge, et qui ne le range jamais doit quand même trouver un chargeur.
 
 
 ---

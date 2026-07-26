@@ -184,8 +184,13 @@ Config.Settings = {
     ringSeconds     = 30,
     maxMinutes      = 60,
     battery         = true,
-    hoursToEmpty    = 8,
-    screenDrain     = 3,
+    -- A real day of USE, which is what a player measures it against. 48 hours idle with
+    -- the phone in a pocket, halved to 24 with the screen on - so somebody who plays a long
+    -- session and keeps checking it still ends the night with charge, and somebody who
+    -- never puts it away eventually has to find a charger. The old 8/3 pair emptied a
+    -- phone in under three hours of use, which read as broken rather than as a mechanic.
+    hoursToEmpty    = 48,
+    screenDrain     = 2,
     chargeMinutes   = 45,
     powerbankCharge = 45,
     autoDark        = true,
@@ -699,8 +704,10 @@ Config.Airdrop = { range = 12.0, offerTtl = 30 }
 -- drawer, but so does the ability to charge it: coming back from a week away to a dead
 -- phone and no way to have prevented it is a punishment for logging off.
 Config.Battery = {
-    hoursToEmpty = 8.0,     -- idle, phone closed
-    screenMultiplier = 3.0, -- how much faster it drains with the screen on
+    -- These are the fallbacks the code uses when Config.Settings has no answer; keep them
+    -- in step with it or the two disagree the moment somebody clears a setting.
+    hoursToEmpty = 48.0,    -- idle, phone closed: two full days
+    screenMultiplier = 2.0, -- with the screen on, so a day of actual use
     chargeMinutes = 45.0,   -- flat to full at a charger
     lowAt = 20,             -- first warning
     criticalAt = 5,
