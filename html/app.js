@@ -2456,7 +2456,9 @@ RENDER.contacts = () => {
       subtitle: myNum(state.number), chevron: true, data: { me: '1' } })]) +
     '<div id="clist"></div>');
   rows('.row', (r) => { if (r.dataset.me) r.addEventListener('click',
-    () => airdropShare('number', { name: '', number: state.number })); });
+    // No name sent: the SERVER labels this one, from the name the player typed during setup.
+    // Sending one here would be a value the server ignores, which is worse than sending none.
+    () => airdropShare('number', { number: state.number })); });
   draw('');
   onSearch(draw);
 };

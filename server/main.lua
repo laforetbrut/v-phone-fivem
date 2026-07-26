@@ -2616,6 +2616,24 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
     if kind == 'contact' or kind == 'number' then
         payload = { name = tostring(pin.name or ''):sub(1, 40), number = tostring(pin.number or ''):sub(1, 20) }
         if payload.number == '' then resolve({ error = 'x' }) return end
+
+        -- **Sharing your OWN number: the server names you, not the page.**
+        --
+        -- The page sent an empty name here, so the receiver's new contact was labelled with
+        -- the number itself - a phone book full of `555-0142` and nothing to tell them apart.
+        -- The name a player typed during setup is exactly the right label, and the server
+        -- already holds it.
+        --
+        -- Derived here rather than taken from the payload on purpose. This is a row that lands
+        -- in somebody ELSE's contact book: a client that could choose the name it is saved
+        -- under could introduce itself as anybody. `contact` keeps using the payload, because
+        -- there the name IS the sender's own label for a third party and nobody else's to know.
+        if kind == 'number' then
+            local prefs = prefsOf(me)
+            local mine = tostring((prefs and prefs.ownerName) or ''):gsub('[%c]', '')
+            if mine == '' then mine = tostring(me.name or '') end
+            payload.name = mine:sub(1, 40)
+        end
     elseif kind == 'photo' then
         payload = { url = tostring(pin.url or ''):sub(1, 400) }
         if payload.url == '' or not wallpaperAllowed(payload.url) or not ownsPhoto(me, payload.url) then

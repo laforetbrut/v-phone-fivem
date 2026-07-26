@@ -4,6 +4,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.4] - 2026-07-26
+
+### Fixed (English first)
+
+- **AirDropping your own number saved it under the number instead of your name.** The receiver's new contact read `555-0142`, so a phone book filled up with rows that had nothing to tell them apart. The page sent an empty name and the accept path falls back to the number - which is the right fallback for a contact card with no label, and was simply wrong here. The name a player typed during setup is exactly the right label and the server already holds it, so **the server derives it** rather than reading it from the payload: this is a row that lands in somebody ELSE's contact book, and a client that could choose the name it is saved under could introduce itself as anybody. A name sent by the page for your own number is now ignored. With no setup name it falls back to the character's name, and to an empty label rather than a crash if there is neither. Sharing somebody else's contact card is untouched - there the name IS the sender's own label for a third party, and nobody else's to know.
+
+### Correctifs (miroir français)
+
+- **Partager son propre numéro par AirDrop l'enregistrait sous le numéro au lieu du nom.** Le nouveau contact du destinataire affichait `555-0142`, donc un répertoire se remplissait de lignes que rien ne distinguait. La page envoyait un nom vide et le chemin d'acceptation retombe sur le numéro — ce qui est le bon repli pour une fiche de contact sans libellé, et était simplement faux ici. Le nom qu'un joueur a saisi lors de la configuration est exactement le bon libellé et le serveur le détient déjà : **c'est donc le serveur qui le déduit** au lieu de le lire dans la charge utile. Cette ligne atterrit dans le répertoire de quelqu'un d'AUTRE, et un client capable de choisir le nom sous lequel il est enregistré pourrait se présenter comme n'importe qui. Un nom envoyé par la page pour votre propre numéro est désormais ignoré. Sans nom de configuration, cela retombe sur le nom du personnage, puis sur un libellé vide plutôt qu'une erreur s'il n'y a ni l'un ni l'autre. Partager la fiche de contact de quelqu'un d'autre n'est pas touché : là, le nom EST le libellé propre de l'expéditeur pour un tiers, et personne d'autre n'a à le connaître.
+
+---
+
 ## [1.2.3] - 2026-07-26
 
 ### Fixed (English first)
