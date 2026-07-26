@@ -906,14 +906,16 @@ end)
 -- the game into that view - correct aspect, correct field of view - and
 -- `CellFrontCamActivate` is the selfie the engine composes itself.
 --
--- **The phone is hidden while framing, and that is deliberate.** A NUI page cannot receive a
--- live feed of the game, so an in-phone viewfinder would mean capturing a frame several times
--- a second and shipping it back - expensive, and the phone appears inside its own preview.
--- Every public phone resource hides the handset instead and lets the game BE the viewfinder.
--- Three attempts here tried to keep it on screen with a see-through display; each failed,
--- because the app surface, the wallpaper and the camview all paint their own background.
+-- **The preview is real, and it is in the handset.** No frames are captured or streamed: the
+-- NUI layer is already transparent over the game, so making the phone's screen see-through
+-- shows the camera view through it. Three earlier attempts failed for one reason, and it was
+-- not the idea - it was that six things paint a background in there, and the last one found
+-- was `.bezel::before`, which fills the whole inner face with #030304 behind the screen. A
+-- probe that reported `backgroundColor` said the bezel was transparent, because that colour
+-- lives on a pseudo-element.
 --
--- So: the phone goes, the world is the shot, and the prompts say which key does what.
+-- The cursor still leaves, because the mouse has to aim. The keys below stand in for the
+-- buttons the player can see but cannot click.
 local camActive, camFront = false, false
 
 camModeOff = function()
@@ -923,9 +925,8 @@ camModeOff = function()
     CellFrontCamActivate(false)
     CellCamActivate(false, false)
     DisplayRadar(true)
-    -- Bring the handset back unless the phone itself is on its way out.
     if isOpen then
-        SendNUIMessage({ action = 'camHide', on = false })
+        SendNUIMessage({ action = 'camLive', on = false })
         SetNuiFocus(true, true)
         SetNuiFocusKeepInput(true)
     end
@@ -943,9 +944,9 @@ RegisterNUICallback('camMode', function(data, cb)
     CellFrontCamActivate(camFront)
     DisplayRadar(false)
 
-    -- The handset leaves the screen and the cursor goes with it: the player is framing a
-    -- photograph with the mouse now, not clicking buttons.
-    SendNUIMessage({ action = 'camHide', on = true })
+    -- The handset STAYS on screen - the preview is meant to be in it. Only the cursor goes,
+    -- because the mouse has to aim the shot; the keys below do what its buttons would.
+    SendNUIMessage({ action = 'camLive', on = true })
     SetNuiFocus(false, false)
 
     CreateThread(function()

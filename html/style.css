@@ -9219,18 +9219,33 @@ body.inframe.dark .uisearch {
 .codefill { margin: -4px 0 10px; font-weight: 600; }
 
 /* ── The viewfinder ────────────────────────────────────────────
-   The engine frames the photograph now - `CellCamActivate` gives GTA's own phone-camera view
-   - so the phone is not a window onto the world and must not pretend to be one. An earlier
-   attempt made the screen transparent to fake a preview; it never worked, because the app
-   surface, the wallpaper and the camview each paint their own background and beating all of
-   them left a phone-shaped hole rather than a viewfinder.
+   A real preview, in the handset, with nothing captured or streamed. The NUI layer is already
+   transparent over the game, so the camera view shows through wherever this page stops
+   painting. The work is finding everything that paints.
 
-   What is left is honest: the frame guides sit over a dark screen, and the picture the player
-   is composing is the game itself, behind the handset, with the HUD hidden. */
+   Six layers do, and they took three attempts to enumerate. The one that hid the rest was
+   `.bezel::before` - an inset panel filling the whole inner face with #030304 behind the
+   screen. A probe reading `backgroundColor` reported the bezel as transparent, because that
+   colour lives on a pseudo-element and pseudo-elements were not being looked at. */
+.device.camlive .bezel::before { background: transparent; box-shadow: none; }
+/* `!important` on purpose. The wallpaper carries an animation that touches opacity, and a
+   running CSS animation outranks a normal declaration however specific it is - the same
+   mechanism that once held the whole handset at opacity 0. This is the one property here
+   that needs it; the backgrounds above do not. */
+.device.camlive .wallpaper { opacity: 0 !important; }
+.device.camlive .screen { background: transparent; }
+.device.camlive .app,
+.device.camlive .app.camfull,
+.device.camlive .app.camfull .appbody {
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.device.camlive .camview { background: transparent; }
+/* The controls stay readable over whatever is behind them, and only they are tinted. */
 .device.camlive .camtop,
 .device.camlive .cammode,
-.device.camlive .camctl { background: rgba(0, 0, 0, .34); border-radius: 18px; }
-.device.camlive .camview { background: rgba(0, 0, 0, .18); }
+.device.camlive .camctl { background: rgba(0, 0, 0, .38); border-radius: 18px; }
 
 /* ── Zooming a photo ──────────────────────────────────────────
    A photograph is worth looking at closely. The wheel zooms about the cursor and a drag pans

@@ -1239,9 +1239,9 @@ function enterApp(a, tile) {
 function closeApp(instant) {
   // Whatever route out of an app is taken, the camera's first-person hold and hidden HUD
   // must not survive it. Cheap to call when no camera was open.
-  if (byId('device').classList.contains('camlive')) {
+  if (camAppOpen) {
+    camAppOpen = false;
     byId('device').classList.remove('camlive');
-    byId('device').classList.remove('hidden');
     post('camMode', { on: false });
     // `landscape` is module state and survived the visit, so a phone turned sideways in the
     // camera stayed sideways everywhere afterwards with no control left to turn it back.
@@ -4891,6 +4891,7 @@ RENDER.reminders = async () => {
 let camMode = 'photo';     // 'photo' | 'video' (video only when the server hosts media)
 let camRecording = false;
 let camFront = false;      // selfie: a game camera in front of the ped
+let camAppOpen = false;    // the Camera app is up, so closeApp knows to tear it down
 
 // Record a clip. The client relay hides the phone, the server records and uploads through
 // screencapture, and the URL comes back. The countdown is cosmetic - the server owns the
@@ -4959,10 +4960,14 @@ RENDER.camera = async () => {
   //
   // Lua is told at the same moment: it puts the player in first person and hides the HUD and
   // minimap, so what is framed is what is photographed.
-  // Only on the way IN. `RENDER.camera` is re-run by the landscape button and by the selfie
-  // button, so anything done here unconditionally would fight them.
-  const entering = !byId('device').classList.contains('camlive');
-  byId('device').classList.add('camlive');
+  // Only on the way IN. `RENDER.camera` is re-run by the landscape and selfie buttons, so
+  // anything done here unconditionally would fight them.
+  //
+  // The `camlive` CLASS is Lua's to set, not this function's: it is what makes the screen
+  // see-through, and it must appear at the same moment the cursor leaves. Two owners for one
+  // class is how it ended up on screen with a cursor still over it.
+  const entering = !camAppOpen;
+  camAppOpen = true;
   if (entering) {
     // The engine frames the shot and the handset leaves the screen while it does. The phone
     // is drawn again the moment the camera closes, which Lua signals.
@@ -8508,10 +8513,11 @@ window.addEventListener('message', (e) => {
     banner(d.banner || {});
   } else if (d.action === 'buzz') {
     buzzDevice();
-  } else if (d.action === 'camHide') {
-    // Framing happens in the world, not on the screen: Lua has taken the cursor and the
-    // game is the viewfinder, so the handset gets out of the way entirely.
-    byId('device').classList.toggle('hidden', d.on === true);
+  } else if (d.action === 'camLive') {
+    // Framing happens through the handset: `camlive` makes its screen see-through so the
+    // camera view shows in it. Lua has the cursor, so the phone's buttons are labels now -
+    // the keys named on screen do the work.
+    byId('device').classList.toggle('camlive', d.on === true);
     return;
   } else if (d.action === 'camShoot') {
     // The on-screen shutter, fired from Lua's key handler. Same path as the button, so
