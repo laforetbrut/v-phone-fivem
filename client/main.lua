@@ -1627,12 +1627,11 @@ CreateThread(function()
 end)
 
 RegisterNUICallback('call', function(data, cb)
-    V.Request('v-phone:call', function(res)
-        if not res or res.error then
-            V.Notify(L('ph.err_' .. ((res and res.error) or 'x')), 'error')
-        end
-        cb(res or { error = 'x' })
-    end, data)
+    -- The failure used to be announced here as a framework notification, outside the phone,
+    -- and nowhere else - so the page said nothing and made no sound. The page owns it now: it
+    -- plays the reorder tone and shows the reason on the handset, which is one message for one
+    -- failure rather than two in two different places.
+    V.Request('v-phone:call', function(res) cb(res or { error = 'x' }) end, data)
 end)
 
 RegisterNUICallback('answer', function(_, cb)

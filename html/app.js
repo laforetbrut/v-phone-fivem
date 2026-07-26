@@ -1523,7 +1523,7 @@ RENDER.phone = () => {
         });
       }));
       qrows('recents', '.row', (el) => el.addEventListener('click', () => {
-        if (el.dataset.n) post('call', { number: el.dataset.n });
+        if (el.dataset.n) placeCall(el.dataset.n);
       }));
       byId('callsclear').addEventListener('click', () => {
         confirmSheet(L('ph.calls_clear_ask'), L('ph.calls_clear'), async () => {
@@ -1563,7 +1563,7 @@ RENDER.phone = () => {
           avatar: c.name, title: c.name, subtitle: c.number, chevron: true, data: { n: c.number },
         })))
       : UI.empty(L(phoneTab === 'contacts' ? 'ph.no_contacts' : 'ph.no_favourites'), 'contacts'));
-    rows('.row[data-n]', (r) => r.addEventListener('click', () => post('call', { number: r.dataset.n })));
+    rows('.row[data-n]', (r) => r.addEventListener('click', () => placeCall(r.dataset.n)));
     return;
   }
 
@@ -1589,7 +1589,7 @@ RENDER.phone = () => {
     dialed = (dialed + b.dataset.k).slice(0, 20); paint();
   }));
   byId('delkey').addEventListener('click', () => { dialed = dialed.slice(0, -1); paint(); });
-  byId('dial').addEventListener('click', () => { if (dialed) post('call', { number: dialed }); });
+  byId('dial').addEventListener('click', () => { if (dialed) placeCall(dialed); });
 };
 
 // ── Health record ──────────────────────────────────────────────
@@ -2026,7 +2026,7 @@ function voicemailSheet(v) {
     UI.button(L('ph.delete'), 'vmdel', 'destructive'),
     () => {
       const c = byId('vmcall');
-      if (c) c.addEventListener('click', () => { closeSheet(); post('call', { number: v.number }); });
+      if (c) c.addEventListener('click', () => { closeSheet(); placeCall(v.number); });
       byId('vmdel').addEventListener('click', async () => {
         const epoch = sheetEpoch;
         await post('voicemail', { op: 'del', id: v.id });
@@ -2136,7 +2136,7 @@ async function openThread(number, draft) {
   // label, and offer no call button: there is nobody on the other end to ring.
   const isService = String(number || '').slice(0, 4) === 'svc:';
   setNav(isService ? String(number).slice(4) : nameOfNumber(number), L('app.messages'),
-    isService ? null : { icon: 'phone', onClick: () => post('call', { number }) },
+    isService ? null : { icon: 'phone', onClick: () => placeCall(number) },
   () => {
     thread = null;
     foot('');
@@ -2406,8 +2406,8 @@ function contactSheet(c) {
       UI.button(L('ph.message'), 'cmsg', 'plain') +
       UI.button(L('ph.airdrop_share'), 'cshare', 'plain'),
       () => {
-        byId('ccall').addEventListener('click', () => { closeSheet(); post('call', { number: c.number }); });
-        byId('cface').addEventListener('click', () => { closeSheet(); post('call', { number: c.number, video: true }); });
+        byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
+        byId('cface').addEventListener('click', () => { closeSheet(); placeCall(c.number, { video: true }); });
         byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
         byId('cshare').addEventListener('click', () =>
           airdropShare('contact', { name: c.name, number: c.number }));
@@ -2446,7 +2446,7 @@ function contactSheet(c) {
         } else toast(L('ph.err_' + ((res && res.error) || 'x')));
       });
       if (isNew) return;
-      byId('ccall').addEventListener('click', () => { closeSheet(); post('call', { number: c.number }); });
+      byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
       byId('cshare').addEventListener('click', () => airdropShare('contact', { name: c.name, number: c.number }));
       byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
       byId('cdel').addEventListener('click', async () => {
@@ -7382,7 +7382,7 @@ async function hushMatches() {
         [...byId('sheet').querySelectorAll('[data-act]')].forEach((el) =>
           el.addEventListener('click', () => {
             if (!closeSheet(false, epoch2)) return;
-            if (el.dataset.act === 'call') { post('call', { number: m.number }); return; }
+            if (el.dataset.act === 'call') { placeCall(m.number); return; }
             const messages = (state.apps || []).find((a) => a.id === 'messages');
             if (!messages) return;
             enterApp(messages, null);
@@ -7571,6 +7571,20 @@ const UI_TONES = {
   success:  [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
   error:    [[311, 0, .11], [233, .1, .18]],
   faceid:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
+  // A call that cannot connect. This is the REORDER tone - what a telephone network has
+  // answered a dead number with for sixty years - and it is deliberately not one of the
+  // pleasant little chimes above: 480 Hz and 620 Hz together, three short bursts, ending
+  // abruptly. The dissonance is the point. A player hears it and knows the call is over
+  // without reading anything, which is what a line of grey text could never do.
+  //
+  // The two frequencies are sounded as separate notes because that is what the score format
+  // allows, and two oscillators at once IS the beat: 620 - 480 leaves the 140 Hz roughness
+  // the tone is recognised by.
+  callfailed: [
+    [480, 0, .2],   [620, 0, .2],
+    [480, .33, .2], [620, .33, .2],
+    [480, .66, .3], [620, .66, .3],
+  ],
   // The payphone's chrome buttons, for a server running with sound files off. The shipped
   // WAVs are the real thing - noise transient and all - but even the fallback keeps what
   // matters: the partials are INHARMONIC, at the free-bar ratios 1 : 2.76 : 5.40, which is
@@ -7603,6 +7617,25 @@ function ui(name) {
   const score = UI_TONES[name];
   if (!score) return;
   score.forEach(([f, t, d]) => note(f, t, d, 0.045 * vol, 'sine'));
+}
+
+// ══ Placing a call ═════════════════════════════════════════════
+// Every route to a call goes through here: the keypad, a recent, a contact, a conversation
+// header, a notification, and the SDK. There were nine call sites and none of them looked at
+// the answer, so a number that does not exist did nothing at all on the phone - the failure
+// was a framework notification outside the frame and nothing else.
+//
+// A call that fails now sounds like one. The tone comes first and the message second, because
+// the tone is what a player reacts to.
+async function placeCall(number, extra) {
+  const payload = extra ? Object.assign({ number }, extra) : { number };
+  const r = await post('call', payload);
+  // The server answers `{ ok = true, id }`, or `{ error }`, or a bare `false` when it cannot
+  // even identify the caller. Anything that is not an explicit ok is a failed call.
+  if (r && r.ok) return true;
+  ui('callfailed');
+  toast(L('ph.err_' + ((r && r.error) || 'x')));
+  return false;
 }
 
 function syncDndAudio() {
@@ -8502,7 +8535,8 @@ const SDK_ALLOWED = {
     deviceName: (state.prefs || {}).deviceName || 'iFruit',
   }),
   message:  (d) => post('send', d),
-  call:     (d) => post('call', d),
+  // Through the same helper, so an app built on the SDK gets the tone too.
+  call:     (d) => placeCall(d && d.number, d),
 };
 
 window.addEventListener('message', async (e) => {
