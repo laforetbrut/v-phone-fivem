@@ -8756,3 +8756,20 @@ window.addEventListener('message', (e) => {
   else if (d.action === 'facePeer') faceShow('facepeer', d.data || null);
   else if (d.action === 'call' && !d.call) faceClear();
 });
+
+// ══ Boot trace ═════════════════════════════════════════════════
+// The only logging in this file, and it earns its place: without it a page that never
+// loaded and a page that loaded fine are indistinguishable in FiveM's cef_console.txt,
+// because nothing else here ever writes to the console. Two lines turn "the phone does
+// not open" from a guess into a reading.
+//
+// They fire once each. If you see `booted` but never `open`, Lua's message is not
+// reaching the page; if you see neither, the page itself never ran.
+console.info('[v-phone] page booted');
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
+  if (d.action === 'open' && !window.__vphoneOpenSeen) {
+    window.__vphoneOpenSeen = true;
+    console.info('[v-phone] open received');
+  }
+});
