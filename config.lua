@@ -1041,10 +1041,17 @@ Config.Booth = {
 
     -- ── How the player reaches the box ─────────────────────────
     interact = {
-        -- `auto` uses whichever target script is running. Name one to force it, or `off` to
-        -- ignore target scripts entirely and always use the marker and key below - which
-        -- some servers prefer even when they do run a target.
-        target = 'auto',          -- auto | ox_target | qb-target | qtarget | off
+        -- `off` is the default: a marker on the box and an [E] prompt, which works the
+        -- moment a player walks up to one and needs nothing installed.
+        --
+        -- `auto` hands the box to whichever target script is running instead. That is the
+        -- prettier integration, but it is not self-evident: qb-target only shows its eye
+        -- while the player HOLDS Left Alt, so somebody standing at a phone box wondering
+        -- why nothing happens is the normal outcome rather than a bug. Choose it when your
+        -- players already know the targeting key.
+        --
+        -- Naming a script forces that one and falls back to the marker if it is not running.
+        target = 'off',           -- off | auto | ox_target | qb-target | qtarget
 
         key = 38,                 -- the control id for the prompt. 38 is E.
         icon = 'fas fa-phone',    -- the target script's icon

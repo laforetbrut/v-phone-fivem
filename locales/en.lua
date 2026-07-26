@@ -561,6 +561,7 @@ local T = {
     ['ph.day_thu']       = 'Thursday',
     ['ph.day_fri']       = 'Friday',
     ['ph.day_sat']       = 'Saturday',
+    ['ph.soc_code_sms'] = 'Your verification code is %s. It expires in five minutes.',
     ['ph.weather_sun'] = 'Clear',
     ['ph.weather_cloud'] = 'Cloudy',
     ['ph.weather_rain'] = 'Rain',

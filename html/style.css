@@ -7971,7 +7971,11 @@ body.inframe.dark .uisearch {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  padding: 7px 6px 2px;
+  /* 22px at the bottom, not 2px, and it is not decoration. The home indicator sits at
+     `bottom: 9px` and is 5px tall, so with 2px of padding the pill was drawn straight
+     across the tab icons and its hit area swallowed taps meant for them. iOS reserves this
+     strip below a tab bar for exactly the same reason. `.tabbar` already had it. */
+  padding: 7px 6px 22px;
   border-radius: 20px 20px 0 0;
   background:
     radial-gradient(120% 100% at 30% -30%, rgba(255, 255, 255, .10), transparent 60%),

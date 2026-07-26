@@ -143,9 +143,23 @@ end
 
 local function smsCode(src, app, code)
     if GetResourceState('v-phone') ~= 'started' then return end
+    local name = APP_NAME[app] or 'iFruit'
+    local text = (LP(src, 'ph.soc_code_sms')):format(code)
+
+    -- A real message, in Messages, from the service that sent it. A banner disappears the
+    -- moment you look away and the code goes with it; a text is still there when you come
+    -- back to type it in, which is what anyone does with a verification code.
     pcall(function()
-        exports['v-phone']:Notify(src, app, APP_NAME[app] or 'iFruit',
-            ('Code de verification : %s'):format(code))
+        local p = Core and Core.GetPlayer and Core.GetPlayer(src)
+        if p and p.citizenid then
+            exports['v-phone']:SendServiceMessage(p.citizenid, name:sub(1, 12), text)
+        end
+    end)
+
+    -- And the banner as well, because the code is wanted immediately and the player is
+    -- already looking at the sign-up screen rather than at Messages.
+    pcall(function()
+        exports['v-phone']:Notify(src, app, name, text)
     end)
 end
 

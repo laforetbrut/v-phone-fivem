@@ -563,6 +563,7 @@ local T = {
     ['ph.day_thu']       = 'Jeudi',
     ['ph.day_fri']       = 'Vendredi',
     ['ph.day_sat']       = 'Samedi',
+    ['ph.soc_code_sms'] = 'Votre code de vérification est %s. Il expire dans cinq minutes.',
     ['ph.weather_sun'] = 'Dégagé',
     ['ph.weather_cloud'] = 'Nuageux',
     ['ph.weather_rain'] = 'Pluie',
