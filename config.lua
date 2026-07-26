@@ -857,6 +857,37 @@ Config.Bank = {
     -- Saved beneficiaries per character.
     maxFavourites = 25,
 
+    -- ── Being told when money arrives ──────────────────────────
+    -- A banking app that says nothing when you are paid is not a banking app. The phone
+    -- listens to the framework's own money events, so a salary, a society payout or a shop
+    -- refund raises a banner with the bank's icon on it.
+    --
+    -- Instant and with a reason attached on qb-core, qbx_core and ESX, which all announce
+    -- their money changes. ox_core has no equivalent event - see `pollSeconds`.
+    notify = {
+        enabled = true,
+
+        -- Ignore anything smaller, so a one dollar tip is not a notification.
+        minAmount = 1,
+
+        -- Announce money LEAVING too. Off by default: most servers already have a HUD that
+        -- flashes spending, and a phone buzzing at every purchase gets muted.
+        outgoing = false,
+
+        -- Write a statement line for money the phone did not move itself.
+        --   'auto'  only when no dedicated banking script is running (the default: with one
+        --           present that line already exists in its history, which the statement
+        --           merges, so writing a second would show every salary twice)
+        --   true    always      false   never
+        record = 'auto',
+
+        -- The fallback for a framework with no money event, ox_core in practice: sample the
+        -- balance every N seconds and announce what changed. 0 is off, and off is right on
+        -- qb, qbx and ESX where the events above are instant and carry a reason. The
+        -- minimum is 15 seconds; it costs one balance read per online player per interval.
+        pollSeconds = 0,
+    },
+
     -- How many statement lines the app shows, and how long the phone keeps its own.
     historyLimit = 50,
     retentionDays = 60,       -- 0 keeps them for ever

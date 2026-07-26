@@ -440,6 +440,13 @@ local BANKS = { 'Renewed-Banking', 'qb-banking', 'okokBanking', 'qs-banking', 'e
 
 Bridge.Banking = {}
 
+--- Which dedicated banking script is running, or nil for none.
+---
+--- The bank app asks because it decides whether to write its own statement line for a
+--- paycheck: with a banking script present that line already exists and writing a second
+--- one would show every salary twice.
+function Bridge.Banking.Script() return choose('banking', BANKS) end
+
 --- Cash and bank, as two plain numbers. Anything richer is that script's own UI.
 function Bridge.Banking.Balances(src)
     local custom = Config.Compat.hooks.balances

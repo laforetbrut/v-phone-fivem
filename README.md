@@ -56,7 +56,7 @@ Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Pro
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players.
 - **Messages**: private and group threads, photos, GIFs, location sharing, reactions, forwarding and emoji.
-- **Bank**: the balance your framework already keeps, a statement, transfers to another character by phone number, and saved beneficiaries. No companion resource - it reads qb-core, qbx, ESX, ox or your banking script through the bridge. Limits, an optional fee and offline transfers are configurable.
+- **Bank**: the balance your framework already keeps, a statement, transfers to another character by phone number, saved beneficiaries, and a notification when money arrives - a salary, a society payout, a transfer. No companion resource - it reads qb-core, qbx, ESX, ox or your banking script through the bridge. Limits, an optional fee and offline transfers are configurable.
 - **Bleeter** (Twitter): two timelines, likes, comments, reposts, a searchable directory, follows, direct messages and profiles.
 - **Snapmatic** (Instagram): stories with a 24 hour life, a photo feed, a profile grid, search and direct messages.
 - **Hush** (Tinder): a card you throw with your finger, matches kept in their own tab, an editable profile.
@@ -217,7 +217,7 @@ Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, 
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour.
 - **Messages** : conversations privées et groupées, photos, GIF, partage de position, réactions, transfert et emoji.
-- **Banque** : le solde que votre framework tient déjà, un relevé, des virements vers un autre personnage par numéro de téléphone, et des bénéficiaires enregistrés. Aucune ressource compagnon : elle lit qb-core, qbx, ESX, ox ou votre script bancaire via le bridge. Limites, frais optionnels et virements hors ligne configurables.
+- **Banque** : le solde que votre framework tient déjà, un relevé, des virements vers un autre personnage par numéro de téléphone, des bénéficiaires enregistrés, et une notification quand de l'argent arrive — salaire, versement de société, virement. Aucune ressource compagnon : elle lit qb-core, qbx, ESX, ox ou votre script bancaire via le bridge. Limites, frais optionnels et virements hors ligne configurables.
 - **Bleeter** (Twitter) : deux fils, likes, commentaires, republications, annuaire cherchable, abonnements, messages privés et profils.
 - **Snapmatic** (Instagram) : stories d'une journée, fil photo, profil en grille, recherche et messages privés.
 - **Hush** (Tinder) : une carte qu'on lance au doigt, les matchs conservés dans leur onglet, un profil modifiable.

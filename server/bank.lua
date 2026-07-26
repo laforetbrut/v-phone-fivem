@@ -329,9 +329,26 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
         -- would freeze one language into a row that outlives the setting: the page composes
         -- the wording from `counterparty` and the sign instead.
         record(targetCid, amount, note, 'transfer', myName)
-        V.Notify(target.source, LP(target.source, 'ph.bank_received', amount, myName), 'success')
+
+        -- One notification, on the bank, the way a banking app does it. This used to be a
+        -- framework toast AND a text message, which is two alerts for one payment.
+        local body = ('+%d - %s'):format(amount, myName)
+        if note ~= '' then body = body .. ' - ' .. note end
+        pcall(function()
+            exports[GetCurrentResourceName()]:Notify(
+                target.source, 'bank', LP(target.source, 'ph.bank_notify_in'), body)
+        end)
     else
         escrow(targetCid, amount, note, myName)
+
+        -- Nobody to show a banner to, and a banner would be gone before they connected
+        -- anyway. A text persists, so it is still there when they pick the phone up - which
+        -- is the only way somebody paid while offline finds out without going looking.
+        local body = LP(nil, 'ph.bank_received', amount, myName)
+        if note ~= '' then body = body .. ' - ' .. note end
+        pcall(function()
+            exports[GetCurrentResourceName()]:SendServiceMessage(targetCid, 'iFruit Bank', body)
+        end)
     end
 
     -- Two lines that add up to what left the account: the transfer, and the fee beside it.
@@ -342,14 +359,6 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
         -- No label at all: `kind` says what it is, and the page prints the translation.
         record(p.citizenid, -fee, '', 'fee', theirName)
     end
-
-    -- A text, because a bank that moves money without telling you is a bug report.
-    -- In the recipient's language, not the server's opinion of English.
-    local body = LP(target and target.source, 'ph.bank_received', amount, myName)
-    if note ~= '' then body = body .. ' - ' .. note end
-    pcall(function()
-        exports[GetCurrentResourceName()]:SendServiceMessage(targetCid, 'iFruit Bank', body)
-    end)
 
     resolve({ ok = true, amount = amount, fee = fee, to = theirName,
               held = (target == nil) or nil })
@@ -405,6 +414,149 @@ V.Callback('v-phone:bank:favourite', function(src, resolve, data)
     end
 
     resolve({ error = 'badop' })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Money arriving: the notification
+-- ══════════════════════════════════════════════════════════════
+-- A banking app that says nothing when you are paid is not a banking app. Every framework
+-- announces its own money changes, so this listens rather than polls - the event carries the
+-- amount and, usefully, the REASON, which is how a paycheck can be labelled as one.
+--
+-- The event names are not guessed. qb-core and qbx_core both fire
+-- `QBCore:Server:OnMoneyChange(src, type, amount, action, reason)`; qbx additionally fires
+-- `qbx_core:server:onPaycheck(src, amount)`; ESX fires `esx:addAccountMoney`,
+-- `esx:removeAccountMoney` and `esx:setAccountMoney` with `(src, account, amount, reason)`.
+-- ox_core has no comparable server event, which is what `pollSeconds` is for.
+local NOTIFY = BANK.notify or {}
+local function notifyOn() return enabled() and NOTIFY.enabled ~= false end
+local function notifyMin() return math.max(0, math.floor(num(NOTIFY.minAmount, 1))) end
+
+--- Should a statement line be written for money the phone did not move itself?
+---
+--- 'auto' writes one only when NO dedicated banking script is running. With one present
+--- that line already exists in its own history - which the statement merges - so writing a
+--- second would show every salary twice.
+local function shouldRecord()
+    local mode = NOTIFY.record
+    if mode == true then return true end
+    if mode == false then return false end
+    return (Bridge.Banking and Bridge.Banking.Script and Bridge.Banking.Script()) == nil
+end
+
+--- Tell a player money moved, and file it if this phone is the only thing keeping a record.
+---
+--- `reason` is the framework's own string. A reason beginning `v-phone` is the phone itself
+--- moving money - a transfer, or a purchase in the store - and those already report back
+--- through their own path, so announcing them here would say everything twice.
+local function moneyMoved(src, amount, incoming, reason, kind)
+    if not notifyOn() then return end
+    src = tonumber(src)
+    amount = math.floor(math.abs(num(amount, 0)))
+    if not src or amount < notifyMin() or amount <= 0 then return end
+
+    reason = tostring(reason or '')
+    if reason:lower():find('^v%-phone') then return end
+    if not incoming and NOTIFY.outgoing ~= true then return end
+
+    local p = Core.GetPlayer(src)
+    if not p then return end
+
+    -- A banner on the phone, with the bank's own icon, through the same export any other
+    -- resource would use.
+    local title = LP(src, incoming and 'ph.bank_notify_in' or 'ph.bank_notify_out')
+    local body = (incoming and '+' or '-') .. tostring(amount)
+    if reason ~= '' then body = body .. ' - ' .. reason end
+    pcall(function()
+        exports[GetCurrentResourceName()]:Notify(src, 'bank', title, body)
+    end)
+
+    if shouldRecord() then
+        record(p.citizenid, incoming and amount or -amount, reason, kind or 'account', '')
+    end
+end
+
+--- Anyone else's money movement, announced on the phone. For a job script, a shop, a
+--- society payout - anything that pays a player and wants them to know.
+---
+---     exports['v-phone']:NotifyMoney(src, 250, 'Overtime')
+exports('NotifyMoney', function(src, amount, label)
+    local value = math.floor(num(amount, 0))
+    if value == 0 then return false end
+    moneyMoved(src, value, value > 0, tostring(label or ''), 'account')
+    return true
+end)
+
+-- qb-core and qbx_core. One handler for both: qbx kept the event name.
+AddEventHandler('QBCore:Server:OnMoneyChange', function(src, moneyType, amount, action, reason)
+    -- 'set' hands over the new BALANCE rather than a delta, so there is no movement to
+    -- report from it without tracking the previous value; the add/remove pair covers every
+    -- normal payment.
+    if action ~= 'add' and action ~= 'remove' then return end
+    local kind = tostring(reason or ''):lower():find('paycheck') and 'salary' or 'account'
+    moneyMoved(src, amount, action == 'add', reason, kind)
+end)
+
+-- qbx names its paycheck explicitly, which is better than matching on a reason string.
+AddEventHandler('qbx_core:server:onPaycheck', function(src, amount)
+    -- Deliberately silent: the money-change handler above has already announced this from
+    -- the AddMoney underneath it. This exists to LABEL it, so the statement line says
+    -- salary rather than a bare deposit.
+    if not shouldRecord() then return end
+    local p = Core.GetPlayer(src)
+    if not p then return end
+    MySQL.update.await([[UPDATE vphone_bank_tx SET kind = 'salary'
+        WHERE citizenid = ? AND amount = ? AND kind = 'account'
+        ORDER BY id DESC LIMIT 1]], { p.citizenid, math.floor(num(amount, 0)) })
+end)
+
+-- ESX.
+AddEventHandler('esx:addAccountMoney', function(src, account, amount, reason)
+    if account ~= 'bank' and account ~= 'money' then return end
+    moneyMoved(src, amount, true, reason, 'account')
+end)
+AddEventHandler('esx:removeAccountMoney', function(src, account, amount, reason)
+    if account ~= 'bank' and account ~= 'money' then return end
+    moneyMoved(src, amount, false, reason, 'account')
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- The fallback for a framework with no money event
+-- ══════════════════════════════════════════════════════════════
+-- ox_core, and any bespoke setup, changes a balance without announcing it. Sampling is the
+-- only way to notice, so it is opt-in and off by default: it costs one balance read per
+-- online player per interval, and on qb, qbx or ESX the events above already do the job
+-- instantly and with a reason attached.
+local lastSeen = {}
+
+AddEventHandler('playerDropped', function()
+    lastSeen[source] = nil
+end)
+
+CreateThread(function()
+    local every = math.floor(num(NOTIFY.pollSeconds, 0))
+    if every <= 0 or not notifyOn() then return end
+    every = math.max(15, every)
+    print(('[v-phone] bank: sampling balances every %ds for money notifications'):format(every))
+
+    while true do
+        Wait(every * 1000)
+        for _, id in ipairs(GetPlayers()) do
+            local src = tonumber(id)
+            local balances = src and Bridge.Banking and Bridge.Banking.Balances
+                and Bridge.Banking.Balances(src)
+            if type(balances) == 'table' then
+                local now = math.floor(num(balances.bank, 0))
+                local before = lastSeen[src]
+                -- The first sample only establishes the baseline: announcing a difference
+                -- from nothing would greet every player with their whole balance.
+                if before and now ~= before then
+                    moneyMoved(src, now - before, now > before, '', 'account')
+                end
+                lastSeen[src] = now
+            end
+        end
+    end
 end)
 
 -- ══════════════════════════════════════════════════════════════

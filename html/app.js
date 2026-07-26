@@ -2442,10 +2442,16 @@ function txWhen(t) {
 // reads in French for whoever is looking at it.
 function txTitle(t) {
   if (t.kind === 'fee') return L('ph.bank_fee');
+  if (t.kind === 'salary') return L('ph.salary');
   if (t.label) return String(t.label);
   if (t.with) {
     return L(Number(t.amount) < 0 ? 'ph.bank_to_name' : 'ph.bank_from_name')
       .replace('{name}', t.with);
+  }
+  // A framework money movement with no reason given is still a deposit or a withdrawal;
+  // calling it a transfer would be a guess about something the phone did not do.
+  if (t.kind === 'account') {
+    return L(Number(t.amount) < 0 ? 'ph.bank_withdrawal' : 'ph.bank_deposit');
   }
   return L('ph.bank_transfer');
 }
