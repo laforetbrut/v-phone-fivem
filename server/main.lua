@@ -439,6 +439,35 @@ function Bridge.MediaHasUrl(url)
     return MySQL.scalar.await('SELECT 1 FROM vphone_media WHERE url = ? LIMIT 1', { url }) ~= nil
 end
 
+--- Is this a track URL the operator allows?
+---
+--- `Config.Music.hosts`, not the wallpaper list: they are different decisions. A server may
+--- be happy to stream from SoundCloud and not want images from it, or the reverse. An empty
+--- list allows anything, which is the documented permissive setting for both.
+local function musicHostAllowed(url)
+    url = tostring(url or '')
+    if url == '' then return false end
+    local hosts = (Config.Music or {}).hosts
+    if type(hosts) ~= 'table' or #hosts == 0 then return true end
+    local host = url:match('^https?://([^/]+)')
+    if not host then return false end
+    host = host:lower():gsub(':%d+$', '')
+    for _, allowed in ipairs(hosts) do
+        allowed = tostring(allowed):lower()
+        if host == allowed or host:sub(-(#allowed + 1)) == '.' .. allowed then return true end
+    end
+    return false
+end
+
+--- Is the page's boot tracing on? The config first, then the convar.
+---
+--- Named once because three places used to ask, each with its own spelling of the same
+--- question, and a switch that has to be found in three places is a switch somebody leaves on.
+function phoneDebug()
+    if (Config.Log or {}).debug == true then return true end
+    return GetConvar('phone_debug', '') == 'true'
+end
+
 local function wallpaperAllowed(url)
     url = tostring(url or '')
     if url == '' then return true end                      -- clearing it is always fine
@@ -1538,13 +1567,18 @@ V.Callback('v-phone:open', function(src, resolve)
         -- falls back on its own if a file will not load, so this is a preference and
         -- not a promise.
         soundFiles = Config.Sounds.files ~= false,
-        -- `set phone_debug true` turns on the page's boot tracing. Off, the phone writes
-        -- nothing to the browser console at all, which is what a live server wants.
-        debug = GetConvar('phone_debug', '') == 'true',
+        -- The page's boot tracing: what each layer paints, which inputs decided the camera,
+        -- whether a keypress arrived. Off, the phone writes NOTHING to the browser console,
+        -- which is what a live server wants and what this ships as.
+        --
+        -- `Config.Log.debug = true`, or `setr phone_debug true` for a server that would rather
+        -- not edit the config. `setr` and not `set`: the page's own read of the convar is
+        -- client-side, and a plain `set` is invisible there.
+        debug = phoneDebug(),
         -- The three inputs behind `camera`, sent so the page can print them. A previous
         -- round had the startup report say `camera: on` while the payload said false, and
         -- with only the conclusion visible there was no way to tell which input disagreed.
-        cameraWhy = GetConvar('phone_debug', '') == 'true' and {
+        cameraWhy = phoneDebug() and {
             convar = GetConvar('phone_camera', '(unset)'),
             config = tostring(Config.Settings and Config.Settings.camera),
             resolved = tostring(V.SettingBool('camera', true)),
@@ -2515,6 +2549,22 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
         if payload.url == '' or not wallpaperAllowed(payload.url) or not ownsPhoto(me, payload.url) then
             resolve({ error = 'x' }) return
         end
+    elseif kind == 'track' then
+        -- A track is a link and two labels. Deliberately NOT checked for ownership the way a
+        -- photo is: a photo URL identifies a file this character took, and handing somebody
+        -- else's is a way to claim it, while a music link is public by nature - the point of
+        -- passing one on is that the other person can play the same thing. What IS checked is
+        -- the operator's host list, because that governs what may be streamed on this server
+        -- at all, and an AirDrop must not be a way around it.
+        payload = {
+            url = tostring(pin.url or ''):sub(1, 400),
+            title = tostring(pin.title or ''):gsub('[%c]', ''):sub(1, 80),
+            artist = tostring(pin.artist or ''):gsub('[%c]', ''):sub(1, 80),
+        }
+        if payload.url == '' or not musicHostAllowed(payload.url) then
+            resolve({ error = 'badhost' }) return
+        end
+        if payload.title == '' then payload.title = payload.url:sub(1, 40) end
     else
         resolve({ error = 'x' }) return
     end
@@ -2582,7 +2632,17 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
         resolve({ error = 'range' }) return
     end
 
-    if o.kind == 'photo' then
+    if o.kind == 'track' then
+        -- The receiver's music library lives in the phone's own app storage, which the PAGE
+        -- owns - so the track goes back in the answer and the page files it. A server-side
+        -- write would have to reimplement the library's chunked layout, and get it right
+        -- twice, to save one round trip on a screen the player is already looking at.
+        if o.from and GetPlayerName(o.from) then
+            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+        end
+        resolve({ ok = true, track = o.payload })
+        return
+    elseif o.kind == 'photo' then
         local shots = rp.GetMetadata('photos')
         if type(shots) ~= 'table' then shots = {} end
         table.insert(shots, 1, { url = o.payload.url, album = '', filter = '' })

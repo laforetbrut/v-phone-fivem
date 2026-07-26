@@ -88,6 +88,13 @@ PhoneStrings = strings
 
 local function voice() return GetResourceState('v-voice') == 'started' end
 
+--- The client half of the same switch the server answers in the phone's payload. Config first,
+--- then the convar, and off unless one of them says otherwise.
+local function debugOn()
+    if (Config.Log or {}).debug == true then return true end
+    return GetConvar('phone_debug', '') == 'true'
+end
+
 -- ══════════════════════════════════════════════════════════════
 -- Ring, buzz, and the peek out of the pocket
 -- ══════════════════════════════════════════════════════════════
@@ -867,6 +874,11 @@ RegisterNUICallback('music', function(data, cb)
             url = data and data.url, title = data and data.title,
             artist = data and data.artist, volume = data and data.volume,
         }, data and data.kind) or { error = 'x' })
+    elseif action == 'pause' or action == 'resume' then
+        -- Neither of these existed. The page has had a pause button since the app shipped and
+        -- it fell through to the `else` below, which answers `x` - so the button reported an
+        -- error the page then swallowed, and pausing has never once worked.
+        cb(music.Pause(action == 'resume') or { error = 'x' })
     elseif action == 'stop' then
         cb(music.Stop() or { error = 'x' })
     elseif action == 'volume' then
@@ -1025,7 +1037,7 @@ local function endFreeLook()
         SetNuiFocusKeepInput(true)
         SendNUIMessage({ action = 'freelook', on = false })
     end
-    if GetConvar('phone_debug', '') == 'true' then print('[v-phone] free look off') end
+    if debugOn() then print('[v-phone] free look off') end
 end
 
 RegisterNUICallback('freelook', function(_, cb)
@@ -1036,7 +1048,7 @@ RegisterNUICallback('freelook', function(_, cb)
     SetNuiFocusKeepInput(false)
     SetNuiFocus(false, false)
     SendNUIMessage({ action = 'freelook', on = true })
-    if GetConvar('phone_debug', '') == 'true' then print('[v-phone] free look on') end
+    if debugOn() then print('[v-phone] free look on') end
 
     CreateThread(function()
         -- The game has just been handed input and the player may still be holding the tap

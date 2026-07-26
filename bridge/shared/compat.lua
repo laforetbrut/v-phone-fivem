@@ -365,6 +365,36 @@ STUBS['v-music'] = {
         return { ok = true }
     end,
 
+    --- Pause, or pick the track up again.
+    ---
+    --- Deliberately NOT "stop, then play from the top". A stream restarted from zero is not a
+    --- pause, and on a long mix that is the difference between a working button and a
+    --- baffling one. Only xsound can do this: the other two decks own their own transport and
+    --- expose no pause, so the honest answer there is that the phone cannot.
+    Pause = function(_, resume)
+        if isServer then return nil end
+        local M = Config.Music or {}
+        if type(M.hooks) == 'table' and type(M.hooks.pause) == 'function' then
+            local ok, done = pcall(M.hooks.pause, resume == true)
+            if ok and done then return { ok = true, driven = true } end
+        end
+        if musicDeckFor() ~= 'xsound' then return { error = 'nopause' } end
+
+        -- Both halves, because either could be the live one: the player may have switched
+        -- output mid-track. Pausing a sound that does not exist is a no-op in xsound.
+        pcall(function()
+            if resume then exports.xsound:Resume(PRIVATE_SOUND)
+            else exports.xsound:Pause(PRIVATE_SOUND) end
+        end)
+        local answer
+        V.Request('v-phone:music:pause', function(res) answer = res end, { resume = resume == true })
+        local waited = 0
+        while answer == nil and waited < 3000 do Wait(50); waited = waited + 50 end
+        -- The private sound is this client's own and needs no server answer, so a server that
+        -- had nothing playing is not a failure - it just means the track was in the earphones.
+        return { ok = true, driven = true, paused = resume ~= true }
+    end,
+
     Volume = function(_, level)
         if isServer then return nil end
         local M = Config.Music or {}

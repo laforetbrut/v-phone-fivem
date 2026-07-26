@@ -3707,9 +3707,16 @@ async function musicPlay(track, queue, output) {
   musicOutput = kind;
   musicQueue = (queue && queue.length ? queue : [track]).map(musicNormalise);
   musicQueueIndex = Math.max(0, musicQueue.findIndex((row) => row.url === track.url));
+  // `result.id` was never sent by anything. A phone plays ONE track, so "the current track"
+  // needs no identifier at all - and requiring one is what broke pause and the volume slider:
+  // both were guarded on `current.id`, which was always undefined, so pause silently replayed
+  // the track from the start and the slider posted nothing.
   musicNow = Object.assign({}, musicNormalise(track), {
-    id: result.id, kind, paused: false, volume: track.volume || .65,
+    kind, paused: false, volume: track.volume || .65,
   });
+  // The control centre's media tile reads this rather than asking the deck, because a deck
+  // that plays a URL has no idea what a phone considers to be "now playing".
+  ccNow = musicNow;
   await musicRemember(track);
   toast(kind === 'headphones' ? L('ph.playing_ear') : L('ph.playing'));
   if (openApp && openApp.id === 'music') RENDER.music();
@@ -3718,12 +3725,17 @@ async function musicPlay(track, queue, output) {
 async function musicToggle(track) {
   const current = track || musicNow;
   if (!current) return;
-  if (!current.id) { await musicPlay(current, musicQueue.length ? musicQueue : [current]); return; }
+  // Nothing is playing yet: the button is a play button, so play.
+  if (!musicNow || musicNow.url !== current.url) {
+    await musicPlay(current, musicQueue.length ? musicQueue : [current]);
+    return;
+  }
   const action = current.paused ? 'resume' : 'pause';
-  const result = await post('music', { id: current.id, action });
+  const result = await post('music', { action });
   if (!result || result.error) { toast(L('ph.err_' + ((result && result.error) || 'x'))); return; }
-  if (musicNow) musicNow.paused = action === 'pause';
-  RENDER.music();
+  musicNow.paused = action === 'pause';
+  ccNow = musicNow;
+  if (openApp && openApp.id === 'music') RENDER.music();
 }
 
 async function musicStep(direction) {
@@ -3790,6 +3802,7 @@ function musicTrackSheet(track, index) {
         esc(track.favorite ? L('ph.favorited') : L('ph.favorite')) + '</span></button>' +
       '<button id="mquickqueue" type="button">' + svg('add') + '<span>' + esc(L('ph.add_queue')) + '</span></button></div>' +
     UI.button(L('ph.choose_output'), 'moutput', 'plain') +
+    UI.button(L('ph.airdrop_share'), 'mshare', 'plain') +
     (saved ? UI.button(L('ph.track_edit'), 'medit', 'plain') : '') +
     (saved ? UI.button(L('ph.delete'), 'mdelt', 'destructive') : ''),
     () => {
@@ -3800,6 +3813,12 @@ function musicTrackSheet(track, index) {
         closeSheet(); toast(L('ph.added_queue'));
       });
       byId('moutput').addEventListener('click', () => musicOutputSheet(track));
+      // Pass the track to somebody standing next to you. A link and two labels, which is
+      // exactly what a track is on this phone - so the person receiving it gets a library
+      // entry they can play, not a copy of a file.
+      byId('mshare').addEventListener('click', () => airdropShare('track', {
+        url: track.url, title: track.title, artist: track.artist,
+      }));
       if (saved) byId('medit').addEventListener('click', () => { closeSheet(); musicAdd(track, index); });
       if (saved) byId('mdelt').addEventListener('click', async () => {
         const epoch = sheetEpoch;
@@ -3890,11 +3909,17 @@ function musicRenderPlayer(model) {
   byId('mplayerout').addEventListener('click', () => musicOutputSheet(current));
   byId('mplayerqueue').addEventListener('click', musicQueueSheet);
   const slider = byId('mvolume');
+  // Set once at render, not only on the first drag: the filled part of the track is drawn from
+  // this, so without it the slider opens looking empty whatever the volume actually is.
+  slider.style.setProperty('--volume', slider.value + '%');
   slider.addEventListener('input', () => slider.style.setProperty('--volume', slider.value + '%'));
   slider.addEventListener('change', async () => {
     const value = Number(slider.value) / 100;
     if (musicNow) musicNow.volume = value;
-    if (current.id) await post('music', { id: current.id, action: 'volume', volume: value });
+    // No id guard. There never was an id, so this line never ran and the slider moved a
+    // handle and changed nothing.
+    const r = await post('music', { action: 'volume', volume: value });
+    if (r && r.error) toast(L('ph.err_' + r.error));
   });
   let swipe = null;
   const player = byId('appbody').querySelector('.musicplayer');
@@ -4849,14 +4874,21 @@ function hud(icon, label, pct) {
 
 let volume = 0.5;
 
+// The volume rocker on the side of the handset.
+//
+// It read `sources` from the Music app's payload - a list the phone has always answered as
+// empty - so it showed "nothing playing" while a track was audibly playing, and the post it
+// then never reached carried an `id` that nothing has ever sent. Same root cause as the
+// control centre's dead media tile: the phone knows what it started, so it reads that.
 async function nudgeVolume(delta) {
-  const d = await post('app', { app: 'music' });
-  const list = (d && d.sources) || [];
-  if (!list.length) { hud('speaker', L('ph.nothing_playing')); return; }
-  const src = list[0];
-  volume = Math.max(0, Math.min(1, (src.volume ?? volume) + delta));
-  hud('speaker', src.title || L('ph.untitled'), volume);
-  await post('music', { id: src.id, action: 'volume', volume });
+  if (!musicNow) { hud('speaker', L('ph.nothing_playing')); return; }
+  volume = Math.max(0, Math.min(1, (musicNow.volume ?? volume) + delta));
+  musicNow.volume = volume;
+  hud('speaker', musicNow.title || L('ph.untitled'), volume);
+  const r = await post('music', { action: 'volume', volume });
+  if (r && r.error) toast(L('ph.err_' + r.error));
+  // The player screen and the control centre both draw this number.
+  if (openApp && openApp.id === 'music') RENDER.music();
 }
 
 function wireSideButtons() {
@@ -5722,9 +5754,10 @@ function airdropShare(kind, payload) {
 // The receiver's prompt. Nothing is written until they accept.
 function airdropOffer(o) {
   o = o || {};
+  const icon = o.kind === 'photo' ? 'images' : (o.kind === 'track' ? 'music' : 'contacts');
   const preview = o.kind === 'photo'
     ? '<img class="shotbig" src="' + esc(o.preview || '') + '" />'
-    : '<div class="airbig">' + svg(o.kind === 'photo' ? 'images' : 'contacts') + '<span>' + esc(o.preview || '') + '</span></div>';
+    : '<div class="airbig">' + svg(icon) + '<span>' + esc(o.preview || '') + '</span></div>';
   sheet(L('ph.airdrop_incoming'),
     preview +
     '<div class="airfrom">' + esc(L('ph.airdrop_from')) + ' <b>' + esc(o.from || '') + '</b></div>' +
@@ -5734,8 +5767,21 @@ function airdropOffer(o) {
       byId('airok').addEventListener('click', async () => {
         closeSheet();
         const r = await post('airdropRespond', { offerId: o.offerId, accept: true });
-        if (r && r.ok) { await refresh(); toast(L('ph.airdrop_saved')); }
-        else toast(L('ph.airdrop_' + ((r && r.error) || 'x')));
+        if (!r || !r.ok) { toast(L('ph.airdrop_' + ((r && r.error) || 'x'))); return; }
+        // A track is filed here rather than on the server: the library lives in this phone's
+        // app storage, and the page is what knows its layout.
+        if (r.track && r.track.url) {
+          const library = await musicLibrary();
+          if (!library.some((row) => row.url === r.track.url)) {
+            library.unshift(musicNormalise(r.track));
+            await musicSaveLibrary(library);
+          }
+          toast(L('ph.airdrop_track_saved'));
+          if (openApp && openApp.id === 'music') RENDER.music();
+          return;
+        }
+        await refresh();
+        toast(L('ph.airdrop_saved'));
       });
       byId('airno').addEventListener('click', async () => {
         closeSheet();
@@ -8700,8 +8746,12 @@ function renderCC() {
       : `<div class="nowmid"><span class="nowart">${svg('music')}</span>` +
           `<span class="nows">${esc(L('ph.nothing_playing'))}</span></div>`);
   if (m) byId('ccnow').querySelector('[data-n="toggle"]').addEventListener('click', async () => {
-    await post('music', { id: m.id, action: m.paused ? 'resume' : 'pause' });
-    m.paused = !m.paused; renderCC();
+    const r = await post('music', { action: m.paused ? 'resume' : 'pause' });
+    if (r && r.error) { toast(L('ph.err_' + r.error)); return; }
+    m.paused = !m.paused;
+    if (musicNow) musicNow.paused = m.paused;
+    renderCC();
+    if (openApp && openApp.id === 'music') RENDER.music();
   });
 
   const bright = Math.max(0.35, Math.min(1, p.brightness ?? 1));
@@ -8739,7 +8789,7 @@ function renderCC() {
     byId('ccvol').querySelector('.fill').style.height = Math.round(v * 100) + '%';
     byId('ccvol').setAttribute('aria-valuenow', String(Math.round(v * 100)));
   }, async (v) => {
-    if (ccNow) await post('music', { id: ccNow.id, action: 'volume', volume: v });
+    if (ccNow) await post('music', { action: 'volume', volume: v });
   });
 
   byId('cctoggles').innerHTML =
@@ -8848,8 +8898,15 @@ function wireSlab(id, onChange, onCommit) {
   });
 }
 
-// The control centre's media tile reads from v-music, refreshed each time it opens.
+// The control centre's media tile.
+//
+// It used to ask the Music app's payload for `sources`, a list the phone has always answered
+// as empty - so the tile said "nothing playing" while a track was audibly playing. Nothing
+// else could have filled it: a deck that plays a URL has no notion of what a PHONE considers
+// to be now playing. The phone knows, because it started it, so the tile reads that.
 async function primeNowPlaying() {
+  if (musicNow) { ccNow = musicNow; return; }
+  // A deck the phone cannot drive may still be able to say what it has: keep honouring that.
   const d = await post('app', { app: 'music' });
   const list = (d && d.sources) || [];
   ccNow = list[0] || null;

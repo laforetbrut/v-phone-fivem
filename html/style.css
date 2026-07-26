@@ -6959,7 +6959,11 @@ input { font: inherit; }
 .musicqueue button > em svg { width: 15px; height: 15px; }
 
 .app[data-app="music"] .navbar:has(+ .appbody .musicplayer) { background: transparent; box-shadow: none; }
-.app[data-app="music"] .appbody:has(.musicplayer) { padding: 0; overflow: hidden; }
+/* The full-bleed player: no side padding, because its glow reaches the bezel. But it must
+   still SCROLL when it does not fit - `overflow: hidden` here is what clipped the bottom row
+   of buttons on a shorter screen, leaving Favourite, Output and Queue half under the home
+   indicator and impossible to press. */
+.app[data-app="music"] .appbody:has(.musicplayer) { padding: 0; overflow-y: auto; overflow-x: hidden; }
 .musicplayer {
   --player-y: 0px;
   position: relative;
@@ -6968,7 +6972,11 @@ input { font: inherit; }
   align-items: center;
   flex-direction: column;
   overflow: hidden;
-  padding: 5px 25px 25px;
+  /* 48px at the foot, not 25px. The appbody's own 34px bottom padding - which every other
+     screen relies on to clear the home indicator - is removed for this player, so the player
+     has to carry it itself. Without it the last row of buttons sits under the bar and cannot
+     be tapped at all. */
+  padding: 5px 25px 48px;
   transform: translateY(var(--player-y));
   transition: transform .28s var(--ph-spring);
   touch-action: pan-y;
@@ -7008,7 +7016,17 @@ input { font: inherit; }
 .musicvolume { display: grid; width: 100%; grid-template-columns: 16px 1fr 18px; align-items: center; gap: 9px; color: var(--app-label3); }
 .musicvolume > svg:first-child { width: 12px; opacity: .65; }
 .musicvolume > svg:last-child { width: 17px; }
-.musicvolume input { width: 100%; height: 4px; accent-color: var(--music-red); }
+/* A 4px track is a 4px target. The visible line stays thin, but the input itself is tall
+   enough to put a finger on - which is the difference between a slider that works and one
+   that looks like it should. */
+.musicvolume input { width: 100%; height: 22px; margin: 0; accent-color: var(--music-red);
+  background: transparent; cursor: pointer; }
+.musicvolume input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--music-red) var(--volume, 50%),
+    rgba(120, 120, 128, .2) var(--volume, 50%)); }
+.musicvolume input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+  background: var(--music-red); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
 .musicplayeractions { display: grid; width: 100%; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 18px; }
 .musicplayeractions button { display: flex; min-height: 50px; align-items: center; flex-direction: column; justify-content: center; gap: 4px; color: var(--music-red); border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.28), 0 7px 16px rgba(36,18,30,.07); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
 .musicplayeractions button svg { width: 18px; height: 18px; }

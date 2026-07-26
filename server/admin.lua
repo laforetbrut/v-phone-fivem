@@ -342,6 +342,82 @@ if ADMIN.commands ~= false then
         end
     end, false)
 
+    -- ── What the chat box offers as you type ────────────────────────
+    --
+    -- `chat:addSuggestion` is what puts a command in the autocomplete list with its arguments
+    -- named. Without it staff have to remember twenty-four subcommands and their order, which
+    -- in practice means they use four and guess at the rest.
+    --
+    -- Registered SERVER-side and per player, on join, rather than broadcast to everybody:
+    -- suggesting `/phoneadmin wipe` to a player who cannot run it is an invitation to try, and
+    -- telling everyone which staff tools exist is telling everyone what to look for. Only
+    -- somebody the ace allows is offered it at all.
+    --
+    -- One entry per subcommand rather than one for the command: the chat box matches on the
+    -- whole string, so `/phoneadmin out` narrows to the outage lines, which is the entire
+    -- point of having them listed.
+    local SUGGESTIONS = {
+        { 'info', 'What a phone thinks: number, battery, unread, online', { { 'id|cid|number', 'the target' } } },
+        { 'who', 'Everybody with their phone open right now', {} },
+        { 'number', 'Read a number, or set one', { { 'id|cid', 'the target' }, { 'number', 'omit to read it' } } },
+        { 'contacts', "Read a character's contact book", { { 'id|cid', 'the target' } } },
+        { 'apps', 'What is installed on a phone', { { 'id|cid', 'the target' } } },
+        { 'open', "Open a player's phone on their screen", { { 'id', 'server id' } } },
+        { 'battery', 'Set a battery level', { { 'id', 'server id' }, { '0-100', 'percent' } } },
+        { 'batteryall', 'Set every phone online', { { '0-100', 'percent' } } },
+        { 'message', 'Send a text message, from Staff', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
+        { 'notify', 'A banner on their phone (does not persist)', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
+        { 'announce', 'That banner, to every phone online', { { 'text...', 'the message' } } },
+        { 'app', 'Install or remove an app', { { 'id|cid', 'the target' }, { 'give|take', 'which way' }, { 'appid', 'e.g. bleeter' } } },
+        { 'outage', 'Cut the network: bars 0-4, whole server', { { 'bars', '0 = no signal' }, { 'minutes', 'omit for until cleared' } } },
+        { 'outage here', 'Cut the network in a circle around you', { { 'radius', 'metres' }, { 'bars', '0-4' }, { 'minutes', 'optional' } } },
+        { 'outage clear', 'Lift an outage', { { 'id|all', 'from /phoneadmin outages' } } },
+        { 'outages', 'What outages are in force, and for how long', {} },
+        { 'brick', 'Take one handset out of service', { { 'id|cid', 'the target' }, { 'minutes', 'omit for until unbricked' } } },
+        { 'unbrick', 'Put it back in service', { { 'id|cid', 'the target' } } },
+        { 'bricked', 'Which phones are out of service', {} },
+        { 'verify', 'Grant or revoke the verified badge', { { '@handle', 'the account' }, { 'off', 'to revoke' }, { 'snap', 'Snapmatic instead of Bleeter' } } },
+        { 'verified', 'Who holds a badge', { { 'snap', 'Snapmatic instead of Bleeter' } } },
+        { 'wipe', 'DELETE everything on a phone. Irreversible', { { 'id|cid', 'the target' }, { 'confirm', 'required' } } },
+    }
+
+    local function suggestTo(src)
+        if not allowed(src) then return end
+        for _, entry in ipairs(SUGGESTIONS) do
+            local params = {}
+            for _, pair in ipairs(entry[3]) do
+                params[#params + 1] = { name = pair[1], help = pair[2] }
+            end
+            TriggerClientEvent('chat:addSuggestion', src,
+                '/phoneadmin ' .. entry[1], entry[2], params)
+        end
+    end
+
+    -- On join, and again a moment later: chat is not always up when a player first loads, and
+    -- a suggestion sent to a chat resource that has not started yet is simply lost.
+    AddEventHandler('playerJoining', function()
+        local src = source
+        CreateThread(function()
+            Wait(4000)
+            if GetPlayerName(src) then suggestTo(src) end
+        end)
+    end)
+
+    -- And for anybody already connected when the resource restarts, which is every refresh
+    -- during development and the case that would otherwise never be tested.
+    CreateThread(function()
+        Wait(2000)
+        for _, raw in ipairs(GetPlayers()) do suggestTo(tonumber(raw)) end
+    end)
+
+    -- A staff member whose ace was granted after they joined can ask for the list.
+    RegisterCommand('phoneadminhelp', function(src)
+        if not allowed(src) then denied(src, 'help') return end
+        suggestTo(src)
+        reply(src, ('%d subcommands are now in your chat suggestions. Type /phoneadmin and '
+            .. 'the list narrows as you go.'):format(#SUGGESTIONS))
+    end, false)
+
     -- The ACE the command checks, so `add_ace group.admin command.phoneadmin allow` also
     -- works for a server that gates by command name.
     V.Info('[v-phone] admin command /phoneadmin registered (ace: ' .. (ADMIN.ace or 'vphone.admin') .. ')')

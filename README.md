@@ -142,25 +142,244 @@ player at all the app still works as a library and says so on screen.
 
 ## Installation
 
-1. Install [oxmysql](https://github.com/overextended/oxmysql). It is the only hard requirement.
-2. Drop this folder into your `resources` directory.
-3. Add it to your `server.cfg`, after your framework:
+Nothing here is optional-but-actually-required. Step 3 is the only one most servers need.
 
-   ```
-   ensure oxmysql
-   ensure v-phone
-   ```
+### 1. oxmysql
 
-4. Start the server once. Every table is created automatically.
-5. Open `config.lua` and read the `COMPATIBILITY` section at the top. On most servers you will not need to change anything.
+The one hard requirement. [Install it](https://github.com/overextended/oxmysql) and make sure
+your `mysql_connection_string` is set, because every table the phone needs is created through
+it on the first start.
 
-Optional, from `server.cfg`:
+### 2. Drop the folder in
+
+`resources/[phone]/v-phone`, or wherever you keep things. The folder name **must stay
+`v-phone`** - the resource looks itself up by name in a few places.
+
+### 3. server.cfg
+
+Order matters: after your framework, after oxmysql.
+
+```cfg
+ensure oxmysql
+ensure qb-core          # or qbx_core, ox_core, es_extended - whatever you run
+ensure v-phone
+```
+
+### 4. Start the server once
+
+Every table is created automatically, and the console says what was detected:
 
 ```
-set phone_locale "en"        # or fr
+[v-phone] framework: qb-core
+```
+
+If that line says `standalone` and you do run a framework, the framework started *after* the
+phone - move its `ensure` above. (Turn `Config.Log.boot = true` on to see that line at all;
+it is off by default so a live console stays readable.)
+
+### 5. Give players a phone item
+
+**Skipped entirely if you do not want an item.** Set `Config.Settings.requireItem = false`, or
+`set phone_requireItem false` in server.cfg, and everybody has a phone. That is a legitimate
+choice and plenty of servers make it.
+
+If you *do* want the item, see [Creating the phone item](#creating-the-phone-item) below - it
+is one row of SQL or one table entry, per framework.
+
+### 6. Optional convars
+
+```cfg
+setr phone_locale "en"        # or fr, or any locale file you add
 set phone_battery false      # any Config.Settings key, prefixed with phone_
-set phone_requireItem false  # everyone gets a phone, no item needed
+set phone_requireItem false   # everybody gets a phone, no item needed
+set phone_camera true         # the Camera app (needs screenshot-basic or screencapture)
+set phone_media true          # photo hosting
+setr phone_verbose true       # the boot summary
+setr phone_debug true         # the page's tracing in F8. Leave this OFF on a live server
 ```
+
+`setr` where the client has to read it too, `set` where only the server does. A plain `set`
+convar does not exist on a client at all, which is a mistake worth knowing about before it
+costs you an afternoon.
+
+### 7. Staff permissions
+
+```cfg
+add_ace group.admin vphone.admin allow
+```
+
+qb-core's own `qbadmin.menu` is accepted too, so existing staff usually work without this. See
+[Admin commands](#admin-commands).
+
+## Creating the phone item
+
+Only needed when `Config.Settings.requireItem` is on (it is, by default). The item name the
+phone looks for is `Config.PhoneItem`, `phone` out of the box - and `phone` and `iphone` are
+both accepted whatever you set, so an item you already have usually just works.
+
+The phone does **not** need the item to be usable-on-click: it opens with the keybind either
+way. Making it usable is nicer, so both halves are below.
+
+### qb-core
+
+`qb-core/shared/items.lua` - add one entry:
+
+```lua
+['phone'] = {
+    ['name'] = 'phone',
+    ['label'] = 'Phone',
+    ['weight'] = 700,
+    ['type'] = 'item',
+    ['image'] = 'phone.png',
+    ['unique'] = false,
+    ['useable'] = true,
+    ['shouldClose'] = true,
+    ['combinable'] = nil,
+    ['description'] = 'To call and text people',
+},
+```
+
+Recent qb-core versions ship a `phone` item already - check before adding a second one. Put a
+`phone.png` in `qb-inventory/html/images/` or the slot shows a blank square.
+
+Give one to a player:
+
+```
+/giveitem 1 phone 1
+```
+
+### qbx_core (Qbox)
+
+Items live in `ox_inventory/data/items.lua`, because Qbox uses ox_inventory:
+
+```lua
+['phone'] = {
+    label = 'Phone',
+    weight = 700,
+    stack = false,
+    close = true,
+    description = 'To call and text people',
+},
+```
+
+No `client` block and no export: the phone listens to `ox_inventory:usedItem` itself, so
+declaring the item is all there is to do.
+
+### ox_core / ox_inventory
+
+Same file, same entry as Qbox above.
+
+### ESX
+
+ESX keeps items in the database. One row:
+
+```sql
+INSERT INTO items (name, label, weight, rare, can_remove)
+VALUES ('phone', 'Phone', 1, 0, 1);
+```
+
+On an ESX server using ox_inventory, use the ox entry above instead - ox_inventory reads its
+own file, not the `items` table.
+
+Give one to a player:
+
+```
+/giveitem 1 phone 1
+```
+
+### Any inventory: making it open the phone
+
+The phone registers a usable item by itself for every inventory it detects: `ox_inventory`,
+`qs-inventory`, `ps-inventory`, `qb-inventory`, `origen_inventory`, `codem-inventory`. On
+qb-core and qbx it goes through `CreateUseableItem`, on ESX through `ESX.RegisterUsableItem`,
+and on ox_inventory it listens to `ox_inventory:usedItem` - so on all of those, declaring the
+item is enough.
+
+If yours is not in that list, have it call the client export:
+
+```lua
+exports['v-phone']:Open()
+```
+
+`Config.Compat.inventory` also takes a resource name instead of `'auto'`, for a fork whose name
+the bridge does not recognise.
+
+## Admin commands
+
+Behind `Config.Admin.ace` (`vphone.admin` by default), or qb-core's `qbadmin.menu`. Type
+`/phoneadmin` in chat and the autocomplete lists every subcommand with its arguments - staff
+only, so a player who cannot run them is never offered them.
+
+Each one has its own switch in `Config.Admin.actions`, so an action you would rather staff did
+not have is **removed**, not merely left untyped.
+
+### Reading a phone
+
+```
+/phoneadmin info     [id|cid|number]      number, battery, unread, online
+/phoneadmin who                            everybody with a phone open right now
+/phoneadmin number   [id|cid]              read a number
+/phoneadmin contacts [id|cid]              read the contact book
+/phoneadmin apps     [id|cid]              what is installed
+/phoneadmin bricked                        which phones are out of service
+/phoneadmin outages                        what outages are in force, and for how long
+/phoneadmin verified (snap)                who holds a verified badge
+```
+
+### Acting on one phone
+
+```
+/phoneadmin open     [id]                  open their phone on their screen (support)
+/phoneadmin battery  [id] [0-100]
+/phoneadmin number   [id|cid] [number]     set a number
+/phoneadmin message  [id|cid] [text]       a text message, from Staff
+/phoneadmin notify   [id|cid] [text]       a banner - does not persist, comes from no number
+/phoneadmin app      [id|cid] give|take [appid]
+/phoneadmin brick    [id|cid] (minutes)    take one handset out of service
+/phoneadmin unbrick  [id|cid]
+/phoneadmin wipe     [id|cid] confirm      DELETE everything on that phone. Irreversible
+```
+
+### The whole server
+
+```
+/phoneadmin announce   [text]              a banner on every phone online
+/phoneadmin batteryall [0-100]
+/phoneadmin outage     [bars 0-4] (minutes)              the whole server
+/phoneadmin outage here [radius] [bars] (minutes)        a circle around you
+/phoneadmin outage at [x] [y] [z] [radius] [bars] (minutes)
+/phoneadmin outage clear [id|all]
+```
+
+An outage is a **ceiling in bars**, not an on/off switch: one bar is a far more interesting
+outage than no phone, because calls drop and players have to move to be heard. It goes through
+the same path as the map's dead zones and the worst one wins, so a global outage cannot be
+escaped by standing somewhere with perfect reception. `minutes = 0`, or omitted, means until
+somebody clears it. **Nothing is persisted** - a restart lifts every outage, deliberately, so
+one nobody remembers setting can never survive a crash.
+
+`brick` is the other half: the network is fine, that handset is not. For a phone that was
+smashed or confiscated. Keyed by citizen id, so it survives reconnecting, and a bricked phone
+refuses to **open** rather than opening onto features that quietly fail.
+
+### Social
+
+```
+/phoneadmin verify [@handle] (off) (snap)   grant or revoke the verified badge
+```
+
+By handle rather than by character, because a badge belongs to an account and a report has the
+@handle in it. It is an **export, never a callback**: a client cannot ask to be verified.
+
+### Everybody's commands
+
+```
+/refreshphone      reset your own stuck phone: prop, animation, NUI focus, control guard
+/phonediag         staff only, and only with debug on: what each callback and provider answers
+```
+
+Every refused staff command is printed to the server console with who tried it.
+
 
 ## Support
 
@@ -331,25 +550,250 @@ Les applications Banque, Garage, Logement, Portefeuille et Emplois n'ont besoin 
 
 ## Installation
 
-1. Installez [oxmysql](https://github.com/overextended/oxmysql). C'est la seule dépendance obligatoire.
-2. Déposez ce dossier dans votre répertoire `resources`.
-3. Ajoutez-le à votre `server.cfg`, après votre framework :
+Rien ici n'est « optionnel mais en fait obligatoire ». L'étape 3 est la seule dont la plupart
+des serveurs ont besoin.
 
-   ```
-   ensure oxmysql
-   ensure v-phone
-   ```
+### 1. oxmysql
 
-4. Démarrez le serveur une fois. Toutes les tables sont créées automatiquement.
-5. Ouvrez `config.lua` et lisez la section `COMPATIBILITY` en haut. Sur la plupart des serveurs vous n'aurez rien à changer.
+La seule dépendance dure. [Installez-la](https://github.com/overextended/oxmysql) et vérifiez
+que votre `mysql_connection_string` est renseignée : toutes les tables du téléphone sont créées
+à travers elle au premier démarrage.
 
-Optionnel, depuis `server.cfg` :
+### 2. Déposez le dossier
+
+`resources/[phone]/v-phone`, ou là où vous rangez vos ressources. Le nom du dossier **doit
+rester `v-phone`** : la ressource se cherche elle-même par ce nom à plusieurs endroits.
+
+### 3. server.cfg
+
+L'ordre compte : après votre framework, après oxmysql.
+
+```cfg
+ensure oxmysql
+ensure qb-core          # ou qbx_core, ox_core, es_extended - ce que vous faites tourner
+ensure v-phone
+```
+
+### 4. Démarrez le serveur une fois
+
+Toutes les tables sont créées automatiquement, et la console indique ce qui a été détecté :
 
 ```
-set phone_locale "fr"
-set phone_battery false      # n'importe quelle clé de Config.Settings, préfixée par phone_
-set phone_requireItem false  # tout le monde a un téléphone, aucun objet requis
+[v-phone] framework: qb-core
 ```
+
+Si cette ligne dit `standalone` alors que vous avez bien un framework, c'est qu'il a démarré
+*après* le téléphone : remontez son `ensure`. (Mettez `Config.Log.boot = true` pour voir cette
+ligne : elle est désactivée par défaut pour qu'une console de production reste lisible.)
+
+### 5. Donnez un item téléphone aux joueurs
+
+**Entièrement facultatif.** Mettez `Config.Settings.requireItem = false`, ou
+`set phone_requireItem false` dans server.cfg, et tout le monde a un téléphone. C'est un choix
+parfaitement valable et beaucoup de serveurs le font.
+
+Si vous **voulez** l'item, voir [Créer l'item téléphone](#créer-litem-téléphone) plus bas : une
+ligne de SQL ou une entrée de table, selon le framework.
+
+### 6. Convars optionnels
+
+```cfg
+setr phone_locale "fr"        # ou en, ou tout fichier de langue que vous ajoutez
+set phone_battery false       # n'importe quelle clé de Config.Settings, préfixée phone_
+set phone_requireItem false   # tout le monde a un téléphone, sans item
+set phone_camera true         # l'app Appareil photo (nécessite screenshot-basic ou screencapture)
+set phone_media true          # l'hébergement des photos
+setr phone_verbose true       # le résumé de démarrage
+setr phone_debug true         # le traçage de la page dans F8. À laisser SUR OFF en production
+```
+
+`setr` quand le client doit le lire aussi, `set` quand seul le serveur en a besoin. Un convar
+posé avec un simple `set` n'existe pas du tout côté client — une subtilité qu'il vaut mieux
+connaître avant qu'elle ne vous coûte une après-midi.
+
+### 7. Permissions du staff
+
+```cfg
+add_ace group.admin vphone.admin allow
+```
+
+Le `qbadmin.menu` de qb-core est aussi accepté, donc un staff existant fonctionne généralement
+sans cette ligne. Voir [Commandes admin](#commandes-admin).
+
+## Créer l'item téléphone
+
+Nécessaire seulement si `Config.Settings.requireItem` est actif (c'est le cas par défaut). Le
+nom d'item que le téléphone cherche est `Config.PhoneItem`, soit `phone` d'origine — et `phone`
+et `iphone` sont acceptés dans tous les cas, donc un item que vous avez déjà fonctionne
+généralement tel quel.
+
+Le téléphone n'a **pas** besoin que l'item soit utilisable au clic : il s'ouvre avec la touche
+dans tous les cas. Le rendre utilisable est plus agréable, donc les deux moitiés sont ci-dessous.
+
+### qb-core
+
+`qb-core/shared/items.lua` — ajoutez une entrée :
+
+```lua
+['phone'] = {
+    ['name'] = 'phone',
+    ['label'] = 'Téléphone',
+    ['weight'] = 700,
+    ['type'] = 'item',
+    ['image'] = 'phone.png',
+    ['unique'] = false,
+    ['useable'] = true,
+    ['shouldClose'] = true,
+    ['combinable'] = nil,
+    ['description'] = 'Pour appeler et envoyer des messages',
+},
+```
+
+Les versions récentes de qb-core livrent déjà un item `phone` — vérifiez avant d'en ajouter un
+second. Placez un `phone.png` dans `qb-inventory/html/images/` sinon la case reste vide.
+
+Donner l'item à un joueur :
+
+```
+/giveitem 1 phone 1
+```
+
+### qbx_core (Qbox)
+
+Les items vivent dans `ox_inventory/data/items.lua`, puisque Qbox utilise ox_inventory :
+
+```lua
+['phone'] = {
+    label = 'Téléphone',
+    weight = 700,
+    stack = false,
+    close = true,
+    description = 'Pour appeler et envoyer des messages',
+},
+```
+
+Pas de bloc `client` ni d'export : le téléphone écoute lui-même `ox_inventory:usedItem`, donc
+déclarer l'item est tout ce qu'il y a à faire.
+
+### ox_core / ox_inventory
+
+Même fichier, même entrée que Qbox ci-dessus.
+
+### ESX
+
+ESX garde ses items en base. Une ligne :
+
+```sql
+INSERT INTO items (name, label, weight, rare, can_remove)
+VALUES ('phone', 'Téléphone', 1, 0, 1);
+```
+
+Sur un serveur ESX qui utilise ox_inventory, prenez l'entrée ox ci-dessus à la place :
+ox_inventory lit son propre fichier, pas la table `items`.
+
+Donner l'item à un joueur :
+
+```
+/giveitem 1 phone 1
+```
+
+### N'importe quel inventaire : faire ouvrir le téléphone
+
+Le téléphone enregistre lui-même un item utilisable pour chaque inventaire qu'il détecte :
+`ox_inventory`, `qs-inventory`, `ps-inventory`, `qb-inventory`, `origen_inventory`,
+`codem-inventory`. Sur qb-core et qbx il passe par `CreateUseableItem`, sur ESX par
+`ESX.RegisterUsableItem`, et sur ox_inventory il écoute `ox_inventory:usedItem` — sur tous
+ceux-là, déclarer l'item suffit.
+
+Si le vôtre n'y est pas, faites-lui appeler l'export client :
+
+```lua
+exports['v-phone']:Open()
+```
+
+`Config.Compat.inventory` accepte aussi un nom de ressource au lieu de `'auto'`, pour un fork
+dont le bridge ne connaît pas le nom.
+
+## Commandes admin
+
+Derrière `Config.Admin.ace` (`vphone.admin` par défaut), ou le `qbadmin.menu` de qb-core. Tapez
+`/phoneadmin` dans le chat et l'autocomplétion liste toutes les sous-commandes avec leurs
+arguments — réservé au staff, donc un joueur qui ne peut pas les lancer ne se les voit jamais
+proposer.
+
+Chacune a son interrupteur dans `Config.Admin.actions` : une action que vous préférez ne pas
+donner au staff est **retirée**, pas seulement supposée jamais tapée.
+
+### Lire un téléphone
+
+```
+/phoneadmin info     [id|cid|numéro]      numéro, batterie, non lus, en ligne
+/phoneadmin who                            tous ceux qui ont leur téléphone ouvert
+/phoneadmin number   [id|cid]              lire un numéro
+/phoneadmin contacts [id|cid]              lire le répertoire
+/phoneadmin apps     [id|cid]              ce qui est installé
+/phoneadmin bricked                        quels téléphones sont hors service
+/phoneadmin outages                        quelles pannes sont en cours, et pour combien de temps
+/phoneadmin verified (snap)                qui a un badge de certification
+```
+
+### Agir sur un téléphone
+
+```
+/phoneadmin open     [id]                  ouvrir son téléphone sur son écran (support)
+/phoneadmin battery  [id] [0-100]
+/phoneadmin number   [id|cid] [numéro]     définir un numéro
+/phoneadmin message  [id|cid] [texte]      un SMS, de la part du Staff
+/phoneadmin notify   [id|cid] [texte]      une bannière — ne persiste pas, ne vient d'aucun numéro
+/phoneadmin app      [id|cid] give|take [appid]
+/phoneadmin brick    [id|cid] (minutes)    mettre un combiné hors service
+/phoneadmin unbrick  [id|cid]
+/phoneadmin wipe     [id|cid] confirm      EFFACER tout sur ce téléphone. Irréversible
+```
+
+### Tout le serveur
+
+```
+/phoneadmin announce   [texte]             une bannière sur tous les téléphones connectés
+/phoneadmin batteryall [0-100]
+/phoneadmin outage     [barres 0-4] (minutes)            tout le serveur
+/phoneadmin outage here [rayon] [barres] (minutes)       un cercle autour de vous
+/phoneadmin outage at [x] [y] [z] [rayon] [barres] (minutes)
+/phoneadmin outage clear [id|all]
+```
+
+Une panne est un **plafond en barres**, pas un interrupteur : une barre est une panne bien plus
+intéressante que pas de téléphone, parce que les appels coupent et que les joueurs doivent se
+déplacer pour être entendus. Elle passe par le même chemin que les zones mortes de la carte et
+le pire l'emporte : une panne globale ne se contourne pas en se plaçant là où la réception est
+parfaite. `minutes = 0`, ou omis, signifie jusqu'à ce que quelqu'un la lève. **Rien n'est
+persisté** — un redémarrage lève toutes les pannes, volontairement, pour qu'une panne que
+personne ne se rappelle avoir posée ne survive jamais à un crash.
+
+`brick` est l'autre moitié : le réseau va bien, ce combiné non. Pour un téléphone cassé ou
+confisqué. Indexé par citizen id, donc cela survit à une reconnexion, et un téléphone hors
+service refuse de **s'ouvrir** au lieu de s'ouvrir sur des fonctions qui échouent en silence.
+
+### Réseaux sociaux
+
+```
+/phoneadmin verify [@handle] (off) (snap)   attribuer ou retirer le badge de certification
+```
+
+Par handle plutôt que par personnage, parce qu'un badge appartient à un compte et qu'un
+signalement contient le @handle. C'est un **export, jamais un callback** : un client ne peut pas
+demander à être certifié.
+
+### Commandes de tout le monde
+
+```
+/refreshphone      réinitialiser votre propre téléphone bloqué : prop, animation, focus NUI
+/phonediag         staff uniquement, et seulement avec le debug actif : ce que répond chaque callback
+```
+
+Chaque commande staff refusée est imprimée dans la console du serveur avec l'identité de qui a
+essayé.
+
 
 ## Support
 

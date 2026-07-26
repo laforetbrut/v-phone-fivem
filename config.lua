@@ -829,6 +829,18 @@ Config.Log = {
     -- the admin command, each app folder loaded. Useful exactly once, when setting a server up.
     -- `set phone_verbose true` in server.cfg turns it on without editing this file.
     boot = false,
+
+    -- The PAGE's tracing, in the browser console (F8): what each layer paints and its computed
+    -- style, which inputs decided the camera, whether a keypress reached the page, when free
+    -- look goes on and off. Perhaps forty lines every time an app opens.
+    --
+    -- Off, and it has to stay off on anything but a machine you are debugging on. It is
+    -- genuinely useful when a screen renders wrong and useless noise the rest of the time -
+    -- and F8 is also where a player's own errors appear, so filling it hides those.
+    --
+    -- `setr phone_debug true` turns it on without editing this file. `setr`, not `set`: the
+    -- page reads it client-side and a plain `set` never reaches a client.
+    debug = false,
 }
 
 Config.Admin = {

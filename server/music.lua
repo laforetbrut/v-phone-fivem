@@ -135,6 +135,24 @@ V.Callback('v-phone:music:stop', function(src, resolve)
     resolve({ ok = stopFor(src) })
 end)
 
+--- Pause or resume the sound this player owns.
+---
+--- Not "stop and start again": a stream restarted from the beginning is not a pause, and on a
+--- twenty-minute mix that difference is the whole feature. xsound keeps the sound object and
+--- its position, so Pause/Resume land where the track was.
+V.Callback('v-phone:music:pause', function(src, resolve, data)
+    local record = Playing[src]
+    local x = xsound()
+    if not record or not x then resolve({ error = 'nothing' }) return end
+    local resume = data and data.resume == true
+    local ok = pcall(function()
+        if resume then x:Resume(-1, record.name) else x:Pause(-1, record.name) end
+    end)
+    if not ok then resolve({ error = 'nodeck' }) return end
+    record.paused = not resume
+    resolve({ ok = true, paused = record.paused })
+end)
+
 V.Callback('v-phone:music:volume', function(src, resolve, data)
     local record = Playing[src]
     local x = xsound()
@@ -152,6 +170,17 @@ AddEventHandler('playerDropped', function() stopFor(source) end)
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     for src in pairs(Playing) do stopFor(src) end
+end)
+
+exports('PauseMusic', function(src, resume)
+    local record = Playing[tonumber(src) or 0]
+    local x = xsound()
+    if not record or not x then return false end
+    pcall(function()
+        if resume then x:Resume(-1, record.name) else x:Pause(-1, record.name) end
+    end)
+    record.paused = not resume
+    return true
 end)
 
 exports('StopMusic', function(src) return stopFor(tonumber(src) or 0) end)
