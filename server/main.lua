@@ -2583,6 +2583,32 @@ V.Callback('v-phone:install', function(src, resolve, data)
     resolve({ ok = true })
 end)
 
+--- Delete a whole conversation, for this character only.
+---
+--- The other side keeps their copy: this is a phone clearing its own thread, not a message
+--- being unsent. Doing it the other way round would let anybody erase what they said from
+--- somebody else's handset.
+---
+--- `other` is a citizen id, or a `svc:Label` key for a service thread. Either way it is
+--- only ever used against rows this character is a party to.
+V.Callback('v-phone:threadDelete', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local other = tostring((data and data.other) or '')
+    if other == '' then resolve({ error = 'args' }) return end
+
+    -- Messages this character RECEIVED from the other party go. Messages they SENT are
+    -- left, because deleting them here would not delete the copy already delivered, and a
+    -- thread that empties on one side only is more confusing than one that does not.
+    local n = MySQL.update.await(
+        'DELETE FROM vphone_messages WHERE to_cid = ? AND from_cid = ? AND group_id IS NULL',
+        { p.citizenid, other }) or 0
+    n = n + (MySQL.update.await(
+        'DELETE FROM vphone_messages WHERE from_cid = ? AND to_cid = ? AND group_id IS NULL',
+        { p.citizenid, other }) or 0)
+    resolve({ ok = true, removed = n })
+end)
+
 V.Callback('v-phone:places', function(src, resolve)
     if GetResourceState('v-world') ~= 'started' then resolve({ error = 'off' }) return end
     local world = V.Use('v-world')

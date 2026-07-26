@@ -1995,9 +1995,18 @@ function nameOfNumber(number) {
   return c ? c.name : (number || L('ph.unknown'));
 }
 
-RENDER.messages = () => {
+RENDER.messages = async () => {
   threadGroup = null;
   setNav(L('app.messages'), null, { icon: 'add', onClick: newMessageSheet });
+
+  // Re-read before drawing. `state.conversations` is a snapshot taken when the phone was
+  // OPENED, so anything that arrived since - a text from another player, a verification code
+  // from one of the apps - was simply not in the list. Opening Messages and seeing nothing
+  // new while the message sat in the database is what that looked like.
+  const epoch = viewEpoch;
+  await refresh();
+  if (epoch !== viewEpoch || !openApp || openApp.id !== 'messages') return;
+
   const list = state.conversations || [];
   const groups = state.groups || [];
   if (!list.length && !groups.length) { body(UI.empty(L('ph.no_messages'), 'messages')); return; }
@@ -2018,6 +2027,23 @@ RENDER.messages = () => {
     })) : '')
   );
   rows('.row[data-n]', (r) => r.addEventListener('click', () => openThread(r.dataset.n)));
+  // Press and hold a thread to delete it. A swipe would be more iOS, but a long press is
+  // the one gesture that cannot be confused with scrolling the list.
+  rows('.row[data-n]', (r) => {
+    let timer = null;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    r.addEventListener('pointerdown', () => {
+      timer = setTimeout(() => {
+        timer = null;
+        const key = r.dataset.n;
+        confirmSheet(L('ph.thread_delete'), L('ph.delete'), async () => {
+          const res = await post('threadDelete', { other: key });
+          if (res && res.ok) { await refresh(); RENDER.messages(); }
+        });
+      }, 550);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => r.addEventListener(e, cancel));
+  });
   rows('.row[data-g]', (r) => r.addEventListener('click', () =>
     openGroup(Number(r.dataset.g), r.dataset.gn)));
 };
@@ -8078,7 +8104,36 @@ byId('qtorch').addEventListener('click', toggleTorch);
 // key - Lua cannot, because the browser has the keyboard while the phone is focused - so it
 // reports the press and Lua watches for the release once focus is back in the game.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Alt' && !e.repeat) { e.preventDefault(); post('freelook', {}); }
+  if (e.key === 'Alt' && !e.repeat) {
+    e.preventDefault();
+    if (state && state.debug) console.info('[v-phone] Alt seen by the page, asking Lua');
+    post('freelook', {});
+  }
+});
+
+// What is painting outside the handset. Runs once, only with `set phone_debug true`, and
+// only when an app is open - the report is useless from the home screen. It names the
+// element occupying the pixels just beyond each edge of the device, which is the one thing
+// a screenshot cannot tell me and guessing at it has already cost two wrong fixes.
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
+  if (d.action !== 'open' || window.__vphoneEdgeProbe) return;
+  window.__vphoneEdgeProbe = true;
+  if (!d.debug) return;
+  setTimeout(function probe() {
+    const dev = document.getElementById('device');
+    if (!dev || !byId('app').classList.contains('on')) { setTimeout(probe, 1500); return; }
+    const r = dev.getBoundingClientRect();
+    const name = (el) => el ? (el.id ? '#' + el.id : '') +
+      '.' + String(el.className || el.tagName).slice(0, 30) : 'none';
+    const at = (x, y) => name(document.elementFromPoint(x, y));
+    console.info('[v-phone] outside the device -> ' +
+      'left:' + at(Math.max(1, r.left - 8), r.top + r.height / 2) +
+      ' | right:' + at(Math.min(innerWidth - 1, r.right + 8), r.top + r.height / 2) +
+      ' | above:' + at(r.left + r.width / 2, Math.max(1, r.top - 8)) +
+      ' | below:' + at(r.left + r.width / 2, Math.min(innerHeight - 1, r.bottom + 8)) +
+      ' | device rect ' + [r.x, r.y, r.width, r.height].map(Math.round).join(','));
+  }, 2000);
 });
 
 document.addEventListener('keydown', (e) => {

@@ -684,6 +684,7 @@ end)
 -- Each of these forwards to the module that owns the action, so the module's own
 -- validation, notifications and settings all still apply. None of them decide anything.
 
+RegisterNUICallback('threadDelete', relay('v-phone:threadDelete'))
 RegisterNUICallback('places', relay('v-phone:places'))
 RegisterNUICallback('install', relay('v-phone:install'))
 

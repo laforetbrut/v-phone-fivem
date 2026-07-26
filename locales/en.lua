@@ -115,6 +115,7 @@ local T = {
     ['ph.loading']   = 'Loading',
     ['ph.save']      = 'Save',
     ['ph.delete']    = 'Delete',
+    ['ph.thread_delete'] = 'Delete this conversation?',
     ['ph.send']      = 'Send',
     ['ph.call']      = 'Call',
     ['ph.answer']    = 'Answer',
