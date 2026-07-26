@@ -633,7 +633,7 @@ CreateThread(function()
     local every = math.floor(num(NOTIFY.pollSeconds, 0))
     if every <= 0 or not notifyOn() then return end
     every = math.max(15, every)
-    print(('[v-phone] bank: sampling balances every %ds for money notifications'):format(every))
+    V.Info(('[v-phone] bank: sampling balances every %ds for money notifications'):format(every))
 
     while true do
         Wait(every * 1000)
@@ -724,14 +724,14 @@ function Bridge.BankBoot()
     CreateThread(function()
         Wait(3000)
         if not enabled() then
-            print('[v-phone] bank: OFF (Config.Bank.enabled)')
+            V.Info('[v-phone] bank: OFF (Config.Bank.enabled)')
             return
         end
         local reader = (GetResourceState('v-banking') == 'started') and 'v-banking'
             or ('the ' .. tostring(Bridge.framework or '?') .. ' bridge')
         local keeping = shouldRecord() and 'the phone keeps the statement'
             or 'the banking script keeps the statement'
-        print(('[v-phone] bank: on, balance from %s, transfers %s, %s')
+        V.Info(('[v-phone] bank: on, balance from %s, transfers %s, %s')
             :format(reader, transfersOn() and 'on' or 'off', keeping))
     end)
 end

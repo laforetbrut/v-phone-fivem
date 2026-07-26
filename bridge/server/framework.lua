@@ -67,7 +67,7 @@ local function loadFramework()
         local ok, obj = pcall(function() return exports['es_extended']:getSharedObject() end)
         ESX = ok and obj or nil
     end
-    print(('[v-phone] framework: %s%s'):format(Bridge.framework,
+    V.Info(('[v-phone] framework: %s%s'):format(Bridge.framework,
         Bridge.frameworkResource and (' (' .. Bridge.frameworkResource .. ')') or ''))
 end
 

@@ -296,6 +296,23 @@ function V.Log(...)
     print(('[%s]'):format(V.name), ...)
 end
 
+--- Boot chatter: what was detected, what is on, what a module decided.
+---
+--- Silent by default. The resource used to print about twenty lines at every start - the
+--- framework, each app group, the bank, the payphones, the admin command, every app folder -
+--- which is exactly the kind of output an operator learns to scroll past, and then misses the
+--- one line that mattered. A problem still prints unconditionally through `print`; this is
+--- only for the things that are merely true.
+---
+--- Turned on by `Config.Log.boot = true`, or without touching the config by
+--- `set phone_verbose true` in server.cfg, which also works on a live server via `sets`.
+function V.Info(...)
+    local cfg = rawget(_G, 'Config')
+    local on = cfg and cfg.Log and cfg.Log.boot
+    if not on and GetConvar('phone_verbose', '') ~= 'true' then return end
+    print(('[%s]'):format(V.name), ...)
+end
+
 function V.On(event, fn) AddEventHandler(event, fn) end
 function V.OnNet(event, fn) RegisterNetEvent(event, fn) end
 function V.Emit(event, ...) TriggerEvent(event, ...) end

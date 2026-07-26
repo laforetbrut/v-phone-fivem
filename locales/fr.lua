@@ -93,7 +93,6 @@ local T = {
     ['ph.crop_tall'] = "Plein ecran",
     ['ph.crop_focus'] = "Cadrage",
     ['ph.crop_saved'] = "Enregistre sur cette photo",
-    ['ph.app_bank'] = "Banque",
     ['ph.bank_transfer'] = "Virement",
     ['ph.err_nochar'] = "Le serveur ne connait pas encore votre personnage",
     ['ph.err_nohandler'] = 'Cette partie du telephone n est pas chargee sur ce serveur',
@@ -171,7 +170,6 @@ local T = {
     ['ph.thread_delete'] = 'Supprimer cette conversation ?',
     ['ph.thread_delete_hint'] = "Appui long sur une conversation pour la supprimer.",
     ['ph.copy_code']        = 'Copier le code',
-    ['ph.cam_prompt'] = 'ENTRÉE  prendre la photo~n~FLÈCHE HAUT  passer en selfie~n~RETOUR ARRIÈRE  fermer',
     ['ph.cam_selfie_hint'] = 'Selfie : la souris cadre, la molette éloigne, Q/E inclinent',
     ['ph.cam_exit_hint'] = 'Fermer : ~INPUT_CELLPHONE_CANCEL~',
     ['ph.cam_flip_hint'] = 'Avant/arrière : ~INPUT_PHONE~',
@@ -195,9 +193,7 @@ local T = {
     ['ph.write']        = 'Écrire un message',
     ['ph.no_messages']  = 'Aucune conversation',
     ['ph.no_contacts']  = 'Aucun contact',
-    ['ph.contacts']     = 'Contacts',
     ['ph.new_contact']  = 'Nouveau contact',
-    ['ph.new_message']  = 'Nouveau message de %s',
 
     -- ── Appels ──
     ['ph.incoming']     = 'Appel entrant',
@@ -245,7 +241,6 @@ local T = {
     ['ph.lic_none']     = 'Aucun',
 
     -- ── Emplois ──
-    ['ph.current_job']  = 'Emploi actuel',
     ['ph.my_job'] = "Mon emploi",
     ['ph.employer'] = "Employeur",
     ['ph.rank'] = "Echelon",
@@ -275,8 +270,7 @@ local T = {
     ['ph.required_contact'] = 'Obligatoire',
     ['ph.required_contact_hint'] = 'Contact ajouté par votre serveur',
     ['ph.dnd']          = 'Ne pas déranger',
-    ['ph.dnd_on']       = 'Ne pas déranger activé',
-    ['ph.dnd_off']      = 'Ne pas déranger désactivé',
+
 
     -- ── Erreurs ──
     ['ph.err_x']        = "Quelque chose s'est mal passé",
@@ -298,12 +292,9 @@ local T = {
     ['ph.err_fields']   = 'Un nom et un numéro sont nécessaires',
     ['ph.err_unknown']  = 'Application inconnue',
     ['ph.home'] = 'Accueil',
-    ['ph.unread'] = 'Non lus',
-    ['ph.mute'] = 'muet',
-    ['ph.keypad'] = 'clavier',
+
     ['ph.speaker'] = 'haut-parleur',
     ['ph.new_message_to'] = 'Nouveau message',
-    ['ph.cc'] = "Centre de contrôle",
     ['ph.airplane'] = "Mode Avion",
     ['ph.cellular'] = "Données cellulaires",
     ['ph.wifi'] = "Wi-Fi",
@@ -321,13 +312,11 @@ local T = {
     ['ph.notif_mute_app'] = "Masquer les notifications",
     ['ph.notif_muted'] = "Masquée",
     ['ph.notif_done'] = "OK",
-    ['ph.notif_earlier'] = "Plus tôt",
     ['ph.notif_empty'] = "Aucune notification",
     ['ph.torch_on'] = "Lampe allumée",
     ['ph.torch_off'] = "Lampe éteinte",
     ['ph.dnd_hint'] = 'Les appels sont refusés et les messages arrivent sans bannière.',
     ['ph.camera_off'] = "L'appareil photo est désactivé sur ce serveur",
-    ['ph.torch_hint'] = 'Rien à éclairer ici',
     ['app.maps'] = 'Plans',
     ['app.music'] = 'Musique',
     ['app.property'] = 'Logement',
@@ -363,7 +352,6 @@ local T = {
     ['ph.speaker_on'] = "Haut-parleur active",
     ['ph.speaker_off'] = "Haut-parleur desactive",
     ['ph.library'] = "Bibliotheque",
-    ['ph.playing_around'] = "Autour de vous",
     ['ph.library_empty'] = "Aucun titre",
     ['ph.library_hint'] = "Vos titres, gardes sur le telephone.",
     ['ph.track_add'] = "Ajouter un titre",
@@ -372,9 +360,7 @@ local T = {
     ['ph.track_url'] = "Lien (YouTube ou autre)",
     ['ph.track_hint'] = "Collez un lien YouTube. Les hebergeurs autorises sont definis par le serveur.",
     ['ph.track_nourl'] = "Ajoutez un lien",
-    ['ph.play_ear'] = "Ecouter avec des ecouteurs",
     ['ph.playing_ear'] = "Lecture dans vos ecouteurs",
-    ['ph.play_speaker'] = "Lire sur le haut-parleur",
     ['ph.err_nocall'] = "Aucun appel en cours",
     ['ph.no_music'] = 'Rien que vous puissiez contrôler',
     ['ph.music_sources'] = 'À portée',
@@ -383,7 +369,6 @@ local T = {
     ['ph.paused'] = 'En pause',
     ['ph.pause'] = 'Mettre en pause',
     ['ph.resume'] = 'Reprendre',
-    ['ph.stop'] = 'Arreter',
     ['ph.music_boombox'] = 'Enceinte',
     ['ph.music_jukebox'] = 'Juke-box',
     ['ph.music_vehicle'] = 'Autoradio',
@@ -499,7 +484,6 @@ local T = {
     ['app.store'] = 'FruitStore',
     ['ph.no_recents'] = 'Rien d’ouvert',
     ['ph.switch_hint'] = 'Balayez une carte vers le haut pour la fermer',
-    ['ph.no_notifs'] = 'Aucune notification',
     ['ph.action_unset'] = 'Aucune application choisie pour ce bouton',
     ['ph.about_title'] = 'Informations',
     ['ph.about_device'] = 'Appareil',
@@ -508,11 +492,9 @@ local T = {
     ['ph.action_button'] = 'Bouton Action',
     ['ph.action_hint'] = 'Le bouton en haut à gauche ouvre cette application. Retouchez celle qui est choisie pour l’effacer.',
     ['ph.store_empty'] = 'Rien de disponible sur ce serveur',
-    ['ph.store_all'] = 'Toutes les applications',
-    ['ph.store_hint'] = 'Votre serveur décide de ce qui est disponible ici. Vous décidez de ce que vous gardez.',
+
     ['ph.store_required'] = 'Intégrée',
-    ['ph.store_installed'] = 'Installée',
-    ['ph.store_get'] = 'Non installée',
+
     ['ph.store_install'] = 'OBTENIR',
     ['ph.store_delete'] = 'Retirer',
     ['ph.store_added'] = 'Installée',
@@ -548,13 +530,11 @@ local T = {
     ['ph.fit_contain'] = 'Ajuster',
     ['ph.wall_hint'] = 'Seuls les hébergeurs d’images autorisés par votre serveur se chargeront.',
     ['ph.device'] = 'Appareil',
-    ['ph.size'] = 'Taille',
     ['ph.side_right'] = 'Droite',
     ['ph.side_left'] = 'Gauche',
     ['ph.emoji'] = 'Émoji',
     ['ph.arrange_done'] = 'OK',
     ['ph.folder'] = 'Dossier',
-    ['ph.arrange_on'] = 'Déposez sur une autre app pour créer un dossier',
     ['ph.err_badhost'] = 'Cet hébergeur d’images n’est pas autorisé ici',
     ['ph.err_nocam'] = "L'appareil photo n'est pas installé sur ce serveur",
     ['ph.err_noupload'] = 'Aucune destination d’envoi configurée',
@@ -592,7 +572,6 @@ local T = {
     ['ph.mail_subject'] = "Objet",
     ['ph.mail_body_ph'] = "Votre message",
     ['ph.mail_send'] = "Envoyer",
-    ['ph.mail_sent_ok'] = "Envoye",
     ['ph.mail_savedraft'] = "Enregistrer le brouillon",
     ['ph.mail_drafted'] = "Brouillon enregistre",
     ['ph.mail_reply'] = "Repondre",
@@ -649,7 +628,6 @@ local T = {
     ['ph.keypad_tab'] = 'Clavier',
     ['ph.search_contacts'] = 'Rechercher un contact',
     ['ph.los_santos'] = 'Los Santos',
-    ['ph.in_game_date'] = 'En jeu',
     ['ph.day_sun']       = 'Dimanche',
     ['ph.day_mon']       = 'Lundi',
     ['ph.day_tue']       = 'Mardi',
@@ -799,9 +777,7 @@ local T = {
     ['ph.cipher_err_fields'] = 'Complétez tous les champs',
     ['ph.cipher_err_storage'] = "Impossible d'enregistrer la clé privée sur cet appareil",
     ['ph.cipher_err_crypto'] = 'Le chiffrement a échoué sur cet appareil',
-
     ['app.hush'] = 'Hush',
-    ['ph.soc_welcome'] = 'Choisissez votre pseudo',
     ['ph.soc_login_sub'] = "Connectez-vous a votre compte",
     ['ph.soc_join_sub'] = "Creez votre compte",
     ['ph.soc_code_sub'] = "Code envoye au",
@@ -831,13 +807,11 @@ local T = {
     ['ph.err_password'] = "Mot de passe trop court (4 min.)",
     ['ph.err_exists'] = "Vous avez deja un compte",
     ['ph.err_badpass'] = "Mot de passe incorrect",
-    ['ph.soc_handle'] = 'Pseudo (lettres, chiffres, _)',
     ['ph.soc_avatar'] = "Lien d'avatar (facultatif)",
     ['ph.soc_cover'] = "URL de l image de couverture",
     ['ph.soc_bio'] = 'Bio (facultatif)',
     ['ph.soc_create'] = 'Créer le compte',
     ['ph.soc_made'] = 'Bienvenue sur le réseau',
-    ['ph.soc_hint'] = "Chaque application a son propre compte. Le pseudo est public ; votre vrai nom n'y est pas rattaché.",
     ['ph.bleet_new'] = 'Nouveau bleet',
     ['ph.bleet_ph'] = 'Quoi de neuf ?',
     ['ph.bleet_send'] = 'Bleeter',
@@ -874,7 +848,6 @@ local T = {
     ['ph.store_none'] = 'Rien ici',
     ['ph.store_dev'] = 'Développeur',
     ['ph.store_cat'] = 'Catégorie',
-    ['ph.store_state'] = 'État',
     ['ph.cat_social'] = 'Réseaux sociaux',
     ['ph.cat_finance'] = 'Finance',
     ['ph.cat_utilities'] = 'Utilitaires',
@@ -1037,7 +1010,7 @@ local T = {
     ['ph.clip_posted'] = 'Clip publie',
     ['ph.facetime'] = 'FaceTime',
     ['ph.facetime_video'] = 'Appel video',
-    ['ph.facetime_hint'] = 'La video en direct n est pas affichee ; l appel est vocal.',    ['ph.cam_selfie'] = 'Camera avant',
+    ['ph.cam_selfie'] = 'Camera avant',
 
     -- Appels, confidentialite et notifications, dans les Reglages
     ['ph.calls_privacy'] = 'Appels et confidentialite',
@@ -1054,7 +1027,6 @@ local T = {
     ['ph.previews'] = 'Afficher les apercus',
     ['ph.peek'] = 'Sortir le telephone',
     ['ph.previews_hint'] = 'Sans apercu, une notification indique de qui elle vient et non ce qu elle dit. Sortir le telephone le fait apparaitre a l ecran ; desactivez-le pour etre averti discretement.',
-
 
     -- Musique : playlists et passage de relais au deck
     ['ph.playlists'] = 'Playlists',
@@ -1075,7 +1047,6 @@ local T = {
     ['ph.music_handoff_hint'] = 'Lancer un titre ouvre la radio de votre voiture, ou le deck DJ a pied, avec le lien copie pret a coller.',
     ['ph.err_nodeck'] = 'Aucun lecteur de musique ne tourne sur ce serveur.',
     ['ph.err_nohook'] = 'Ce deck ne peut pas etre pilote depuis le telephone.',
-
 
     -- Telecommande vehicule (application Garage)
     ['ph.veh_near'] = 'A environ {m} m',
@@ -1110,10 +1081,8 @@ local T = {
     ['ph.veh_err_disabled'] = 'Cette commande est desactivee ici.',
     ['ph.veh_err_cooldown'] = 'Une commande a la fois.',
     ['ph.veh_err_x'] = 'La voiture n a pas repondu.',
-
     ['ph.store_nomoney'] = 'Fonds insuffisants. Cette application coute {price}.',
-    ['ph.store_buy'] = 'Acheter',
-    ['ph.store_owned'] = 'Achetee',
+
 
     -- Cabines telephoniques
     ['ph.booth_use'] = 'Utiliser la cabine',
@@ -1125,7 +1094,6 @@ local T = {
     ['ph.booth_box_number'] = 'Cette cabine',
     ['ph.booth_credit'] = 'Temps de communication',
     ['ph.booth_free_mode'] = 'Les appels depuis cette cabine sont gratuits',
-    ['ph.booth_no_credit'] = 'Aucun credit',
     ['ph.booth_insert_card'] = 'Inserer une carte',
     ['ph.booth_insert_hint'] = 'Une carte prepayee vaut {minutes} minutes.',
     ['ph.booth_dial'] = 'Composer un numero',

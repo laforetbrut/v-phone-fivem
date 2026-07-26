@@ -939,10 +939,17 @@ local function endCall(id, reason)
 end
 
 local function allocateCallId()
-    -- v-voice maps phone calls over 24 dedicated Mumble channels. Never hand two live
-    -- conversations the same modulo slot.
-    for _ = 1, 24 do
-        callSeq = (callSeq % 24) + 1
+    -- A call id IS its voice channel, modulo the span in `Config.Compat.voiceChannels`. Never
+    -- hand two live conversations the same slot: pma-voice puts everybody on the same channel
+    -- into one `callData[channel]` and lets them hear each other, so a collision means one
+    -- call listening to another - a privacy failure, not a glitch.
+    --
+    -- The span used to be hardcoded at 24, which also made 24 the hard ceiling on concurrent
+    -- calls server-wide: the twenty-fifth was refused with 'capacity' on a busy night. A
+    -- pma-voice channel is just an integer, so the ceiling cost nothing and bought nothing.
+    local span = VoiceChannelSpan and VoiceChannelSpan() or 256
+    for _ = 1, span do
+        callSeq = (callSeq % span) + 1
         if not Calls[callSeq] then return callSeq end
     end
     return nil
@@ -3621,7 +3628,7 @@ CreateThread(function()
     -- app folder from an app resource - which is the whole point.
     for _, def in ipairs(PhoneApps or {}) do
         if registerApp(def.id, def, 'v-phone') then
-            print(('[v-phone] app folder loaded: %s'):format(def.id))
+            V.Info(('[v-phone] app folder loaded: %s'):format(def.id))
         end
     end
     loadWorldApps()

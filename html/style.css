@@ -507,7 +507,6 @@ input { font: inherit; }
 .bub.me { align-self: flex-end; background: var(--app-tint); color: #fff;
   border-bottom-right-radius: 6px; }
 .bub + .bub { margin-top: 0; }
-.bubtime { align-self: center; font-size: 11.5px; color: var(--l3); padding: 8px 0 4px; }
 
 .compose { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px;
   padding: 8px 12px 14px; background: var(--app-bg); }
@@ -595,14 +594,9 @@ input { font: inherit; }
   animation: ph-cc .34s var(--spring); }
 .cc.on { display: block; }
 @keyframes ph-cc { from { opacity: 0; transform: translateY(-26px); } to { opacity: 1; transform: none; } }
-.ccgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.cctile { border-radius: 22px; padding: 14px; display: flex; flex-direction: column;
-  justify-content: space-between; min-height: 84px; }
 .cctile.w2 { grid-column: span 2; }
 .cctile.h2 { grid-row: span 2; }
-.cctile .cch { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--l2); }
 .cctile .ccv { font-size: 15px; font-weight: 600; }
-.cctile svg { width: 18px; height: 18px; }
 .ccpill { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center;
   justify-content: center; background: rgba(255,255,255,.16); color: #fff; }
 .ccpill.on { background: var(--v-grad-accent); color: #000; }
@@ -725,7 +719,6 @@ input { font: inherit; }
 .ckey.op { background: #FF9F0A; color: #fff; font-size: 30px; }
 .ckey.wide { grid-column: span 2; border-radius: 34px; text-align: left; padding-left: 26px; }
 
-
 /* ══ App switcher ═════════════════════════════════════════════
    Swipe up from the bottom edge and pause. Cards are the apps you have opened,
    most recent first, and flicking one upward closes it. */
@@ -778,10 +771,6 @@ input { font: inherit; }
   font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,.82); }
 .bankcard .bal { font-family: var(--ios-num); font-size: 17px; text-transform: none;
   letter-spacing: 0; color: #fff; }
-
-/* ══ Store ════════════════════════════════════════════════════ */
-.storebtn { flex: 0 0 auto; padding: 6px 14px; border-radius: 99px; font-size: 13px;
-  font-weight: 600; background: var(--app-fill); color: var(--app-tint); }
 .storebtn.get { font-weight: 700; letter-spacing: .03em; }
 
 /* The side buttons are real controls, so they need a real hit area. */
@@ -796,7 +785,6 @@ input { font: inherit; }
 .hud.on { display: flex; }
 .hud .bar { width: 96px; height: 6px; border-radius: 99px; background: rgba(255,255,255,.22); }
 .hud .bar i { display: block; height: 100%; border-radius: 99px; background: #fff; }
-
 
 /* ══ Health rings ═════════════════════════════════════════════
    The one place a list would be the wrong shape: these are quantities, and a
@@ -845,7 +833,6 @@ input { font: inherit; }
 /* ══ Segmented device settings ════════════════════════════════ */
 .wallpreview { height: 96px; border-radius: 14px; margin-bottom: 10px; background-size: cover;
   background-position: center; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1); }
-
 
 /* ══ Search field ═════════════════════════════════════════════
    Every iOS list app has one directly under the large title. Its absence is one
@@ -901,16 +888,12 @@ input { font: inherit; }
 
 /* ══ Control centre, laid out the way iOS lays it out ═════════ */
 .ccrow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.ccblock { border-radius: 22px; padding: 12px; display: grid;
-  grid-template-columns: 1fr 1fr; gap: 10px; }
-.ccsliders { display: flex; gap: 12px; }
 .ccslider { flex: 1; border-radius: 22px; min-height: 132px; position: relative;
   overflow: hidden; background: var(--app-fill); }
 .ccslider i { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; }
 .ccslider span { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center;
   color: rgba(0,0,0,.45); }
 .ccslider span svg { width: 20px; height: 20px; }
-.cctiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .cctiles .ccpill { width: 100%; aspect-ratio: 1; border-radius: 22px; }
 
 /* The calculator is black on iOS in both themes, and always has been. It is the one
@@ -924,7 +907,6 @@ input { font: inherit; }
 /* A bar the network is not giving you is drawn, but empty. */
 #bars rect.off { opacity: .28; }
 .nosvc { font-size: 11px; font-weight: 700; letter-spacing: .06em; }
-
 
 /* ══ iOS pass extras ══════════════════════════════════════════ */
 .ic { display: flex; align-items: center; justify-content: center; color: #fff; }
@@ -950,7 +932,6 @@ input { font: inherit; }
 @keyframes ph-push { from { transform: translateX(52px); opacity: 0; } }
 .appbody.pushin > * { animation: ph-push .3s var(--spring); }
 
-
 /* ══ Pull-down surfaces ═══════════════════════════════════════
    The shade, control centre and switcher were a 40% tint over the home grid,
    which left the grid fighting the content for attention. They are their own
@@ -974,17 +955,10 @@ input { font: inherit; }
 .sheet.on { display: flex; flex-direction: column; overflow-y: auto; }
 .sheet #appres { flex: 1; min-height: 0; overflow-y: auto; }
 .sheet #appres::-webkit-scrollbar { width: 0; }
-
-/* ══ FruitStore app pages ═════════════════════════════════════ */
-.storehero { display: flex; align-items: center; gap: 14px; padding: 6px 2px 16px; }
 .storehero .ic { width: 72px; height: 72px; border-radius: 16px; flex: 0 0 auto;
   box-shadow: 0 6px 16px rgba(0, 0, 0, .28); }
-.storehero .shname { font-size: 22px; font-weight: 700; letter-spacing: -.02em;
-  color: var(--app-label); }
-.storehero .shsub { font-size: 13px; color: var(--app-label2); margin-top: 2px; }
 .storedesc { font-size: 15px; line-height: 1.45; color: var(--app-label);
   padding: 4px 2px 18px; }
-
 
 /* ══ The island is a camera housing, not a hole ═══════════════
    A uniform black pill reads as a dead pixel block. The real island holds a
@@ -1002,7 +976,6 @@ input { font: inherit; }
 .island.live::after { opacity: 0; }
 .island .icontent { visibility: hidden; }
 .island.live .icontent { visibility: visible; }
-
 
 /* ══ The feed ═════════════════════════════════════════════════
    One card per post: avatar, handle, time, body, and the like row. Bleeter and
@@ -1046,7 +1019,6 @@ input { font: inherit; }
 .hushbtn.yes { color: #FF2D55; }
 .hushbtn.yes svg { fill: #FF2D55; stroke: #FF2D55; }
 
-
 /* ══ Status ink follows the surface ═══════════════════════════
    Over the wallpaper the bar is white. Over a light app it turns black, which is
    what iOS does and what "23:11 disappeared" was about. Dark mode and the black
@@ -1060,7 +1032,6 @@ input { font: inherit; }
 
 /* And nothing sits under the indicator: the compose bar clears it. */
 .compose { padding-bottom: 26px; }
-
 
 /* ══ Message media ════════════════════════════════════════════ */
 .bub .mimg { max-width: 100%; border-radius: 14px; display: block; }
@@ -1078,7 +1049,6 @@ input { font: inherit; }
 .gpick { display: flex; align-items: center; gap: 10px; padding: 9px 4px; font-size: 15px;
   color: var(--app-label); }
 .gpick input { width: 20px; height: 20px; accent-color: var(--app-tint); }
-
 
 /* ══ FruitStore ═══════════════════════════════════════════════
    A store front, not a settings list: one featured card, then rows grouped by
@@ -1131,7 +1101,6 @@ input { font: inherit; }
 .stmeta .mk { font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
   color: var(--app-label2); }
 .stmeta .mv { font-size: 15px; font-weight: 600; color: var(--app-label); margin-top: 2px; }
-
 
 /* ===============================================================
    Control centre, notifications and island - iOS 27 Liquid Glass
@@ -1272,7 +1241,6 @@ input { font: inherit; }
 .shade.manage .ncard .nw { display: none; }
 .nempty { text-align: center; color: rgba(235,235,245,.5); font-size: 15px; padding: 60px 0; }
 
-
 /* ── Home-screen arrangement, rebuilt for a real drag ──────────── */
 /* The tile being carried is a fixed clone that follows the finger; the original
    position just holds an empty gap so the grid does not collapse under it. */
@@ -1295,7 +1263,6 @@ input { font: inherit; }
   font-size: 14px; font-weight: 700; color: #000; text-align: center;
   background: #fff; box-shadow: 0 8px 22px rgba(0,0,0,.4); }
 .home.arrange .arrangedone { display: block; animation: ph-in .3s var(--spring); }
-
 
 /* ── Done pill: top-right, labelled, so it is a button and not a stray white bar ── */
 .arrangedone { position: absolute; z-index: 62; top: 58px; right: 22px; left: auto; margin: 0;
@@ -1331,20 +1298,10 @@ input { font: inherit; }
   font-size: 18px; background: rgba(120,120,128,.24); display: flex; align-items: center;
   justify-content: center; }
 
-
 /* ── Camera viewfinder + Gallery + AirDrop ─────────────────────── */
 .viewfinder { position: relative; height: 62%; border-radius: 22px; overflow: hidden;
   background: radial-gradient(120% 80% at 50% 20%, #2a2a30, #050506);
   display: flex; align-items: flex-end; justify-content: center; }
-.vfframe { position: absolute; inset: 16px; border-radius: 16px;
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,.16); }
-.vfframe::before, .vfframe::after { content: ''; position: absolute; width: 22px; height: 22px;
-  border: 3px solid rgba(255,255,255,.5); }
-.vfframe::before { left: -1px; top: -1px; border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0; }
-.vfframe::after { right: -1px; bottom: -1px; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
-.vfhint { position: relative; margin-bottom: 18px; font-size: 12.5px; color: rgba(255,255,255,.7);
-  text-align: center; padding: 0 20px; }
-.camrow { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 0; }
 .camroll { width: 48px; height: 48px; border-radius: 10px; background-size: cover;
   background-position: center; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.2); }
 .camroll.empty, .camroll.spacer { background: rgba(120,120,128,.2); }
@@ -2793,10 +2750,6 @@ input { font: inherit; }
     var(--app-tint);
 }
 
-.bubtime {
-  color: var(--app-label3);
-}
-
 /* Sheets, toast, HUD and emoji ------------------------------------------ */
 .scrim {
   background:
@@ -3859,18 +3812,6 @@ input { font: inherit; }
   min-height: 34px;
 }
 
-.panelgrab {
-  position: absolute;
-  top: 2px;
-  left: 50%;
-  width: 42px;
-  height: 5px;
-  margin-left: -21px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, .38);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .32);
-}
-
 .panelclose {
   position: absolute;
   top: 0;
@@ -3897,33 +3838,6 @@ input { font: inherit; }
 .panelclose svg {
   width: 16px;
   height: 16px;
-}
-
-.panelhome {
-  position: absolute;
-  z-index: 3;
-  left: 50%;
-  bottom: 9px;
-  width: 138px;
-  height: 17px;
-  margin-left: -69px;
-}
-
-.panelhome::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 1px;
-  height: 5px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, .84);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .36);
-  transition: transform var(--ph-fast) var(--ph-spring);
-}
-
-.panelhome:active::after {
-  transform: scaleX(.88);
 }
 
 .shade {
@@ -4954,12 +4868,6 @@ input { font: inherit; }
 
 .camchip.back svg {
   transform: none;
-}
-
-/* Final system-surface corrections ------------------------------------ */
-.panelgrab,
-.panelhome {
-  display: none;
 }
 
 .shade::before {
@@ -8804,9 +8712,6 @@ body.inframe.dark .uisearch {
 }
 /* The name, timer and buttons stay above the picture. */
 .callui.facetime > *:not(.facepeer):not(.faceself) { position: relative; z-index: 4; }
-
-
-
 
 /* ══ The payphone ═══════════════════════════════════════════════
    Built from the anatomy of a real call box, because that is what the player is standing in

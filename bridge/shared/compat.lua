@@ -81,9 +81,19 @@ end
 
 --- The channel a call runs on. Spread over a range so two calls in the same minute do
 --- not share one, which would let each side hear the other conversation.
+--- How many channels calls may spread over. Read in one place, because the server's call-id
+--- allocator has to agree with this exactly: it hands out ids inside this span and refuses to
+--- reuse a live one, which is what keeps two conversations off the same channel. pma-voice
+--- puts everybody on `callData[channel]` and lets them hear each other, so a collision is not
+--- a glitch - it is one call listening to another.
+function VoiceChannelSpan()
+    return math.max(4, math.min(4096,
+        math.floor(tonumber((Config.Compat and Config.Compat.voiceChannels) or 256) or 256)))
+end
+
 local function callChannel(callId)
     local base = tonumber((Config.Compat and Config.Compat.voiceChannel) or 700) or 700
-    return base + (math.floor(tonumber(callId) or 0) % 24)
+    return base + (math.floor(tonumber(callId) or 0) % VoiceChannelSpan())
 end
 
 -- **A phone call is a CALL channel, not a radio channel.**
@@ -104,11 +114,26 @@ end
 --
 -- So: calls use the call API. `voice_enableCalls` gates it, pma-voice tells its own server
 -- about the change, and radio is left entirely alone.
+-- Said once per session, not once per call: a warning that repeats every time somebody
+-- dials is noise that hides the next real line.
+local warnedNoCalls = false
+
 STUBS['v-voice'] = {
     PhoneCallStart = function(_, callId)
         if isServer or not callId then return end
         local voice = voiceResource()
         if voice == 'pma-voice' then
+            -- pma-voice's own `setCallChannel` opens with `if GetConvarInt('voice_enableCalls',
+            -- 1) ~= 1 then return end` - it returns SILENTLY, on both the client and the
+            -- server. With calls disabled the phone therefore works perfectly except that
+            -- nobody can hear anybody, which is a support ticket rather than a symptom. Said
+            -- once, here, where it is about to matter.
+            if GetConvarInt('voice_enableCalls', 1) ~= 1 and not warnedNoCalls then
+                warnedNoCalls = true
+                print('[v-phone] pma-voice has calls disabled (voice_enableCalls is not 1), '
+                    .. 'so a phone call will carry no audio. Remove `setr voice_enableCalls 0` '
+                    .. 'from server.cfg, or set Config.Compat.voice = "off" to stop trying.')
+            end
             exports['pma-voice']:setCallChannel(callChannel(callId))
         elseif voice == 'saltychat' then
             TriggerEvent('SaltyChat_SetRadioChannel', tostring(callChannel(callId)), true)

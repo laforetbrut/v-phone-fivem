@@ -96,6 +96,14 @@ Config.Compat = {
     -- it while taking a call. Do not confuse the two - see bridge/shared/compat.lua.
     voiceChannel = 700,
 
+    -- How many channels calls may spread over, starting at `voiceChannel` above. This is
+    -- also the ceiling on CONCURRENT calls server-wide, because a call id is its channel and
+    -- no two live calls may share one - two conversations on one pma-voice channel hear each
+    -- other. It was hardcoded at 24, which refused the twenty-fifth call on a busy night for
+    -- no reason: a pma-voice channel is just an integer. Raise it if you run a big server;
+    -- keep the range clear of any radio channels your other scripts use.
+    voiceChannels = 256,
+
     -- ── Apps that need a script you may not run ────────────────
     -- Set one to false and its app is not offered at all: no home screen, no store, no
     -- search. This is how you switch off the garage app on a server with no garages,
@@ -806,6 +814,23 @@ Config.DeadZones = {
 -- Staff actions on a player's phone, from the console, an ACE-gated command, or the
 -- qb-core admin menu. Every one of them is also an export (see API.md), so an admin menu
 -- of any framework can drive them.
+-- ══════════════════════════════════════════════════════════════
+--  LOGGING
+-- ══════════════════════════════════════════════════════════════
+-- What the resource says on the way up.
+--
+-- Everything here is OFF, and the reason is worth stating: a resource that prints twenty
+-- lines at every start teaches an operator to scroll past its output, and then the one line
+-- that mattered scrolls past too. Problems always print - a framework that was named but is
+-- not running, a table that could not be read, a callback with no handler. These switches
+-- only govern the lines that are merely true.
+Config.Log = {
+    -- The boot summary: framework detected, which app groups are on, the bank, the payphones,
+    -- the admin command, each app folder loaded. Useful exactly once, when setting a server up.
+    -- `set phone_verbose true` in server.cfg turns it on without editing this file.
+    boot = false,
+}
+
 Config.Admin = {
     -- The ACE permission a command or menu action is checked against. `command.PLAYERID`
     -- style aces and qb-core's `qbadmin.menu` / god group are both accepted; this is the

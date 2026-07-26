@@ -406,7 +406,7 @@ CreateThread(function()
         local ok, result = pcall(fn)
         return label .. '=' .. ((ok and type(result) == 'table') and 'yes' or 'no')
     end
-    print(('[v-phone] bridge apps: %s %s %s %s'):format(
+    V.Info(('[v-phone] bridge apps: %s %s %s %s'):format(
         state('garage', function()
             return Bridge.Vehicles.Owned('__probe__', nil) end),
         state('property', function()

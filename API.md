@@ -244,11 +244,17 @@ phone:OnCall()          --> boolean
 
 ```
 info     [id|cid|number]                     number, battery, unread, online
+who                                          everybody with a phone open right now
+number   [id|cid]                             read it
+contacts [id|cid]                             read the contact book
+apps     [id|cid]                             what is installed
 open     [id]                                open their phone on their screen
 battery  [id] [0-100]
-number   [id|cid] [number]
+batteryall [0-100]                            every phone online
+number   [id|cid] [number]                    set it
 message  [id|cid] [text]                     a text message, from Staff
 notify   [id|cid] [text]                     a banner, which does not persist
+announce [text]                               that banner, to everybody online
 app      [id|cid] give|take [appid]
 
 outage   [bars 0-4] (minutes)                the whole server

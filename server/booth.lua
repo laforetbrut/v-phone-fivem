@@ -38,7 +38,7 @@ local function isFree() return math.floor(num(BOOTH.costPerMinute, 60)) <= 0 end
 local function log(src, message)
     if not BOOTH.log then return end
     local p = Core.GetPlayer(src)
-    print(('[v-phone] payphone: %s (%s) %s'):format(
+    V.Info(('[v-phone] payphone: %s (%s) %s'):format(
         p and p.name or '?', p and p.citizenid or src, message))
     if Core.Log then Core.Log('payphone', message, nil, p and p.citizenid) end
 end

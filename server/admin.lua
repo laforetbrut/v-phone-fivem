@@ -111,10 +111,14 @@ if ADMIN.commands ~= false then
             self:SetBattery(target, pct)
             reply(src, ('Battery set to %d%%.'):format(math.floor(pct)))
 
-        elseif sub == 'number' and actionOn('setNumber') then
+        -- `args[3]` is part of the condition, not just checked inside it: without a number to
+        -- set, `number [id]` has to fall through to the READ branch further down. An elseif
+        -- chain is ordered, so a branch that claims the subcommand unconditionally makes every
+        -- later branch for it dead code.
+        elseif sub == 'number' and args[3] ~= nil and actionOn('setNumber') then
             local cid = resolveCitizen(args[2])
             local number = args[3]
-            if not cid or not number then reply(src, 'Usage: /phoneadmin number [id|cid] [number]') return end
+            if not cid then reply(src, 'Usage: /phoneadmin number [id|cid] [number]') return end
             local ok, err = self:SetNumber(cid, number)
             reply(src, ok and ('Number set to ' .. number) or ('Failed: ' .. tostring(err)))
 
@@ -266,15 +270,81 @@ if ADMIN.commands ~= false then
             local ok = self:NotifyCitizen(cid, 'phone', 'iFruit', body)
             reply(src, ok and 'Shown.' or 'That character is not online.')
 
+        -- ── Read a phone without touching it ────────────────────────────
+        --
+        -- Support work is mostly answering "what does their phone actually think", and every
+        -- one of these is a READ. They are behind `readInfo` rather than their own switch,
+        -- because refusing staff the ability to look while allowing them to wipe would be a
+        -- strange place to draw a line.
+        elseif sub == 'contacts' and actionOn('readInfo') then
+            local cid = resolveCitizen(args[2])
+            local list = cid and self:GetContacts(cid) or nil
+            if not list then reply(src, 'No such character.') return end
+            if #list == 0 then reply(src, 'No contacts.') return end
+            for _, c in ipairs(list) do
+                reply(src, ('%s  %s%s'):format(c.name or '?', c.number or '-',
+                    c.favourite and '  *' or ''))
+            end
+
+        elseif sub == 'apps' and actionOn('readInfo') then
+            local cid = resolveCitizen(args[2])
+            if not cid then reply(src, 'Usage: /phoneadmin apps [id|cid]') return end
+            local prefs = Bridge.KvGet(cid, 'phone') or {}
+            local added = prefs.added or {}
+            reply(src, #added == 0
+                and 'Nothing installed beyond the defaults.'
+                or ('Installed: ' .. table.concat(added, ', ')))
+
+        elseif sub == 'number' and args[3] == nil and actionOn('readInfo') then
+            -- `number [id]` with nothing to set reads it instead of complaining. Staff type
+            -- this constantly and the two-argument form is the rarer one.
+            local cid = resolveCitizen(args[2])
+            local info = cid and self:AdminReadPhone(cid)
+            reply(src, info and ('%s: %s'):format(info.name or cid, info.number or '-')
+                or 'No such character.')
+
+        -- ── The whole server at once ────────────────────────────────────
+        elseif sub == 'announce' and actionOn('notify') then
+            local body = table.concat(args, ' ', 2)
+            if body == '' then reply(src, 'Usage: /phoneadmin announce [text]') return end
+            self:NotifyAll('phone', 'iFruit', body)
+            reply(src, 'Announced to everybody online.')
+
+        elseif sub == 'who' and actionOn('readInfo') then
+            -- Everybody with a phone open right now. The support question behind it is
+            -- "is anybody actually looking at this", before changing something live.
+            local open, total = {}, 0
+            for _, raw in ipairs(GetPlayers()) do
+                local id = tonumber(raw)
+                total = total + 1
+                if self:IsPhoneOpen(id) then
+                    open[#open + 1] = ('%s (%d)'):format(GetPlayerName(id) or '?', id)
+                end
+            end
+            reply(src, ('%d of %d online have their phone open%s'):format(#open, total,
+                #open > 0 and (': ' .. table.concat(open, ', ')) or '.'))
+
+        -- ── Battery, for everybody ──────────────────────────────────────
+        elseif sub == 'batteryall' and actionOn('setBattery') then
+            local pct = tonumber(args[2])
+            if not pct then reply(src, 'Usage: /phoneadmin batteryall [0-100]') return end
+            local n = 0
+            for _, raw in ipairs(GetPlayers()) do
+                self:SetBattery(tonumber(raw), pct)
+                n = n + 1
+            end
+            reply(src, ('Battery set to %d%% on %d phone(s).'):format(math.floor(pct), n))
+
         else
-            reply(src, 'phoneadmin: info | open | battery | number | message | notify | app | ' ..
-                       'outage | outages | brick | unbrick | bricked | verify | verified | wipe')
+            reply(src, 'phoneadmin: info | who | number | contacts | apps | open | battery | ' ..
+                       'batteryall | message | notify | announce | app | outage | outages | ' ..
+                       'brick | unbrick | bricked | verify | verified | wipe')
         end
     end, false)
 
     -- The ACE the command checks, so `add_ace group.admin command.phoneadmin allow` also
     -- works for a server that gates by command name.
-    print('[v-phone] admin command /phoneadmin registered (ace: ' .. (ADMIN.ace or 'vphone.admin') .. ')')
+    V.Info('[v-phone] admin command /phoneadmin registered (ace: ' .. (ADMIN.ace or 'vphone.admin') .. ')')
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -291,7 +361,7 @@ if ADMIN.qbAdminMenu ~= false then
         -- third party is to register a header + buttons it exposes. Rather than depend on
         -- an internal shape that changes between builds, the phone registers a single
         -- command the menu can point a button at, and prints how to add it.
-        print('[v-phone] qb-adminmenu detected. Add a button that runs: phoneadmin info [id]')
-        print('[v-phone] full staff actions: /phoneadmin (info|open|battery|number|message|notify|app|outage|brick|wipe)')
+        V.Info('[v-phone] qb-adminmenu detected. Add a button that runs: phoneadmin info [id]')
+        V.Info('[v-phone] full staff actions: /phoneadmin (info|open|battery|number|message|notify|app|outage|brick|wipe)')
     end)
 end

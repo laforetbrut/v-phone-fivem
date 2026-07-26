@@ -91,7 +91,6 @@ local T = {
     ['ph.crop_tall'] = "Tall",
     ['ph.crop_focus'] = "Framing",
     ['ph.crop_saved'] = "Saved to this photo",
-    ['ph.app_bank'] = "Bank",
     ['ph.bank_transfer'] = "Transfer",
     ['ph.err_nochar'] = "The server does not know your character yet",
     ['ph.err_nohandler'] = 'That part of the phone is not loaded on this server',
@@ -169,7 +168,6 @@ local T = {
     ['ph.thread_delete'] = 'Delete this conversation?',
     ['ph.thread_delete_hint'] = "Press and hold a conversation to delete it.",
     ['ph.copy_code']        = 'Copy code',
-    ['ph.cam_prompt'] = 'ENTER  take the photo~n~ARROW UP  flip to selfie~n~BACKSPACE  close',
     ['ph.cam_selfie_hint'] = 'Selfie: mouse frames it, wheel is arm length, Q/E tilt',
     ['ph.cam_exit_hint'] = 'Close: ~INPUT_CELLPHONE_CANCEL~',
     ['ph.cam_flip_hint'] = 'Front/back: ~INPUT_PHONE~',
@@ -193,9 +191,7 @@ local T = {
     ['ph.write']        = 'Write a message',
     ['ph.no_messages']  = 'No conversations yet',
     ['ph.no_contacts']  = 'No contacts yet',
-    ['ph.contacts']     = 'Contacts',
     ['ph.new_contact']  = 'New contact',
-    ['ph.new_message']  = 'New message from %s',
 
     -- ── Calls ──
     ['ph.incoming']     = 'Incoming call',
@@ -243,7 +239,6 @@ local T = {
     ['ph.lic_none']     = 'None',
 
     -- ── Jobs ──
-    ['ph.current_job']  = 'Current job',
     ['ph.my_job'] = "My job",
     ['ph.employer'] = "Employer",
     ['ph.rank'] = "Rank",
@@ -273,8 +268,7 @@ local T = {
     ['ph.required_contact'] = 'Required',
     ['ph.required_contact_hint'] = 'Contact added by your server',
     ['ph.dnd']          = 'Do not disturb',
-    ['ph.dnd_on']       = 'Do not disturb is on',
-    ['ph.dnd_off']      = 'Do not disturb is off',
+
 
     -- ── Errors ──
     ['ph.err_x']        = 'Something went wrong',
@@ -296,12 +290,9 @@ local T = {
     ['ph.err_fields']   = 'A name and a number are needed',
     ['ph.err_unknown']  = 'Unknown app',
     ['ph.home'] = 'Home',
-    ['ph.unread'] = 'Unread',
-    ['ph.mute'] = 'mute',
-    ['ph.keypad'] = 'keypad',
+
     ['ph.speaker'] = 'speaker',
     ['ph.new_message_to'] = 'New message',
-    ['ph.cc'] = "Control Centre",
     ['ph.airplane'] = "Airplane Mode",
     ['ph.cellular'] = "Cellular Data",
     ['ph.wifi'] = "Wi-Fi",
@@ -319,13 +310,11 @@ local T = {
     ['ph.notif_mute_app'] = "Mute notifications",
     ['ph.notif_muted'] = "Muted",
     ['ph.notif_done'] = "Done",
-    ['ph.notif_earlier'] = "Earlier",
     ['ph.notif_empty'] = "No notifications",
     ['ph.torch_on'] = "Flashlight on",
     ['ph.torch_off'] = "Flashlight off",
     ['ph.dnd_hint'] = 'Calls are refused and messages arrive without a banner.',
     ['ph.camera_off'] = 'The camera is disabled on this server',
-    ['ph.torch_hint'] = 'Nothing to light up in here',
     ['app.maps'] = 'Maps',
     ['app.music'] = 'Music',
     ['app.property'] = 'Property',
@@ -361,7 +350,6 @@ local T = {
     ['ph.speaker_on'] = "Speaker on",
     ['ph.speaker_off'] = "Speaker off",
     ['ph.library'] = "Library",
-    ['ph.playing_around'] = "Around you",
     ['ph.library_empty'] = "No tracks",
     ['ph.library_hint'] = "Your tracks, kept on the phone.",
     ['ph.track_add'] = "Add a track",
@@ -370,9 +358,7 @@ local T = {
     ['ph.track_url'] = "Link (YouTube or other)",
     ['ph.track_hint'] = "Paste a YouTube link. The allowed hosts are set by the server.",
     ['ph.track_nourl'] = "Add a link",
-    ['ph.play_ear'] = "Listen with headphones",
     ['ph.playing_ear'] = "Playing in your headphones",
-    ['ph.play_speaker'] = "Play on speaker",
     ['ph.err_nocall'] = "No call in progress",
     ['ph.no_music'] = 'Nothing playing that you can control',
     ['ph.music_sources'] = 'Within reach',
@@ -381,7 +367,6 @@ local T = {
     ['ph.paused'] = 'Paused',
     ['ph.pause'] = 'Pause',
     ['ph.resume'] = 'Resume',
-    ['ph.stop'] = 'Stop',
     ['ph.music_boombox'] = 'Boombox',
     ['ph.music_jukebox'] = 'Jukebox',
     ['ph.music_vehicle'] = 'Car stereo',
@@ -497,7 +482,6 @@ local T = {
     ['app.store'] = 'FruitStore',
     ['ph.no_recents'] = 'Nothing open',
     ['ph.switch_hint'] = 'Flick a card up to close it',
-    ['ph.no_notifs'] = 'No notifications',
     ['ph.action_unset'] = 'No app chosen for this button',
     ['ph.about_title'] = 'About',
     ['ph.about_device'] = 'Device',
@@ -506,11 +490,9 @@ local T = {
     ['ph.action_button'] = 'Action button',
     ['ph.action_hint'] = 'The button on the top left opens this app. Tap the chosen one again to clear it.',
     ['ph.store_empty'] = 'Nothing available on this server',
-    ['ph.store_all'] = 'All apps',
-    ['ph.store_hint'] = 'Your server decides what is available here. You decide what to keep.',
+
     ['ph.store_required'] = 'Built in',
-    ['ph.store_installed'] = 'Installed',
-    ['ph.store_get'] = 'Not installed',
+
     ['ph.store_install'] = 'GET',
     ['ph.store_delete'] = 'Remove',
     ['ph.store_added'] = 'Installed',
@@ -546,13 +528,11 @@ local T = {
     ['ph.fit_contain'] = 'Fit',
     ['ph.wall_hint'] = 'Only image hosts your server allows will load.',
     ['ph.device'] = 'Device',
-    ['ph.size'] = 'Size',
     ['ph.side_right'] = 'Right',
     ['ph.side_left'] = 'Left',
     ['ph.emoji'] = 'Emoji',
     ['ph.arrange_done'] = 'Done',
     ['ph.folder'] = 'Folder',
-    ['ph.arrange_on'] = 'Drag onto another app to make a folder',
     ['ph.err_badhost'] = 'That image host is not allowed here',
     ['ph.err_nocam'] = 'The camera is not installed on this server',
     ['ph.err_noupload'] = 'No upload destination is configured',
@@ -590,7 +570,6 @@ local T = {
     ['ph.mail_subject'] = "Subject",
     ['ph.mail_body_ph'] = "Your message",
     ['ph.mail_send'] = "Send",
-    ['ph.mail_sent_ok'] = "Sent",
     ['ph.mail_savedraft'] = "Save draft",
     ['ph.mail_drafted'] = "Draft saved",
     ['ph.mail_reply'] = "Reply",
@@ -647,7 +626,6 @@ local T = {
     ['ph.keypad_tab'] = 'Keypad',
     ['ph.search_contacts'] = 'Search contacts',
     ['ph.los_santos'] = 'Los Santos',
-    ['ph.in_game_date'] = 'In game',
     ['ph.day_sun']       = 'Sunday',
     ['ph.day_mon']       = 'Monday',
     ['ph.day_tue']       = 'Tuesday',
@@ -797,9 +775,7 @@ local T = {
     ['ph.cipher_err_fields'] = 'Complete every field',
     ['ph.cipher_err_storage'] = 'Could not store the private key on this device',
     ['ph.cipher_err_crypto'] = 'Encryption failed on this device',
-
     ['app.hush'] = 'Hush',
-    ['ph.soc_welcome'] = 'Pick your handle',
     ['ph.soc_login_sub'] = "Sign in to your account",
     ['ph.soc_join_sub'] = "Create your account",
     ['ph.soc_code_sub'] = "Code sent to",
@@ -829,13 +805,11 @@ local T = {
     ['ph.err_password'] = "Password too short (min 4)",
     ['ph.err_exists'] = "You already have an account",
     ['ph.err_badpass'] = "Wrong password",
-    ['ph.soc_handle'] = 'Handle (letters, numbers, _)',
     ['ph.soc_avatar'] = 'Avatar link (optional)',
     ['ph.soc_cover'] = "Cover image URL",
     ['ph.soc_bio'] = 'Bio (optional)',
     ['ph.soc_create'] = 'Create the account',
     ['ph.soc_made'] = 'Welcome to the network',
-    ['ph.soc_hint'] = 'Each app has its own account. The handle is public; your real name is not attached to it.',
     ['ph.bleet_new'] = 'New bleet',
     ['ph.bleet_ph'] = 'What is happening?',
     ['ph.bleet_send'] = 'Bleet',
@@ -872,7 +846,6 @@ local T = {
     ['ph.store_none'] = 'Nothing here',
     ['ph.store_dev'] = 'Developer',
     ['ph.store_cat'] = 'Category',
-    ['ph.store_state'] = 'Status',
     ['ph.cat_social'] = 'Social',
     ['ph.cat_finance'] = 'Finance',
     ['ph.cat_utilities'] = 'Utilities',
@@ -1035,7 +1008,7 @@ local T = {
     ['ph.clip_posted'] = 'Clip posted',
     ['ph.facetime'] = 'FaceTime',
     ['ph.facetime_video'] = 'Video call',
-    ['ph.facetime_hint'] = 'Live video is not shown; the call is voice.',    ['ph.cam_selfie'] = 'Flip camera',
+    ['ph.cam_selfie'] = 'Flip camera',
 
     -- Calls, privacy and notifications, in Settings
     ['ph.calls_privacy'] = 'Calls & Privacy',
@@ -1052,7 +1025,6 @@ local T = {
     ['ph.previews'] = 'Show previews',
     ['ph.peek'] = 'Raise to show',
     ['ph.previews_hint'] = 'With previews off, a notification shows who it is from and not what it says. Raise to show lifts the handset into view; turn it off to be notified quietly.',
-
 
     -- Music: playlists and the deck hand-off
     ['ph.playlists'] = 'Playlists',
@@ -1073,7 +1045,6 @@ local T = {
     ['ph.music_handoff_hint'] = 'Playing a track opens the radio in your car, or the DJ deck on foot, with the link copied ready to paste.',
     ['ph.err_nodeck'] = 'No music player is running on this server.',
     ['ph.err_nohook'] = 'This deck cannot be controlled from the phone.',
-
 
     -- Vehicle remote (Garage app)
     ['ph.veh_near'] = 'About {m} m away',
@@ -1108,10 +1079,8 @@ local T = {
     ['ph.veh_err_disabled'] = 'That control is switched off here.',
     ['ph.veh_err_cooldown'] = 'One at a time.',
     ['ph.veh_err_x'] = 'The car did not answer.',
-
     ['ph.store_nomoney'] = 'You cannot afford this. It costs {price}.',
-    ['ph.store_buy'] = 'Buy',
-    ['ph.store_owned'] = 'Purchased',
+
 
     -- Payphones
     ['ph.booth_use'] = 'Use payphone',
@@ -1123,7 +1092,6 @@ local T = {
     ['ph.booth_box_number'] = 'This box',
     ['ph.booth_credit'] = 'Talk time',
     ['ph.booth_free_mode'] = 'Calls from this box are free',
-    ['ph.booth_no_credit'] = 'No talk time',
     ['ph.booth_insert_card'] = 'Insert card',
     ['ph.booth_insert_hint'] = 'One prepaid card is worth {minutes} minutes.',
     ['ph.booth_dial'] = 'Dial a number',
