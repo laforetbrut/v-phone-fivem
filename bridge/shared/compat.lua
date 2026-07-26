@@ -360,6 +360,35 @@ STUBS['v-inventory'] = {
 }
 
 -- ══════════════════════════════════════════════════════════════
+-- The apps this resource answers for
+-- ══════════════════════════════════════════════════════════════
+--- Has the operator switched this app off?
+---
+--- `Config.Compat.apps` names them plainly. The older `Config.Compat.modules` used the
+--- author's v-* module names and is still honoured, because ignoring a switch somebody set is
+--- worse than carrying two spellings for it.
+---
+--- Shared rather than duplicated: the home screen decides whether to draw the icon and the
+--- server callback decides whether to answer, and those two must never disagree - an icon
+--- that opens onto "not available" is worse than no icon.
+local APP_LEGACY_KEY = {
+    bank = 'v-banking', garage = 'v-vehicles', property = 'v-housing',
+    wallet = 'v-licenses', jobs = 'v-cityhall',
+}
+
+function Bridge_AppEnabled(id)
+    id = tostring(id or '')
+    local compat = (Config and Config.Compat) or {}
+    local apps = compat.apps
+    if type(apps) == 'table' and apps[id] ~= nil then return apps[id] ~= false end
+    local legacy, name = compat.modules, APP_LEGACY_KEY[id]
+    if type(legacy) == 'table' and name and legacy[name] ~= nil then
+        return legacy[name] ~= false
+    end
+    return true
+end
+
+-- ══════════════════════════════════════════════════════════════
 -- Which of these count as "started"
 -- ══════════════════════════════════════════════════════════════
 -- A stub with nothing behind it must NOT report as started, or the phone shows an app

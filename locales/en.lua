@@ -217,6 +217,9 @@ local T = {
     ['ph.no_vehicles']  = 'No vehicles registered to you',
     ['ph.veh_out']      = 'Out',
     ['ph.veh_stored']   = 'Stored',
+    ['ph.veh_locate'] = "Locate on the map",
+    ['ph.veh_locate_out'] = "Where you left it",
+    ['ph.veh_located'] = "Waypoint set",
     ['ph.out']          = 'Out on the street',
 
     -- ── Wallet ──

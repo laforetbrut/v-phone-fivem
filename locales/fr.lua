@@ -219,6 +219,9 @@ local T = {
     ['ph.no_vehicles']  = 'Aucun véhicule à votre nom',
     ['ph.veh_out']      = 'Sorti',
     ['ph.veh_stored']   = 'Garé',
+    ['ph.veh_locate'] = "Localiser sur la carte",
+    ['ph.veh_locate_out'] = "La ou vous l avez laissee",
+    ['ph.veh_located'] = "Point de passage place",
     ['ph.out']          = 'Dans la rue',
 
     -- ── Portefeuille ──

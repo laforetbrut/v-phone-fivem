@@ -155,6 +155,9 @@ Config.Compat = {
         vehicles = nil,       -- (citizenid) -> { { plate, model, garage, state }, ... }
         properties = nil,     -- (citizenid) -> { { label, address }, ... }
         licences = nil,       -- (src, citizenid) -> { { type, label }, ... }
+        -- What a garage key is called and where it is. Only needed if your garage script
+        -- keeps neither in a readable config - Quasar's escrowed build, for instance.
+        garage = nil,         -- (key) -> { label, x, y }
         jobs = nil,           -- () -> { { name, label, grades }, ... }
         status = nil,         -- (src) -> { hunger, thirst, ... }
         -- Charge a player. Return true ONLY if the money genuinely left them: the store
@@ -335,6 +338,11 @@ Config.Calls = {
 --
 -- `owner` is the module the app is a view of, and an app whose owner is stopped is not
 -- shown: an app that opens onto nothing is worse than an app that is not there.
+-- `owner` is the resource that answers for the app; the home screen hides an app whose owner
+-- is not running. Bank, Garage, Property, Wallet and Jobs used to name modules of the
+-- author's own suite here - v-banking, v-vehicles and friends - which do not exist on a
+-- qb-core, qbx, ESX or ox server. They read the bridge from server files shipped in THIS
+-- resource, so v-phone is the honest owner. Whether they appear is `Config.Compat.apps`.
 Config.Apps = {
     -- `required` cannot be removed: a phone with no Phone app is a brick, and a phone
     -- with no store cannot get anything back.
@@ -352,7 +360,7 @@ Config.Apps = {
       required = true, category = 'essentials' },
     { id = 'contacts', label = 'app.contacts', icon = 'contacts', owner = 'v-phone',    slot = 3, dock = true,
       required = true, category = 'essentials' },
-    { id = 'bank',     label = 'app.bank',     icon = 'bank',     owner = 'v-banking',  slot = 4,
+    { id = 'bank',     label = 'app.bank',     icon = 'bank',     owner = 'v-phone',    slot = 4,
       category = 'finance' },
     { id = 'mail',     label = 'app.mail',     icon = 'mail',     owner = 'v-phone',    slot = 5,
       category = 'work' },
@@ -364,15 +372,15 @@ Config.Apps = {
       category = 'utilities' },
     { id = 'music',    label = 'app.music',    icon = 'music',    owner = 'v-music',    slot = 9,
       category = 'entertainment' },
-    { id = 'garage',   label = 'app.garage',   icon = 'garage',   owner = 'v-vehicles', slot = 10,
+    { id = 'garage',   label = 'app.garage',   icon = 'garage',   owner = 'v-phone',    slot = 10,
       category = 'travel' },
-    { id = 'property', label = 'app.property', icon = 'house',    owner = 'v-housing',  slot = 11,
+    { id = 'property', label = 'app.property', icon = 'house',    owner = 'v-phone',    slot = 11,
       category = 'utilities' },
     -- Police only by default. The operator can open it up, or gate something else the
     -- same way, from Editor -> Phone apps.
-    { id = 'wallet',   label = 'app.wallet',   icon = 'wallet',   owner = 'v-licenses', slot = 12,
+    { id = 'wallet',   label = 'app.wallet',   icon = 'wallet',   owner = 'v-phone',    slot = 12,
       category = 'finance' },
-    { id = 'jobs',     label = 'app.jobs',     icon = 'jobs',     owner = 'v-cityhall', slot = 13,
+    { id = 'jobs',     label = 'app.jobs',     icon = 'jobs',     owner = 'v-phone',    slot = 13,
       category = 'work' },
     { id = 'health',   label = 'app.health',   icon = 'heart',    owner = 'v-status',   slot = 14,
       category = 'health' },
@@ -826,6 +834,25 @@ Config.ExternalCharging = {
 
 -- ══════════════════════════════════════════════════════════════
 --  POLICE FORENSICS
+-- ══════════════════════════════════════════════════════════════
+--  GARAGES
+-- ══════════════════════════════════════════════════════════════
+-- Only needed to OVERRIDE. The Garage app reads your garage script's own config for the
+-- name and position of each garage - qb-garages and its forks all keep
+-- `Config.Garages.<key> = { label = ..., takeVehicle = vector3(...) }`, and that is read
+-- straight from the file - so most servers need nothing here.
+--
+-- Fill it in when the script keeps its garages somewhere unreadable (an escrowed build), or
+-- when you want your own names. Anything listed here wins over what the script says.
+--
+--     Config.Garages = {
+--         motelgarage = { label = 'Motel Parking', x = 274.29, y = -334.15 },
+--     }
+--
+-- `x` and `y` are what the "Locate" button sets a waypoint to. Leave them out and the app
+-- still shows the name, it just cannot point at it.
+Config.Garages = {}
+
 -- ══════════════════════════════════════════════════════════════
 --  BANK
 -- ══════════════════════════════════════════════════════════════

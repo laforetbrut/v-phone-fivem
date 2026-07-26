@@ -2624,7 +2624,10 @@ RENDER.garage = async () => {
   const list = Array.isArray(d) ? d : (d.vehicles || []);
   if (!list.length) { body(UI.empty(L('ph.no_vehicles'), 'garage')); return; }
   body(UI.group(list.map((v, i) => UI.row({
-    icon: 'garage', tint: '#0A84FF', title: v.model || '', subtitle: `${v.plate || ''}  ${v.garage || L('ph.out')}`,
+    icon: 'garage', tint: '#0A84FF', title: v.model || '',
+    // The garage's real name when the server could resolve it, its key when it could not,
+    // and "out" when the car is not in one at all.
+    subtitle: `${v.plate || ''}  ${v.garageLabel || v.garage || L('ph.out')}`,
     value: v.live ? L('ph.veh_out') : L('ph.veh_stored'),
     chevron: true, data: { veh: String(i) },
   }))));
@@ -2666,6 +2669,17 @@ async function vehicleRemote(v) {
   const controls = (state.vehicleControls || {});
 
   const group = [];
+  // First, and outside the `controls` gates: finding your own car is not a remote command,
+  // it needs no proximity and no operator switch. Only offered when the server actually
+  // knows where it is - a button that cannot answer is worse than no button.
+  if (v.x && v.y) {
+    group.push(UI.row({
+      icon: 'location', tint: '#FF9500',
+      title: L('ph.veh_locate'),
+      subtitle: v.live ? L('ph.veh_locate_out') : (v.garageLabel || v.garage || ''),
+      data: { a: 'locate' },
+    }));
+  }
   if (controls.locks) {
     group.push(UI.row({ icon: 'lockshut', tint: '#8E8E93', title: L('ph.veh_lock'), data: { a: 'lock' } }));
     group.push(UI.row({ icon: 'lockopen', tint: '#34C759', title: L('ph.veh_unlock'), data: { a: 'unlock' } }));
@@ -2687,7 +2701,13 @@ async function vehicleRemote(v) {
         const a = r.dataset.a;
         if (!a) return;
         r.addEventListener('click', async () => {
-          if (a === 'lock' || a === 'unlock') {
+          if (a === 'locate') {
+            // Straight to the existing waypoint callback: it moves this player's own map
+            // marker and touches nothing else.
+            const set = await post('waypoint', { x: v.x, y: v.y });
+            toast(L(set && set.ok ? 'ph.veh_located' : 'ph.err_x'));
+            ui('key');
+          } else if (a === 'lock' || a === 'unlock') {
             await vehicleSend(plate, 'locks', a === 'lock' ? 'lock' : 'unlock');
           } else if (a === 'horn' || a === 'alarm') {
             await vehicleSend(plate, a);

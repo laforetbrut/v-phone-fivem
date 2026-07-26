@@ -332,6 +332,9 @@ local function appsFor(src, p)
         if w and tonumber(w.enabled) == 0 then ok = false end
         -- An app that opens onto a stopped module is worse than an app that is not there.
         if ok and a.owner and a.owner ~= 'v-phone' and GetResourceState(a.owner) ~= 'started' then ok = false end
+        -- The operator's own switch for the apps this resource answers for. Same function
+        -- the server callbacks use, so an icon never opens onto "not available here".
+        if ok and Bridge_AppEnabled and not Bridge_AppEnabled(id) then ok = false end
         -- The job gate can come from either place: the operator's row on v-world, or the
         -- app's own `job` in config (a police MDT is police-only even before an operator
         -- has ever touched it). The config value is the floor; the row can raise the grade.

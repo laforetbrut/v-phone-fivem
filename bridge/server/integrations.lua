@@ -609,6 +609,122 @@ function Bridge.Vehicles.Owned(citizenid, src)
     return rows
 end
 
+-- ── Naming a garage, and finding it on the map ─────────────────
+-- A garage row carries a KEY - `motelgarage`, `casinoparking` - which is not something to
+-- show a player. The label and the coordinates live in the garage script's own config, and
+-- that config is a global inside ITS resource, so it cannot simply be read from here.
+--
+-- It can be read from disk, though. `LoadResourceFile` hands over any file in another
+-- resource, and qb-garages and its many forks all keep the same shape:
+--
+--     Config.Garages.motelgarage = { label = 'Motel Parking', takeVehicle = vector3(...) }
+--
+-- So the file is loaded into a sandbox with the vector constructors stubbed, and the two
+-- fields that matter are lifted out. Nothing else in that file is executed for its effects,
+-- and a file that will not load is simply skipped.
+--
+-- An escrowed script (Quasar's core is encrypted) may not expose a readable config. That is
+-- what `Config.Garages` in this resource's own config is for, and it always wins.
+Bridge.Garages = {}
+
+local garageCache = nil
+
+--- Read `Config.Garages` out of whichever garage script is running.
+local function garagesFromScript()
+    local resource = choose('garage', GARAGES)
+    if not resource then return {} end
+
+    local out = {}
+    for _, file in ipairs({ 'config.lua', 'configs/config.lua', 'shared/config.lua' }) do
+        local raw = LoadResourceFile(resource, file)
+        if raw and raw ~= '' then
+            -- A sandbox: the file gets vectors and a table to fill, and nothing else. It
+            -- cannot reach the server's globals even if it tries.
+            local env = {
+                Config = {}, Configs = {}, math = math, table = table, string = string,
+                pairs = pairs, ipairs = ipairs, tonumber = tonumber, tostring = tostring,
+                vector3 = function(x, y, z) return { x = x, y = y, z = z } end,
+                vector4 = function(x, y, z, w) return { x = x, y = y, z = z, w = w } end,
+                vec3 = function(x, y, z) return { x = x, y = y, z = z } end,
+                vec4 = function(x, y, z, w) return { x = x, y = y, z = z, w = w } end,
+            }
+            local chunk = load(raw, 'garages', 't', env)
+            if chunk and pcall(chunk) then
+                local list = (env.Config and env.Config.Garages) or (env.Configs and env.Configs.Garages)
+                if type(list) == 'table' then
+                    for key, g in pairs(list) do
+                        if type(g) == 'table' then
+                            local at = g.takeVehicle or g.spawnPoint or g.putVehicle or g.coords
+                            if type(at) == 'table' and at[1] then at = at[1] end
+                            out[tostring(key)] = {
+                                label = tostring(g.label or g.name or key),
+                                x = at and tonumber(at.x) or nil,
+                                y = at and tonumber(at.y) or nil,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+        if next(out) then break end
+    end
+    return out
+end
+
+--- The label and map position of one garage, or nil when nothing here knows it.
+---
+--- Cached: reading and sandboxing a config file per vehicle per app open would be absurd.
+function Bridge.Garages.Info(key)
+    key = tostring(key or '')
+    if key == '' then return nil end
+
+    local custom = Config.Compat.hooks.garage
+    if custom then
+        local ok, info = pcall(custom, key)
+        if ok and type(info) == 'table' then return info end
+    end
+
+    -- The operator's own names always win: they know what their garages are called, and an
+    -- escrowed script may never tell us.
+    local named = (Config.Garages or {})[key]
+    if type(named) == 'table' then
+        return { label = tostring(named.label or key), x = tonumber(named.x), y = tonumber(named.y) }
+    end
+
+    if garageCache == nil then
+        local ok, found = pcall(garagesFromScript)
+        garageCache = (ok and found) or {}
+        local n = 0
+        for _ in pairs(garageCache) do n = n + 1 end
+        if n > 0 then print(('[v-phone] garages: read %d from the garage script'):format(n)) end
+    end
+    return garageCache[key]
+end
+
+--- Where a car with this plate is standing right now, if it is out in the world.
+---
+--- Server-side entity iteration, so it finds the car whether or not it is streamed to the
+--- player asking. `GetAllVehicles` is not present on every build, hence the pcall: a server
+--- without it loses the "locate" button and nothing else.
+function Bridge.Garages.LocatePlate(plate)
+    local wanted = tostring(plate or ''):upper():gsub('%s', '')
+    if wanted == '' then return nil end
+
+    local ok, result = pcall(function()
+        for _, vehicle in ipairs(GetAllVehicles()) do
+            if DoesEntityExist(vehicle) then
+                local found = tostring(GetVehicleNumberPlateText(vehicle) or ''):upper():gsub('%s', '')
+                if found == wanted then
+                    local at = GetEntityCoords(vehicle)
+                    return { x = at.x, y = at.y, z = at.z }
+                end
+            end
+        end
+        return nil
+    end)
+    return ok and result or nil
+end
+
 -- ── The property app ───────────────────────────────────────────
 local HOUSING = { 'qs-housing', 'ps-housing', 'qb-houses', 'ox_property', 'loaf_housing', 'esx_property' }
 

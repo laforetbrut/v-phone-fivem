@@ -20,25 +20,13 @@
 
 local function num(v, d) return tonumber(v) or d or 0 end
 
---- Has the operator switched this app off?
+--- The operator's switch, shared with the home screen so the icon and the answer agree.
 ---
---- `Config.Compat.apps` names them plainly. The older `Config.Compat.modules` used the
---- author's v-* module names and is still honoured for a config written against it, because
---- silently ignoring a switch somebody set is worse than carrying two spellings.
-local LEGACY_KEY = {
-    bank = 'v-banking', garage = 'v-vehicles', property = 'v-housing',
-    wallet = 'v-licenses', jobs = 'v-cityhall',
-}
+--- Tolerant of the helper being absent: it lives in the shared compatibility layer, and four
+--- apps refusing to answer because one function did not load would be a poor trade.
 local function appOn(key)
-    local compat = Config.Compat or {}
-    local apps = compat.apps
-    if type(apps) == 'table' and apps[key] ~= nil then return apps[key] ~= false end
-    local legacy = compat.modules
-    local name = LEGACY_KEY[key]
-    if type(legacy) == 'table' and name and legacy[name] ~= nil then
-        return legacy[name] ~= false
-    end
-    return true
+    if type(Bridge_AppEnabled) ~= 'function' then return true end
+    return Bridge_AppEnabled(key)
 end
 
 --- Read something from a provider without letting a broken schema take the app down.
@@ -120,7 +108,29 @@ V.Callback('v-phone:garage:data', function(src, resolve)
     local out = {}
     for _, v in ipairs(rows) do
         local row = vehicleRow(v)
-        if row and row.plate ~= '' then out[#out + 1] = row end
+        if row and row.plate ~= '' then
+            -- Which garage, by its real name rather than its key. `motelgarage` is a
+            -- database value; "Motel Parking" is what the player calls it.
+            if row.garage then
+                local info = Bridge.Garages and Bridge.Garages.Info
+                    and Bridge.Garages.Info(row.garage)
+                if info then
+                    row.garageLabel = info.label
+                    -- A stored car is findable at the garage that holds it.
+                    if not row.live and info.x and info.y then
+                        row.x, row.y = info.x, info.y
+                    end
+                end
+            end
+            -- A car that is OUT is findable where it actually stands, which is the whole
+            -- point of asking a phone where you left it.
+            if row.live then
+                local at = Bridge.Garages and Bridge.Garages.LocatePlate
+                    and Bridge.Garages.LocatePlate(row.plate)
+                if at then row.x, row.y = at.x, at.y end
+            end
+            out[#out + 1] = row
+        end
     end
     resolve({ ok = true, vehicles = out })
 end)
