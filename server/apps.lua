@@ -210,7 +210,33 @@ V.Callback('v-phone:wallet:data', function(src, resolve)
         return Bridge.Licences and Bridge.Licences.Held
             and Bridge.Licences.Held(src, p.citizenid)
     end)
-    if type(rows) ~= 'table' then resolve({ error = 'nolicences' }) return end
+    -- Who the character is, which is the other half of a wallet. Isolated: a framework that
+    -- will not say leaves the card off rather than taking the licences down with it.
+    local id = safely('identity', function()
+        return Bridge.Identity and Bridge.Identity(p.citizenid, src)
+    end)
+    local identity = nil
+    if type(id) == 'table' then
+        local first = id.first and tostring(id.first) or ''
+        local last = id.last and tostring(id.last) or ''
+        identity = {
+            name = ((first .. ' ' .. last):gsub('^%s+', ''):gsub('%s+$', '')),
+            dob = id.dob and tostring(id.dob):sub(1, 20) or nil,
+            -- 'm' or 'f'; the page names it, so the word is never frozen here.
+            sex = (id.sex == 'm' or id.sex == 'f') and id.sex or nil,
+            nationality = id.nationality and tostring(id.nationality):sub(1, 40) or nil,
+            height = tonumber(id.height),
+            id = id.id and tostring(id.id):sub(1, 40) or nil,
+        }
+        if identity.name == '' then identity.name = tostring(p.name or '') end
+    end
+
+    -- Licences may be unreadable while the identity is perfectly fine, so the identity is
+    -- answered either way rather than being lost to an early return.
+    if type(rows) ~= 'table' then
+        resolve({ ok = true, licenses = {}, readable = false, identity = identity })
+        return
+    end
 
     local out = {}
     for _, r in ipairs(rows) do
@@ -231,7 +257,7 @@ V.Callback('v-phone:wallet:data', function(src, resolve)
             end
         end
     end
-    resolve({ ok = true, licenses = out })
+    resolve({ ok = true, licenses = out, readable = true, identity = identity })
 end)
 
 -- ══════════════════════════════════════════════════════════════

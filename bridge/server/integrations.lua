@@ -609,6 +609,74 @@ function Bridge.Vehicles.Owned(citizenid, src)
     return rows
 end
 
+-- ── Who the character is ───────────────────────────────────────
+-- The Wallet app shows an identity card, which means it needs the facts a framework already
+-- keeps about a character. Every one of them keeps the same handful under different names and
+-- in a different place, so this is a read per ecosystem, normalised once.
+--
+--   qb / qbx   `players.charinfo`, JSON: firstname, lastname, birthdate, gender, nationality
+--   ox         `characters`: firstName, lastName, dateofbirth, gender
+--   esx        `users`: firstname, lastname, dateofbirth, sex, height
+--
+-- `gender` is a number on qb (0 male, 1 female) and a letter on ESX ('m' / 'f'). The phone
+-- hands back a plain 'm' or 'f' and lets the page name it in the reader's language, so
+-- nothing here has to know the word for it.
+function Bridge.Identity(citizenid, src)
+    citizenid = tostring(citizenid or '')
+    if citizenid == '' then return nil end
+
+    local custom = Config.Compat.hooks.identity
+    if custom then
+        local ok, info = pcall(custom, citizenid, src)
+        if ok and type(info) == 'table' then return info end
+    end
+
+    --- 0/1, 'm'/'f', 'male'/'female', or anything else, as 'm' or 'f' or nil.
+    local function sexOf(value)
+        if value == nil then return nil end
+        local v = tostring(value):lower()
+        if v == '0' or v == 'm' or v == 'male' or v == 'homme' then return 'm' end
+        if v == '1' or v == 'f' or v == 'female' or v == 'femme' then return 'f' end
+        return nil
+    end
+
+    if Bridge.framework == 'qb' then
+        local raw = MySQL.scalar.await('SELECT charinfo FROM players WHERE citizenid = ?', { citizenid })
+        local ok, info = pcall(json.decode, raw or '{}')
+        if ok and type(info) == 'table' then
+            return {
+                first = info.firstname, last = info.lastname,
+                dob = info.birthdate, sex = sexOf(info.gender),
+                nationality = info.nationality, id = citizenid,
+            }
+        end
+
+    elseif Bridge.framework == 'ox' then
+        local row = MySQL.single.await([[SELECT firstName, lastName, dateofbirth, gender
+            FROM characters WHERE charId = ?]], { citizenid })
+        if row then
+            return {
+                first = row.firstName, last = row.lastName,
+                dob = row.dateofbirth, sex = sexOf(row.gender), id = citizenid,
+            }
+        end
+
+    elseif Bridge.framework == 'esx' then
+        -- ESX keys `users` by the licence identifier, not by a citizen id, and that is what
+        -- the bridge carries as `citizenid` on an ESX server.
+        local row = MySQL.single.await([[SELECT firstname, lastname, dateofbirth, sex, height
+            FROM users WHERE identifier = ?]], { citizenid })
+        if row then
+            return {
+                first = row.firstname, last = row.lastname,
+                dob = row.dateofbirth, sex = sexOf(row.sex),
+                height = tonumber(row.height), id = citizenid,
+            }
+        end
+    end
+    return nil
+end
+
 -- ── Naming a garage, and finding it on the map ─────────────────
 -- A garage row carries a KEY - `motelgarage`, `casinoparking` - which is not something to
 -- show a player. The label and the coordinates live in the garage script's own config, and

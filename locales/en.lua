@@ -167,6 +167,7 @@ local T = {
     ['ph.save']      = 'Save',
     ['ph.delete']    = 'Delete',
     ['ph.thread_delete'] = 'Delete this conversation?',
+    ['ph.thread_delete_hint'] = "Press and hold a conversation to delete it.",
     ['ph.copy_code']        = 'Copy code',
     ['ph.cam_prompt'] = 'ENTER  take the photo~n~ARROW UP  flip to selfie~n~BACKSPACE  close',
     ['ph.cam_selfie_hint'] = 'Selfie: mouse frames it, wheel is arm length, Q/E tilt',
@@ -225,6 +226,20 @@ local T = {
 
     -- ── Wallet ──
     ['ph.no_licenses']  = 'No licences on record',
+    ['ph.id_card'] = "Identity",
+    ['ph.id_name'] = "Name",
+    ['ph.id_dob'] = "Date of birth",
+    ['ph.id_sex'] = "Sex",
+    ['ph.id_sex_m'] = "Male",
+    ['ph.id_sex_f'] = "Female",
+    ['ph.id_nationality'] = "Nationality",
+    ['ph.id_height'] = "Height",
+    ['ph.id_number'] = "Citizen ID",
+    ['ph.calls_clear'] = "Clear the call history",
+    ['ph.calls_clear_ask'] = "Delete every call from this phone?",
+    ['ph.calls_cleared'] = "Call history cleared",
+    ['ph.call_delete_ask'] = "Forget this call?",
+    ['ph.call_deleted'] = "Call deleted",
     ['ph.lic_held']     = 'Held',
     ['ph.lic_none']     = 'None',
 

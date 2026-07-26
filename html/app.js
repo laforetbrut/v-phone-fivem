@@ -1506,7 +1506,10 @@ RENDER.phone = () => {
       if (!host) return;
       const calls = (r && r.calls) || [];
       if (!calls.length) { host.innerHTML = UI.empty(L('ph.no_recents_call'), 'phone'); return; }
-      host.innerHTML = UI.group(calls.map((c) => {
+      // A visible way to wipe the log. Press and hold one row to forget just that call - the
+      // same gesture the conversation list uses, so there is one thing to learn, not two.
+      host.innerHTML = UI.button(L('ph.calls_clear'), 'callsclear', 'plain') +
+        UI.group(calls.map((c) => {
         const missed = c.direction === 'in' && !Number(c.answered);
         const dir = missed ? 'missed' : c.direction;
         const name = c.number ? nameOfNumber(c.number) : L('ph.unknown');
@@ -1515,12 +1518,39 @@ RENDER.phone = () => {
           tint: missed ? '#FF453A' : '#34C759',
           title: name,
           subtitle: (L('ph.call_' + dir) + '  ') + String(c.at || '').slice(5, 16),
-          value: c.number || '', chevron: true, data: { n: c.number || '' },
+          value: c.number || '', chevron: true,
+          data: { n: c.number || '', cid: c.id || '' },
         });
       }));
       qrows('recents', '.row', (el) => el.addEventListener('click', () => {
         if (el.dataset.n) post('call', { number: el.dataset.n });
       }));
+      byId('callsclear').addEventListener('click', () => {
+        confirmSheet(L('ph.calls_clear_ask'), L('ph.calls_clear'), async () => {
+          await post('callsDelete', { all: true });
+          toast(L('ph.calls_cleared'));
+          RENDER.phone();
+        });
+      });
+      // One call, held rather than tapped: a tap on a recent call rings it back, and losing
+      // a number because a finger landed on the wrong row would be worse than no delete.
+      qrows('recents', '.row', (el) => {
+        let timer = null;
+        const cancel = () => { clearTimeout(timer); timer = null; };
+        el.addEventListener('pointerdown', () => {
+          timer = setTimeout(() => {
+            timer = null;
+            const id = el.dataset.cid;
+            if (!id) return;
+            confirmSheet(L('ph.call_delete_ask'), L('ph.delete'), async () => {
+              await post('callsDelete', { id: Number(id) });
+              toast(L('ph.call_deleted'));
+              RENDER.phone();
+            });
+          }, 550);
+        });
+        ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => el.addEventListener(e, cancel));
+      });
     });
     return;
   }
@@ -2055,7 +2085,9 @@ RENDER.messages = async () => {
         badge: c.unread > 0 ? c.unread : null, chevron: true,
         data: { n: c.service ? c.other : c.number },
       });
-    })) : '')
+    // A gesture nobody is told about is a gesture nobody uses: the long press to delete a
+    // conversation has been here all along and was reported as missing.
+    }), { footer: L('ph.thread_delete_hint') }) : '')
   );
   rows('.row[data-n]', (r) => r.addEventListener('click', () => openThread(r.dataset.n)));
   // Press and hold a thread to delete it. A swipe would be more iOS, but a long press is
@@ -2773,7 +2805,28 @@ RENDER.wallet = async () => {
       '<div class="foot"><span>' + esc(card.holder || '') + '</span>' +
       '<span class="bal">' + esc(money(card.bank)) + '</span></div></div>'
     : (card && card.ok ? UI.group([UI.row({ icon: 'bank', title: L('ph.no_card'), subtitle: L('ph.no_card_hint') })]) : '');
-  if (!list.length) { body(cardHtml + UI.empty(L('ph.no_licenses'), 'wallet')); return; }
+  // The identity card: the facts the framework keeps about this character. Drawn above the
+  // licences because it is the thing a wallet is actually opened for.
+  const id = d.identity;
+  const idHtml = id ? UI.group([
+    UI.row({ icon: 'id', tint: '#0A84FF', title: L('ph.id_name'), value: id.name || '' }),
+    id.dob ? UI.row({ icon: 'timer', tint: '#5E5CE6', title: L('ph.id_dob'), value: id.dob, mono: true }) : '',
+    id.sex ? UI.row({ icon: 'contacts', tint: '#FF9F0A', title: L('ph.id_sex'),
+                      value: L('ph.id_sex_' + id.sex) }) : '',
+    id.nationality ? UI.row({ icon: 'map', tint: '#30D158', title: L('ph.id_nationality'),
+                              value: id.nationality }) : '',
+    id.height ? UI.row({ icon: 'focus', tint: '#64D2FF', title: L('ph.id_height'),
+                         value: id.height + ' cm', mono: true }) : '',
+    id.id ? UI.row({ icon: 'shield', tint: '#8E8E93', title: L('ph.id_number'),
+                     value: id.id, mono: true }) : '',
+  ].filter(Boolean), { header: L('ph.id_card') }) : '';
+
+  if (!list.length) {
+    body(cardHtml + idHtml +
+      UI.empty(L(d.readable === false ? 'ph.err_nolicences' : 'ph.no_licenses'), 'wallet'));
+    wireCard();
+    return;
+  }
   const wireCard = () => {
     const el = document.querySelector('.bankcard');
     if (el && card && card.card) {
@@ -2781,7 +2834,7 @@ RENDER.wallet = async () => {
       el.addEventListener('click', () => copyText(card.card, L('ph.card_copied')));
     }
   };
-  body(cardHtml + UI.group(list.map((l) => UI.row({
+  body(cardHtml + idHtml + UI.group(list.map((l) => UI.row({
     icon: 'wallet', tint: '#5856D6', title: (L(l.i18n) !== l.i18n ? L(l.i18n) : (l.label || l.key)),
     subtitle: l.issuer || '', value: l.held ? L('ph.lic_held') : L('ph.lic_none'),
     tone: l.held ? 'pos' : '',

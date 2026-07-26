@@ -306,6 +306,55 @@ V.Callback('v-phone:bank:data', function(src, resolve)
 end)
 
 -- ══════════════════════════════════════════════════════════════
+-- The card
+-- ══════════════════════════════════════════════════════════════
+-- The Wallet app draws a bank card. Upstream that card was minted by `v-banking`, and the
+-- page asked `v-banking:card` - a callback nobody on a qb-core, ESX or ox server answers, so
+-- the card was simply never there.
+--
+-- A card is three facts: a number, a holder, and a balance. The balance is the framework's,
+-- the holder is the character's own name, and the number is the only thing that had to be
+-- invented - so the phone mints one and keeps it, exactly the way it already does with phone
+-- numbers. It is stable for the life of the character and means nothing to anything outside
+-- the phone: it is a display, not an account.
+local function cardNumber(citizenid)
+    local existing = Bridge.KvGet(citizenid, 'card')
+    if type(existing) == 'string' and existing ~= '' then return existing end
+
+    -- Four groups of four. Deliberately not derived from the citizen id: a card number that
+    -- can be reversed into an identifier is worse than a random one.
+    local parts = {}
+    for i = 1, 4 do parts[i] = ('%04d'):format(math.random(0, 9999)) end
+    local number = table.concat(parts, ' ')
+    Bridge.KvSet(citizenid, 'card', number)
+    return number
+end
+
+V.Callback('v-phone:card', function(src, resolve)
+    if not enabled() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    local balances = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+    local holder = p.name or ''
+    -- The name on a card is the character's, and a framework that will not say who they are
+    -- leaves it blank rather than guessing.
+    local ok, id = pcall(function()
+        return Bridge.Identity and Bridge.Identity(p.citizenid, src)
+    end)
+    if ok and type(id) == 'table' and id.first then
+        holder = ((tostring(id.first) .. ' ' .. tostring(id.last or '')):gsub('%s+$', ''))
+    end
+
+    resolve({
+        ok = true,
+        card = cardNumber(p.citizenid),
+        holder = holder:upper():sub(1, 30),
+        bank = type(balances) == 'table' and math.floor(num(balances.bank, 0)) or nil,
+    })
+end)
+
+-- ══════════════════════════════════════════════════════════════
 -- Transfers
 -- ══════════════════════════════════════════════════════════════
 V.Callback('v-phone:bank:transfer', function(src, resolve, data)

@@ -790,15 +790,14 @@ end)
 -- validation, notifications and settings all still apply. None of them decide anything.
 
 RegisterNUICallback('threadDelete', relay('v-phone:threadDelete'))
+RegisterNUICallback('callsDelete', relay('v-phone:callsDelete'))
 RegisterNUICallback('places', relay('v-phone:places'))
 RegisterNUICallback('install', relay('v-phone:install'))
 
---- The card belongs to v-banking, which mints it and owns the number. The wallet app
---- only displays it, so this reads and never writes.
-RegisterNUICallback('card', function(_, cb)
-    if GetResourceState('v-banking') ~= 'started' then cb({ error = 'off' }) return end
-    V.Request('v-banking:card', function(res) cb(res or { error = 'x' }) end)
-end)
+--- The card the Wallet app draws. It used to ask `v-banking:card`, a callback that exists
+--- only in the author's own suite, so no server outside it ever showed a card. The phone
+--- mints and keeps the number itself now, and the balance comes from the framework.
+RegisterNUICallback('card', relay('v-phone:card'))
 
 --- Setting a waypoint is the one thing a phone map is actually for. Purely local: it
 --- moves a marker on this player's own minimap and touches nothing else.

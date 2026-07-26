@@ -2621,6 +2621,28 @@ end)
 ---
 --- `other` is a citizen id, or a `svc:Label` key for a service thread. Either way it is
 --- only ever used against rows this character is a party to.
+--- Forget a call, or the whole log. A phone that cannot forget who you rang is a phone
+--- nobody uses for anything they would rather not explain, and the log is the character's
+--- own: nothing else on the server reads it.
+V.Callback('v-phone:callsDelete', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'nochar' }) return end
+
+    if data and data.all == true then
+        local n = MySQL.update.await('DELETE FROM vphone_calls WHERE citizenid = ?', { p.citizenid })
+        resolve({ ok = true, removed = tonumber(n) or 0 })
+        return
+    end
+
+    -- One row, and the citizen id is part of the WHERE so an id from a forged message can
+    -- only ever delete this character's own call.
+    local id = math.floor(num(data and data.id, 0))
+    if id <= 0 then resolve({ error = 'x' }) return end
+    local n = MySQL.update.await('DELETE FROM vphone_calls WHERE id = ? AND citizenid = ?',
+        { id, p.citizenid })
+    resolve({ ok = true, removed = tonumber(n) or 0 })
+end)
+
 V.Callback('v-phone:threadDelete', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -3035,8 +3057,9 @@ end)
 V.Callback('v-phone:calls', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
-    local rows = MySQL.query.await([[SELECT other_num AS number, direction, answered, at
+    local rows = MySQL.query.await([[SELECT id, other_num AS number, direction, answered, at
         FROM vphone_calls WHERE citizenid = ? ORDER BY id DESC LIMIT 60]], { p.citizenid }) or {}
+    -- The id travels with each row so one call can be forgotten without forgetting the lot.
     resolve({ ok = true, calls = rows })
 end)
 

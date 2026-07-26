@@ -169,6 +169,7 @@ local T = {
     ['ph.save']      = 'Enregistrer',
     ['ph.delete']    = 'Supprimer',
     ['ph.thread_delete'] = 'Supprimer cette conversation ?',
+    ['ph.thread_delete_hint'] = "Appui long sur une conversation pour la supprimer.",
     ['ph.copy_code']        = 'Copier le code',
     ['ph.cam_prompt'] = 'ENTRÉE  prendre la photo~n~FLÈCHE HAUT  passer en selfie~n~RETOUR ARRIÈRE  fermer',
     ['ph.cam_selfie_hint'] = 'Selfie : la souris cadre, la molette éloigne, Q/E inclinent',
@@ -227,6 +228,20 @@ local T = {
 
     -- ── Portefeuille ──
     ['ph.no_licenses']  = 'Aucun permis enregistré',
+    ['ph.id_card'] = "Identite",
+    ['ph.id_name'] = "Nom",
+    ['ph.id_dob'] = "Date de naissance",
+    ['ph.id_sex'] = "Sexe",
+    ['ph.id_sex_m'] = "Homme",
+    ['ph.id_sex_f'] = "Femme",
+    ['ph.id_nationality'] = "Nationalite",
+    ['ph.id_height'] = "Taille",
+    ['ph.id_number'] = "Numero de citoyen",
+    ['ph.calls_clear'] = "Effacer l historique d appels",
+    ['ph.calls_clear_ask'] = "Supprimer tous les appels de ce telephone ?",
+    ['ph.calls_cleared'] = "Historique d appels efface",
+    ['ph.call_delete_ask'] = "Oublier cet appel ?",
+    ['ph.call_deleted'] = "Appel supprime",
     ['ph.lic_held']     = 'Détenu',
     ['ph.lic_none']     = 'Aucun',
 

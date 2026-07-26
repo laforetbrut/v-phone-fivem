@@ -155,6 +155,9 @@ Config.Compat = {
         vehicles = nil,       -- (citizenid) -> { { plate, model, garage, state }, ... }
         properties = nil,     -- (citizenid) -> { { label, address }, ... }
         licences = nil,       -- (src, citizenid) -> { { type, label }, ... }
+        -- Who the character is, for the Wallet app's identity card. Only needed if your
+        -- framework keeps none of it where the bridge looks.
+        identity = nil,       -- (citizenid, src) -> { first, last, dob, sex, nationality, id }
         -- What a garage key is called and where it is. Only needed if your garage script
         -- keeps neither in a readable config - Quasar's escrowed build, for instance.
         garage = nil,         -- (key) -> { label, x, y }
