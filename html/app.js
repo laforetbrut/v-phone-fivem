@@ -354,6 +354,98 @@ async function renderAuthFace() {
   }
 }
 
+// ── Changing the passcode, and Face ID, after setup ─────────────
+// Both were set once in the first-run assistant and then had no route back. The keypad here
+// is the same `pinPadHTML`/`wirePinPad` the lock screen uses, so a code entered in Settings
+// looks and behaves exactly like a code entered to unlock.
+
+/// Ask for one six-digit code. `onDone(code)` returns true to close the sheet.
+function passcodeAsk(title, hint, onDone) {
+  let value = '';
+  sheet(title,
+    '<div class="authcode insheet">' +
+      '<p class="authmessage" id="pcmsg">' + esc(hint) + '</p>' +
+      pinDotsHTML('pcdots', '') + pinPadHTML() +
+    '</div>',
+    () => {
+      const host = byId('sheet');
+      const epoch = sheetEpoch;
+      wirePinPad(host, () => value, (v) => {
+        value = v;
+        paintPinDots('pcdots', v);
+      }, async (code) => {
+        const done = await onDone(code);
+        if (epoch !== sheetEpoch) return;
+        if (done) { closeSheet(false, epoch); return; }
+        // Wrong, or refused. Clear and let them try again rather than closing the sheet
+        // out from under them with nothing said.
+        value = '';
+        paintPinDots('pcdots', '');
+        host.classList.add('wrong');
+        ui('error');
+        setTimeout(() => host.classList.remove('wrong'), 460);
+      });
+    });
+}
+
+/// Set a code, or change one. An existing code has to be given first.
+function passcodeSheet() {
+  const p = state.prefs || {};
+  const setNew = () => passcodeAsk(L('ph.sec_passcode_new'), L('ph.sec_passcode_new_hint'),
+    (first) => new Promise((resolve) => {
+      // Twice, because a mistyped code that nobody confirms locks the phone for good.
+      setTimeout(() => passcodeAsk(L('ph.sec_passcode_again'), L('ph.sec_passcode_again_hint'),
+        async (second) => {
+          if (second !== first) { toast(L('ph.setup_passcode_mismatch')); return false; }
+          const res = await post('prefs', { passcode: second, securityEnabled: true });
+          if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return false; }
+          state.prefs = res.prefs;
+          RENDER.settings();
+          toast(L('ph.sec_passcode_done'));
+          return true;
+        }), 120);
+      resolve(true);
+    }));
+
+  if (!p.securityEnabled) { setNew(); return; }
+  passcodeAsk(L('ph.sec_passcode_change'), L('ph.sec_passcode_current'), async (current) => {
+    const check = await post('unlock', { passcode: current });
+    if (!check || !check.ok) { toast(L('ph.wrong_passcode')); return false; }
+    setTimeout(setNew, 120);
+    return true;
+  });
+}
+
+/// Re-enrol Face ID: the same scan the assistant runs, from Settings.
+function faceIdSheet() {
+  sheet(L('ph.faceid'),
+    '<div class="authface insheet">' +
+      '<div class="facescan scanning" id="secface">' + svg('faceid') + '<i></i></div>' +
+      '<p id="secfacestatus">' + esc(L('ph.faceid_recognising')) + '</p>' +
+    '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      setTimeout(async () => {
+        if (epoch !== sheetEpoch) return;
+        const res = await post('prefs', { faceId: true });
+        if (epoch !== sheetEpoch) return;
+        const scan = byId('secface');
+        if (!scan) return;
+        scan.classList.remove('scanning');
+        if (res && res.ok) {
+          scan.classList.add('recognised');
+          byId('secfacestatus').textContent = L('ph.setup_faceid_ready');
+          state.prefs = res.prefs;
+          ui('faceid');
+          setTimeout(() => { if (closeSheet(false, epoch)) RENDER.settings(); }, 700);
+        } else {
+          scan.classList.add('failed');
+          byId('secfacestatus').textContent = L('ph.faceid_failed');
+        }
+      }, 1150);
+    });
+}
+
 function unlock(after) {
   if (byId('setup').classList.contains('on')) return;
   if (byId('lock').classList.contains('out')) {
@@ -363,6 +455,15 @@ function unlock(after) {
   if (!(state.prefs || {}).securityEnabled) {
     pendingUnlockAction = after || null;
     completeUnlock();
+    return;
+  }
+  // Already asking. A second call restarts the Face ID scan, which is what a fast series of
+  // taps produced: each `unlock()` bumped `authTicket`, every scan but the last aborted at its
+  // own guard, and the one that survived finished with no animation ever having been drawn -
+  // the phone appeared to open by itself a second later. The action is still carried over, so
+  // a tap that meant "open the camera" is not lost.
+  if (byId('auth').classList.contains('on')) {
+    if (typeof after === 'function') pendingUnlockAction = after;
     return;
   }
   pendingUnlockAction = after || null;
@@ -3478,15 +3579,55 @@ function transferSheet(d, prefillNumber, prefillName) {
   const min = Number(d.min) || 1;
   const max = Number(d.max) || 0;
 
+  // The contact book, as well as the number field.
+  //
+  // A transfer is addressed by phone number, and the people somebody sends money to are almost
+  // always in their contacts already - so reading a number off one screen to type it into
+  // another was the same daily annoyance the message composer had. The field stays for a number
+  // that is not in the book, and picking a contact fills it in rather than replacing the sheet:
+  // the amount somebody has already typed must survive choosing who to send it to.
+  const picks = (state.contacts || []).filter((c) => c && c.number);
   sheet(L('ph.bank_transfer'),
     UI.field('bamount', L('ph.bank_amount'), '', 'type="number" inputmode="numeric" min="' +
       min + '"' + (max > 0 ? ' max="' + max + '"' : '')) +
     UI.field('bnumber', L('ph.bank_to'), prefillNumber || '', 'maxlength="20"') +
+    (picks.length ? UI.button(L('ph.bank_pick_contact'), 'bpick', 'plain') : '') +
     UI.field('bnote', L('ph.bank_note'), '', 'maxlength="40"') +
     '<div class="bankcalc" id="bcalc"></div>' +
     UI.button(L('ph.bank_send'), 'bgo', 'tinted'),
     () => {
       const amount = byId('bamount'), calc = byId('bcalc');
+
+      const pick = byId('bpick');
+      if (pick) pick.addEventListener('click', () => {
+        // Everything typed so far, carried through the picker and back. Losing an amount
+        // because you looked up who to send it to is the bug this feature would otherwise be.
+        const carried = {
+          amount: byId('bamount').value,
+          note: byId('bnote').value,
+        };
+        sheet(L('ph.pick_contact'),
+          UI.group(picks.map((c) => UI.row({
+            avatar: c.name, title: c.name, subtitle: maskNum(c.number),
+            chevron: true, data: { n: c.number },
+          }))),
+          () => {
+            const epoch = sheetEpoch;
+            [...byId('sheet').querySelectorAll('.row[data-n]')].forEach((row) =>
+              row.addEventListener('click', () => {
+                const chosen = picks.find((c) => c.number === row.dataset.n);
+                if (!closeSheet(false, epoch)) return;
+                transferSheet(d, row.dataset.n, chosen && chosen.name);
+                // Put back what was already typed. `transferSheet` has just redrawn the
+                // sheet, so these elements are new ones.
+                if (carried.amount) {
+                  byId('bamount').value = carried.amount;
+                  byId('bamount').dispatchEvent(new Event('input'));
+                }
+                if (carried.note) byId('bnote').value = carried.note;
+              }));
+          });
+      });
       // What this will actually cost, updated as it is typed. A fee discovered after the
       // fact is the kind of thing a player reports as theft.
       const repaint = () => {
@@ -3923,6 +4064,23 @@ RENDER.settings = () => {
         data: { t: 'serverid' } }),
     ], { header: L('ph.calls_privacy'),
          footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }) +
+    // Security. The passcode and Face ID were set once during setup and then unreachable
+    // for the life of the character - a phone whose code cannot be changed is a phone whose
+    // code is shared the first time somebody looks over a shoulder.
+    UI.group([
+      UI.row({ icon: 'lockshut', tint: '#FF3B30', title: L('ph.sec_passcode'),
+        subtitle: p.securityEnabled ? L('ph.sec_passcode_on') : L('ph.sec_passcode_off'),
+        chevron: true, data: { t: 'passcode' } }),
+      ...(p.securityEnabled ? [UI.row({
+        icon: 'faceid', tint: '#30D158', title: L('ph.faceid'),
+        subtitle: L('ph.sec_faceid_hint'),
+        toggle: !!p.faceId, data: { t: 'faceid' },
+      })] : []),
+      ...(p.securityEnabled ? [UI.row({
+        icon: 'lockopen', tint: '#8E8E93', title: L('ph.sec_off'),
+        subtitle: L('ph.sec_off_hint'), chevron: true, data: { t: 'securityoff' },
+      })] : []),
+    ], { header: L('ph.sec_header'), footer: L('ph.sec_footer') }) +
     UI.group([
       UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.previews'),
         toggle: p.previews !== false, data: { t: 'previews' } }),
@@ -4006,6 +4164,20 @@ RENDER.settings = () => {
           if (res && res.ok) { state.prefs = res.prefs; RENDER.settings(); }
         }));
       return;
+    } else if (r.dataset.t === 'passcode') {
+      passcodeSheet();
+      return;
+    } else if (r.dataset.t === 'securityoff') {
+      // Turning it off needs the current code, for the obvious reason: otherwise anybody
+      // holding an unlocked phone can remove the lock on it.
+      passcodeAsk(L('ph.sec_off'), L('ph.sec_off_ask'), async (current) => {
+        const check = await post('unlock', { passcode: current });
+        if (!check || !check.ok) { toast(L('ph.wrong_passcode')); return false; }
+        const res = await post('prefs', { securityEnabled: false, faceId: false });
+        if (res && res.ok) { state.prefs = res.prefs; RENDER.settings(); toast(L('ph.sec_off_done')); }
+        return true;
+      });
+      return;
     } else if (r.dataset.t === 'grid') {
       // The layouts a phone actually offers: fewer, larger icons or more, smaller ones.
       const opts = [[4, 4], [4, 5], [4, 6], [5, 5], [5, 6], [6, 6], [3, 4]];
@@ -4040,6 +4212,17 @@ RENDER.settings = () => {
     } else if (r.dataset.t === 'vibrate') {
       const res2 = await post('prefs', { vibrate: !((state.prefs || {}).vibrate !== false) });
       if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+      return;
+    } else if (r.dataset.t === 'faceid') {
+      // Turning it ON is an enrolment, not a boolean: the same scan the first-run assistant
+      // runs, so the phone behaves the same way whichever screen it was set up from. Turning
+      // it off is just the flag.
+      if ((state.prefs || {}).faceId) {
+        const res2 = await post('prefs', { faceId: false });
+        if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+      } else {
+        faceIdSheet();
+      }
       return;
     } else if (SETTING_TOGGLES[r.dataset.t]) {
       // The plain on/off rows, which all behave identically: flip, save, redraw.

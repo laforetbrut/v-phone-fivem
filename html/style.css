@@ -5808,6 +5808,15 @@ input { font: inherit; }
   padding-bottom: 40px;
 }
 
+/* The same keypad and the same scan, in a sheet rather than over the lock screen.
+   `height: 100%` is right for a full-screen overlay and collapses to nothing inside a sheet,
+   which is the only thing that has to change. */
+.authcode.insheet,
+.authface.insheet { height: auto; padding: 4px 0 8px; }
+.authcode.insheet .pinpad { margin-bottom: 4px; }
+.authface.insheet { gap: 14px; padding: 18px 0 22px; }
+.sheet.wrong { animation: passcode-wrong .44s ease; }
+
 .authface h2,
 .authcode h2 {
   margin: 23px 0 5px;
