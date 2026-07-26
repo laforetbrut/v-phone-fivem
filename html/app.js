@@ -6770,6 +6770,11 @@ function postCard(pst, appId) {
       '<button class="pact prepost' + (pst.reposted ? ' on' : '') + '" type="button" aria-label="' +
         esc(L('ph.soc_repost')) + '">' + svg('repost') + '<span>' + (pst.reposts || 0) + '</span></button>' +
       '<span class="pspacer"></span>' +
+      // Saving sits on the right, away from the three public actions, because it is the one
+      // that does something for the reader rather than for the author. No count beside it:
+      // how many people bookmarked a post is nobody's business, including the author's.
+      '<button class="pact psave' + (pst.saved ? ' on' : '') + '" type="button" aria-label="' +
+        esc(L('ph.soc_save')) + '">' + svg('star') + '</button>' +
       (pst.mine
         ? '<button class="pact pdel" type="button" aria-label="' + esc(L('ph.delete')) + '">' + svg('trash') + '</button>'
         : '') +
@@ -6781,6 +6786,16 @@ function postCard(pst, appId) {
 
 // Every card in a list answers the same way, so the wiring is written once. `reload` is
 // what a destructive action calls once the server has agreed.
+// The heart a double tap throws over the photograph. Purely feedback: it says the tap was
+// heard, on the picture rather than in a corner where a thumb is covering the count.
+function popHeart(card) {
+  const el = document.createElement('span');
+  el.className = 'pheart';
+  el.innerHTML = svg('heart');
+  card.appendChild(el);
+  setTimeout(() => el.remove(), 700);
+}
+
 function wirePosts(appId, reload) {
   rows('.post .plike', (b) => b.addEventListener('click', async () => {
     const id = Number(b.closest('.post').dataset.id);
@@ -6800,6 +6815,39 @@ function wirePosts(appId, reload) {
       ui(r.reposted ? 'toggleon' : 'toggleoff');
     } else toast(L('ph.err_' + ((r && r.error) || 'x')));
   }));
+  rows('.post .psave', (b) => b.addEventListener('click', async () => {
+    const id = Number(b.closest('.post').dataset.id);
+    const r = await post('social', { op: 'save', id, app: appId });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    b.classList.toggle('on', r.saved);
+    ui(r.saved ? 'toggleon' : 'toggleoff');
+    toast(L(r.saved ? 'ph.soc_saved_added' : 'ph.soc_saved_removed'));
+  }));
+
+  // Double-tap the photograph to like it - the gesture everybody arrives already knowing.
+  //
+  // It only ever LIKES. Instagram's double tap does not unlike, and for good reason: the
+  // second tap of a slightly slow double tap would otherwise undo the first, so the gesture
+  // would work or not depending on how fast somebody's fingers are.
+  rows('.post .pimg', (img) => {
+    let last = 0;
+    img.addEventListener('click', async () => {
+      const now = Date.now();
+      const quick = now - last < 320;
+      last = now;
+      if (!quick) return;
+      const card = img.closest('.post');
+      const heart = card.querySelector('.plike');
+      if (!heart || heart.classList.contains('on')) { popHeart(card); return; }
+      const r = await post('social', { op: 'like', id: Number(card.dataset.id), app: appId });
+      if (!r || !r.ok) return;
+      heart.classList.toggle('on', r.liked);
+      heart.querySelector('span').textContent = r.likes;
+      ui('toggleon');
+      popHeart(card);
+    });
+  });
+
   rows('.post .pcomment', (b) => b.addEventListener('click', () =>
     commentSheet(appId, Number(b.closest('.post').dataset.id), b.querySelector('span'))));
   rows('.post .phead', (b) => b.addEventListener('click', () =>
@@ -6987,9 +7035,18 @@ function storyViewer(appId, group) {
             svg('xmark') + '</button></div>' +
         '<div class="storyphoto" style="' + inlineBackground(item.image) + '"></div>' +
         (item.body ? '<div class="storycap">' + esc(item.body) + '</div>' : '') +
+        // Only on your own story. Who watched somebody else's is between them and the author,
+        // and `group.mine` is the server's answer rather than a comparison done here.
+        (group.mine ? '<button class="storyseen" type="button">' + svg('focus') +
+          '<span>' + esc(L('ph.soc_seen_by')) + '</span></button>' : '') +
       '</div>';
     post('social', { op: 'storySeen', id: item.id });
     host.querySelector('.storyclose').addEventListener('click', (e) => { e.stopPropagation(); close(); });
+    const seenBtn = host.querySelector('.storyseen');
+    if (seenBtn) seenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      storyViewers(appId, item.id);
+    });
     host.querySelector('.storyphoto').addEventListener('click', () => {
       index += 1;
       if (index >= group.items.length) close(); else paint();
@@ -7001,6 +7058,22 @@ function storyViewer(appId, group) {
   };
   host.classList.add('on', 'storymode');
   paint();
+}
+
+// Who watched one story. The seen table has existed since stories shipped and only ever drove
+// the unseen ring; this reads it the other way, which is what the author wants to know.
+async function storyViewers(appId, id) {
+  const r = await post('social', { op: 'storyViewers', id, app: appId });
+  if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+  const list = r.viewers || [];
+  sheet(L('ph.soc_seen_by') + ' (' + list.length + ')',
+    list.length
+      ? UI.group(list.map((v) => UI.row({
+          avatar: v.displayname || v.handle,
+          title: (v.displayname || v.handle) + (v.verified ? ' ✓' : ''),
+          subtitle: '@' + v.handle,
+        })))
+      : UI.empty(L('ph.soc_no_viewers'), 'focus'));
 }
 
 // ── Search ─────────────────────────────────────────────────────
@@ -7110,7 +7183,8 @@ async function socialProfile(appId, handle) {
         '<span><b>' + (c.followers || 0) + '</b>' + esc(L('ph.soc_followers')) + '</span>' +
         '<span><b>' + (c.following || 0) + '</b>' + esc(L('ph.soc_following_count')) + '</span>' +
       '</div>' +
-      (r.me ? '<button class="socedit" id="socedit" type="button">' + esc(L('ph.soc_edit')) + '</button>'
+      (r.me ? '<button class="socedit" id="socedit" type="button">' + esc(L('ph.soc_edit')) + '</button>' +
+              '<button class="socedit" id="socsaved" type="button">' + esc(L('ph.soc_saved')) + '</button>'
             : '<div class="socprofacts">' +
                 '<button class="socbig' + (r.followed ? ' on' : '') + '" id="socfollow" type="button">' +
                   esc(L(r.followed ? 'ph.soc_unfollow' : 'ph.soc_follow')) + '</button>' +
@@ -7127,6 +7201,7 @@ async function socialProfile(appId, handle) {
   pushAnim();
 
   if (r.me) byId('socedit').addEventListener('click', () => socialEdit(appId, a));
+  if (r.me) byId('socsaved').addEventListener('click', () => socialSaved(appId));
   else {
     byId('socfollow').addEventListener('click', () => socialFollow(appId, a.handle, byId('socfollow')));
     byId('socdm').addEventListener('click', () => socialDmThread(appId, a.handle));
@@ -7239,6 +7314,9 @@ function socialRender(appId) {
        { id: 'matches', icon: 'heart', label: L('ph.hush_matches') },
        { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }]
     : [{ id: 'feed', icon: 'home', label: L('ph.soc_feed') },
+       // Explore is Snapmatic's: a grid of photographs makes no sense on a text timeline.
+       ...(appId === 'snap'
+         ? [{ id: 'explore', icon: 'sparkles', label: L('ph.soc_explore') }] : []),
        { id: 'search', icon: 'search', label: L('ph.soc_search') },
        // `badge` is what the tab bar actually renders for this: a dot on the icon. It draws
        // the icon and the label is only an aria-label, so a count put in the text would have
@@ -7267,11 +7345,72 @@ function socialRender(appId) {
     if (tab === 'me') return hushProfile();
     return hushSwipe();
   }
+  if (tab === 'explore') return socialExplore(appId);
+  if (tab === 'saved') return socialSaved(appId);
   if (tab === 'notifs') return socialNotifs(appId);
   if (tab === 'search') return socialSearchView(appId);
   if (tab === 'dm') return socialDmList(appId);
   if (tab === 'me') return socialProfile(appId, SOC.handle[appId]);
   return socialFeed(appId);
+}
+
+// ══ Explore, and what you kept ═════════════════════════════════
+// Both are grids of photographs rather than a timeline: the point of either is to scan a lot
+// of pictures quickly and open the one you want.
+function socGrid(appId, list, emptyKey, reload) {
+  if (!list.length) { body(UI.empty(L(emptyKey), APP_ICON[appId])); return; }
+  body('<div class="shots socgrid">' + list.map((pst, i) =>
+    '<div class="shot" data-gi="' + i + '" style="' +
+      inlineBackground(pst.image) + '"></div>').join('') + '</div>');
+  // A tile opens the post on its own, where the caption, the likes and the comments are.
+  rows('.shot[data-gi]', (el) => el.addEventListener('click', () =>
+    socPostSheet(appId, list[Number(el.dataset.gi)], reload)));
+}
+
+// One post, full size, with everything the grid left out.
+function socPostSheet(appId, pst, reload) {
+  if (!pst) return;
+  sheet('@' + (pst.handle || ''), '<div id="socone">' + postCard(pst, appId) + '</div>', () => {
+    // The card's own handlers, so a like or a save from here behaves as it does in the feed.
+    qrows('sheet', '.post .plike', (b) => b.addEventListener('click', async () => {
+      const r = await post('social', { op: 'like', id: pst.id, app: appId });
+      if (!r || !r.ok) return;
+      b.classList.toggle('on', r.liked);
+      b.querySelector('span').textContent = r.likes;
+      ui(r.liked ? 'toggleon' : 'toggleoff');
+    }));
+    qrows('sheet', '.post .psave', (b) => b.addEventListener('click', async () => {
+      const r = await post('social', { op: 'save', id: pst.id, app: appId });
+      if (!r || !r.ok) return;
+      b.classList.toggle('on', r.saved);
+      toast(L(r.saved ? 'ph.soc_saved_added' : 'ph.soc_saved_removed'));
+    }));
+    qrows('sheet', '.post .pcomment', (b) => b.addEventListener('click', () =>
+      commentSheet(appId, pst.id, b.querySelector('span'))));
+    qrows('sheet', '.post .phead', (b) => b.addEventListener('click', () => {
+      closeSheet(true);
+      socialProfile(appId, b.dataset.who);
+    }));
+  });
+}
+
+async function socialExplore(appId) {
+  const epoch = viewEpoch;
+  loading();
+  const r = await post('social', { op: 'explore', app: appId });
+  if (!socialActive(appId, epoch)) return;
+  if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), APP_ICON[appId])); return; }
+  socGrid(appId, r.posts || [], 'ph.soc_no_explore', () => socialExplore(appId));
+}
+
+async function socialSaved(appId) {
+  const epoch = viewEpoch;
+  setNav(L('ph.soc_saved'), L('app.' + appId), null, () => socialRender(appId));
+  loading();
+  const r = await post('social', { op: 'saved', app: appId });
+  if (!socialActive(appId, epoch)) return;
+  if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), 'star')); return; }
+  socGrid(appId, r.posts || [], 'ph.soc_no_saved', () => socialSaved(appId));
 }
 
 // ══ Notifications ══════════════════════════════════════════════

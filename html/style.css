@@ -9265,6 +9265,38 @@ body.inframe.dark .uisearch {
 .shotzoom[data-nozoom="1"] img { cursor: default; }
 /* What a transfer will actually cost, under the amount field. Tabular figures so the
    number does not jitter while it is being typed. */
+/* ── Snapmatic ──────────────────────────────────────────────────
+   Saving a post. It sits with the other card actions but reads as the reader's own: filled
+   when kept, outlined when not, and never carrying a count. */
+.post .psave.on { color: var(--ph-accent, #0a84ff); }
+.post .psave.on svg { fill: currentColor; }
+
+/* The heart a double tap throws over the photograph. It is feedback, not a control: no
+   pointer events, and it removes itself. */
+.post { position: relative; }
+.pheart { position: absolute; inset: 0; display: grid; place-items: center;
+  pointer-events: none; animation: ph-heart .7s ease-out forwards; }
+.pheart svg { width: 96px; height: 96px; color: #fff; fill: #fff;
+  filter: drop-shadow(0 2px 12px rgba(0, 0, 0, .45)); }
+@keyframes ph-heart {
+  0%   { opacity: 0; transform: scale(.6); }
+  22%  { opacity: 1; transform: scale(1.12); }
+  40%  { transform: scale(1); }
+  100% { opacity: 0; transform: scale(1) translateY(-18px); }
+}
+
+/* Explore and Saved are grids of photographs. Same tiles as the gallery, so a player who has
+   used one already knows the other. */
+.socgrid { margin-top: 2px; }
+
+/* "Seen by", along the bottom of your own story. */
+.storyseen { position: absolute; left: 14px; bottom: 16px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 12px; border: 0; border-radius: 99px; cursor: pointer;
+  background: rgba(0, 0, 0, .42); color: #fff; font: inherit; font-size: 13px; font-weight: 600; }
+.storyseen svg { width: 15px; height: 15px; }
+.storyseen:active { opacity: .7; }
+
 /* A hashtag and a mention inside a post body. Buttons rather than links because they act on
    the phone rather than navigating anywhere, and they inherit the body's own type so a
    sentence containing one does not change line height. */

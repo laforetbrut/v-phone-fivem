@@ -453,6 +453,9 @@ local POST_COLUMNS = [[
     (SELECT COUNT(*) FROM vphone_social_reposts r WHERE r.post_id = s.id) AS reposts,
     EXISTS(SELECT 1 FROM vphone_social_likes l2 WHERE l2.post_id = s.id AND l2.citizenid = ?) AS liked,
     EXISTS(SELECT 1 FROM vphone_social_reposts r2 WHERE r2.post_id = s.id AND r2.citizenid = ?) AS reposted,
+    -- Whether THIS reader saved it. There is deliberately no count beside it: how many people
+    -- bookmarked something is not information a save is supposed to leak.
+    EXISTS(SELECT 1 FROM vphone_social_saves sv WHERE sv.post_id = s.id AND sv.citizenid = ?) AS saved,
     EXISTS(SELECT 1 FROM vphone_social_follows f WHERE f.app = a.app AND f.from_cid = ? AND f.to_cid = s.citizenid) AS following,
     (s.citizenid = ?) AS mine
 ]]
@@ -587,6 +590,7 @@ local function cleanPosts(rows)
         r.reposts = num(r.reposts, 0)
         r.liked = num(r.liked, 0) == 1
         r.reposted = num(r.reposted, 0) == 1
+        r.saved = num(r.saved, 0) == 1
         r.following = num(r.following, 0) == 1
         r.verified = num(r.verified, 0) == 1
         r.mine = num(r.mine, 0) == 1
@@ -619,7 +623,10 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
                    AND f.from_cid = ? AND f.to_cid = s.citizenid))]]
         or ''
 
-    local args = { p.citizenid, p.citizenid, p.citizenid, p.citizenid, app }
+    -- Five, not four: POST_COLUMNS gained `saved`. Miscounting these silently shifts every
+    -- later placeholder along by one, which is the kind of bug that answers with somebody
+    -- else's rows rather than with an error.
+    local args = { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid, app }
     if photo then args[#args + 1] = 'photo'; args[#args + 1] = 'video'
     else args[#args + 1] = 'text' end
     if following then
@@ -894,7 +901,9 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
         WHERE s.citizenid = ? AND s.kind = ?
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS), {
-        p.citizenid, p.citizenid, p.citizenid, p.citizenid,
+        -- Five: POST_COLUMNS binds the reader's own id once per EXISTS - liked, reposted,
+        -- saved, following - plus once for `mine`.
+        p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
         app, cid, kind, socFeedSize(),
     }) or {}
 
@@ -1087,6 +1096,7 @@ V.Callback('v-phone:soc:delete', function(src, resolve, data)
     MySQL.query.await('DELETE FROM vphone_social_reposts WHERE post_id = ?', { id })
     -- And its tags, and every notification that points at it. A notification whose post is
     -- gone is a tap that leads nowhere.
+    MySQL.query.await('DELETE FROM vphone_social_saves WHERE post_id = ?', { id })
     MySQL.query.await('DELETE FROM vphone_social_tags WHERE post_id = ?', { id })
     MySQL.query.await('DELETE FROM vphone_social_notifs WHERE post_id = ?', { id })
     resolve({ ok = true })
@@ -1177,7 +1187,8 @@ V.Callback('v-phone:soc:tag', function(src, resolve, data)
         WHERE t.tag = ?
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS),
-        { p.citizenid, p.citizenid, p.citizenid, p.citizenid, app, app, tag, socFeedSize() }) or {}
+        { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
+          app, app, tag, socFeedSize() }) or {}
 
     resolve({ ok = true, tag = tag, posts = cleanPosts(rows) })
 end)
@@ -1201,6 +1212,124 @@ V.Callback('v-phone:soc:trending', function(src, resolve, data)
         out[#out + 1] = { tag = tostring(r.tag), posts = math.floor(num(r.posts, 0)) }
     end
     resolve({ ok = true, trending = out, hours = hours })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Saving a post
+-- ══════════════════════════════════════════════════════════════
+--- Save or unsave. A toggle, keyed on the pair, so a double tap cannot count twice.
+V.Callback('v-phone:soc:save', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+    local id = math.floor(num(data and data.id, 0))
+    if id <= 0 then resolve(false) return end
+
+    local exists = MySQL.scalar.await(
+        'SELECT 1 FROM vphone_social_saves WHERE post_id = ? AND citizenid = ?', { id, p.citizenid })
+    if exists then
+        MySQL.query.await('DELETE FROM vphone_social_saves WHERE post_id = ? AND citizenid = ?',
+            { id, p.citizenid })
+    else
+        MySQL.insert.await('INSERT IGNORE INTO vphone_social_saves (post_id, citizenid) VALUES (?,?)',
+            { id, p.citizenid })
+    end
+    -- Nobody is notified. A save is private, and telling the author would make it public.
+    resolve({ ok = true, saved = not exists })
+end)
+
+--- Everything this reader saved, newest save first - not newest post. Somebody looking at
+--- their saves is looking for the thing they kept, and they remember when they kept it.
+V.Callback('v-phone:soc:saved', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+
+    local rows = MySQL.query.await(([[
+        SELECT %s
+        FROM vphone_social_saves sv
+        JOIN vphone_social_posts s ON s.id = sv.post_id
+        JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
+        WHERE sv.citizenid = ?
+        ORDER BY sv.at DESC, sv.post_id DESC LIMIT ?
+    ]]):format(POST_COLUMNS),
+        { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
+          app, p.citizenid, socFeedSize() }) or {}
+
+    resolve({ ok = true, posts = cleanPosts(rows) })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Explore
+-- ══════════════════════════════════════════════════════════════
+--- Photographs from accounts this reader does not already follow.
+---
+--- The point of an explore grid is to show something the feed cannot, so it deliberately
+--- EXCLUDES the people already followed and the reader themselves. Ordered by likes over a
+--- recent window rather than all time: a grid that never changes is a hall of fame, not a
+--- place to discover anybody.
+V.Callback('v-phone:soc:explore', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+    local hours = math.max(1, math.min(720, math.floor(num(SOC.exploreHours, 168))))
+
+    local rows = MySQL.query.await(([[
+        SELECT %s
+        FROM vphone_social_posts s
+        JOIN vphone_social_accounts a ON a.citizenid = s.citizenid AND a.app = ?
+        WHERE s.kind IN ('photo', 'video')
+          AND s.citizenid <> ?
+          AND NOT EXISTS(SELECT 1 FROM vphone_social_follows f
+                         WHERE f.app = ? AND f.from_cid = ? AND f.to_cid = s.citizenid)
+          AND s.at >= (NOW() - INTERVAL ? HOUR)
+        ORDER BY likes DESC, s.id DESC LIMIT ?
+    ]]):format(POST_COLUMNS),
+        { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
+          app, p.citizenid, app, p.citizenid, hours, socFeedSize() }) or {}
+
+    resolve({ ok = true, posts = cleanPosts(rows) })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Who watched a story
+-- ══════════════════════════════════════════════════════════════
+--- The viewers of one story, for its author and nobody else.
+---
+--- The seen table has existed since stories shipped and only ever drove the unseen ring. This
+--- reads the other direction, which is what the author actually wants to know.
+V.Callback('v-phone:soc:storyViewers', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    local id = math.floor(num(data and data.id, 0))
+    if id <= 0 then resolve(false) return end
+
+    -- Only the author. Who watched somebody else's story is their business, and asking for a
+    -- story id that is not yours must answer nothing rather than a list.
+    local owner = MySQL.scalar.await(
+        'SELECT citizenid FROM vphone_social_stories WHERE id = ? AND app = ?', { id, app })
+    if not owner then resolve({ error = 'gone' }) return end
+    if owner ~= p.citizenid then resolve({ error = 'notyours' }) return end
+
+    local rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+        FROM vphone_social_story_seen v
+        JOIN vphone_social_accounts a ON a.citizenid = v.citizenid AND a.app = ?
+        WHERE v.story_id = ?
+        ORDER BY a.handle LIMIT 100]], { app, id }) or {}
+
+    local out = {}
+    for _, r in ipairs(rows) do
+        out[#out + 1] = {
+            handle = tostring(r.handle), displayname = r.displayname and tostring(r.displayname) or nil,
+            avatar = r.avatar and tostring(r.avatar) or nil,
+            verified = num(r.verified, 0) == 1,
+        }
+    end
+    resolve({ ok = true, viewers = out })
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -1611,6 +1740,16 @@ function SocialBoot(core)
         `body`      VARCHAR(280) NOT NULL DEFAULT '',
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), KEY `post_idx` (`post_id`, `id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- Saved posts. The one thing on a social app that is nobody else's business: a like is
+    -- public, a repost is public, a save is a private bookmark and its count is never shown.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_saves` (
+        `post_id`   INT UNSIGNED NOT NULL,
+        `citizenid` VARCHAR(16) NOT NULL,
+        `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`post_id`, `citizenid`),
+        KEY `mine` (`citizenid`, `post_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_reposts` (

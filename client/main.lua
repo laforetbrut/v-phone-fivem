@@ -971,6 +971,8 @@ local SOCIAL_OPS = {
     comments = true, comment = true, uncomment = true, repost = true, delete = true,
     -- What happened to you, what people are talking about, and one tag's posts.
     notifs = true, notifCount = true, notifSeen = true, tag = true, trending = true,
+    -- Saved posts, the explore grid, and who watched a story.
+    save = true, saved = true, explore = true, storyViewers = true,
     -- Stories, and the direct messages between two handles.
     stories = true, story = true, storySeen = true,
     dmList = true, dmThread = true, dmSend = true,
