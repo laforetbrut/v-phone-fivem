@@ -1061,8 +1061,20 @@ function folderTile(it, i) {
 function openFolder(i) {
   const it = layoutItems()[i];
   if (!it || it.t !== 'folder') return;
-  byId('foldername').textContent = it.name;
-  byId('folderapps').innerHTML = it.apps.map((id, k) => {
+
+  // Every element read here is checked for, and the folder still opens without any one of
+  // them. Not defensiveness for its own sake: a player whose page is a build behind - the
+  // markup is served from disk and a client that loaded it earlier keeps what it loaded -
+  // hit `byId('foldername').textContent` on a null and the exception took the whole handler
+  // with it, so no folder on that phone would open at all. One missing label is a cosmetic
+  // problem; a folder that cannot be opened is the report that arrives.
+  const host = byId('folderview');
+  if (!host) { toast(L('ph.folder_gone')); return; }
+  const nameEl = byId('foldername');
+  if (nameEl) nameEl.textContent = it.name;
+  const appsEl = byId('folderapps');
+  if (!appsEl) { toast(L('ph.folder_gone')); return; }
+  appsEl.innerHTML = it.apps.map((id, k) => {
     const a = appById(id);
     if (!a) return '';
     return editing
@@ -1071,15 +1083,15 @@ function openFolder(i) {
           + '</span><span class="wrap">')
       : tileHTML(a, k);
   }).join('');
-  byId('folderview').classList.toggle('arranging', editing);
-  byId('folderview').classList.add('on');
+  host.classList.toggle('arranging', editing);
+  host.classList.add('on');
   ui('folder');
 
   // The way out, as a button rather than a gesture.
   //
   // `onclick` rather than `addEventListener`: openFolder runs every time a folder is opened and
   // listeners would stack, so the same folder would raise the sheet several times over.
-  const leave = () => byId('folderview').classList.remove('on', 'arranging');
+  const leave = () => host.classList.remove('on', 'arranging');
   const manage = byId('foldermanage');
   if (manage) {
     manage.textContent = L('ph.folder_manage');
@@ -1116,23 +1128,23 @@ function openFolder(i) {
       // Re-open only while there is still a folder here to look at.
       const now = layoutItems()[i];
       if (editing && now && now.t === 'folder') openFolder(i);
-      else byId('folderview').classList.remove('on');
+      else host.classList.remove('on');
     });
     ui('toggleoff');
   };
 
-  [...byId('folderapps').querySelectorAll('.unfolder')].forEach((x) =>
+  [...appsEl.querySelectorAll('.unfolder')].forEach((x) =>
     x.addEventListener('click', (e) => {
       // The badge sits on the tile, so its click must not also open the app.
       e.stopPropagation();
       takeOut(x.dataset.out);
     }));
 
-  [...byId('folderapps').querySelectorAll('.tile')].forEach((t) =>
+  [...appsEl.querySelectorAll('.tile')].forEach((t) =>
     t.addEventListener('click', () => {
       // In arrange mode a tap is not "open": the whole screen is being rearranged.
       if (editing) return;
-      byId('folderview').classList.remove('on');
+      host.classList.remove('on');
       const a = appById(t.dataset.app);
       if (a) enterApp(a, t);
     }));
@@ -6073,7 +6085,7 @@ function openCC() {
 }
 
 byId('shmanage').addEventListener('click', () => { shadeManage = !shadeManage; renderShade(); });
-byId('shclear').addEventListener('click', () => { notifs = []; paintNotifs(); renderShade(); });
+byId('shclear').addEventListener('click', () => clearAllNotifications());
 [
   ['shadeclose', 'shade'],
   ['ccclose', 'cc'],
@@ -8615,8 +8627,14 @@ async function socialProfile(appId, handle) {
     // would cost the header its shape for nothing.
     (a.cover ? '<div class="soccover" style="' + inlineBackground(a.cover) + '"></div>' : '') +
     '<div class="socprof' + (a.cover ? ' hascover' : '') + '">' + socAvatar(a, 'socbigav') +
-      '<div class="socname">' + esc(a.displayname || a.handle) + socVerified(a) + '</div>' +
+      '<div class="socname' + (a.verified ? ' isverified' : '') + '">' +
+        esc(a.displayname || a.handle) + socVerified(a) + '</div>' +
       '<div class="sochandle">@' + esc(a.handle) + '</div>' +
+      // Said in words on the profile, not only as a badge. A blue tick is a convention the
+      // reader has to already know; the line under it is what makes an account visibly
+      // official to somebody who has never seen one before.
+      (a.verified ? '<div class="socverifline">' + svg('check') + '<span>' +
+        esc(L('ph.soc_verified')) + '</span></div>' : '') +
       (a.bio ? '<div class="socbio">' + esc(a.bio) + '</div>' : '') +
       '<div class="soccounts">' +
         '<span><b>' + (c.posts || 0) + '</b>' + esc(L('ph.soc_posts')) + '</span>' +
@@ -8660,14 +8678,21 @@ function socialEdit(appId, account) {
   sheet(L('ph.soc_edit'),
     UI.field('socdn', L('ph.soc_displayname'), account.displayname || '', 'maxlength="40"') +
     UI.field('socav', L('ph.soc_avatar'), account.avatar || '', 'maxlength="300"') +
+    UI.button(L('ph.soc_pick_avatar'), 'socavpick', 'plain') +
     UI.field('soccov', L('ph.soc_cover'), account.cover || '', 'maxlength="300"') +
-    UI.button(L('ph.pick_photo'), 'soccovpick', 'plain') +
+    UI.button(L('ph.soc_pick_cover'), 'soccovpick', 'plain') +
     UI.field('socbio', L('ph.soc_bio'), account.bio || '', 'maxlength="160"') +
     UI.button(L('ph.save'), 'socsave'),
     () => {
       const epoch = sheetEpoch;
-      // A cover is usually a photo the player already took, so the gallery is offered rather
-      // than making them find a URL for something that is on the phone already.
+      // One picker per picture, each named for the one it fills.
+      //
+      // There was a single button labelled "choose a photo" between the two fields, and it
+      // filled the COVER - so the obvious way to set a profile picture set the banner instead,
+      // and the only route to an avatar was pasting a URL. Two fields need two buttons, and a
+      // button that fills one of two fields has to say which.
+      byId('socavpick').addEventListener('click', () =>
+        pickPhoto((url) => { byId('socav').value = url; }));
       byId('soccovpick').addEventListener('click', () =>
         pickPhoto((url) => { byId('soccov').value = url; }));
       byId('socsave').addEventListener('click', async () => {
@@ -8693,7 +8718,7 @@ async function socialDmList(appId) {
   body(threads.length ? UI.group(threads.map((t) =>
     '<button class="row lead socdmrow" data-who="' + esc(t.handle) + '" type="button">' +
       socAvatar(t, 'socav') +
-      '<span class="rmain"><span class="rt">' + esc(t.displayname || t.handle) + '</span>' +
+      '<span class="rmain"><span class="rt">' + esc(t.displayname || t.handle) + socVerified(t) + '</span>' +
       '<span class="rs">' + esc((t.mine ? L('ph.you') + ' ' : '') + (t.body || L('ph.photo'))) + '</span></span>' +
       (t.unread ? '<span class="socunread">' + t.unread + '</span>' : '') +
     '</button>').join('')) : UI.empty(L('ph.soc_no_dm'), 'messages'));
@@ -9983,6 +10008,24 @@ function relTime(t) {
 }
 
 // The lock screen shows the most recent handful; the shade shows everything, grouped.
+/// Clear the stack, and the numbers on the icons with it.
+///
+/// The notification centre is a list this page holds; a badge is a count the server keeps.
+/// Two different things, which look like one thing to somebody holding the phone - so
+/// clearing the stack used to leave "1" sitting on Messages with nothing left to open. The
+/// player saying they have seen it is what marks it seen.
+async function clearAllNotifications() {
+  notifs = [];
+  paintNotifs();
+  if (byId('shade').classList.contains('on')) renderShade();
+  const r = await post('seenAll', {});
+  if (!r || !r.ok) return;
+  // The counts come back with the refresh; the home screen is redrawn from them.
+  await refresh();
+  renderHome();
+  if (byId('shade').classList.contains('on')) renderShade();
+}
+
 function paintNotifs() {
   const host = byId('locknotifs');
   const shown = notifs.slice(0, 4);
@@ -10008,9 +10051,7 @@ function paintNotifs() {
   const all = byId('lockclear');
   if (all) all.addEventListener('click', (e) => {
     e.stopPropagation();
-    notifs = [];
-    paintNotifs();
-    if (byId('shade').classList.contains('on')) renderShade();
+    clearAllNotifications();
   });
   // Tapping the card itself still does what the notification is for.
   [...host.querySelectorAll('.lnotif')].forEach((c) => c.addEventListener('click', (e) => {

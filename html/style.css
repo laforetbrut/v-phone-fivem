@@ -2227,6 +2227,28 @@ input { font: inherit; }
   min-height: 38px;
 }
 
+/* The collapsed title, and the back button it used to sit on top of.
+   `.navtitle-sm` is absolutely positioned across the whole bar and centred, which is right -
+   a title has to be centred on the BAR, not on the space left over. But nothing kept it clear
+   of the back label, so "James Thompson" printed straight through "< Messages".
+   Two rules, the way a phone does it: the back label gives up its width first and truncates,
+   and the title is inset far enough that it can never reach either side. */
+#navbacktxt {
+  display: inline-block;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.navtitle-sm {
+  padding: 0 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .navback,
 .navact {
   min-height: var(--ph-touch);
@@ -7971,20 +7993,41 @@ body.inframe.dark .uisearch {
   text-align: left;
 }
 
+/* The verified badge. Bigger than it was, and lit: at 14px flat it read as a bullet point
+   next to the name rather than as a mark, which is the opposite of what a badge is for. */
 .pverif {
   display: inline-flex;
-  width: 14px;
-  height: 14px;
-  margin-left: 3px;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   color: #fff;
-  vertical-align: -2px;
-  background: #0a84ff;
+  vertical-align: -3px;
+  background: linear-gradient(180deg, #3aa0ff, #0a72e8);
+  box-shadow: 0 0 0 1.5px rgba(10, 132, 255, .18), 0 1px 4px rgba(10, 132, 255, .38);
 }
 
-.pverif svg { width: 9px; height: 9px; }
+.pverif svg { width: 10px; height: 10px; stroke-width: 3; }
+
+/* And on the profile, where there is room to say it rather than only mark it. */
+.socname.isverified { display: flex; align-items: center; justify-content: center; gap: 2px; }
+
+.socverifline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  color: #0a72e8;
+  font-size: 11.5px;
+  font-weight: 650;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, .12);
+}
+.socverifline svg { width: 11px; height: 11px; stroke-width: 3; }
+.screen.dark .socverifline { color: #6db8ff; background: rgba(10, 132, 255, .18); }
 
 .pfoot {
   display: flex;

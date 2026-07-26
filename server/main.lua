@@ -41,6 +41,21 @@ local prefsOf
 
 local function num(v, d) return tonumber(v) or d or 0 end
 
+--- A stored TINYINT(1), as a boolean.
+---
+--- **oxmysql hands a TINYINT(1) column back as a Lua boolean, not as 0 or 1.** Its type cast
+--- reads `case "TINY": return field.length === 1 ? field.string() === "1" : next()`. So
+--- `tonumber(row.seen)` is nil for both states, and `tonumber(row.seen) == 0` - the way the
+--- Cipher unread count was written - was false for a message nobody had read.
+---
+--- All three shapes are accepted: a computed column comes back as a number, and so does a
+--- schema an older build created wider than TINYINT(1).
+local function truthy(v)
+    if v == nil then return false end
+    if type(v) == 'boolean' then return v end
+    return (tonumber(v) or 0) ~= 0
+end
+
 local function L(src, k)
     local p = Core and Core.GetPlayer(src)
     local lang = (p and p.lang) or 'fr'
@@ -1906,7 +1921,7 @@ V.Callback('v-phone:cipher', function(src, resolve, data)
                     conversationsByCid[other] = conv
                     order[#order + 1] = other
                 end
-                if row.to_cid == p.citizenid and tonumber(row.seen) == 0 then
+                if row.to_cid == p.citizenid and not truthy(row.seen) then
                     conv.unread = conv.unread + 1
                 end
             end
@@ -3517,6 +3532,30 @@ end)
 -- A missed call is an invitation to leave a message. It is written rather than recorded,
 -- which is the only honest way to do it here: nothing on the server can hold audio, and a
 -- note the other person can actually read beats a fake tape.
+--- Everything the home-screen badges count, marked read at once.
+---
+--- Clearing the notification centre used to leave the numbers on the icons: the centre is a
+--- list the page holds, and a badge is a COUNT the server keeps - two different things that
+--- look like one thing to somebody holding the phone. Clearing the stack is the player saying
+--- they have seen it, so this is what that means.
+---
+--- Only the three the tiles actually draw. Mail's unread state is per message and shown in the
+--- list rather than on the icon, and marking a whole mailbox read from a notification sweep
+--- would throw away more than the player asked to clear.
+V.Callback('v-phone:seenAll', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    MySQL.update.await('UPDATE vphone_messages SET seen = 1 WHERE to_cid = ? AND seen = 0',
+        { p.citizenid })
+    MySQL.update.await('UPDATE vphone_voicemail SET seen = 1 WHERE citizenid = ? AND seen = 0',
+        { p.citizenid })
+    MySQL.update.await('UPDATE vphone_cipher_messages SET seen = 1 WHERE to_cid = ? AND seen = 0',
+        { p.citizenid })
+
+    resolve({ ok = true })
+end)
+
 V.Callback('v-phone:voicemail', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end

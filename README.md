@@ -43,8 +43,10 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **Grid sizes** from 3x3 to 6x7, chosen by the player in Settings.
 - **Sound**: sixteen audio files ship with the phone, five ringtones, four alerts, five interface sounds and the payphone's two struck-metal key clicks. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
-- **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning.
-- **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
+- **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning. Charging in a vehicle and in a property are each a switch.
+- **Paid charging points**: give a charger a price and the phone asks before it charges. One payment buys the whole stop - charge as long as you like, and pay again only after leaving the zone. The money goes to a job or society account you name, per charger. See [Paid charging points](#paid-charging-points).
+- **Security you can change**: the passcode and Face ID are set during first run and can be changed from Settings afterwards - both asking for the current code first.
+- **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number, on a lab-bench interface with a case reference and evidence rows. Opened by a key press, and by a target zone when a target script is running. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
 - **Payphones**: the call boxes already standing in Los Santos, made to work - no coordinate list, because the client finds the props themselves. A booth **places calls and can never receive them**, its number is derived from where it stands so it is the same every restart, and calls are paid for with a prepaid card item fed into the box. Emergency numbers are free, and walking away hangs up.
 - **`/refreshphone`**: a get-out-of-jail command for a phone stuck to the hand or a frozen animation.
 - **Media hosting**: photos and short video clips captured in game and uploaded to a CDN (Fivemanage), with a per-file auto-delete clock. Clips post to Bleeter and Snapmatic.
@@ -427,11 +429,70 @@ people's address books to follow a staff action would be worse than the problem.
 character's own contacts, messages and call log are untouched.
 
 
+## Paid charging points
+
+A charger with a `price` asks before it charges. The phone shows the offer, the player accepts
+or refuses, and **one payment buys the whole stop**: they charge for as long as they like and
+pay again only if they leave the zone and come back. Nothing is metered.
+
+```lua
+Config.Chargers = {
+    { id = 'ch_lsia', label = 'LSIA, arrivals hall', x = -1037.0, y = -2737.0, z = 20.2,
+      radius = 8.0, price = 40, account = 'airport' },   -- paid
+    { id = 'ch_legion', label = 'Legion Square kiosk', x = 195.0, y = -933.0, z = 30.7,
+      radius = 6.0 },                                    -- free
+}
+
+Config.PaidCharging = {
+    enabled    = true,
+    price      = 0,        -- for a charger whose row names none
+    money      = 'cash',   -- or 'bank'
+    account    = '',       -- where it goes when a row names none; '' pays nobody
+    refusedFor = 90,       -- seconds before it asks again after a refusal
+    skipAbove  = 95,       -- do not ask somebody whose phone is nearly full
+}
+```
+
+`account` is a **job or society account** in your banking script. qb-banking, Renewed-Banking,
+okokBanking and esx_addonaccount are handled; anything else fills
+`Config.Compat.hooks.society = function(account, amount, reason) ... end`. An account that
+cannot be credited still charges the player and prints one line naming it, so a kiosk never
+stops working because a banking script changed.
+
+Everything is decided on the server from the player's real position: the phone sends yes or no
+and nothing else.
+
+**Charging in a vehicle** is `Config.Compat.chargeInVehicle`, next to `chargeAtProperty`. Off
+makes a long drive cost battery.
+
+## The staff menu
+
+`/phoneadmin` with no arguments opens a menu: pick the nearest player or type an id, then read
+the phone, open it on their screen, set the battery or the number, send a message or a
+notification, give or take an app, take the handset out of service, wipe it, or cut the
+network.
+
+It is drawn through **ox_lib** or **qb-menu**, whichever is running, and uses **qb-input** or
+ox_lib's dialog to ask for values. With neither, it says so and the subcommands below still
+work.
+
+**qb-adminmenu cannot be extended by another resource** - it builds its menu from local
+variables in its own client file and hands them to MenuV, so nothing outside that file can
+reach them. To put the phone's menu in front of staff from any admin menu, point a button at:
+
+```lua
+TriggerServerEvent('v-phone:admin:menu')
+```
+
+The menu is a front end, not a second set of permissions: it sends the same arguments to the
+same handler the typed command reaches, and the ace is checked there.
+
 ## Admin commands
 
 Behind `Config.Admin.ace` (`vphone.admin` by default), or qb-core's `qbadmin.menu`. Type
 `/phoneadmin` in chat and the autocomplete lists every subcommand with its arguments - staff
-only, so a player who cannot run them is never offered them.
+only, so a player who cannot run them is never offered them. With no arguments at all it opens
+[the staff menu](#the-staff-menu).
 
 Each one has its own switch in `Config.Admin.actions`, so an action you would rather staff did
 not have is **removed**, not merely left untyped.
@@ -577,8 +638,10 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Grilles** de 3x3 à 6x7, choisies par le joueur dans les Réglages.
 - **Son** : seize fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes, cinq sons d'interface et les deux clics de touche en métal frappé de la cabine. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
-- **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible.
-- **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.
+- **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible. La recharge en véhicule et en logement sont chacune une option.
+- **Bornes de recharge payantes** : donnez un prix à une borne et le téléphone demande avant de recharger. Un seul paiement couvre tout le passage - rechargez autant que vous voulez, et ne repayez qu'après avoir quitté la zone. L'argent va sur le compte de métier ou de société que vous désignez, borne par borne. Voir [Bornes de recharge payantes](#bornes-de-recharge-payantes).
+- **Une sécurité modifiable** : le code et le Face ID sont définis au premier démarrage et peuvent être changés ensuite depuis les Réglages - les deux demandant d'abord le code actuel.
+- **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro, sur une interface de laboratoire avec référence de dossier et lignes de preuve. Ouvert par une touche, et par une zone de target quand un script de target tourne. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.
 - **Cabines téléphoniques** : les bornes déjà présentes à Los Santos, rendues fonctionnelles - aucune liste de coordonnées, car le client trouve les props lui-même. Une cabine **passe des appels et ne peut jamais en recevoir**, son numéro est dérivé de sa position et reste donc identique à chaque redémarrage, et les appels se paient avec un item carte prépayée inséré dans la borne. Les numéros d'urgence sont gratuits, et s'éloigner raccroche.
 - **`/refreshphone`** : une commande de secours quand le téléphone reste collé à la main ou qu'une animation se fige.
 - **Hébergement média** : photos et courts clips vidéo capturés en jeu et envoyés vers un CDN (Fivemanage), avec une horloge de suppression automatique par fichier. Les clips se publient sur Bleeter et Snapmatic.
@@ -963,12 +1026,71 @@ staff serait pire que le problème. Les contacts, messages et historique d'appel
 lui-même ne sont pas touchés.
 
 
+## Bornes de recharge payantes
+
+Une borne avec un `price` demande avant de recharger. Le téléphone affiche l'offre, le joueur
+accepte ou refuse, et **un seul paiement couvre tout le passage** : il recharge aussi longtemps
+qu'il veut et ne repaie que s'il quitte la zone et revient. Rien n'est au compteur.
+
+```lua
+Config.Chargers = {
+    { id = 'ch_lsia', label = 'LSIA, arrivals hall', x = -1037.0, y = -2737.0, z = 20.2,
+      radius = 8.0, price = 40, account = 'airport' },   -- payante
+    { id = 'ch_legion', label = 'Legion Square kiosk', x = 195.0, y = -933.0, z = 30.7,
+      radius = 6.0 },                                    -- gratuite
+}
+
+Config.PaidCharging = {
+    enabled    = true,
+    price      = 0,        -- pour une borne qui n'en indique pas
+    money      = 'cash',   -- ou 'bank'
+    account    = '',       -- destination quand la borne n'en indique pas ; '' ne paie personne
+    refusedFor = 90,       -- secondes avant de redemander après un refus
+    skipAbove  = 95,       -- ne pas déranger un téléphone presque plein
+}
+```
+
+`account` est un **compte de métier ou de société** de votre script bancaire. qb-banking,
+Renewed-Banking, okokBanking et esx_addonaccount sont gérés ; pour tout autre, remplissez
+`Config.Compat.hooks.society = function(account, amount, reason) ... end`. Un compte qui ne
+peut pas être crédité fait quand même payer le joueur et affiche une ligne le nommant : une
+borne ne cesse jamais de fonctionner parce qu'un script bancaire a changé.
+
+Tout est décidé sur le serveur depuis la position réelle du joueur : la page n'envoie que oui
+ou non.
+
+**La recharge en véhicule** est `Config.Compat.chargeInVehicle`, à côté de `chargeAtProperty`.
+Désactivée, un long trajet coûte de la batterie.
+
+## Le menu staff
+
+`/phoneadmin` sans argument l'ouvre : choisissez le joueur le plus proche ou saisissez un id,
+puis lisez le téléphone, ouvrez-le sur son écran, réglez la batterie ou le numéro, envoyez un
+message ou une notification, donnez ou retirez une application, mettez le combiné hors service,
+effacez-le, ou coupez le réseau.
+
+Il est dessiné via **ox_lib** ou **qb-menu**, selon ce qui tourne, et utilise **qb-input** ou la
+boîte de dialogue d'ox_lib pour demander les valeurs. Sans ni l'un ni l'autre, il le dit et les
+sous-commandes ci-dessous fonctionnent toujours.
+
+**qb-adminmenu ne peut pas être étendu par une autre ressource** : il construit son menu à
+partir de variables locales dans son propre fichier client et les passe à MenuV, donc rien
+d'extérieur ne peut les atteindre. Pour mettre le menu du téléphone devant le staff depuis
+n'importe quel menu admin, pointez un bouton sur :
+
+```lua
+TriggerServerEvent('v-phone:admin:menu')
+```
+
+Le menu est une façade, pas un second jeu de permissions : il envoie les mêmes arguments au même
+gestionnaire que la commande tapée, et l'ACE y est vérifié.
+
 ## Commandes admin
 
 Derrière `Config.Admin.ace` (`vphone.admin` par défaut), ou le `qbadmin.menu` de qb-core. Tapez
 `/phoneadmin` dans le chat et l'autocomplétion liste toutes les sous-commandes avec leurs
 arguments — réservé au staff, donc un joueur qui ne peut pas les lancer ne se les voit jamais
-proposer.
+proposer. Sans aucun argument, elle ouvre [le menu staff](#le-menu-staff).
 
 Chacune a son interrupteur dans `Config.Admin.actions` : une action que vous préférez ne pas
 donner au staff est **retirée**, pas seulement supposée jamais tapée.

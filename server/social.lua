@@ -31,6 +31,24 @@ local SOC = Config.Social
 local Core
 local function num(v, d) return tonumber(v) or d or 0 end
 
+--- A stored TINYINT(1), as a boolean.
+---
+--- **oxmysql hands a TINYINT(1) column back as a Lua boolean, not as 0 or 1.** Its type cast
+--- reads `case "TINY": return field.length === 1 ? field.string() === "1" : next()`, so the
+--- driver has already decided. `tonumber(true)` is nil, which made every one of the twenty-one
+--- `num(column, 0)` comparisons in this file false on every server: an account could be
+--- verified in the database and in the staff command's own listing, and the badge still could
+--- not appear anywhere.
+---
+--- All three shapes are accepted. A column that a computed expression produced - `EXISTS(...)`,
+--- `(a.citizenid = ?)` - comes back as a number, and a schema created wider than TINYINT(1) by
+--- an older build comes back as a number too.
+local function truthy(v)
+    if v == nil then return false end
+    if type(v) == 'boolean' then return v end
+    return (tonumber(v) or 0) ~= 0
+end
+
 local function L(src, k)
     local p = Core and Core.GetPlayer(src)
     local lang = (p and p.lang) or 'fr'
@@ -604,12 +622,12 @@ local function cleanPosts(rows)
         r.likes = num(r.likes, 0)
         r.comments = num(r.comments, 0)
         r.reposts = num(r.reposts, 0)
-        r.liked = num(r.liked, 0) == 1
-        r.reposted = num(r.reposted, 0) == 1
-        r.saved = num(r.saved, 0) == 1
-        r.following = num(r.following, 0) == 1
-        r.verified = num(r.verified, 0) == 1
-        r.mine = num(r.mine, 0) == 1
+        r.liked = truthy(r.liked)
+        r.reposted = truthy(r.reposted)
+        r.saved = truthy(r.saved)
+        r.following = truthy(r.following)
+        r.verified = truthy(r.verified)
+        r.mine = truthy(r.mine)
     end
     return rows or {}
 end
@@ -781,7 +799,7 @@ V.Callback('v-phone:soc:hushMe', function(src, resolve)
         bio = row.bio, photo = row.photo, photo2 = row.photo2, photo3 = row.photo3,
         gender = row.gender, seeking = row.seeking,
         minAge = num(row.min_age, 18), maxAge = num(row.max_age, 99),
-        active = num(row.active, 0) == 1,
+        active = truthy(row.active),
     } or nil })
 end)
 
@@ -1078,7 +1096,7 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
         me = cid == p.citizenid,
         account = {
             handle = a.handle, displayname = a.displayname, avatar = a.avatar,
-            bio = a.bio, cover = a.cover, verified = num(a.verified, 0) == 1,
+            bio = a.bio, cover = a.cover, verified = truthy(a.verified),
         },
         counts = {
             posts = num(counts.posts, 0),
@@ -1126,9 +1144,9 @@ V.Callback('v-phone:soc:search', function(src, resolve, data)
 
     for _, r in ipairs(rows) do
         r.followers = num(r.followers, 0)
-        r.followed = num(r.followed, 0) == 1
-        r.verified = num(r.verified, 0) == 1
-        r.me = num(r.me, 0) == 1
+        r.followed = truthy(r.followed)
+        r.verified = truthy(r.verified)
+        r.me = truthy(r.me)
     end
     resolve({ ok = true, accounts = rows })
 end)
@@ -1178,8 +1196,8 @@ V.Callback('v-phone:soc:comments', function(src, resolve, data)
         WHERE c.post_id = ? ORDER BY c.id ASC LIMIT 200
     ]], { p.citizenid, app, id }) or {}
     for _, r in ipairs(rows) do
-        r.mine = num(r.mine, 0) == 1
-        r.verified = num(r.verified, 0) == 1
+        r.mine = truthy(r.mine)
+        r.verified = truthy(r.verified)
     end
     resolve({ ok = true, comments = rows })
 end)
@@ -1301,12 +1319,12 @@ V.Callback('v-phone:soc:notifs', function(src, resolve, data)
             id = math.floor(num(r.id, 0)),
             kind = tostring(r.kind or ''),
             postId = r.post_id and math.floor(num(r.post_id, 0)) or nil,
-            seen = num(r.seen, 0) == 1,
+            seen = truthy(r.seen),
             ts = math.floor(num(r.ts, 0)),
             handle = tostring(r.handle or ''),
             displayname = r.displayname and tostring(r.displayname) or nil,
             avatar = r.avatar and tostring(r.avatar) or nil,
-            verified = num(r.verified, 0) == 1,
+            verified = truthy(r.verified),
             excerpt = r.excerpt and tostring(r.excerpt) or nil,
         }
     end
@@ -1497,7 +1515,7 @@ V.Callback('v-phone:soc:storyViewers', function(src, resolve, data)
         out[#out + 1] = {
             handle = tostring(r.handle), displayname = r.displayname and tostring(r.displayname) or nil,
             avatar = r.avatar and tostring(r.avatar) or nil,
-            verified = num(r.verified, 0) == 1,
+            verified = truthy(r.verified),
         }
     end
     resolve({ ok = true, viewers = out })
@@ -1580,12 +1598,12 @@ V.Callback('v-phone:soc:stories', function(src, resolve, data)
         if not byAuthor[key] then
             byAuthor[key] = {
                 handle = r.handle, displayname = r.displayname, avatar = r.avatar,
-                mine = num(r.mine, 0) == 1, unseen = false, items = {},
+                mine = truthy(r.mine), unseen = false, items = {},
             }
             order[#order + 1] = byAuthor[key]
         end
         local group = byAuthor[key]
-        local seen = num(r.seen, 0) == 1
+        local seen = truthy(r.seen)
         if not seen then group.unseen = true end
         group.items[#group.items + 1] = { id = r.id, image = r.image, body = r.body, at = r.at, seen = seen }
     end
@@ -1634,7 +1652,7 @@ V.Callback('v-phone:soc:dmList', function(src, resolve, data)
     local app = appOf(data)
 
     local rows = MySQL.query.await([[
-        SELECT a.handle, a.displayname, a.avatar,
+        SELECT a.handle, a.displayname, a.avatar, a.verified,
                m.body, m.image, m.at, (m.from_cid = ?) AS mine,
                (SELECT COUNT(*) FROM vphone_social_dm u
                  WHERE u.app = m.app AND u.to_cid = ? AND u.seen = 0
@@ -1652,7 +1670,8 @@ V.Callback('v-phone:soc:dmList', function(src, resolve, data)
     ]], { p.citizenid, p.citizenid, p.citizenid, p.citizenid, app, p.citizenid, p.citizenid }) or {}
 
     for _, r in ipairs(rows) do
-        r.mine = num(r.mine, 0) == 1
+        r.mine = truthy(r.mine)
+        r.verified = truthy(r.verified)
         r.unread = num(r.unread, 0)
     end
     resolve({ ok = true, threads = rows })
@@ -1670,7 +1689,7 @@ V.Callback('v-phone:soc:dmThread', function(src, resolve, data)
         WHERE app = ? AND ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
         ORDER BY id ASC LIMIT 200
     ]], { p.citizenid, app, p.citizenid, cid, cid, p.citizenid }) or {}
-    for _, r in ipairs(rows) do r.mine = num(r.mine, 0) == 1 end
+    for _, r in ipairs(rows) do r.mine = truthy(r.mine) end
 
     -- Opening the thread is reading it.
     MySQL.query.await('UPDATE vphone_social_dm SET seen = 1 WHERE app = ? AND from_cid = ? AND to_cid = ?',
