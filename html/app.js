@@ -2082,10 +2082,12 @@ async function openThread(number, draft) {
   loading();
   const res = await post('conversation', { number });
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
-  paintThread(res.messages || []);
+  paintThread(res.messages || [], res.service === true || isService);
   if (draft && byId('msg')) byId('msg').value = String(draft).slice(0, 250);
   pushAnim();
-  const c = (state.conversations || []).find((x) => x.number === number);
+  // Match on `other` as well: a service row's `number` is its label, while the key used to
+  // open it is `svc:Label`, so matching on number alone never cleared the badge.
+  const c = (state.conversations || []).find((x) => x.number === number || x.other === number);
   if (c) c.unread = 0;
 }
 
@@ -2115,7 +2117,7 @@ function wireLocButtons() {
   }));
 }
 
-function paintThread(messages) {
+function paintThread(messages, service) {
   body(`<div class="thread" id="thread">${messages.map(bubbleHtml).join('')}</div>`);
   wireLocButtons();
   // A tap remains a tap. Message actions use the familiar mobile long-press gesture,
@@ -2161,6 +2163,9 @@ function paintThread(messages) {
       b.style.removeProperty('--msg-drag');
     });
   });
+  // No composer on a service thread. `svc:Bleeter` is not a line anybody answers, and a
+  // send box that can only fail is worse than no send box.
+  if (service) { foot(''); return; }
   foot(`<div class="compose">` +
     `<button class="attach" id="attach" type="button" aria-label="${esc(L('ph.attach'))}">+</button>` +
     `<button class="emoji" id="msgemoji" type="button" aria-label="${esc(L('ph.emoji'))}">😊</button>` +

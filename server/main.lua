@@ -1849,9 +1849,15 @@ V.Callback('v-phone:conversation', function(src, resolve, data)
         return
     end
 
-    local other = cidOfNumber(tostring((data and data.number) or ''))
+    -- A service thread - a verification code, a receipt - is addressed by `svc:Label`
+    -- rather than by a number, because no character sent it. Resolving that as a phone
+    -- number finds nothing, which is why opening one answered "this number does not exist"
+    -- while the message itself sat in the list right above it.
+    local key = tostring((data and data.number) or '')
+    local other = key:sub(1, 4) == 'svc:' and key or cidOfNumber(key)
     if not other then resolve({ error = 'nonumber' }) return end
-    resolve({ ok = true, messages = conversation(p.citizenid, other, Config.Messages.pageSize) })
+    resolve({ ok = true, service = key:sub(1, 4) == 'svc:' or nil,
+              messages = conversation(p.citizenid, other, Config.Messages.pageSize) })
 end)
 
 V.Callback('v-phone:send', function(src, resolve, data)
