@@ -23,6 +23,7 @@ All notable changes to v-phone are documented here.
 
 ### Changed
 
+- **The emergency alert is a notification, not a takeover.** `/phoneadmin alert` drew a card over the entire screen; a screen-filling warning triangle is a lot of screen for something a phone announces. What makes an alert impossible to miss is the hard buzz and the tone that ignores the player's own ring volume, and both still happen - it now also lands in the notification centre, so it can be read again and tapped. `Config.Admin.emergencyFullScreen` puts the takeover back for a server that wants it.
 - **Verified accounts are visible.** The badge is bigger, lit rather than flat, and now appears in the direct-message list as well as on posts, comments, search results and profiles. A profile also says it in words - a blue tick is a convention the reader has to already know.
 
 ### Added
@@ -51,6 +52,7 @@ All notable changes to v-phone are documented here.
 - **Effacer les notifications efface aussi les chiffres sur les icones.** Le centre de notifications est une liste que la page detient ; un badge est un compteur que le serveur tient. Deux choses differentes qui n'en font qu'une pour qui tient le telephone. Vider la pile marque desormais messages, repondeur et Cipher comme lus.
 - **Un dossier qui ne s'ouvrait plus du tout.** `byId('foldername').textContent` n'etait pas protege : un joueur dont la page avait un build de retard plantait des la premiere ligne et emportait tout le gestionnaire.
 - **La photo de profil Bleeter a son propre bouton**, distinct de celui de la couverture.
+- **L'alerte d'urgence est une notification, pas une prise d'ecran.** `/phoneadmin alert` dessinait une carte sur tout l'ecran. Ce qui rend une alerte impossible a manquer, c'est la vibration forte et le son qui ignore le volume choisi par le joueur - les deux ont lieu quoi qu'il arrive - et elle arrive desormais aussi dans le centre de notifications. `Config.Admin.emergencyFullScreen` remet la prise d'ecran pour qui la veut.
 - **Les comptes certifies sont visibles** : badge plus grand et lumineux, present aussi dans la liste des messages prives, et une mention en toutes lettres sur le profil.
 - **Les bornes de recharge publiques peuvent etre payantes.** Le telephone propose, le joueur accepte ou refuse, **un seul paiement couvre tout le passage** : il recharge autant qu'il veut et ne repaie que s'il quitte la zone et revient. Rien n'est au compteur, volontairement. Tout est decide depuis la position reelle du ped sur le serveur. La destination de l'argent se regle par borne et par serveur via `Bridge.AddSociety` (qb-banking, Renewed-Banking, okokBanking, esx_addonaccount, plus un hook).
 - **`Config.Compat.chargeInVehicle`** : desactive, un long trajet coute de la batterie.

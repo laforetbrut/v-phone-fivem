@@ -1179,13 +1179,14 @@ Config.Admin = {
     },
 
     -- ── The emergency alert ────────────────────────────────────
-    -- A full-screen, loud broadcast to every phone on the server: an earthquake, a wildfire,
-    -- a citywide evacuation.
+    -- A loud broadcast to every phone on the server: an earthquake, a wildfire, a citywide
+    -- evacuation.
     --
-    -- It is the only thing on this phone that draws with the handset SHUT and ignores a
-    -- player's own volume setting - which is exactly why it is behind the staff ace and its own
-    -- switch. A channel that overrides somebody's silence has to be hard to reach, or it will
-    -- be used for things that are not emergencies and then muted along with everything else.
+    -- It arrives as a notification, and two things about it are true of nothing else on this
+    -- phone: the buzz ignores Do Not Disturb and the sound ignores the player's own ring
+    -- volume. That is exactly why it is behind the staff ace and its own switch. A channel
+    -- that overrides somebody's silence has to be hard to reach, or it will be used for
+    -- things that are not emergencies and then muted along with everything else.
     emergency = true,
 
     -- Accept the bare `command` ace as proof of being staff.
@@ -1196,6 +1197,14 @@ Config.Admin = {
     -- or cut the network for everybody. Turn it back on only if your staff genuinely have
     -- no other ace, and prefer `add_ace group.admin vphone.admin allow` instead.
     aceCommandFallback = false,
+
+    -- Draw the alert as a card over the WHOLE screen as well as sounding it.
+    --
+    -- Off. It used to be the only behaviour, and a screen-filling warning triangle is a lot of
+    -- screen for something a phone announces - what makes an alert impossible to miss is the
+    -- hard buzz and the tone that ignores the volume setting, both of which happen either way.
+    -- On for a server that wants the takeover.
+    emergencyFullScreen = false,
 
     -- Wiping is destructive. Require a second confirmation in the command flow.
     confirmWipe = true,

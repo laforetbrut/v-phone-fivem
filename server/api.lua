@@ -154,6 +154,10 @@ exports('EmergencyAlert', function(kind, body, title)
         kind = tostring(kind or ''):gsub('[%c]', ''):sub(1, 24),
         title = tostring(title or ''):gsub('[%c]', ''):sub(1, 60),
         body = tostring(body or ''):gsub('[%c]', ''):sub(1, 300),
+        -- Whether it takes the whole screen. Off: an alert is a notification that buzzes hard
+        -- and sounds loudly, which is what makes it impossible to miss - not the square
+        -- footage. Decided here rather than on the client so one server setting governs it.
+        fullScreen = (Config.Admin and Config.Admin.emergencyFullScreen) == true,
     }
     if alert.body == '' and alert.title == '' then return 0 end
 

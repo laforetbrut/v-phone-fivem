@@ -617,9 +617,43 @@ RegisterNetEvent('v-phone:client:ringOut', function(who, on)
     end)
 end)
 
+--- A city-wide alert.
+---
+--- It is a NOTIFICATION, not a takeover: it buzzes hard, it sounds loudly, it lands in the
+--- notification centre, and it lifts the handset out of a pocket the way any notification
+--- does. It used to draw a full-screen card over the whole screen, which is a lot of screen
+--- for something a phone announces - `Config.Admin.emergencyFullScreen` puts that back for a
+--- server that wants the takeover.
+---
+--- Two things it does that no other notification does, and both are deliberate: the buzz
+--- ignores Do Not Disturb, and the sound ignores the ring volume. That is the whole point of
+--- an emergency channel, and it is why it sits behind a staff ace and its own switch.
 RegisterNetEvent('v-phone:client:emergency', function(alert)
     if type(alert) ~= 'table' then return end
+
+    -- The page always hears about it, open or shut: it owns the sound and the notification
+    -- centre, and it is loaded for as long as the resource is running.
     SendNUIMessage({ action = 'emergency', alert = alert, strings = strings() })
+
+    -- Straight to the pad rather than through `buzz`, which stands down for Do Not Disturb.
+    if prefsCache.vibrate ~= false then
+        SendNUIMessage({ action = 'buzz' })
+        SetPadShake(0, 420, 110)
+    end
+
+    -- And the handset rises out of a pocket, if it is away.
+    --
+    -- The `peek` message on its own, not the `peek()` helper: that one also sends `archive`,
+    -- and the page files its own card for this from `emergencyAlert` - going through the
+    -- helper would leave two identical notifications in the centre for one alert.
+    if not isOpen and prefsCache.peek ~= false then
+        SendNUIMessage({ action = 'peek', kind = 'banner', strings = strings(), data = {
+            app = 'settings', icon = 'warning',
+            title = tostring(alert.kind or ''),
+            body = tostring(alert.title or alert.body or ''),
+            hasItem = true,
+        } })
+    end
 end)
 
 RegisterNetEvent('v-phone:client:open', function() if not isOpen then openPhone() end end)

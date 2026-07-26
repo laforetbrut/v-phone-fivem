@@ -2862,25 +2862,46 @@ function hushDistanceText(metres) {
 let emergencyOpen = false;
 
 function emergencyAlert(a) {
-  const host = byId('emergency');
-  if (!host) return;
+  a = a || {};
 
-  host.innerHTML =
-    '<div class="emergencycard">' +
-      '<div class="emergencyicon">' + svg('warning') + '</div>' +
-      '<div class="emergencykind">' + esc(a.kind || L('ph.emergency_default')) + '</div>' +
-      '<div class="emergencytitle">' + esc(a.title || '') + '</div>' +
-      (a.body ? '<div class="emergencybody">' + esc(a.body) + '</div>' : '') +
-      UI.button(L('ph.emergency_ack'), 'emok', 'tinted') +
-    '</div>';
-  host.classList.add('on');
-  emergencyOpen = true;
-
-  byId('emok').addEventListener('click', () => {
-    host.classList.remove('on');
-    host.innerHTML = '';
-    emergencyOpen = false;
+  // A notification, not a takeover.
+  //
+  // This drew a card over the entire screen, and a screen-filling warning triangle is a lot of
+  // screen for something a phone announces. What an alert has to do is be impossible to miss -
+  // which is the buzz and the sound below, not the square footage. The full-screen card is
+  // still here for a server that wants it, behind `Config.Admin.emergencyFullScreen`.
+  //
+  // It goes into the notification centre through the ordinary path, so it can be read again
+  // later, muted per app like anything else, and tapped to open the app it came from.
+  const kind = a.kind || L('ph.emergency_default');
+  banner({
+    app: 'settings',
+    icon: 'warning',
+    title: kind,
+    body: [a.title, a.body].filter(Boolean).join(' - '),
   });
+
+  if (a.fullScreen) {
+    const host = byId('emergency');
+    if (host) {
+      host.innerHTML =
+        '<div class="emergencycard">' +
+          '<div class="emergencyicon">' + svg('warning') + '</div>' +
+          '<div class="emergencykind">' + esc(kind) + '</div>' +
+          '<div class="emergencytitle">' + esc(a.title || '') + '</div>' +
+          (a.body ? '<div class="emergencybody">' + esc(a.body) + '</div>' : '') +
+          UI.button(L('ph.emergency_ack'), 'emok', 'tinted') +
+        '</div>';
+      host.classList.add('on');
+      emergencyOpen = true;
+
+      byId('emok').addEventListener('click', () => {
+        host.classList.remove('on');
+        host.innerHTML = '';
+        emergencyOpen = false;
+      });
+    }
+  }
 
   // **Louder than anything else, and it ignores the volume preference.**
   //
