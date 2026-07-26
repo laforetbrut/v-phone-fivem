@@ -4,7 +4,7 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## [Unreleased]
+## [1.2.3] - 2026-07-26
 
 ### Fixed (English first)
 
