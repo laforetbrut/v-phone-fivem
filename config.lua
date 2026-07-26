@@ -230,15 +230,18 @@ Config.Settings = {
 
 -- Open / close the phone.
 --
--- `false` means there is no keybind at all: the phone opens by USING the item, the way any
--- other object in the inventory works. That is the default, and it is the reason
--- Config.Settings.requireItem is on - a key that opens a phone you do not own would make
--- the item pointless.
+-- **Every player can change this for themselves.** It is registered with
+-- `RegisterKeyMapping`, so it appears in the game's own Settings -> Key Bindings -> FiveM
+-- list under "iFruit". Whatever a player binds there wins over this value and survives a
+-- restart, which is why the operator only needs to pick a sensible starting point.
 --
--- Put a key name here ('F1', 'F3', ...) to offer a binding as well. The player can always
--- rebind it in the game's own keybind settings. The `/vphone` command exists either way,
--- which is what you want while testing.
-Config.Key = false
+-- F2 by default: F1 is taken by more resources than any other key, and F3 is a common radio.
+--
+-- Holding the item is still required (`Config.Settings.requireItem`), so the key opens a
+-- phone you own and says so plainly when you do not. Set this to `false` for no binding at
+-- all, and the phone then opens only by using the item. The `/vphone` command exists either
+-- way, which is what you want while testing.
+Config.Key = 'F2'
 
 -- ── In hand ────────────────────────────────────────────────────
 -- A phone you are using is a phone you are holding: a prop in the hand and an animation

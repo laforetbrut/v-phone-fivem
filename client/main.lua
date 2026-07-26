@@ -449,10 +449,15 @@ end
 -- the item, from an admin action, and from a console while testing.
 RegisterCommand('vphone', function() if isOpen then closePhone() else openPhone() end end, false)
 
--- No `or 'F1'` fallback. Config.Key = false means the server wants no binding at all, and a
--- fallback would quietly hand one back - which is exactly the case the default now relies on.
+-- No fallback if Config.Key is false: that means the operator wants no binding at all, and a
+-- default would quietly hand one back.
+--
+-- The description below is what the player sees in Settings -> Key Bindings -> FiveM, and
+-- rebinding it there overrides Config.Key for that player permanently. That is the whole
+-- mechanism by which the key is player-configurable - there is nothing for the phone to
+-- store or sync.
 if Config.Key then
-    RegisterKeyMapping('vphone', 'Open the phone', 'keyboard', Config.Key)
+    RegisterKeyMapping('vphone', 'iFruit - open the phone', 'keyboard', Config.Key)
 end
 
 -- The server can open or close the phone from an admin action or an API call. Close is
