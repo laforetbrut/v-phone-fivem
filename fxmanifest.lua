@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.2.5'
+version '1.2.6'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -21,8 +21,10 @@ shared_scripts {
     'bridge/shared/locale.lua',
     'bridge/shared/compat.lua',
 
-    'locales/en.lua',
+    -- French first: it is the default language and the fallback for a key missing from
+    -- another locale file, so it is the base table the others are read against.
     'locales/fr.lua',
+    'locales/en.lua',
     'config.lua',
     -- Payphones. Loaded after config.lua because a booth's number is derived from the
     -- format the config names, and both the client and the server have to derive it the

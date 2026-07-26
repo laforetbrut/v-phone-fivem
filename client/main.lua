@@ -72,9 +72,9 @@ end
 local function strings()
     local lang = PhoneLang()
     local chosen = Locales[lang]
-    if not chosen then return Locales[LOCALE_FALLBACK] or Locales.en or {} end
+    if not chosen then return Locales[LOCALE_FALLBACK] or Locales.fr or {} end
     if lang == LOCALE_FALLBACK then return chosen end
-    local base = Locales[LOCALE_FALLBACK] or Locales.en or {}
+    local base = Locales[LOCALE_FALLBACK] or Locales.fr or {}
     local merged = {}
     for k, v in pairs(base) do merged[k] = v end
     for k, v in pairs(chosen) do merged[k] = v end
@@ -85,6 +85,28 @@ local function L(k) return strings()[k] or k end
 --- The same table, by a name another client file can reach. client/booth.lua sends it with
 --- the payphone panel, which is the one screen reachable without opening the phone.
 PhoneStrings = strings
+
+--- The page asking for its own string table.
+---
+--- The table is sent with every `open` and that is not sufficient: the page can be drawn
+--- before any open - a payphone, an incoming call, a banner - and NUI drops a message sent to
+--- a page that has not finished loading, silently, with nothing logged. A page that ASKS
+--- cannot be too early, because it only asks once it exists.
+RegisterNUICallback('strings', function(_, cb)
+    cb({ strings = strings(), locale = PhoneLang() })
+end)
+
+--- And when the language arrives after the page did.
+---
+--- The server pushes the language onto a state bag as the character loads. If the page had
+--- already asked, it holds the fallback language - correct English rather than raw keys, but
+--- still not what the operator configured. This hands over the right table the moment it can
+--- be known, rather than waiting for the next time the phone is opened.
+AddStateBagChangeHandler('lang', ('player:%s'):format(GetPlayerServerId(PlayerId())),
+    function(_, _, value)
+        if type(value) ~= 'string' or value == '' then return end
+        SendNUIMessage({ action = 'strings', strings = strings(), locale = value })
+    end)
 
 local function voice() return GetResourceState('v-voice') == 'started' end
 

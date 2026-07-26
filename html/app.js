@@ -114,7 +114,40 @@ let cipherThread = null;
 let cipherDemo = false;
 let cipherBurn = 0;
 
-const L = (k) => S[k] || k;
+// ══ Strings ════════════════════════════════════════════════════
+// `S` is filled by the client with the string table for the player's language. A key that is
+// missing from it used to be rendered AS THE KEY, which is how a screen ends up reading
+// `PH.BOOTH_TITLE` - and that is worse than useless, because it looks like a broken script
+// rather than like a missing translation.
+//
+// So a missing key is humanised instead: the last segment, separators to spaces, capitalised.
+// `ph.booth_title` reads `Booth Title`. Wrong language, obviously, but readable, and a player
+// can still work out what a button does. The failure degrades instead of shouting.
+function humaniseKey(key) {
+  const tail = String(key || '').split('.').pop();
+  if (!tail) return '';
+  return tail.replace(/[_-]+/g, ' ')
+    .replace(/(^|\s)(\S)/g, (_, lead, first) => lead + first.toUpperCase());
+}
+
+// Said once per session, not per key: forty missing strings would otherwise be forty lines and
+// the useful information - that the table never arrived at all - would be buried in them.
+let warnedNoStrings = false;
+
+const L = (k) => {
+  const hit = S[k];
+  if (hit) return hit;
+  if (!warnedNoStrings && !Object.keys(S || {}).length) {
+    warnedNoStrings = true;
+    console.error('[v-phone] the string table is empty, so every label is a guess at its key. '
+      + 'The page asked the client for it on load; if this persists the client answered with '
+      + 'nothing - check that locales/*.lua are in fxmanifest.lua shared_scripts.');
+    // Ask again. The most likely reason for an empty table is that this page loaded before the
+    // client was ready to answer, and one more attempt costs nothing.
+    requestStrings();
+  }
+  return humaniseKey(k);
+};
 const money = (n) => {
   const v = Number(n || 0);
   // "-$1,015", not "$-1,015". The sign goes before the symbol in every locale that puts the
@@ -2067,6 +2100,36 @@ function hushDistanceText(metres) {
 // Display only, deliberately. Nothing is hidden from the server, calls and messages work
 // exactly as before, and a copy still yields the real number - the problem being solved is
 // what sits on camera, not what the phone knows.
+// ══ Asking for the strings ═════════════════════════════════════
+// The client sends the string table with every `open`, which is right and is not enough: this
+// page can be drawn before an `open` ever arrives - a payphone panel, an incoming call, a
+// notification banner - and a message sent to a page that has not finished loading is dropped
+// silently by NUI, with no error anywhere. That is what "restart the resource and it works"
+// means: the restart reloads the page and re-sends.
+//
+// So the page asks. On load, and again if it ever finds itself rendering with nothing.
+let strungAt = 0;
+async function requestStrings() {
+  // Once every two seconds at most: `L` calls this on a miss, and a view full of misses would
+  // otherwise ask once per label.
+  const now = Date.now();
+  if (now - strungAt < 2000) return;
+  strungAt = now;
+  const r = await post('strings');
+  if (r && r.strings && Object.keys(r.strings).length) {
+    S = r.strings;
+    warnedNoStrings = false;
+    if (r.locale) state.locale = r.locale;
+    // Repaint whatever is on screen, or the labels drawn before the table arrived stay wrong.
+    if (openApp && RENDER[openApp.id]) RENDER[openApp.id]();
+    else if (typeof paintLockMeta === 'function') paintLockMeta();
+  }
+}
+
+// As early as the page can ask. `post` needs nothing but the resource name, which is available
+// from the first line of this file.
+requestStrings();
+
 // ══ Reading a number ═══════════════════════════════════════════
 // A number minted as `##########` is stored as `4155550142`, and that is right - it is what
 // every script reading it gets. But ten digits in a row is not something a person can read
@@ -3747,6 +3810,18 @@ function musicWireTracks(tracks, queue) {
   }));
 }
 
+// No deck installed. The app still works - a library is a library - so this is a line rather
+// than an empty screen, and it names what is actually missing.
+//
+// A FUNCTION taking the model, not a local. It was a `const` in `RENDER.music` and used in
+// `musicRenderPlaylists`, which is a different function - so opening the playlists tab threw
+// `noDeck is not defined` and left the view half drawn. Derived from the argument every one of
+// these functions already has, so it cannot be out of scope anywhere.
+function musicNoDeckHint(model) {
+  if (!model || model.provider) return '';
+  return '<div class="groupfoot">' + esc(L('ph.music_nodeck_hint')) + '</div>';
+}
+
 async function musicPlay(track, queue, output) {
   if (!track || !track.url) { toast(L('ph.track_nourl')); return; }
   const kind = output || musicOutput;
@@ -4084,7 +4159,7 @@ async function musicRenderPlaylists(model) {
     // Said once, where it matters: on a server whose deck cannot be driven, playing a track
     // opens that deck with the URL copied. Better here than as a surprise every time.
     (model.handoff ? '<div class="groupfoot">' + esc(L('ph.music_handoff_hint')) + '</div>' : '') +
-    (noDeck ? '<div class="groupfoot">' + esc(L('ph.music_nodeck_hint')) + '</div>' : '') +
+    musicNoDeckHint(model) +
     (items.length ? UI.group(items, { header: L('ph.playlists') })
                   : UI.empty(L('ph.playlist_none'), 'folder')) +
     '<div class="groupfoot">' + esc(L('ph.playlist_hint')) + '</div>');
@@ -4142,9 +4217,6 @@ RENDER.music = async () => {
   loading();
   const model = await musicModel();
   if (!model.enabled) { foot(''); body(UI.empty(L('ph.err_off'), 'music')); return; }
-  // No deck installed. The app still works - a library is a library - so this is a line at
-  // the top rather than an empty screen, and it names what is actually missing.
-  const noDeck = !model.provider;
   if (musicPlayerOpen) { musicRenderPlayer(model); return; }
   musicFoot(model);
 
@@ -9728,6 +9800,15 @@ window.addEventListener('message', (e) => {
     clearTimeout(shutterTimer);
     shutterTimer = null;
     byId('device').classList.remove('capturing');
+  } else if (d.action === 'strings') {
+    // Pushed by the client when the language lands after this page loaded.
+    if (d.strings && Object.keys(d.strings).length) {
+      S = d.strings;
+      warnedNoStrings = false;
+      if (d.locale) state.locale = d.locale;
+      if (openApp && RENDER[openApp.id]) RENDER[openApp.id]();
+      else paintLockMeta();
+    }
   } else if (d.action === 'peek') {
     if (d.strings && !Object.keys(S || {}).length) S = d.strings;
     showPeek(d.kind, d.data || {});

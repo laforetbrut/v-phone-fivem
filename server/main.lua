@@ -3493,7 +3493,7 @@ local function pushLocale(src, player)
     if not state then return end
     local carried = state.lang
     if type(carried) == 'string' and carried ~= '' then return end
-    state:set('lang', GetConvar('phone_locale', 'en'), true)
+    state:set('lang', GetConvar('phone_locale', LOCALE_FALLBACK or 'fr'), true)
 end
 
 local function hydratePlayer(src, player)

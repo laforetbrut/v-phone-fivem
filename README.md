@@ -189,7 +189,7 @@ is one row of SQL or one table entry, per framework.
 ### 6. Optional convars
 
 ```cfg
-setr phone_locale "en"        # or fr, or any locale file you add
+setr phone_locale "en"        # French is the default; en, or any locale file you add
 set phone_battery false      # any Config.Settings key, prefixed with phone_
 set phone_requireItem false   # everybody gets a phone, no item needed
 set phone_camera true         # the Camera app (needs screenshot-basic or screencapture)
@@ -671,7 +671,7 @@ ligne de SQL ou une entrée de table, selon le framework.
 ### 6. Convars optionnels
 
 ```cfg
-setr phone_locale "fr"        # ou en, ou tout fichier de langue que vous ajoutez
+setr phone_locale "fr"        # le français est la valeur par défaut ; en, ou tout fichier que vous ajoutez
 set phone_battery false       # n'importe quelle clé de Config.Settings, préfixée phone_
 set phone_requireItem false   # tout le monde a un téléphone, sans item
 set phone_camera true         # l'app Appareil photo (nécessite screenshot-basic ou screencapture)

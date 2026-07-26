@@ -219,7 +219,7 @@ end)
 V.Callback('v-phone:police:crack', function(src, resolve, data)
     local cid, err = authorise(src)
     if not cid then resolve({ error = err }) return end
-    if not (POLICE.cipher and POLICE.cipher.intercept) then resolve({ error = 'noindercept' }) return end
+    if not (POLICE.cipher and POLICE.cipher.intercept) then resolve({ error = 'nointercept' }) return end
 
     local id = math.floor(num(data and data.id, 0))
     if id <= 0 then resolve({ error = 'args' }) return end

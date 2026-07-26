@@ -5,7 +5,7 @@
 --
 -- The language comes from one convar so a server sets it once:
 --
---     set phone_locale "fr"     # or en, or any locale file you add
+--     set phone_locale "en"     # or fr - the default - or any locale file you add
 --
 -- **`set`, not `setr`, and the client still gets it.** A plain `set` convar exists only on
 -- the server: the client's `GetConvar('phone_locale', ...)` comes back empty and falls back
@@ -23,7 +23,11 @@ Locales = Locales or { en = {}, fr = {} }
 
 --- The fallback language, named once. Everything that needs a default reads THIS, so no two
 --- code paths can disagree about it - which is the bug this replaced.
-LOCALE_FALLBACK = 'en'
+---
+--- **French.** A server that sets `phone_locale` gets what it asked for either way; this is
+--- only what happens when nobody has said. It is also the language a key missing from another
+--- locale file falls back to, so a partial translation reads as French rather than as nothing.
+LOCALE_FALLBACK = 'fr'
 
 --- The language for the local player, or the server's default.
 ---
@@ -64,7 +68,7 @@ if IsDuplicityVersion() then
     --- Translate for one player, in whatever language that player carries.
     function LP(source, key, ...)
         local state = source and Player(source) and Player(source).state
-        local lang = (state and state.lang) or GetConvar('phone_locale', 'en')
+        local lang = (state and state.lang) or GetConvar('phone_locale', LOCALE_FALLBACK)
         return translate(lang, key, ...)
     end
 end

@@ -179,7 +179,7 @@ local function wrap(src, citizenid, name, job)
         name = name or ('Citizen ' .. tostring(citizenid):sub(1, 6)),
         job = job or { name = 'unemployed', label = 'Unemployed', grade = 0, gradeLabel = '', onDuty = true, boss = false },
     }
-    p.lang = GetConvar('phone_locale', 'en')
+    p.lang = GetConvar('phone_locale', LOCALE_FALLBACK or 'fr')
     function p.GetMetadata(key) return Bridge.KvGet(citizenid, key) end
     function p.SetMetadata(key, value) return Bridge.KvSet(citizenid, key, value) end
     return p

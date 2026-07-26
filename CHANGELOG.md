@@ -4,6 +4,34 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.6] - 2026-07-26
+
+### Fixed (English first)
+
+- **The phone showed translation keys until the resource was restarted.** The string table was sent with every `open` and pushed with the payphone panel, and that is not sufficient: NUI **drops a message delivered to a page that has not finished loading**, silently, with nothing logged anywhere. A restart reloads the page and re-sends, which is exactly why restarting appeared to fix it. So the page now **asks** on load - a page that asks cannot be too early, because it only asks once it exists - and the client answers through a `strings` callback. The client also re-pushes the table when the language lands on the state bag, which the server sets as the character loads: a page that asked before that arrived was holding the fallback language rather than the configured one, and it now gets the right table the moment it can be known, instead of at the next open.
+- **A missing string is humanised rather than printed raw.** `L` returned the key itself, which is how a screen ends up reading `PH.BOOTH_TITLE` - worse than useless, because it looks like a broken script rather than a missing translation. A key with no entry now shows its last segment tidied: `ph.booth_title` reads `Booth Title`. Wrong language, plainly, but a player can still tell what a button does. The first miss also prints one line to F8 naming the likely cause and asks the client again.
+- **Two ringtones had no names at all.** The ringtone list offered `signal` and the alert list offered `note`, and neither had a locale entry, so the Sounds screen listed `ph.tone_signal` and `ph.tone_note`. Thirty server error codes were in the same state - `nomoney`, `locked`, `range`, `nokey`, `cooldown` among them - and all thirty now have a sentence in both languages. `check_keys.py` could never have caught these: it finds literal `L('ph.x')` calls and these are built as `L('ph.tone_' + name)`. A second checker now enumerates the sets those prefixes are built from - the ringtone and alert tables, the app categories, the tenancy words, and every `error = '...'` in the server files - and fails when one has no string.
+- **Opening the Music playlists tab threw `noDeck is not defined`** and left the view half drawn. A regression from 1.2.2: the "no radio script installed" hint was a `const` declared in `RENDER.music` and used in `musicRenderPlaylists`, which is a different function. It is a function of the model now, so it cannot be out of scope anywhere.
+- **`noindercept` was a typo** for `nointercept`, so the police interception refusal had no string either.
+
+### Changed
+
+- **French is the default language and the fallback.** A server that sets `phone_locale` gets what it asked for exactly as before; this is only what happens when nobody has said. It is also the language a key missing from another locale file falls back to, so a partial translation reads as French rather than as nothing, and `locales/fr.lua` loads first as the base table. **On upgrade, a server that never set `phone_locale` changes from English to French** - add `set phone_locale "en"` to keep English.
+
+### Correctifs (miroir français)
+
+- **Le téléphone affichait des clés de traduction jusqu'au redémarrage de la ressource.** La table de chaînes était envoyée avec chaque `open` et poussée avec le panneau de cabine, et cela ne suffit pas : NUI **abandonne un message livré à une page qui n'a pas fini de charger**, en silence, sans rien journaliser. Un redémarrage recharge la page et renvoie le message — c'est précisément pourquoi redémarrer semblait corriger le problème. La page **demande** donc maintenant au chargement — une page qui demande ne peut pas être trop tôt, puisqu'elle ne demande qu'une fois qu'elle existe — et le client répond via un callback `strings`. Le client repousse aussi la table quand la langue arrive sur le state bag, que le serveur renseigne au chargement du personnage : une page qui avait demandé avant cela détenait la langue de repli et non celle configurée, et elle reçoit désormais la bonne table dès que celle-ci peut être connue, au lieu d'attendre la prochaine ouverture.
+- **Une chaîne manquante est humanisée au lieu d'être affichée brute.** `L` renvoyait la clé elle-même : c'est ainsi qu'un écran finit par afficher `PH.BOOTH_TITLE` — pire qu'inutile, parce que cela ressemble à un script cassé plutôt qu'à une traduction manquante. Une clé sans entrée affiche maintenant son dernier segment nettoyé : `ph.booth_title` se lit `Booth Title`. La mauvaise langue, évidemment, mais un joueur peut toujours comprendre à quoi sert un bouton. Le premier manque imprime aussi une ligne dans F8 nommant la cause probable et redemande la table au client.
+- **Deux sonneries n'avaient aucun nom.** La liste des sonneries proposait `signal` et celle des alertes `note`, sans entrée de langue ni pour l'une ni pour l'autre : l'écran des sons listait donc `ph.tone_signal` et `ph.tone_note`. Trente codes d'erreur du serveur étaient dans le même état — dont `nomoney`, `locked`, `range`, `nokey`, `cooldown` — et les trente ont maintenant une phrase dans les deux langues. `check_keys.py` ne pouvait pas les attraper : il trouve les appels littéraux `L('ph.x')` et ceux-ci sont construits en `L('ph.tone_' .. nom)`. Un second vérificateur énumère désormais les ensembles dont ces préfixes sont construits — les tables de sonneries et d'alertes, les catégories d'applications, les mots de bail, et chaque `error = '...'` des fichiers serveur — et échoue quand l'un n'a pas de chaîne.
+- **Ouvrir l'onglet des playlists de Musique levait `noDeck is not defined`** et laissait la vue à moitié dessinée. Une régression de la 1.2.2 : l'indication « aucun script radio installé » était un `const` déclaré dans `RENDER.music` et utilisé dans `musicRenderPlaylists`, qui est une autre fonction. C'est maintenant une fonction du modèle, donc elle ne peut plus être hors de portée nulle part.
+- **`noindercept` était une faute de frappe** pour `nointercept` : le refus d'interception policière n'avait donc pas de chaîne non plus.
+
+### Modifications
+
+- **Le français est la langue par défaut et la langue de repli.** Un serveur qui renseigne `phone_locale` obtient exactement ce qu'il a demandé, comme avant ; ceci ne concerne que le cas où personne n'a rien dit. C'est aussi la langue vers laquelle retombe une clé manquante d'un autre fichier de langue, pour qu'une traduction partielle se lise en français plutôt que pas du tout, et `locales/fr.lua` est chargé en premier comme table de base. **À la mise à jour, un serveur qui n'a jamais renseigné `phone_locale` passe de l'anglais au français** — ajoutez `set phone_locale "en"` pour conserver l'anglais.
+
+---
+
 ## [1.2.5] - 2026-07-26
 
 ### Added (English first)
