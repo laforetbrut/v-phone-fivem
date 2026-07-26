@@ -230,27 +230,32 @@ local function startGuard()
         while isOpen do
             for _, c in ipairs(Config.Hold.block) do DisableControlAction(0, c, true) end
 
-            -- Disabling control 200 is not enough on its own: the pause menu is opened by
-            -- the frontend, which does not always go through the control it is bound to.
-            -- Closing it the frame it appears is what actually holds, and it is invisible -
-            -- the menu never gets to draw.
-            if IsPauseMenuActive() then SetPauseMenuActive(false) end
+            -- The pause menu, held shut three ways because one is not enough.
+            --
+            -- 199/200 are blocked across control groups 0, 1 and 2: the frontend reads them
+            -- from its own group, so blocking group 0 alone leaves Escape working. And when
+            -- it opens anyway - it still can, the frontend does not always route through a
+            -- control - `SetFrontendActive(false)` is what actually dismisses it.
+            -- `SetPauseMenuActive(false)` alone does not, which is why the first attempt
+            -- here failed.
+            for _, group in ipairs({ 0, 1, 2 }) do
+                DisableControlAction(group, 199, true)
+                DisableControlAction(group, 200, true)
+            end
+            if IsPauseMenuActive() then
+                SetFrontendActive(false)
+                SetPauseMenuActive(false)
+            end
 
-            -- 19 is INPUT_CHARACTER_WHEEL, which is Left Alt. Read as a DISABLED control so
-            -- it still reports while the phone has the keyboard.
-            local wantFree = IsDisabledControlPressed(0, 19) or IsControlPressed(0, 19)
-            if wantFree ~= freeLook then
-                freeLook = wantFree
-                if wantFree then
-                    -- Cursor away, mouse back to the camera. The page keeps its state; it
-                    -- simply stops receiving pointer events for as long as the key is held.
-                    SetNuiFocus(false, false)
-                    SendNUIMessage({ action = 'freelook', on = true })
-                else
-                    SetNuiFocus(true, true)
-                    SetNuiFocusKeepInput(true)
-                    SendNUIMessage({ action = 'freelook', on = false })
-                end
+            -- Alt is pressed in the PAGE, which owns the keyboard, and released here, which
+            -- owns it again the moment focus is dropped. Reading the press from Lua was the
+            -- first attempt and it never fired: with `SetNuiFocus(true, true)` the browser
+            -- takes the key and the control never registers.
+            if freeLook and not IsControlPressed(0, 19) then
+                freeLook = false
+                SetNuiFocus(true, true)
+                SetNuiFocusKeepInput(true)
+                SendNUIMessage({ action = 'freelook', on = false })
             end
 
             local ped = PlayerPedId()
@@ -775,6 +780,18 @@ local SOCIAL_OPS = {
     stories = true, story = true, storySeen = true,
     dmList = true, dmThread = true, dmSend = true,
 }
+
+-- The page owns the keyboard while the phone is open, so it is the only side that sees Alt
+-- go down. It says so here; the guard thread notices the release, because by then focus has
+-- been dropped and the control reads normally again.
+RegisterNUICallback('freelook', function(_, cb)
+    if isOpen and not freeLook then
+        freeLook = true
+        SetNuiFocus(false, false)
+        SendNUIMessage({ action = 'freelook', on = true })
+    end
+    cb({ ok = true })
+end)
 
 RegisterNUICallback('social', function(data, cb)
     local op = tostring((data and data.op) or '')

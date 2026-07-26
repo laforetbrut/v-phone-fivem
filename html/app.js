@@ -8054,6 +8054,13 @@ byId('qcam').addEventListener('click', () => {
 });
 byId('qtorch').addEventListener('click', toggleTorch);
 
+// Hold Alt and the mouse goes back to the camera. The page is the only side that sees this
+// key - Lua cannot, because the browser has the keyboard while the phone is focused - so it
+// reports the press and Lua watches for the release once focus is back in the game.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Alt' && !e.repeat) { e.preventDefault(); post('freelook', {}); }
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const hadTransient = anyOverlayOpen() || byId('auth').classList.contains('on') ||

@@ -954,11 +954,15 @@ Config.Booth = {
 
     -- The props that count as a phone box. These are the base-game booths; add your own
     -- model names here if your map ships others.
+    -- The `b` suffixes are the ones actually scattered around Los Santos - the plain
+    -- `prop_phonebox_01` is rarer than its variant, which is why a player can stand at a
+    -- box on the street and have nothing happen if only the base names are listed. Both
+    -- forms are here; a model that is not on the map simply never matches.
     models = {
-        'prop_phonebox_01',
-        'prop_phonebox_02',
-        'prop_phonebox_03',
-        'prop_phonebox_04',
+        'prop_phonebox_01', 'prop_phonebox_01b',
+        'prop_phonebox_02', 'prop_phonebox_02b',
+        'prop_phonebox_03', 'prop_phonebox_03b',
+        'prop_phonebox_04', 'prop_phonebox_04b',
         'prop_ld_phonebox',
     },
 

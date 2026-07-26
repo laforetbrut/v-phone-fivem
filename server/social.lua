@@ -127,7 +127,36 @@ local function genCode() return string.format('%04d', math.random(0, 9999)) end
 -- Per-session state, cleared when the player drops: the code we texted them, and which
 -- apps they are logged into on this device.
 local Pending = {}       -- [src] = { [app] = { code, number, at } }
-local Authed  = {}       -- [src] = { [app] = true }
+local Authed  = {}       -- [src] = { [app] = true }, this session's warm copy
+
+-- Signing in USED to be session-only, so every script restart and every server reboot threw
+-- the player back to a password prompt on a phone they had never left. It is their own
+-- handset and their own account: the answer belongs with the character, not the session.
+--
+-- Kept in the phone's own KV table rather than in a new column, so there is nothing to
+-- migrate and an operator can clear it by hand.
+local AUTH_KEY = 'soc_auth'
+
+local function authRecord(citizenid)
+    local rec = Bridge.KvGet(citizenid, AUTH_KEY)
+    return type(rec) == 'table' and rec or {}
+end
+
+local function isAuthed(src, citizenid, app)
+    if Authed[src] and Authed[src][app] ~= nil then return Authed[src][app] == true end
+    local on = authRecord(citizenid)[app] == true
+    Authed[src] = Authed[src] or {}
+    Authed[src][app] = on
+    return on
+end
+
+local function setAuthed(src, citizenid, app, on)
+    Authed[src] = Authed[src] or {}
+    Authed[src][app] = on and true or false
+    local rec = authRecord(citizenid)
+    rec[app] = on and true or nil
+    Bridge.KvSet(citizenid, AUTH_KEY, rec)
+end
 
 AddEventHandler('playerDropped', function()
     local src = source
@@ -177,7 +206,7 @@ V.Callback('v-phone:soc:me', function(src, resolve, data)
     local app = tostring((data and data.app) or 'bleeter')
     if not APPS[app] then resolve(false) return end
     local a = accountOf(p.citizenid, app)
-    local authed = a and Authed[src] and Authed[src][app] == true or false
+    local authed = (a ~= nil) and isAuthed(src, p.citizenid, app) or false
     resolve({ ok = true, exists = a ~= nil, authed = authed,
               account = authed and publicAccount(a) or nil })
 end)
@@ -243,8 +272,8 @@ V.Callback('v-phone:soc:register', function(src, resolve, data)
         { p.citizenid, app, handle, displayname, avatar, bio, pend.number, hashPw(pw) })
 
     Pending[src][app] = nil
-    Authed[src] = Authed[src] or {}
-    Authed[src][app] = true
+    -- Registering signs you in, and that has to persist like any other sign-in.
+    setAuthed(src, p.citizenid, app, true)
     resolve({ ok = true, account = { handle = handle, displayname = displayname, avatar = avatar, bio = bio } })
 end)
 
@@ -259,14 +288,14 @@ V.Callback('v-phone:soc:login', function(src, resolve, data)
     if not checkPw(a.password, tostring((data and data.password) or '')) then
         resolve({ error = 'badpass' }) return
     end
-    Authed[src] = Authed[src] or {}
-    Authed[src][app] = true
+    setAuthed(src, p.citizenid, app, true)
     resolve({ ok = true, account = publicAccount(a) })
 end)
 
 V.Callback('v-phone:soc:logout', function(src, resolve, data)
     local app = tostring((data and data.app) or '')
-    if Authed[src] then Authed[src][app] = nil end
+    local p = Core.GetPlayer(src)
+    if p then setAuthed(src, p.citizenid, app, false) end
     resolve({ ok = true })
 end)
 
@@ -277,7 +306,7 @@ V.Callback('v-phone:soc:setup', function(src, resolve, data)
     local app = tostring((data and data.app) or 'bleeter')
     if not APPS[app] then resolve(false) return end
     -- Editing an existing profile, so it needs a logged-in account, not the sign-up path.
-    if not (Authed[src] and Authed[src][app]) then resolve({ error = 'unverified' }) return end
+    if not isAuthed(src, p.citizenid, app) then resolve({ error = 'unverified' }) return end
     local a = accountOf(p.citizenid, app)
     if not a then resolve({ error = 'noaccount' }) return end
 
