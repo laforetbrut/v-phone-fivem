@@ -534,8 +534,15 @@ RegisterCommand('refresh-phone', forceReset, false)
 RegisterCommand('phonediag', function()
     V.Request('v-phone:diag', function(r)
         if type(r) ~= 'table' or not r.ok then
-            print('[v-phone] diag: no answer - ' ..
-                (type(r) == 'table' and tostring(r.error or '?') or 'nil'))
+            -- The server refuses unless debug is on and the caller is staff, so say which.
+            local why = type(r) == 'table' and tostring(r.error or '?') or 'nil'
+            if why == 'off' then
+                print('[v-phone] diag is off. Enable it with `set phone_debug true`.')
+            elseif why == 'denied' then
+                print('[v-phone] diag: staff only (ace vphone.admin).')
+            else
+                print('[v-phone] diag: no answer - ' .. why)
+            end
             return
         end
         print(('[v-phone] diag | framework=%s (%s)')
@@ -653,15 +660,32 @@ RegisterNUICallback('app', function(data, cb)
     if id == 'music' then cb(musicAppData()) return end
     local src = APP_SOURCE[id]
     if not src then cb({ error = 'unknown' }) return end
-    if GetResourceState(src.res) ~= 'started' then
-        if src.fallback then
-            V.Request(src.fallback, function(res) cb(res or { error = 'x' }) end)
-            return
-        end
-        cb({ error = 'off' })
-        return
+
+    -- Ask, and hand the answer on - unless the answer is "nobody is listening", in which
+    -- case try the other one.
+    --
+    -- This used to decide which backend to ask by looking at `GetResourceState(src.res)`,
+    -- which is a PREDICTION, and a wrong prediction produced an app that reported nothing
+    -- was loaded while the callback it needed was registered and working. The phone no
+    -- longer guesses: it uses whichever backend actually answers. A companion resource that
+    -- is running still wins, because it is asked first.
+    local function ask(name, onMissing)
+        V.Request(name, function(res)
+            if onMissing and type(res) == 'table' and res.error == 'nohandler' then
+                onMissing()
+                return
+            end
+            cb(res or { error = 'x' })
+        end)
     end
-    V.Request(src.callback, function(res) cb(res or { error = 'x' }) end)
+
+    if GetResourceState(src.res) == 'started' then
+        ask(src.callback, src.fallback and function() ask(src.fallback) end or nil)
+    elseif src.fallback then
+        ask(src.fallback)
+    else
+        cb({ error = 'off' })
+    end
 end)
 
 -- ══════════════════════════════════════════════════════════════

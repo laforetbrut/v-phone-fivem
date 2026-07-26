@@ -3157,6 +3157,18 @@ exports('IsOnCall',      function(src) return CallOf[src] ~= nil end)
 -- load, and does the provider behind it return anything - and it lives in main.lua on
 -- purpose, because a file that failed to load cannot report that it failed to load.
 V.Callback('v-phone:diag', function(src, resolve)
+    -- A diagnostic tool, not a player feature: it names the framework, the resources and
+    -- what each provider returns, which is operator information. Off unless the operator
+    -- turned debug on, and staff only even then.
+    if not V.SettingBool('debug', false) then resolve({ error = 'off' }) return end
+    if src ~= 0
+        and not IsPlayerAceAllowed(src, (Config.Admin and Config.Admin.ace) or 'vphone.admin')
+        and not IsPlayerAceAllowed(src, 'qbadmin.menu')
+        and not IsPlayerAceAllowed(src, 'command') then
+        resolve({ error = 'denied' })
+        return
+    end
+
     local expected = {
         'v-phone:bank:data', 'v-phone:garage:data', 'v-phone:property:data',
         'v-phone:wallet:data', 'v-phone:jobs:data',
@@ -3175,7 +3187,14 @@ V.Callback('v-phone:diag', function(src, resolve)
         local ok, result = pcall(fn, cid)
         if not ok then return 'error: ' .. tostring(result) end
         if type(result) ~= 'table' then return 'nothing readable' end
-        return ('%d row(s)'):format(#result)
+        -- `#` on a map is 0, which read as "nothing found" for the balances provider even
+        -- though it had answered perfectly. Count the keys when there is no array part.
+        local n = #result
+        if n > 0 then return ('%d row(s)'):format(n) end
+        local keys = 0
+        for _ in pairs(result) do keys = keys + 1 end
+        if keys == 0 then return 'empty' end
+        return ('ok (%d field(s))'):format(keys)
     end
 
     resolve({
