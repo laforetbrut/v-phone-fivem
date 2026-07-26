@@ -969,8 +969,14 @@ function Bridge.Jobs.All()
             for name, job in pairs(jobs) do
                 local grades = {}
                 for level, grade in pairs(job.grades or {}) do
+                    -- `salary` is the name every caller reads. This used to emit only `pay`,
+                    -- which nothing read, so every wage on the Jobs app was zero on qb while
+                    -- the job list itself looked perfectly healthy. `pay` is kept beside it in
+                    -- case an operator's own code came to depend on it.
+                    local wage = tonumber(grade.payment) or tonumber(grade.salary) or 0
                     grades[#grades + 1] = { grade = tonumber(level) or 0,
-                                            label = grade.name or '', pay = grade.payment or 0 }
+                                            label = grade.name or '',
+                                            salary = wage, pay = wage }
                 end
                 table.sort(grades, function(a, b) return a.grade < b.grade end)
                 out[#out + 1] = { name = name, label = job.label or name,
@@ -979,11 +985,82 @@ function Bridge.Jobs.All()
             table.sort(out, function(a, b) return (a.label or '') < (b.label or '') end)
             return out
         end
+
     elseif Bridge.framework == 'esx' then
+        -- The ladder as well as the list. This read `SELECT name, label FROM jobs` and
+        -- stopped, so on ESX every job had no grades, no wage and no rank count - the app
+        -- drew a list of titles and nothing else. ESX keeps the rest in `job_grades`, per its
+        -- own schema: (job_name, grade, name, label, salary).
         local ok, rows = pcall(function()
-            return MySQL.query.await('SELECT name, label FROM jobs')
+            return MySQL.query.await([[SELECT j.name AS name, j.label AS label,
+                    g.grade AS grade, g.label AS grade_label, g.salary AS salary
+                FROM jobs j
+                LEFT JOIN job_grades g ON g.job_name = j.name
+                ORDER BY j.label, g.grade]])
         end)
-        if ok then return rows end
+        if ok and type(rows) == 'table' then
+            local byName, out = {}, {}
+            for _, r in ipairs(rows) do
+                local key = tostring(r.name or '')
+                if key ~= '' then
+                    local job = byName[key]
+                    if not job then
+                        job = { name = key, label = r.label or key, grades = {} }
+                        byName[key] = job
+                        out[#out + 1] = job
+                    end
+                    -- A job with no rows in job_grades joins to a single NULL grade.
+                    if r.grade ~= nil then
+                        local wage = tonumber(r.salary) or 0
+                        job.grades[#job.grades + 1] = {
+                            grade = math.floor(tonumber(r.grade) or 0),
+                            label = r.grade_label or '',
+                            salary = wage, pay = wage,
+                        }
+                    end
+                end
+            end
+            return out
+        end
+
+    elseif Bridge.framework == 'ox' then
+        -- ox has no jobs: it has GROUPS, and a group is what the phone shows as a job. Both
+        -- tables come from ox_core's own install.sql - `ox_groups (name, label, type)` and
+        -- `ox_group_grades (group, grade, label)`.
+        --
+        -- There is deliberately no wage: ox_group_grades has no salary column, because ox does
+        -- not pay through groups. An honest zero beats a number invented to fill a field.
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT g.name AS name, g.label AS label, g.type AS type,
+                    gr.grade AS grade, gr.label AS grade_label
+                FROM ox_groups g
+                LEFT JOIN ox_group_grades gr ON gr.`group` = g.name
+                ORDER BY g.label, gr.grade]])
+        end)
+        if ok and type(rows) == 'table' then
+            local byName, out = {}, {}
+            for _, r in ipairs(rows) do
+                local key = tostring(r.name or '')
+                -- The config's ignore list keeps admin and permission groups out of a list of
+                -- jobs, the same list `Bridge.GetPlayer` uses to decide somebody's employer.
+                if key ~= '' and not Config.Compat.ignoredGroups[key] then
+                    local job = byName[key]
+                    if not job then
+                        job = { name = key, label = r.label or key, grades = {} }
+                        byName[key] = job
+                        out[#out + 1] = job
+                    end
+                    if r.grade ~= nil then
+                        job.grades[#job.grades + 1] = {
+                            grade = math.floor(tonumber(r.grade) or 0),
+                            label = r.grade_label or '',
+                            salary = 0, pay = 0,
+                        }
+                    end
+                end
+            end
+            return out
+        end
     end
     return nil
 end

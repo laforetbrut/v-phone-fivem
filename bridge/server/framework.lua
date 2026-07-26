@@ -194,6 +194,10 @@ local function jobFromQb(data)
         gradeLabel = (data.grade and data.grade.name) or '',
         onDuty = data.onduty ~= false,
         boss = (data.isboss == true) or (data.grade and data.grade.isboss == true) or false,
+        -- What qb is actually paying this character. Kept because it is authoritative: the
+        -- shared job table says what the grade is worth in general, this says what THIS
+        -- character receives, and a script that granted a rise changed only this one.
+        pay = tonumber(data.payment),
     }
 end
 
@@ -241,6 +245,9 @@ function Bridge.GetPlayer(src)
         return wrap(src, player.identifier, player.getName and player.getName() or nil,
             { name = job.name or 'unemployed', label = job.label or job.name or 'Unemployed',
               grade = job.grade or 0, gradeLabel = job.grade_label or '',
+              -- ESX puts the grade's wage on the job object it hands over, so the card needs
+              -- no second lookup to be right.
+              pay = tonumber(job.grade_salary),
               onDuty = true, boss = false })
     end
 

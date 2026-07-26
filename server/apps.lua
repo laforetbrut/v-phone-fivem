@@ -319,7 +319,9 @@ local function ladderOf(all, name)
                     out[#out + 1] = {
                         grade = math.floor(num(g.grade or g.level, 0)),
                         label = tostring(g.label or g.name or ''),
-                        salary = math.floor(num(g.salary or g.payment, 0)),
+                        -- Three spellings: this bridge emits `salary`, qb's own table uses
+                        -- `payment`, and an operator's `hooks.jobs` may return either or `pay`.
+                        salary = math.floor(num(g.salary or g.payment or g.pay, 0)),
                     }
                 end
             end
@@ -344,6 +346,10 @@ V.Callback('v-phone:jobs:data', function(src, resolve)
     for _, step in ipairs(ladder or {}) do
         if step.grade == math.floor(num(job.grade, 0)) then salary = step.salary end
     end
+    -- The framework's own figure wins when it has one: it is what this character is paid,
+    -- while the ladder is what the grade is worth in general. It also means the card still
+    -- shows a wage on a server whose job table cannot be read at all.
+    if num(job.pay, 0) > 0 then salary = math.floor(num(job.pay, 0)) end
 
     local openings = {}
     for _, j in ipairs(all or {}) do
@@ -358,7 +364,7 @@ V.Callback('v-phone:jobs:data', function(src, resolve)
                     local lvl = math.floor(num(g.grade or g.level, 0))
                     if lowest == nil or lvl < lowest then
                         lowest = lvl
-                        entry = math.floor(num(g.salary or g.payment, 0))
+                        entry = math.floor(num(g.salary or g.payment or g.pay, 0))
                     end
                 end
             end
@@ -376,7 +382,11 @@ V.Callback('v-phone:jobs:data', function(src, resolve)
         ok = true,
         me = {
             name = tostring(job.name or 'unemployed'),
-            label = tostring(job.label or (found and found.label) or job.name or ''),
+            -- A framework that gives no real label hands back the name as the label, which is
+            -- what ox does with a group. The job table has the proper one, so it wins in that
+            -- case and only in that case.
+            label = tostring(((job.label and job.label ~= job.name) and job.label)
+                or (found and found.label) or job.label or job.name or ''),
             grade = math.floor(num(job.grade, 0)),
             gradeLabel = tostring(job.gradeLabel or ''),
             onDuty = job.onDuty ~= false,
