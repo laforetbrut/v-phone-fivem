@@ -1496,10 +1496,6 @@ V.Callback('v-phone:open', function(src, resolve)
         -- Whether Cipher should hand a plaintext copy to the server for lawful intercept.
         -- Off unless the operator turned it on, so E2E stays E2E by default.
         cipherIntercept = (Config.Police and Config.Police.cipher and Config.Police.cipher.intercept) == true,
-        -- Whether the Camera app works at all. This was simply never sent: the page reads
-        -- `state.camera`, found undefined, and reported "the camera is disabled on this
-        -- server" however the operator had set it - so the app has never opened for anyone.
-        camera = V.SettingBool('camera', true),
         -- Media hosting: whether the camera uploads to a CDN, and whether video recording
         -- is offered, and the clip length cap the record UI should honour.
         media = Bridge.MediaEnabled and Bridge.MediaEnabled() or false,
@@ -1527,8 +1523,15 @@ V.Callback('v-phone:open', function(src, resolve)
             local ph = p.GetMetadata('photos')
             return (type(ph) == 'table') and ph or {}
         end)(),
-        camera     = V.SettingBool('camera', false)
-                     and (tostring(V.Setting('cameraUpload', '')) ~= '') or false,
+        -- On when the setting says so AND a photo has somewhere to go. There are TWO
+        -- destinations and this used to accept only one: `cameraUpload`, the screenshot-basic
+        -- route. A server running Config.Media - screencapture uploading to a CDN, which is
+        -- the better of the two because the API key never leaves the server - therefore got
+        -- "the camera is disabled on this server" with everything correctly configured, and
+        -- no setting it could change would help.
+        camera     = V.SettingBool('camera', true)
+                     and ((Bridge.MediaEnabled and Bridge.MediaEnabled())
+                          or tostring(V.Setting('cameraUpload', '')) ~= '') or false,
         customWallpaper = V.SettingBool('customWallpaper', true),
         -- Whether the operator allows a player to withhold their number at all. The Settings
         -- row is hidden when they do not, because a control that cannot do anything is worse

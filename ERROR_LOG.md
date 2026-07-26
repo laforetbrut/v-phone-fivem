@@ -5,6 +5,46 @@ one coming back.
 
 ---
 
+## [2026-07-26 07:40] — The camera gate accepted only one of its two destinations
+
+**Context:** the Camera app reported "disabled on this server" across five rounds of fixes on
+a server where everything was configured correctly.
+
+**Error:** the open payload built `camera` as
+
+    V.SettingBool('camera', false) and (tostring(V.Setting('cameraUpload', '')) ~= '') or false
+
+There are TWO places a photo can go: `Config.Media` (screencapture uploading to a CDN, with
+the API key kept server-side) and `cameraUpload` (screenshot-basic posting to a URL). This
+accepted only the second. A server running the first — the better of the two — got the app
+switched off with nothing it could change to fix it.
+
+**Root cause of five rounds, and it is a method failure, not a code one:**
+
+1. I grepped the payload for `^\s+camera = ` and got one hit, then asserted the key was
+   "absent" and added my own. The existing key is written `camera     =` with several spaces;
+   my pattern required exactly one. **A negative grep result is not evidence of absence** — it
+   is evidence about my pattern. I built three commits on top of that assertion.
+2. I fixed two real bugs on adjacent links of the same chain (the client reading
+   `Config.Media.enabled` while the server resolved a convar; the page treating an absent
+   field as off) and each felt like the fix, because each was genuinely wrong. Neither was
+   this.
+3. What finally settled it was printing the resolver's INPUTS beside its output. The line
+   `camera inputs: convar=true config=true resolved=true` next to `payload: camera=false`
+   proved in one glance that something wrote the field after the resolver ran. I added that
+   diagnostic four rounds too late.
+
+**Fix:** the gate is `V.SettingBool('camera', true) and (MediaEnabled() or cameraUpload ~= '')`.
+Truth table run in real Lua across all five combinations, including this server's exact shape
+— media live, no upload target — which now enables the app. The duplicate key I had added is
+gone.
+
+**Prevention:** when a grep is the basis for a claim about absence, widen it and count, or
+read the block. And when a value is wrong, print the inputs that produced it before theorising
+about which of them is wrong — one line of that would have replaced four rounds of it.
+
+---
+
 ## [2026-07-26 07:00] — The camera flag was never sent, and I repeated the scope bug fixing it
 
 **Context:** the Camera app reported "the camera is disabled on this server" no matter what
