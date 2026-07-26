@@ -597,7 +597,10 @@ prefsOf = function(p, includeSecrets)
         wallpaperUrl = V.SettingBool('customWallpaper', true)
                        and m.wallpaperUrl and tostring(m.wallpaperUrl) or nil,
         wallFit   = (m.wallFit == 'contain') and 'contain' or Config.WallpaperFit,
-        size      = math.max(0.75, math.min(1.15, tonumber(m.size) or Config.DeviceSize)),
+        -- The operator's size, not the player's, and the stored value is ignored rather
+        -- than clamped: a character who had set 80% before this was locked would otherwise
+        -- keep a permanently soft phone with no control left to fix it.
+        size      = math.max(0.75, math.min(1.15, tonumber(Config.DeviceSize) or 1.0)),
         side      = (m.side == 'left') and 'left' or 'right',
         -- The home screen: the player's own order, and any folders they made.
         layout    = cleanLayout(m.layout),
@@ -2046,7 +2049,9 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
             prefs.wallpaperUrl = (url ~= '') and url or nil
         end
         if data.wallFit ~= nil then prefs.wallFit = (data.wallFit == 'contain') and 'contain' or 'cover' end
-        if data.size ~= nil then prefs.size = math.max(0.75, math.min(1.15, num(data.size, 1.0))) end
+        -- `size` is deliberately not accepted from the page any more. The slider is gone
+        -- because anything but 100% scales a rasterised phone and blurs every glyph, so
+        -- there is nothing for a client to set and no reason to trust it if there were.
         if data.side ~= nil then prefs.side = (data.side == 'left') and 'left' or 'right' end
         if data.layout ~= nil then
             prefs.layout = cleanLayout(data.layout)

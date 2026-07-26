@@ -640,7 +640,11 @@ Config.WallpaperFit = 'cover'
 
 -- The device itself. Players with small screens want it smaller, and left-handers want it
 -- on the other side; neither is worth making them live without.
-Config.DeviceSize = 1.0        -- 0.75 .. 1.15
+-- How big the handset is drawn, for everyone. 1.0 is the ONLY value that renders exactly:
+-- the phone is laid out in pixels at 372x784, so any other size is a `transform: scale()`
+-- over an already-drawn image and the text goes soft. There is no player-facing slider for
+-- that reason. Change this if you want a different fixed size and accept the softness.
+Config.DeviceSize = 1.0        -- 0.75 .. 1.15, but only 1.0 is pixel-exact
 Config.DeviceSide = 'right'    -- right | left
 
 -- ── Mail ───────────────────────────────────────────────────────

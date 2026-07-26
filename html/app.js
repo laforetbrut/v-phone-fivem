@@ -2644,11 +2644,13 @@ RENDER.settings = () => {
     })), { header: L('ph.wallpaper') }) +
     // The device itself: how big, and which side it sits on.
     '<div class="grouphead">' + esc(L('ph.device')) + '</div>' +
+    // No size slider, on purpose. The phone is laid out in pixels at 372x784, so any size
+    // other than 100% is a `transform: scale()` over an already-rasterised image and every
+    // glyph goes soft. Locking it to 100% is the only setting that renders exactly, and a
+    // crisp phone at one size beats a fuzzy one at five. `Config.DeviceSize` is still there
+    // for an operator who wants a different fixed size and will accept the softness.
     '<div class="sliderow">' +
-      '<div class="sl"><span>' + esc(L('ph.size')) + '</span><span>' + Math.round((p.size || 1) * 100) + '%</span></div>' +
-      '<input type="range" id="dsize" min="75" max="115" step="1" aria-label="' +
-        esc(L('ph.size')) + '" value="' + Math.round((p.size || 1) * 100) + '" />' +
-      '<div class="seg" style="margin-top:12px">' +
+      '<div class="seg">' +
         '<button class="' + (p.side !== 'left' ? 'on' : '') + '" data-side="right">' + esc(L('ph.side_right')) + '</button>' +
         '<button class="' + (p.side === 'left' ? 'on' : '') + '" data-side="left">' + esc(L('ph.side_left')) + '</button>' +
       '</div>' +
@@ -2713,20 +2715,6 @@ RENDER.settings = () => {
       const res = await post('prefs', { side: b.dataset.side });
       if (res && res.ok) { state.prefs = res.prefs; applyDevice(); RENDER.settings(); }
     }));
-  const ds = byId('dsize');
-  if (ds) {
-    ds.addEventListener('input', () => {
-      state.prefs.size = Number(ds.value) / 100;
-      applyDevice();
-      ds.style.setProperty('--fill-pct', ((Number(ds.value) - 75) / 40 * 100) + '%');
-    });
-    ds.addEventListener('change', async () => {
-      const res = await post('prefs', { size: Number(ds.value) / 100 });
-      if (res && res.ok) state.prefs = res.prefs;
-    });
-    ds.style.setProperty('--fill-pct', (((p.size || 1) * 100 - 75) / 40 * 100) + '%');
-  }
-
   const gl = byId('glass');
   if (gl) {
     // Repaint live while dragging so the value is judged by looking at it, and only
