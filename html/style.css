@@ -3,19 +3,10 @@
 
    Two rules govern everything below.
 
-   1. **`backdrop-filter` IS the glass, and the panels need it.** This note used to
-      say the opposite - that FiveM's CEF renders it as an opaque black box, so the
-      glass had to be COMPOSED from a tint, a rim and a sheen instead. That was true
-      of an old CEF. FiveM ships Chromium 103 now and blurs the backdrop correctly.
-
-      It matters because most panels here carry `background: rgba(...)` at a LOW
-      alpha, or only a highlight gradient over nothing at all. The blur is what
-      makes them read as frosted; strip it and you see the home screen straight
-      through the Settings list. Verified the hard way: they were removed once, on
-      the strength of the sentence above, and every menu went transparent.
-
-      So: keep them. The composed tint, rim and sheen are still there and still
-      carry the look where a panel is opaque anyway.
+   1. **No `backdrop-filter`.** FiveM's CEF renders it as an opaque black box, so
+      the glass is COMPOSED rather than sampled: a translucent tint, a bright 1px
+      rim, a specular sheen across the top edge and a soft inner shadow. Against
+      the smooth gradient wallpapers this reads as glass, and it costs nothing.
 
    2. **The chrome is the phone's; the accent is the server's.** Structure,
       radii, materials and motion are iOS. The accent colour comes from v-ui, so
@@ -136,7 +127,7 @@ input { font: inherit; }
   border-radius: 56px;
   background:
     linear-gradient(145deg, #8d8d8d 0%, #3a3a3c 18%, #1c1c1e 45%, #48484a 78%, #0e0e0f 100%);
-  box-shadow: 0 16px 38px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .26),
+  box-shadow: 0 42px 90px rgba(0, 0, 0, .62), 0 6px 18px rgba(0, 0, 0, .5),
               inset 0 1px 0 rgba(255, 255, 255, .30),
               inset 0 -1px 0 rgba(0, 0, 0, .6); }
 .bezel::before { content: ''; position: absolute; inset: 6px; border-radius: 51px;
@@ -1670,15 +1661,7 @@ input { font: inherit; }
 /* Device and wallpaper ---------------------------------------------------- */
 .device {
   z-index: var(--ph-overlay-z);
-  /* No `filter` here, deliberately, and this one really does have to go. The size setting
-     scales this element with a transform, and a filter gives the element its own render
-     surface which is rasterised BEFORE the transform is applied - so the phone was drawn at
-     372px and then stretched, and every glyph went soft the moment the size slider left
-     100%.
-
-     Nothing is lost with it: `.bezel` already carries
-     `0 42px 90px rgba(0,0,0,.62), 0 6px 18px rgba(0,0,0,.5)` as a box-shadow, which is the
-     same silhouette, paints with the element, and rasterises at the final scale. */
+  filter: drop-shadow(0 24px 46px rgba(0, 0, 0, .34));
 }
 
 .device.capturing {
@@ -1694,17 +1677,9 @@ input { font: inherit; }
     linear-gradient(102deg,
       #161719 0%, #77787c 7%, #2a2b2e 17%, #0d0e10 48%,
       #4e5054 78%, #151618 94%, #050506 100%);
-  /* A phone's shadow, not a stage light. This was `0 46px 96px rgba(0,0,0,.62)` - a
-     96px cloud at 62% black hanging 46px below the handset - which over a daylit street
-     reads as a black rectangle sitting behind the phone rather than as depth. It is
-     invisible to a DOM probe too, because a shadow is painted but never hit-tested, which
-     is why "what is behind the phone" kept coming back as `body`.
-
-     Kept tight and soft: enough to lift the handset off the world, not enough to darken
-     it. The insets below are the bezel's own highlights and must stay. */
   box-shadow:
-    0 16px 38px rgba(0, 0, 0, .34),
-    0 4px 10px rgba(0, 0, 0, .26),
+    0 46px 96px rgba(0, 0, 0, .62),
+    0 10px 24px rgba(0, 0, 0, .56),
     inset 0 1px 0 rgba(255, 255, 255, .34),
     inset 1px 0 0 rgba(255, 255, 255, .14),
     inset -1px 0 0 rgba(255, 255, 255, .08),
@@ -1730,14 +1705,6 @@ input { font: inherit; }
     inset 0 0 0 .5px rgba(255, 255, 255, .08),
     inset 0 0 0 1.5px rgba(0, 0, 0, .9);
   isolation: isolate;
-  /* `overflow: hidden` alone does not hold here. Opening an app puts
-     `filter: blur(18px) brightness(.72)` and `transform: scale(1.08)` on the wallpaper
-     (.screen.app-open .wallpaper), and a filtered element gets its own composited surface
-     which Chromium does not reliably clip to a rounded overflow ancestor. The wallpaper is
-     scaled BEYOND the screen, so what escaped was a dark blurred rectangle sitting behind
-     the handset - and only ever with an app open, which is exactly how it was reported.
-     `contain: paint` makes the clip a promise rather than a hope. */
-  contain: paint;
 }
 
 .wallpaper {
@@ -7202,17 +7169,6 @@ html.keyboard-nav .homebar:focus {
    Native applications share the wallpaper as their optical backdrop. Camera,
    Calculator, Cipher and Music keep their purpose-built surfaces. */
 .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {
-  /* No backdrop-filter on this one, deliberately, and it is the exception to the note
-     at the top of this file. On the small panels the blur is what makes them read as
-     frosted. Here the element is the WHOLE app surface, 352x764, transparent, and
-     FiveM's CEF turns a backdrop-filter that size into an opaque box - which is the
-     black square that appeared behind the phone whenever an app was open, and only
-     then. Proved by asking the page what each layer paints rather than what is under
-     a pixel: a filter overflow is painted but never hit-tested.
-
-     Nothing is lost. The gradients below still tint the surface, and the wallpaper
-     behind it already carries blur(18px) brightness(.72) of its own, so the frosting
-     was coming from there all along. */
   --app-card: rgba(255, 255, 255, .56);
   --app-fill: rgba(104, 104, 116, .105);
   --app-sep: rgba(60, 60, 67, .20);
@@ -7227,6 +7183,8 @@ html.keyboard-nav .homebar:focus {
     linear-gradient(160deg,
       rgba(247, 249, 255, .86),
       rgba(235, 238, 247, .70));
+  -webkit-backdrop-filter: blur(28px) saturate(158%);
+  backdrop-filter: blur(28px) saturate(158%);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {
@@ -7979,16 +7937,15 @@ body.inframe.dark .uisearch {
 
 /* ── The tab bar ─────────────────────────────────────────────
    It sits in the app footer, which is already clear of the home indicator. */
-/* The footer sits ABOVE the home indicator's hit area, which is a 220px-wide invisible
-   box reaching 26px up from the bottom (.homebar::before, z-index 60). The social tab bar's
-   buttons are 38px tall with almost no bottom padding, so its middle tabs landed inside that
-   box and the home bar swallowed every tap on them - the buttons looked fine and did
-   nothing. The app tab bars (.tabbar) escaped only because their 22px bottom padding lifts
-   them clear.
+/* The footer sits ABOVE the home indicator's hit area - a 220px-wide invisible box reaching
+   26px up from the bottom (.homebar::before, z-index 60). The social tab bar's buttons are
+   38px tall, so its middle tabs landed inside that box and the home bar swallowed every tap
+   on them; they looked fine and did nothing. `.tabbar` escaped only by having 22px of bottom
+   padding, which is the same strip iOS reserves under a tab bar.
 
    pointer-events is the important half: the bar itself lets clicks through, so an empty
    stretch of footer still reaches the home indicator and the swipe-up gesture keeps working.
-   Only the buttons claim their own pixels, which is how iOS behaves too. */
+   Only the buttons claim their own pixels. */
 #appfoot { position: relative; z-index: 61; pointer-events: none; }
 #appfoot > * { pointer-events: auto; }
 
@@ -7996,10 +7953,8 @@ body.inframe.dark .uisearch {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  /* 22px at the bottom, not 2px, and it is not decoration. The home indicator sits at
-     `bottom: 9px` and is 5px tall, so with 2px of padding the pill was drawn straight
-     across the tab icons and its hit area swallowed taps meant for them. iOS reserves this
-     strip below a tab bar for exactly the same reason. `.tabbar` already had it. */
+  /* 22px, not 2px: the home indicator is at `bottom: 9px` and 5px tall, so with 2px of
+     padding the pill was drawn straight across the tab icons. */
   padding: 7px 6px 22px;
   border-radius: 20px 20px 0 0;
   background:
@@ -9235,7 +9190,7 @@ body.inframe.dark .uisearch {
 }
 .neongrid button:active { transform: scale(.95); }
 
-/* Alt is held and the mouse belongs to the camera again. The phone stays on screen and
-   keeps its state - it simply stops looking interactive, because it is not. */
+/* Alt is held and the mouse belongs to the camera again. The phone stays on screen and keeps
+   its state - it simply stops looking interactive, because it is not. */
 .device.freelook { opacity: .72; }
 .device.freelook .screen { pointer-events: none; }

@@ -5,6 +5,46 @@ one coming back.
 
 ---
 
+## [2026-07-26 06:20] — Blocked the camera myself, then broke the glass twice chasing a square
+
+**Context:** two long-running complaints — Alt not freeing the camera, and a black square
+behind the phone whenever an app was open.
+
+**Errors:**
+
+1. **Alt.** Four attempts, each fixing a real defect and none fixing the symptom: reading the
+   key in Lua (the browser holds the keyboard), dropping focus and polling for release (the
+   game had not registered the key yet), `SetNuiFocus(true, false)`, then a settle delay.
+   The actual cause was in `Config.Hold.block`, which lists controls **1 and 2** — look
+   left/right and up/down — and the guard thread disables every entry in it EVERY FRAME while
+   the phone is open. So focus was released correctly all along, the game did have the mouse,
+   and my own guard threw the camera movement away sixty times a second.
+2. **The black square.** Three guesses, each removing something real and none of them the
+   cause: 44 `backdrop-filter` declarations (which made every panel see-through), the bezel's
+   shadow, then the full-screen `.app` backdrop-filter (which made the apps transparent). Two
+   of the three visibly broke the phone.
+
+**Root cause of the pattern, which matters more than either bug:** I was proposing mechanisms
+and shipping them as fixes. Each mechanism was genuinely capable of producing a dark rectangle,
+so each felt like an answer — but I could not see the rendered result, and a mechanism that
+COULD cause a symptom is not evidence that it DID.
+
+The user's own observations were better data than my reasoning every single time: "only when I
+am in an application" localised it to app-open state; "it appeared with the zoom problems"
+dated it to a specific commit range. I under-weighted both.
+
+**Fix:** `style.css` restored wholesale to the last state the user had confirmed looked right
+(`23ee55a^`), then only the two structural fixes that were independently verified re-applied —
+`#appfoot` above the home indicator, and the social tab bar's bottom padding. The guard now
+leaves controls 1 and 2 alone while free look is on.
+
+**Prevention:** when the symptom is visual and cannot be observed from here, do not ship a
+mechanism as a fix. Restore to a state the user has confirmed, change ONE thing, and let them
+look. And when a change is a guess, say so in the message rather than describing it as the
+cause — three of these were written up as though they were established.
+
+---
+
 ## [2026-07-26 05:10] — `undefined` on the home screen, and a black box behind the phone
 
 **Context:** two changes made in the same pass — showing the real date on the calendar widget,

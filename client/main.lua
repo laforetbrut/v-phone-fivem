@@ -254,7 +254,17 @@ local function startGuard()
     freeLook = false
     CreateThread(function()
         while isOpen do
-            for _, c in ipairs(Config.Hold.block) do DisableControlAction(0, c, true) end
+            -- Controls 1 and 2 are look left/right and up/down. Blocking them is right
+            -- while the player is browsing - a drag across the screen should not spin the
+            -- camera - and it is exactly wrong during free look, which exists to spin the
+            -- camera. This is why Alt appeared to do nothing even once focus was released:
+            -- the cursor was gone, the game had the mouse, and this line threw the movement
+            -- away every frame.
+            for _, c in ipairs(Config.Hold.block) do
+                if not (freeLook and (c == 1 or c == 2)) then
+                    DisableControlAction(0, c, true)
+                end
+            end
 
             -- The pause menu, held shut three ways because one is not enough.
             --
