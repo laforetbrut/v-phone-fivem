@@ -118,6 +118,53 @@ end
 -- it a fixed name is what makes "stop whatever is playing" a single call.
 local PRIVATE_SOUND = 'vphone_music'
 
+--- A track URL xsound can actually deal with.
+---
+--- xsound reads a YouTube link with this, in its own NUI:
+---
+---     if (url.indexOf("youtube") !== -1) {
+---         let urlParts = url.split("?v=");
+---         videoId = urlParts[1].substring(0, 11);   // undefined.substring on a miss
+---     }
+---
+--- So any URL containing "youtube" but no `?v=` - a `music.youtube.com` link, a `/shorts/`
+--- link, an `/embed/` link, a playlist - throws inside THEIR page. Nothing reaches the server
+--- console, nothing reaches F8, and the player gets silence with no error: exactly the report
+--- that led here.
+---
+--- This is not ours to fix in their resource, but it is ours not to hand them a URL we know
+--- they cannot read. Every YouTube form is reduced to the one canonical shape their matcher
+--- handles, and a form with no video id in it at all is refused with a message that says so
+--- rather than played into silence.
+---
+--- Returns url, err.
+function MusicNormaliseUrl(url)
+    url = tostring(url or '')
+    if url == '' then return nil, 'nourl' end
+    if not url:match('^https?://') then return nil, 'nourl' end
+
+    local lower = url:lower()
+    if not (lower:find('youtube', 1, true) or lower:find('youtu.be', 1, true)) then
+        -- Anything else is a direct media link as far as we are concerned, and xsound hands it
+        -- to an audio element. Not our business to second-guess.
+        return url, nil
+    end
+
+    -- Every shape a YouTube link comes in, reduced to its eleven-character id.
+    local id = url:match('[?&]v=([%w_-]+)')
+        or url:match('youtu%.be/([%w_-]+)')
+        or url:match('/shorts/([%w_-]+)')
+        or url:match('/embed/([%w_-]+)')
+        or url:match('/live/([%w_-]+)')
+    if id then id = id:sub(1, 11) end
+
+    -- A playlist or a channel link has no single video in it. Refused, because there is
+    -- nothing to play and silence would be the alternative.
+    if not id or #id < 11 then return nil, 'ytform' end
+
+    return ('https://www.youtube.com/watch?v=%s'):format(id), nil
+end
+
 -- Said once per session, not once per call: a warning that repeats every time somebody
 -- dials is noise that hides the next real line.
 local warnedNoCalls = false
@@ -303,8 +350,10 @@ STUBS['v-music'] = {
         -- the server also has to keep pushing the position, or the music stands still while
         -- the player walks away from it. See server/music.lua.
         if deck == 'xsound' then
-            local url = tostring(track.url or '')
-            if url == '' then return { error = 'nourl' } end
+            -- Normalised before it is handed over, because xsound's own YouTube matcher throws
+            -- on several perfectly ordinary link shapes and the failure is silent.
+            local url, urlErr = MusicNormaliseUrl(track.url)
+            if not url then return { error = urlErr or 'nourl' } end
             local volume = math.max(0.0, math.min(1.0, tonumber(track.volume) or 0.65))
 
             if output == nil or output == 'headphones' then

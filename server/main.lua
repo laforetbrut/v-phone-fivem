@@ -35,6 +35,7 @@ local Signal
 local batteryOf
 local requireItem
 local phoneReachable
+local phoneUsable
 local speakerOff
 local prefsOf
 
@@ -1430,6 +1431,19 @@ phoneReachable = function(src)
     return hasBars(src)
 end
 
+--- A phone somebody is holding, with charge in it. **No signal required.**
+---
+--- `phoneReachable` answers "could the network reach this person", which is the right question
+--- for a call or a text and the wrong one for anything that does not use the network. FruitDrop
+--- is the case that matters: it is Bluetooth between two phones a few metres apart, and it was
+--- refused with no bars - so the one situation where handing somebody a number face to face is
+--- the ONLY thing that works was the situation it stopped working in.
+phoneUsable = function(src)
+    if not Core.GetPlayer(src) or not requireItem(src) then return false end
+    if V.SettingBool('battery', true) and batteryOf(src) <= 0 then return false end
+    return true
+end
+
 -- ══ Cipher ═════════════════════════════════════════════════════
 -- Cipher deliberately keeps cryptography out of Lua. The NUI generates an ECDH key pair,
 -- keeps the encrypted private key in the player's local CEF storage and sends only its
@@ -2577,7 +2591,9 @@ end
 V.Callback('v-phone:airdropScan', function(src, resolve)
     local me = Core.GetPlayer(src)
     if not me then resolve(false) return end
-    if not phoneReachable(src) then resolve({ error = 'gone' }) return end
+    -- Usable, not reachable: FruitDrop is Bluetooth between two phones in the same room and
+    -- has nothing to do with the cellular network.
+    if not phoneUsable(src) then resolve({ error = 'gone' }) return end
     if not btOn(me) then resolve({ error = 'bt' }) return end
     local c0 = coordsOf(src)
     if not c0 then resolve({ ok = true, devices = {} }) return end
@@ -2587,7 +2603,7 @@ V.Callback('v-phone:airdropScan', function(src, resolve)
         local tid = tonumber(sid)
         if tid and tid ~= src then
             local tp = Core.GetPlayer(tid)
-            if tp and phoneReachable(tid) and btOn(tp) then
+            if tp and phoneUsable(tid) and btOn(tp) then
                 local c = coordsOf(tid)
                 if c and #(c0 - c) <= airRange() then
                     out[#out + 1] = {
@@ -2606,12 +2622,12 @@ end)
 V.Callback('v-phone:airdropSend', function(src, resolve, data)
     local me = Core.GetPlayer(src)
     if not me then resolve(false) return end
-    if not phoneReachable(src) then resolve({ error = 'gone' }) return end
+    if not phoneUsable(src) then resolve({ error = 'gone' }) return end
     if not btOn(me) then resolve({ error = 'bt' }) return end
 
     local to = tonumber(data and data.to)
     local tp = to and Core.GetPlayer(to)
-    if to == src or not tp or not phoneReachable(to) or not btOn(tp) then
+    if to == src or not tp or not phoneUsable(to) or not btOn(tp) then
         resolve({ error = 'gone' }) return
     end
 
@@ -2647,6 +2663,36 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
         if payload.url == '' or not wallpaperAllowed(payload.url) or not ownsPhoto(me, payload.url) then
             resolve({ error = 'x' }) return
         end
+    elseif kind == 'email' then
+        -- Your own mail address, named by the SERVER exactly as your own number is: this lands
+        -- in somebody else's contact book, and a client that could choose what address it is
+        -- saved under could introduce itself as the police.
+        --
+        -- `data.address` only chooses WHICH of your addresses, and is checked against the ones
+        -- you actually hold.
+        local chosen = mailPick(me.citizenid, data and data.address)
+        if not chosen then resolve({ error = 'noaccount' }) return end
+        local prefs = prefsOf(me)
+        local who = tostring((prefs and prefs.ownerName) or ''):gsub('[%c]', '')
+        if who == '' then who = tostring(me.name or '') end
+        payload = { name = who:sub(1, 40), email = chosen }
+
+    elseif kind == 'health' then
+        -- Your OWN record, and the server reads it rather than taking the page's word for what
+        -- it says: this lands on somebody else's phone as a medical fact about you, and a
+        -- client that could write its own would be a client that could write anyone's.
+        if (Config.HealthRecord or {}).share == false then resolve({ error = 'disabled' }) return end
+        local rec = me.GetMetadata('healthrec')
+        if type(rec) ~= 'table' then rec = {} end
+        payload = {
+            name = tostring(me.name or ''):sub(1, 40),
+            blood = tostring(rec.blood or ''):sub(1, 6),
+            allergies = tostring(rec.allergies or ''):sub(1, 300),
+            conditions = tostring(rec.conditions or ''):sub(1, 300),
+            meds = tostring(rec.meds or ''):sub(1, 300),
+            ice = tostring(rec.ice or ''):sub(1, 60),
+            donor = rec.donor == true,
+        }
     elseif kind == 'track' then
         -- A track is a link and two labels. Deliberately NOT checked for ownership the way a
         -- photo is: a photo URL identifies a file this character took, and handing somebody
@@ -2690,6 +2736,9 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
     end)
 
     local preview = (kind == 'photo') and payload.url
+        or (kind == 'email') and (payload.name .. ' - ' .. payload.email)
+        or (kind == 'health') and payload.name
+        or (kind == 'track') and (payload.title or payload.url)
         or (payload.name ~= '' and (payload.name .. ' - ' .. payload.number) or payload.number)
     TriggerClientEvent('v-phone:client:airdrop', to,
         {
@@ -2721,7 +2770,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
 
     local rp = Core.GetPlayer(src)
     local sp = Core.GetPlayer(o.from)
-    if not rp or not sp or not phoneReachable(src) or not phoneReachable(o.from)
+    if not rp or not sp or not phoneUsable(src) or not phoneUsable(o.from)
         or not btOn(rp) or not btOn(sp) then
         resolve({ error = 'gone' }) return
     end
@@ -2730,7 +2779,36 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
         resolve({ error = 'range' }) return
     end
 
-    if o.kind == 'track' then
+    if o.kind == 'email' then
+        -- Filed onto the matching contact when there is one, so an address joins the person
+        -- rather than making a second, half-empty entry beside them. A contact with no number
+        -- to match on is created from the name.
+        local existing = MySQL.scalar.await(
+            'SELECT id FROM vphone_contacts WHERE citizenid = ? AND name = ? LIMIT 1',
+            { rp.citizenid, o.payload.name })
+        if existing then
+            MySQL.update.await('UPDATE vphone_contacts SET email = ? WHERE id = ? AND citizenid = ?',
+                { o.payload.email, existing, rp.citizenid })
+        else
+            MySQL.insert.await(
+                'INSERT INTO vphone_contacts (citizenid, name, number, email, favourite) VALUES (?,?,?,?,0)',
+                { rp.citizenid, o.payload.name, '', o.payload.email })
+        end
+        if o.from and GetPlayerName(o.from) then
+            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+        end
+        resolve({ ok = true })
+        return
+    elseif o.kind == 'health' then
+        -- Nothing is written: a record belongs to the person it describes, and filing somebody
+        -- else's into the reader's own would overwrite theirs. It is handed over to be READ,
+        -- which is what a medic asking for it wants.
+        if o.from and GetPlayerName(o.from) then
+            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+        end
+        resolve({ ok = true, health = o.payload })
+        return
+    elseif o.kind == 'track' then
         -- The receiver's music library lives in the phone's own app storage, which the PAGE
         -- owns - so the track goes back in the answer and the page files it. A server-side
         -- write would have to reimplement the library's chunked layout, and get it right
@@ -2764,6 +2842,15 @@ V.Callback('v-phone:install', function(src, resolve, data)
     if not p then resolve(false) return end
     local id = tostring((data and data.app) or '')
     local want = data and data.install == true
+
+    -- **A download needs a network.** Installing an app fetches it from the store, and a phone
+    -- with no bars cannot fetch anything - yet this was the one place that never asked. Calls,
+    -- texts, the bank and every social app refuse without signal; the store handed out apps in
+    -- a tunnel.
+    --
+    -- Only on the way IN. Removing an app is a change to this handset and nothing else, so a
+    -- player with no signal is not stuck with an app they want gone.
+    if want and not hasBars(src) then resolve({ error = 'nosignal' }) return end
 
     local available = appsFor(src, p)
     local found
@@ -2908,7 +2995,8 @@ end)
 -- recipient's Inbox and a draft are the same mail seen from different sides. Deleting
 -- your copy never touches anybody else's.
 --- Every address this character holds, oldest first so the list is stable between reads.
-local function mailAccountsOf(cid)
+--- Global for the same reason as `mailPick` below: it is reached from code earlier in the file.
+function mailAccountsOf(cid)
     local rows = MySQL.query.await(
         'SELECT address FROM vphone_mail_accounts WHERE citizenid = ? ORDER BY id ASC', { cid }) or {}
     local out = {}
@@ -2923,7 +3011,11 @@ end
 --- the truth, and checking ownership per request is both simpler and stricter. An unnamed or
 --- unowned address falls back to the first one rather than failing, so an older page that knows
 --- nothing of this keeps working exactly as it did.
-local function mailPick(cid, wanted)
+--- Global, not local, and the reason matters: AirDrop's `email` kind is defined ABOVE this
+--- point in the file, and a `local` declared later is not in scope there - the call would have
+--- read a nil global and failed at runtime with nothing to explain it. Same trap that once bound
+--- a nil `cover` into an UPDATE.
+function mailPick(cid, wanted)
     local accounts = mailAccountsOf(cid)
     wanted = tostring(wanted or '')
     for _, a in ipairs(accounts) do
@@ -2963,21 +3055,48 @@ end
 --- because the page wants to mark a reserved one as such: an address nobody else can take is
 --- worth pointing out, and it is also the only explanation for why the list is longer for a
 --- police officer than for everybody else.
+--- Does this character's job satisfy one reserved-domain rule?
+---
+--- The rule is a table that may hold both shapes at once:
+---
+---   { 'police', 'sheriff' }     a list: any grade of either qualifies
+---   { police = 4 }              a map: grade 4 or higher of the police
+---   { police = 4, 'chief' }     both, in one rule
+---
+--- Named once because two different questions ask it - what to OFFER and what to ALLOW - and
+--- an answer that differs between those two is a domain that appears in the picker and is then
+--- refused, or worse, one that is refused in the picker and accepted on the wire.
+local function mailJobQualifies(p, rule)
+    if type(rule) ~= 'table' then return false end
+    local job = (p and p.job) or {}
+    local name = tostring(job.name or '')
+    if name == '' then return false end
+    -- `grade` is normalised by the bridge to a number for every framework.
+    local grade = math.floor(tonumber(job.grade) or 0)
+
+    -- The list half: any grade of a named job.
+    for _, allowed in ipairs(rule) do
+        if tostring(allowed) == name then return true end
+    end
+
+    -- The map half: a minimum grade for a named job. Skipped for the integer keys the list
+    -- half already answered, so `{ police = 4, 'chief' }` behaves as both.
+    for key, minGrade in pairs(rule) do
+        if type(key) == 'string' and key == name then
+            return grade >= math.floor(tonumber(minGrade) or 0)
+        end
+    end
+    return false
+end
+
 local function mailDomainsFor(p)
     local out, reserved = {}, {}
     for _, d in ipairs(Config.Mail.domains or {}) do out[#out + 1] = d end
 
-    local job = (p and p.job) or {}
-    local name = tostring(job.name or '')
-    for domain, jobs in pairs(Config.Mail.reserved or {}) do
-        if type(jobs) == 'table' then
-            for _, allowed in ipairs(jobs) do
-                if allowed == name then
-                    out[#out + 1] = domain
-                    reserved[domain] = true
-                    break
-                end
-            end
+    for domain, rule in pairs(Config.Mail.reserved or {}) do
+        if mailJobQualifies(p, rule) then
+            out[#out + 1] = domain
+            reserved[domain] = true
         end
     end
     table.sort(out)
@@ -2992,13 +3111,9 @@ local function mailDomainOk(p, domain)
     for _, d in ipairs(Config.Mail.domains or {}) do
         if d == domain then return true end
     end
-    local jobs = (Config.Mail.reserved or {})[domain]
-    if type(jobs) ~= 'table' then return false end
-    local name = tostring(((p and p.job) or {}).name or '')
-    for _, allowed in ipairs(jobs) do
-        if allowed == name then return true end
-    end
-    return false
+    -- The same matcher the picker used, so what is offered and what is allowed can never
+    -- disagree.
+    return mailJobQualifies(p, (Config.Mail.reserved or {})[domain])
 end
 
 --- The same question, including a domain this character bought.
@@ -3370,7 +3485,89 @@ V.Callback('v-phone:health', function(src, resolve, data)
 
     local day = os.date('%Y-%m-%d')
     if rec.stepDay ~= day then rec.steps = 0 end
-    resolve({ ok = true, record = rec })
+    resolve({ ok = true, record = rec, reader = healthMayRead(p) })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Reading somebody else's health record
+-- ══════════════════════════════════════════════════════════════
+-- A paramedic treating an unconscious player cannot ask them for their blood group. So a job
+-- the operator listed may read a record without being handed one - and every part of that
+-- sentence is checked here rather than trusted from the page: the job, the grade, the distance,
+-- and the fact that the person being asked about is really there.
+
+--- May this character read other people's records? Uses the same job/grade matcher the mail
+--- domains use, so one shape is learnt once.
+function healthMayRead(p)
+    local cfg = Config.HealthRecord or {}
+    local readers = cfg.readers
+    if type(readers) ~= 'table' or next(readers) == nil then return false end
+    return mailJobQualifies(p, readers)
+end
+
+--- Everybody close enough to be examined.
+V.Callback('v-phone:health:nearby', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    if not healthMayRead(p) then resolve({ error = 'forbidden' }) return end
+
+    local range = math.max(1.0, math.min(50.0, tonumber((Config.HealthRecord or {}).readRange) or 5.0))
+    local mine = coordsOf(src)
+    if not mine then resolve({ error = 'x' }) return end
+
+    local out = {}
+    for _, raw in ipairs(GetPlayers()) do
+        local other = tonumber(raw)
+        if other and other ~= src then
+            local op = Core.GetPlayer(other)
+            local at = op and coordsOf(other)
+            if op and at and #(mine - at) <= range then
+                out[#out + 1] = {
+                    -- The server id, because that is what a medic can match to a person in
+                    -- front of them, and it is already public in the player list.
+                    id = other,
+                    name = tostring(op.name or ''):sub(1, 40),
+                }
+            end
+        end
+    end
+    resolve({ ok = true, players = out, range = range })
+end)
+
+--- One person's record.
+V.Callback('v-phone:health:read', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    if not healthMayRead(p) then resolve({ error = 'forbidden' }) return end
+
+    local target = math.floor(num(data and data.id, 0))
+    local tp = target > 0 and Core.GetPlayer(target)
+    if not tp then resolve({ error = 'gone' }) return end
+
+    -- Distance again, at the moment of reading. The list was a snapshot; a medic who walked
+    -- away between seeing the list and tapping a name has walked away.
+    local range = math.max(1.0, math.min(50.0, tonumber((Config.HealthRecord or {}).readRange) or 5.0))
+    local a, b = coordsOf(src), coordsOf(target)
+    if not a or not b or #(a - b) > range then resolve({ error = 'range' }) return end
+
+    local rec = tp.GetMetadata('healthrec')
+    if type(rec) ~= 'table' then rec = {} end
+
+    -- The patient is told, unless the operator turned that off. A record that can be read in
+    -- silence is a record whose owner has no way of knowing it happened.
+    if (Config.HealthRecord or {}).notifyOwner ~= false then
+        exports[GetCurrentResourceName()]:Notify(target, 'health',
+            L(target, 'ph.health_read_title'),
+            (L(target, 'ph.health_read_body')):format(tostring(p.name or '?')))
+    end
+    Core.Log('health', ('%s read the record of %s'):format(p.citizenid, tp.citizenid),
+        nil, p.citizenid)
+
+    resolve({ ok = true, name = tostring(tp.name or ''):sub(1, 40), record = {
+        blood = rec.blood, allergies = rec.allergies, conditions = rec.conditions,
+        meds = rec.meds, ice = rec.ice, donor = rec.donor == true,
+        -- Step count is not medical history and is nobody else's business.
+    } })
 end)
 
 -- ══════════════════════════════════════════════════════════════

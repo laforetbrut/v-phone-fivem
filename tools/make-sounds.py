@@ -49,6 +49,25 @@ ALERTS = {
     'note': [(1046, 0.00, .12), (1568, .09, .20)],
 }
 
+# ── The emergency alert ────────────────────────────────────────────────────────
+# Not a notification. This is the one sound on the phone that is meant to be alarming, for a
+# staff broadcast about something happening to the whole city.
+#
+# It is the **WEA attention signal**: 853 Hz and 960 Hz sounded TOGETHER, which is what every
+# emergency alert on a real phone uses. The two tones are close enough to beat against each
+# other rather than blend, and that roughness is the entire design - it is deliberately not a
+# pleasant interval, because a pleasant interval is one people learn to ignore. Two bursts, as
+# the standard specifies, so it reads as a signal rather than as a phone ringing.
+#
+# Both partials are written at full weight and the render normalises the sum, so this lands
+# louder than any other sound the phone makes - which is the point.
+EMERGENCY = {
+    'emergency': [
+        (853, 0.00, .90), (960, 0.00, .90),
+        (853, 1.00, .90), (960, 1.00, .90),
+    ],
+}
+
 # The interface sounds. Short enough that the page could synthesise them, but shipping
 # them too means every sound the phone makes comes from one place.
 UI = {
@@ -195,10 +214,11 @@ def write(name, samples):
 def main():
     os.makedirs(OUT, exist_ok=True)
     total = 0
-    for group, tail in ((RINGTONES, 0.45), (ALERTS, 0.20), (UI, 0.18)):
+    for group, tail in ((RINGTONES, 0.45), (ALERTS, 0.20), (UI, 0.18), (EMERGENCY, 0.30)):
         for name, score in group.items():
             prefix = ('ring_' if group is RINGTONES
-                      else 'alert_' if group is ALERTS else 'ui_')
+                      else 'alert_' if group is ALERTS
+                      else 'ui_' if group is UI else 'ui_')
             size = write(prefix + name, render(score, tail))
             total += size
             print('%-18s %6.1f KB' % (prefix + name + '.wav', size / 1024))
@@ -211,7 +231,7 @@ def main():
         print('%-18s %6.1f KB' % ('ui_' + name + '.wav', size / 1024))
 
     print('%d files, %.1f KB total' % (
-        len(RINGTONES) + len(ALERTS) + len(UI) + len(CLICKS), total / 1024))
+        len(RINGTONES) + len(ALERTS) + len(UI) + len(EMERGENCY) + len(CLICKS), total / 1024))
 
 
 if __name__ == '__main__':

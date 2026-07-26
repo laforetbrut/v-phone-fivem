@@ -395,7 +395,7 @@ function goHome() {
     return;
   }
   if (byId('folderview').classList.contains('on')) {
-    byId('folderview').classList.remove('on');
+    byId('folderview').classList.remove('on', 'arranging');
     return;
   }
   if (editing) { exitArrange(); return; }
@@ -919,17 +919,65 @@ function folderTile(it, i) {
     '<span class="nm">' + esc(it.name) + '</span></button>';
 }
 
+// A folder, and - in arrange mode - the way back OUT of one.
+//
+// An app put into a folder had no route out: this view wired a tap to OPEN the app and nothing
+// else, so a folder was a one-way door. Arrange mode now puts a corner badge on each tile
+// inside, and tapping it lifts that app back onto the home screen. Deliberately the same idiom
+// as removing an app from the home screen, rather than a drag: dragging out of a modal sheet
+// onto a grid behind it is a lot of machinery, and this is the thing that was actually missing.
 function openFolder(i) {
   const it = layoutItems()[i];
   if (!it || it.t !== 'folder') return;
   byId('foldername').textContent = it.name;
   byId('folderapps').innerHTML = it.apps.map((id, k) => {
     const a = appById(id);
-    return a ? tileHTML(a, k) : '';
+    if (!a) return '';
+    return editing
+      ? tileHTML(a, k).replace('<span class="wrap">',
+          '<span class="unfolder" data-out="' + esc(a.id) + '">' + svg('xmark')
+          + '</span><span class="wrap">')
+      : tileHTML(a, k);
   }).join('');
+  byId('folderview').classList.toggle('arranging', editing);
   byId('folderview').classList.add('on');
+  ui('folder');
+
+  // Out of the folder, onto the home screen, in the position the folder occupies.
+  const takeOut = (id) => {
+    const items = layoutItems();
+    const folder = items[i];
+    if (!folder || folder.t !== 'folder') return;
+    folder.apps = folder.apps.filter((x) => x !== id);
+    // A folder holding one app is a folder for no reason: it becomes that app again. Emptying
+    // it entirely is already handled by `layoutItems`, which drops a folder with nothing in it.
+    if (folder.apps.length === 1) {
+      items[i] = { t: 'app', id: folder.apps[0] };
+    } else if (!folder.apps.length) {
+      items.splice(i, 1);
+    }
+    items.splice(i + 1, 0, { t: 'app', id });
+    saveLayout(items).then(() => {
+      renderHome();
+      // Re-open only while there is still a folder here to look at.
+      const now = layoutItems()[i];
+      if (editing && now && now.t === 'folder') openFolder(i);
+      else byId('folderview').classList.remove('on');
+    });
+    ui('toggleoff');
+  };
+
+  [...byId('folderapps').querySelectorAll('.unfolder')].forEach((x) =>
+    x.addEventListener('click', (e) => {
+      // The badge sits on the tile, so its click must not also open the app.
+      e.stopPropagation();
+      takeOut(x.dataset.out);
+    }));
+
   [...byId('folderapps').querySelectorAll('.tile')].forEach((t) =>
     t.addEventListener('click', () => {
+      // In arrange mode a tap is not "open": the whole screen is being rearranged.
+      if (editing) return;
       byId('folderview').classList.remove('on');
       const a = appById(t.dataset.app);
       if (a) enterApp(a, t);
@@ -1653,8 +1701,13 @@ function healthRecord() {
       UI.group([UI.row({ icon: 'heart', tint: '#FF2D55', title: L('ph.donor'),
         toggle: r.donor === true, data: { t: 'donor' } })]) +
       UI.button(L('ph.save'), 'hsave', 'tinted') +
+      // Hand it to somebody standing next to you. Useful exactly when it matters: a medic who
+      // needs a blood group from a player who is conscious enough to send it.
+      UI.button(L('ph.health_share'), 'hshare', 'plain') +
       '<div class="groupfoot">' + esc(L('ph.health_hint')) + '</div>'
     );
+    if (byId('hshare')) byId('hshare').addEventListener('click', () => airdropShare('health', {}));
+    healthReader = d && d.reader === true;
     let donor = r.donor === true;
     rows('.row', (el) => el.addEventListener('click', () => {
       donor = !donor;
@@ -1836,6 +1889,7 @@ async function mailList() {
   body('<button class="mailaddr' + (many ? ' pick' : '') + '" id="maddr" type="button">'
     + esc(mailAcc || '') + (many ? svg('chevron') : '') + '</button><div id="mlist"></div>');
   if (many) byId('maddr').addEventListener('click', () => mailAccountSheet());
+  else byId('maddr').addEventListener('click', () => airdropShare('email', { address: mailAcc }));
 
   const r = mailFolder === 'saved'
     ? await mailPost('saved')
@@ -1920,6 +1974,7 @@ function mailAccountSheet() {
       value: a === mailAcc ? L('ph.mail_reading') : '',
       data: { acc: a },
     }))) +
+    UI.button(L('ph.mail_share'), 'macc_share', 'plain') +
     (accounts.length < cap
       ? UI.button(L('ph.mail_add_account'), 'macc_add', 'tinted')
       : '<div class="groupfoot">' + esc(L('ph.mail_account_cap').replace('{max}', String(cap))) + '</div>'),
@@ -1934,6 +1989,12 @@ function mailAccountSheet() {
           mailFolder = 'inbox';
           RENDER.mail();
         }));
+      byId('macc_share').addEventListener('click', () => {
+        if (!closeSheet(false, epoch)) return;
+        // Which address is shared is this page's choice; WHAT it says is the server's, checked
+        // against the addresses this character actually holds.
+        airdropShare('email', { address: mailAcc });
+      });
       if (byId('macc_add')) byId('macc_add').addEventListener('click', () => {
         if (!closeSheet(false, epoch)) return;
         // The same screen that creates the first address creates the next one.
@@ -1953,6 +2014,10 @@ function mailCompose(o) {
   if (d) {
     to = d.to_addr || ''; subject = d.subject || ''; bodyTxt = d.body || '';
     replyTo = Number(d.reply_to || 0); boxId = Number(d.box_id || 0);
+  } else if (o.to) {
+    // Opened from somewhere that already knows who this is for - a contact card, a tapped
+    // address - so the recipient is filled in and the cursor belongs in the subject.
+    to = String(o.to);
   } else if (o.forward) {
     const f = o.forward;
     subject = /^(fwd|tr):/i.test(f.subject || '') ? f.subject : ('Fwd: ' + (f.subject || ''));
@@ -1995,7 +2060,7 @@ function mailCompose(o) {
     if (image) byId('mdrop').addEventListener('click', () => {
       image = '';
       paintAttach();
-      ui('toggleoff');
+      ui('detach');
     });
   };
 
@@ -2028,7 +2093,7 @@ function mailCompose(o) {
 
   byId('msend').addEventListener('click', async () => {
     const res = await mailPost('send', payload());
-    if (res && res.ok) { ui('sent'); toast(L('ph.mail_sent')); mailFolder = 'sent'; mailList(); }
+    if (res && res.ok) { ui('send'); toast(L('ph.mail_sent')); mailFolder = 'sent'; mailList(); }
     else if (res && res.error === 'noaddr') toast(L('ph.err_noaddr') + ' ' + (res.address || ''));
     else toast(L('ph.err_' + ((res && res.error) || 'x')));
   });
@@ -2319,6 +2384,55 @@ function hushDistanceText(metres) {
   if (m < 100) return L('ph.hush_very_close');
   if (m < 1000) return L('ph.hush_metres').replace('{n}', String(m));
   return L('ph.hush_km').replace('{n}', (m / 1000).toFixed(1));
+}
+
+// ══ Emergency alert ════════════════════════════════════════════
+// The one thing on this phone that is meant to be alarming. Full-screen, loud, and it has to be
+// dismissed rather than fading on its own - a warning that disappears while somebody is reading
+// it is a warning they did not get.
+let emergencyOpen = false;
+
+function emergencyAlert(a) {
+  const host = byId('emergency');
+  if (!host) return;
+
+  host.innerHTML =
+    '<div class="emergencycard">' +
+      '<div class="emergencyicon">' + svg('warning') + '</div>' +
+      '<div class="emergencykind">' + esc(a.kind || L('ph.emergency_default')) + '</div>' +
+      '<div class="emergencytitle">' + esc(a.title || '') + '</div>' +
+      (a.body ? '<div class="emergencybody">' + esc(a.body) + '</div>' : '') +
+      UI.button(L('ph.emergency_ack'), 'emok', 'tinted') +
+    '</div>';
+  host.classList.add('on');
+  emergencyOpen = true;
+
+  byId('emok').addEventListener('click', () => {
+    host.classList.remove('on');
+    host.innerHTML = '';
+    emergencyOpen = false;
+  });
+
+  // **Louder than anything else, and it ignores the volume preference.**
+  //
+  // `ui()` returns immediately when the player has set their ring volume to zero, which is
+  // right for every other sound and wrong for this one: a silenced phone still sounds an
+  // emergency alert on a real handset, and a staff broadcast that a muted player never hears
+  // is a broadcast that did not happen. So this plays the file directly rather than going
+  // through `ui()`, at full volume, with the synthesised score as the fallback.
+  const src = soundUrl('ui', 'emergency');
+  let played = false;
+  if (src) {
+    try {
+      const el = new Audio(src);
+      el.volume = 1;
+      el.play().catch(() => {});
+      played = true;
+    } catch { /* fall through to the oscillators */ }
+  }
+  // `note()` is the oscillator primitive the rest of the sound code uses. Louder here than
+  // anywhere else: 0.045 is the gain every other tone gets.
+  if (!played) UI_TONES.emergency.forEach(([f, t, d]) => note(f, t, d, 0.14, 'square'));
 }
 
 // ══ Streamer mode ══════════════════════════════════════════════
@@ -2758,7 +2872,8 @@ function contactSheet(c) {
   if (c.system) {
     const details = [
       UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.number'), value: maskNum(c.number) }),
-      c.email ? UI.row({ icon: 'mail', tint: '#0A84FF', title: L('ph.c_email'), value: c.email }) : '',
+      c.email ? UI.row({ icon: 'mail', tint: '#0A84FF', title: L('ph.c_email'), value: c.email,
+                         chevron: true, data: { mailto: c.email } }) : '',
       c.address ? UI.row({ icon: 'map', tint: '#FF9500', title: L('ph.c_address'), subtitle: c.address }) : '',
       c.note ? UI.row({ icon: 'note', tint: '#8E8E93', title: L('ph.c_note'), subtitle: c.note }) : '',
     ].filter(Boolean);
@@ -2779,6 +2894,7 @@ function contactSheet(c) {
         byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
         byId('cshare').addEventListener('click', () =>
           airdropShare('contact', { name: c.name, number: c.number }));
+        wireMailto();
       });
     return;
   }
@@ -2790,7 +2906,7 @@ function contactSheet(c) {
     UI.field('cname', L('ph.name'), c.name, 'maxlength="40"') +
     UI.field('cnum', L('ph.number'), c.number, 'maxlength="20"') +
     UI.field('cphoto', L('ph.c_photo'), c.photo || '', 'maxlength="400"') +
-    UI.field('cmail', L('ph.c_email'), c.email || '', 'maxlength="64"') +
+    UI.field('cmail_field', L('ph.c_email'), c.email || '', 'maxlength="64"') +
     UI.field('caddr', L('ph.c_address'), c.address || '', 'maxlength="120"') +
     UI.field('cbday', L('ph.c_birthday'), c.birthday || '', 'maxlength="20"') +
     UI.field('cnote', L('ph.c_note'), c.note || '', 'maxlength="300"') +
@@ -2798,6 +2914,9 @@ function contactSheet(c) {
     UI.button(L('ph.save'), 'csave') +
     (isNew ? '' : UI.button(L('ph.call'), 'ccall', 'tinted')) +
     (isNew ? '' : UI.button(L('ph.message'), 'cmsg', 'plain')) +
+    // Writing to them is only offered when there is an address to write to. A button that
+    // opens an empty composer would be a worse answer than no button.
+    ((isNew || !c.email) ? '' : UI.button(L('ph.c_email_send'), 'cmail', 'plain')) +
     (isNew ? '' : UI.button(L('ph.airdrop_share'), 'cshare', 'plain')) +
     (isNew ? '' : UI.button(L('ph.delete'), 'cdel', 'destructive')),
     () => {
@@ -2805,7 +2924,7 @@ function contactSheet(c) {
       byId('csave').addEventListener('click', async () => {
         const epoch = sheetEpoch;
         const payload = { id: c.id, name: byId('cname').value, number: byId('cnum').value,
-          photo: byId('cphoto').value.trim(), email: byId('cmail').value.trim(),
+          photo: byId('cphoto').value.trim(), email: byId('cmail_field').value.trim(),
           address: byId('caddr').value.trim(), birthday: byId('cbday').value.trim(),
           note: byId('cnote').value.trim() };
         const res = await post('contactSave', payload);
@@ -2817,12 +2936,55 @@ function contactSheet(c) {
       byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
       byId('cshare').addEventListener('click', () => airdropShare('contact', { name: c.name, number: c.number }));
       byId('cmsg').addEventListener('click', () => { closeSheet(); openThread(c.number); });
+      // The address as it stands in the field, not as it was when the sheet opened: somebody
+      // who has just typed one expects the button to use it.
+      if (byId('cmail')) byId('cmail').addEventListener('click', () => {
+        const to = (byId('cmail_field') && byId('cmail_field').value.trim()) || c.email || '';
+        closeSheet();
+        mailTo(to);
+      });
       byId('cdel').addEventListener('click', async () => {
         const epoch = sheetEpoch;
         await post('contactDelete', { id: c.id });
         if (closeSheet(false, epoch)) { await refresh(); RENDER.contacts(); }
       });
     });
+}
+
+// Write to an address from anywhere: a contact card, a tapped row.
+//
+// The Mail app has to be OPEN before its composer can draw, and it needs an account of its own
+// first - so a player with no address is sent to the sign-up rather than to a composer that
+// could not send anything.
+async function mailTo(address) {
+  const to = String(address || '').trim();
+  if (!to) { toast(L('ph.c_email_none')); return; }
+  const app = (state.apps || []).find((a) => a.id === 'mail');
+  if (!app) { toast(L('ph.err_notinstalled')); return; }
+
+  enterApp(app, null);
+  const me = await post('mail', { op: 'me', address: mailAcc });
+  if (!me || me.error) { toast(L('ph.err_' + ((me && me.error) || 'off'))); return; }
+  mailImages = me.images !== false;
+  mailMe = me;
+  if (!me.address) {
+    // No address of their own yet. Sending needs one, so this is the honest next step.
+    mailSignup(me.domains || [], me.reserved || {}, me.owned || {}, me.buy || {});
+    toast(L('ph.mail_need_account'));
+    return;
+  }
+  mailAcc = me.address;
+  mailCompose({ to });
+}
+
+// A tapped row carrying an address, wherever one is drawn.
+function wireMailto() {
+  [...byId('sheet').querySelectorAll('[data-mailto]')].forEach((el) =>
+    el.addEventListener('click', () => {
+      const to = el.dataset.mailto;
+      closeSheet();
+      mailTo(to);
+    }));
 }
 
 // ── Bank ───────────────────────────────────────────────────────
@@ -4679,7 +4841,8 @@ function propertySheet(pr) {
     () => {
       if (byId('plocate')) {
         byId('plocate').addEventListener('click', async () => {
-          const set = await post('waypoint', { x: pr.x, y: pr.y });
+          ui('waypoint');
+        const set = await post('waypoint', { x: pr.x, y: pr.y });
           toast(L(set && set.ok ? 'ph.veh_located' : 'ph.err_x'));
           ui('key');
         });
@@ -5085,42 +5248,86 @@ function openSwitcher() {
 
   // Drag to pan. `panned` is what keeps a drag from also being read as a tap on the card it
   // started on, and the card's own flick-up-to-close still wins on the vertical axis.
-  let panX = null, panFrom = 0, panned = false;
-  strip.addEventListener('pointerdown', (e) => { panX = e.clientX; panFrom = strip.scrollLeft; panned = false; });
+  let panX = null, panY = null, panFrom = 0, panned = false;
+  strip.addEventListener('pointerdown', (e) => {
+    panX = e.clientX; panY = e.clientY; panFrom = strip.scrollLeft; panned = false;
+  });
   strip.addEventListener('pointermove', (e) => {
     if (panX === null) return;
     const dx = e.clientX - panX;
+    // A mostly-VERTICAL drag is the card being flicked away, not the strip being panned.
+    // Without this test any sideways drift at all claimed the gesture, and the flick was
+    // then discarded as "a drag that moved the strip".
+    if (!panned && Math.abs(e.clientY - panY) > Math.abs(dx)) return;
     if (!panned && Math.abs(dx) < 6) return;
     panned = true;
     strip.scrollLeft = panFrom - dx;
   });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
-    strip.addEventListener(ev, () => { panX = null; }));
+    strip.addEventListener(ev, () => { panX = null; panY = null; }));
 
   [...strip.querySelectorAll('.card')].forEach((c) => {
-    let y0 = null;
-    c.addEventListener('pointerdown', (e) => { y0 = e.clientY; });
+    let y0 = null, dragging = false;
+
+    const settle = () => {
+      dragging = false;
+      y0 = null;
+      c.style.removeProperty('transform');
+      c.style.removeProperty('opacity');
+      c.classList.remove('dragging');
+    };
+
+    const close = () => {
+      const id = c.dataset.app;
+      ui('swipe');
+      c.classList.add('gone');
+      recents = recents.filter((recent) => recent !== id);
+      setTimeout(() => {
+        if (openApp && openApp.id === id) closeApp(true);
+        if (!recents.length) byId('switcher').classList.remove('on');
+        else openSwitcher();
+      }, 240);
+    };
+
+    c.addEventListener('pointerdown', (e) => {
+      y0 = e.clientY;
+      dragging = true;
+      // **The card has to capture the pointer.**
+      //
+      // Without this, flicking up moved the pointer OFF the card - which is the whole point
+      // of the gesture - so `pointerup` fired on whatever was underneath and the card's own
+      // handler never ran. The flick worked only if you released while still inside the card,
+      // which for a sixty-pixel upward throw almost never happens. That is why swipe-to-close
+      // did nothing.
+      try { c.setPointerCapture(e.pointerId); } catch { /* mouse without capture support */ }
+    });
+
+    // The card follows the finger, so the gesture confirms itself while it is happening
+    // rather than only when it succeeds.
+    c.addEventListener('pointermove', (e) => {
+      if (!dragging || y0 === null) return;
+      const dy = Math.min(0, e.clientY - y0);
+      if (dy > -4) return;
+      c.classList.add('dragging');
+      c.style.transform = 'translateY(' + dy + 'px)';
+      c.style.opacity = String(Math.max(0.35, 1 + dy / 260));
+    });
+
     c.addEventListener('pointerup', (e) => {
       const flicked = y0 !== null && e.clientY - y0 < -60;
-      y0 = null;
-      // A drag that moved the strip is not a tap on a card.
-      if (panned) { panned = false; return; }
-      if (flicked) {
-        // Flick a card away to close the app, as on a real phone.
-        const id = c.dataset.app;
-        c.classList.add('gone');
-        recents = recents.filter((recent) => recent !== id);
-        setTimeout(() => {
-          if (openApp && openApp.id === id) closeApp(true);
-          if (!recents.length) byId('switcher').classList.remove('on');
-          else openSwitcher();
-        }, 240);
-        return;
-      }
+      const wasPanned = panned;
+      settle();
+      panned = false;
+      // A drag that panned the strip sideways is not a tap on a card.
+      if (wasPanned) return;
+      if (flicked) { close(); return; }
       const a = (state.apps || []).find((x) => x.id === c.dataset.app);
       byId('switcher').classList.remove('on');
       if (a) enterApp(a, null);
     });
+
+    // A cancelled pointer must put the card back rather than leave it half thrown.
+    c.addEventListener('pointercancel', settle);
   });
 }
 
@@ -5638,11 +5845,71 @@ function ringHtml(label, value, max, colour) {
 }
 
 let healthTab = 'today';
+// Whether this character's job may read other people's records. Answered by the server with
+// the record itself, so the tab appears without a second round trip - and the server checks it
+// again on every read, because a tab is not a permission.
+let healthReader = false;
 
 // The hospitals, once. The list is the config: it cannot change while the server is up, so
 // re-fetching it every time somebody taps the tab would be waste. `null` means "not asked
 // yet", which is why the tab is offered on a first open rather than hidden until proven.
 let healthHospitals = null;
+
+// Everybody close enough to be examined, and their records.
+//
+// The list and the read are both checked on the server - job, grade, distance, and that the
+// person is really there - so this screen is a convenience over that and never the gate.
+async function healthPatients() {
+  if (!openApp || openApp.id !== 'health') return;
+  beginView();
+  setNav(L('app.health'), null);
+  loading();
+  const d = await post('health', { op: 'nearby' });
+  if (!openApp || openApp.id !== 'health') return;
+  if (!d || d.error) {
+    body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'contacts'));
+    return;
+  }
+  const list = d.players || [];
+  if (!list.length) {
+    body(UI.empty(L('ph.health_nobody'), 'contacts') +
+      '<div class="groupfoot">' + esc(L('ph.health_range_hint')
+        .replace('{n}', String(Math.round(d.range || 5)))) + '</div>');
+    return;
+  }
+  body(UI.group(list.map((pl) => UI.row({
+    avatar: pl.name, title: pl.name, value: '#' + pl.id, chevron: true,
+    data: { pid: pl.id },
+  }))) + '<div class="groupfoot">' + esc(L('ph.health_read_hint')) + '</div>');
+
+  rows('.row[data-pid]', (r) => r.addEventListener('click', async () => {
+    const res = await post('health', { op: 'read', id: Number(r.dataset.pid) });
+    if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+    healthRecordSheet(res.name, res.record || {});
+  }));
+}
+
+// One record, read-only. Shared by the reader's screen and by an accepted FruitDrop, because
+// a record looks the same whichever way it arrived.
+function healthRecordSheet(name, r) {
+  const line = (label, value) => (value
+    ? UI.row({ icon: 'id', title: L(label), subtitle: String(value) }) : '');
+  sheet(name || L('ph.record'),
+    UI.group([
+      r.blood ? UI.row({ icon: 'heart', tint: '#FF2D55', title: L('ph.blood'),
+                         value: String(r.blood), mono: true }) : '',
+      line('ph.allergies', r.allergies),
+      line('ph.conditions', r.conditions),
+      line('ph.meds', r.meds),
+      line('ph.ice', r.ice),
+      UI.row({ icon: 'heart', title: L('ph.donor'),
+               value: L(r.donor ? 'ph.yes' : 'ph.no') }),
+    ].filter(Boolean)) +
+    // Nothing is empty-checked away: a record with nothing in it is itself worth knowing, and
+    // an empty sheet would read as a failure to load.
+    ((r.blood || r.allergies || r.conditions || r.meds || r.ice) ? ''
+      : '<div class="groupfoot">' + esc(L('ph.health_empty')) + '</div>'));
+}
 
 // ── Hospitals ──────────────────────────────────────────────────
 // A list the operator wrote, and a waypoint. The phone cannot know where a server put its
@@ -5682,9 +5949,26 @@ RENDER.health = async () => {
     { id: 'record', icon: 'id', label: 'ph.record' },
   ];
   if (healthHospitals.length) tabs.push({ id: 'hospitals', icon: 'map', label: 'ph.hospitals' });
+  // Only for a job the operator listed. `healthReader` is last known rather than asked for
+  // here - the record read fills it - so the tab may be a beat late on the very first open and
+  // is then correct. It is a shortcut to a screen, not a permission: every read is checked
+  // again on the server.
+  if (healthReader) tabs.push({ id: 'patients', icon: 'contacts', label: 'ph.patients' });
   tabbar(tabs, healthTab, (t) => { healthTab = t; RENDER.health(); });
   if (healthTab === 'record') { healthRecord(); return; }
   if (healthTab === 'hospitals') { healthHospitalList(); return; }
+  if (healthTab === 'patients') { healthPatients(); return; }
+
+  // The vitals view asks for the record as well, purely to learn whether this character may
+  // read other people's. Without it a medic would have to open their own record once before
+  // the Patients tab appeared, which is a strange thing to have to discover.
+  post('health', { op: 'get' }).then((d) => {
+    const may = !!(d && d.reader);
+    if (may !== healthReader && openApp && openApp.id === 'health') {
+      healthReader = may;
+      RENDER.health();
+    }
+  });
   loading();
   const d = await post('health');
   if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'heart')); return; }
@@ -6144,7 +6428,11 @@ function airdropShare(kind, payload) {
 // The receiver's prompt. Nothing is written until they accept.
 function airdropOffer(o) {
   o = o || {};
-  const icon = o.kind === 'photo' ? 'images' : (o.kind === 'track' ? 'music' : 'contacts');
+  const icon = o.kind === 'photo' ? 'images'
+    : o.kind === 'track' ? 'music'
+    : o.kind === 'health' ? 'heart'
+    : o.kind === 'email' ? 'mail'
+    : 'contacts';
   const preview = o.kind === 'photo'
     ? '<img class="shotbig" src="' + esc(o.preview || '') + '" />'
     : '<div class="airbig">' + svg(icon) + '<span>' + esc(o.preview || '') + '</span></div>';
@@ -6158,6 +6446,12 @@ function airdropOffer(o) {
         closeSheet();
         const r = await post('airdropRespond', { offerId: o.offerId, accept: true });
         if (!r || !r.ok) { toast(L('ph.airdrop_' + ((r && r.error) || 'x'))); return; }
+        // A record is not filed anywhere: it belongs to the person it describes, and writing
+        // it into the reader's own would overwrite theirs. It is handed over to be READ.
+        if (r.health) {
+          healthRecordSheet(r.health.name || o.from || '', r.health);
+          return;
+        }
         // A track is filed here rather than on the server: the library lives in this phone's
         // app storage, and the page is what knows its layout.
         if (r.track && r.track.url) {
@@ -6233,6 +6527,7 @@ function wireCodeFill() {
 // textarea trick. It is the only thing that works in CEF, and a number you cannot copy
 // is a number you have to read out loud.
 function copyText(text, said) {
+  ui('copy');
   // The page is served from https://cfx-nui-<resource>/, which CEF treats as a secure
   // context, so the real clipboard API is available. The textarea trick stays as the
   // fallback: it is the only thing that works when it is not.
@@ -8003,7 +8298,7 @@ function socCompose(appId) {
     if (image) byId('bdrop').addEventListener('click', () => {
       image = '';
       paintAttach();
-      ui('toggleoff');
+      ui('detach');
     });
     const go = byId('bgo');
     // Snapmatic is a photo app: there is nothing to post until one is attached.
@@ -8022,7 +8317,7 @@ function socCompose(appId) {
       byId('bpick').addEventListener('click', () => pickPhoto((url) => {
         image = url;
         paintAttach();
-        ui('shutter');
+        ui('attach');
       }));
       byId('bgo').addEventListener('click', async () => {
         const bodyText = byId(textId).value;
@@ -8524,6 +8819,30 @@ const UI_TONES = {
   success:  [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
   error:    [[311, 0, .11], [233, .1, .18]],
   faceid:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
+  // The WEA attention signal: 853 Hz and 960 Hz TOGETHER, twice. The two are close enough to
+  // beat against each other instead of blending, and that roughness is the whole design - a
+  // pleasant interval is one people learn to ignore. Deliberately the least pleasant sound the
+  // phone makes, because it is the only one that means "stop what you are doing".
+  emergency: [[853, 0, .9], [960, 0, .9], [853, 1.0, .9], [960, 1.0, .9]],
+  // ── The quiet half of the phone ────────────────────────────
+  // Everything below is an action that used to happen in silence. None of them is a fanfare:
+  // a phone that chimes at every touch is a phone people mute, so these are all short, low and
+  // clearly subordinate to the ones above - a confirmation, not an announcement.
+  //
+  // Written as scores rather than files: at forty milliseconds a synthesised note and a sampled
+  // one are indistinguishable, and a file per interaction would be a download per interaction.
+  swipe:    [[520, 0, .035]],                              // a card thrown away
+  refresh:  [[880, 0, .04], [1174, .035, .07]],            // a list pulled to reload
+  attach:   [[1046, 0, .04], [1318, .03, .07]],            // a photo joined to something
+  detach:   [[1318, 0, .04], [880, .03, .07]],             // and taken back off
+  send:     [[1318, 0, .05], [1760, .04, .09], [2093, .09, .13]],   // a mail, a post
+  copy:     [[1568, 0, .03], [2093, .025, .055]],          // something on the clipboard
+  install:  [[880, 0, .06], [1318, .05, .10], [1760, .10, .16]],    // an app arrives
+  uninstall:[[1318, 0, .06], [880, .05, .12]],             // and leaves
+  money:    [[1046, 0, .05], [1568, .04, .09], [1318, .09, .14]],   // a payment went through
+  folder:   [[740, 0, .04], [988, .03, .07]],              // a folder opens
+  waypoint: [[1174, 0, .04], [1568, .035, .08]],           // a marker set on the map
+  delete:   [[440, 0, .05], [330, .045, .10]],             // something removed for good
   // A call that cannot connect. This is the REORDER tone - what a telephone network has
   // answered a dead number with for sixty years - and it is deliberately not one of the
   // pleasant little chimes above: 480 Hz and 620 Hz together, three short bursts, ending
@@ -10028,6 +10347,14 @@ window.addEventListener('message', (e) => {
     clearTimeout(shutterTimer);
     shutterTimer = null;
     byId('device').classList.remove('capturing');
+  } else if (d.action === 'emergency') {
+    // A staff broadcast about something happening to the whole city.
+    //
+    // Drawn even with the phone SHUT and even in Do Not Disturb, which nothing else here does:
+    // the point of an emergency alert is that it reaches somebody who was not looking at their
+    // phone. That is also exactly why it is behind an ace and a config switch - a channel that
+    // ignores a player's own silence settings is one that has to be hard to reach.
+    emergencyAlert(d.alert || {});
   } else if (d.action === 'strings') {
     // Pushed by the client when the language lands after this page loaded.
     if (d.strings && Object.keys(d.strings).length) {

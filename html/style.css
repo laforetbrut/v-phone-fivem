@@ -732,6 +732,11 @@ input { font: inherit; }
 .card { flex: 0 0 190px; height: 380px; border-radius: 26px; overflow: hidden;
   display: flex; flex-direction: column; cursor: pointer;
   transition: transform .24s var(--spring), opacity .24s var(--spring); }
+/* While a finger is on it the card is positioned by script, so the transition that makes it
+   settle back has to be out of the way - otherwise every move fights a 240ms ease and the
+   card lags behind the finger. */
+.card.dragging { transition: none; }
+
 .card.gone { transform: translateY(-120%); opacity: 0; }
 .card .chead { display: flex; align-items: center; gap: 8px; padding: 12px 13px; }
 .card .chead .ic { width: 26px; height: 26px; border-radius: 7px; display: flex;
@@ -1398,9 +1403,12 @@ input { font: inherit; }
    pointer-transparent because it is not something you interact with. */
 .device.peeking { pointer-events: none; }
 .device.peeking .bezel { animation: ph-peek .42s var(--spring) both; }
+/* 10% lower than it was. `to` used to be 72%, which lifted more of the handset into view than
+   a phone half out of a pocket should show - the screen was readable but the illusion was not.
+   `from` moves with it so the travel stays the same and the spring still reads as a lift. */
 @keyframes ph-peek {
-  from { transform: translateY(88%); }
-  to   { transform: translateY(72%); }
+  from { transform: translateY(98%); }
+  to   { transform: translateY(82%); }
 }
 .device.peeking .screen > *:not(.status):not(.island):not(.wallpaper) { visibility: hidden; }
 
@@ -8592,6 +8600,34 @@ body.inframe.dark .uisearch {
 }
 
 .mailimg:active { transform: scale(.99); }
+
+/* Taking an app back out of a folder. Only in arrange mode, and the same corner badge the
+   home screen uses to remove one - a folder used to be a one-way door. */
+.unfolder {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  z-index: 4;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(60, 60, 67, .92);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
+
+.unfolder svg { width: 10px; height: 10px; }
+.unfolder:active { transform: scale(.86); }
+
+/* The tile has to be a positioning context for the badge, and the badge must not be clipped. */
+#folderview.arranging .tile { position: relative; overflow: visible; }
+
+/* The same restless wobble the home screen uses, so arrange mode reads the same inside a
+   folder as outside one. */
+#folderview.arranging .tile .wrap { animation: ph-jiggle .28s ease-in-out infinite alternate; }
 
 /* ══ The warrant terminal ══════════════════════════════════════
    A police tool, deliberately not the phone: a dark forensic console over the whole

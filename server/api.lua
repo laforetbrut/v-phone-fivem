@@ -134,6 +134,41 @@ exports('RenumberAll', function()
     return done, failed
 end)
 
+--- A loud, full-screen alert on every phone on the server.
+---
+--- Not a notification. This is the one thing the phone draws with the handset SHUT and with the
+--- player's own volume setting ignored, because an emergency alert that waits for somebody to
+--- open their phone is not an emergency alert.
+---
+--- It reaches **every connected player**, with no signal, battery or item check: a citywide
+--- warning is not carried by the phone network in the fiction any more than it is in reality,
+--- and a player whose phone is flat is exactly the player who most needs telling. That is also
+--- why it sits behind the staff ace and `Config.Admin.actions.emergency`.
+---
+---     exports['v-phone']:EmergencyAlert('EARTHQUAKE', 'Get away from buildings')
+exports('EmergencyAlert', function(kind, body, title)
+    if (Config.Admin and Config.Admin.actions
+        and Config.Admin.actions.emergency == false) then return 0 end
+
+    local alert = {
+        kind = tostring(kind or ''):gsub('[%c]', ''):sub(1, 24),
+        title = tostring(title or ''):gsub('[%c]', ''):sub(1, 60),
+        body = tostring(body or ''):gsub('[%c]', ''):sub(1, 300),
+    }
+    if alert.body == '' and alert.title == '' then return 0 end
+
+    local n = 0
+    for _, raw in ipairs(GetPlayers()) do
+        local src = tonumber(raw)
+        if src then
+            TriggerClientEvent('v-phone:client:emergency', src, alert)
+            n = n + 1
+        end
+    end
+    Core.Log('admin', ('emergency alert: %s / %s'):format(alert.kind, alert.body))
+    return n
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Messages
 -- ══════════════════════════════════════════════════════════════

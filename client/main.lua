@@ -515,6 +515,60 @@ end
 -- The server can open or close the phone from an admin action or an API call. Close is
 -- also how a number change, a wipe or an import make the phone reload rather than show
 -- what was just changed underneath it.
+--- A citywide alert. Forwarded to the page whether or not the phone is open: the page is
+--- always loaded, and its alert overlay is drawn outside the handset for exactly this.
+--- `/phonemusic` - why is there no sound?
+---
+--- Staff only, through the same server check `/phonediag` uses. It exists because "xsound is
+--- installed, no error, no music" gave nobody anything to work with: every one of the answers
+--- below is a thing that silently produces silence, and this prints all of them at once.
+RegisterCommand('phonemusic', function()
+    V.Request('v-phone:diag', function(res)
+        if not res or res.error then
+            print('[v-phone] music: staff only (ace vphone.admin), with debug enabled.')
+            return
+        end
+
+        local M = Config.Music or {}
+        local music = V.Use('v-music')
+        local provider = music.Provider and music.Provider() or nil
+
+        print('[v-phone] music ─────────────────────────────────────')
+        print(('  Config.Music.enabled   %s'):format(tostring(M.enabled ~= false)))
+        print(('  Config.Music.provider  %s'):format(tostring(M.provider or 'auto')))
+        print(('  resolved deck          %s'):format(tostring(provider or 'NONE')))
+        for _, res2 in ipairs({ 'xsound', 'rcore_radiocar', 'xdiskjockey' }) do
+            print(('  %-22s %s'):format(res2, GetResourceState(res2)))
+        end
+
+        -- The two things inside xsound that produce silence with no error at all.
+        if GetResourceState('xsound') == 'started' then
+            local ok = pcall(function() return exports.xsound end)
+            print(('  xsound exports         %s'):format(ok and 'reachable' or 'NOT REACHABLE'))
+            print('  NOTE: xsound has a /streamermode command that mutes ALL of its sound')
+            print('        silently. If you have ever run it, run it again to toggle it back.')
+            print('        Its YouTube reader also throws on a link with no `?v=` in it, which')
+            print('        is why the phone now rewrites every YouTube link before handing it')
+            print('        over. A playlist or channel link is refused rather than played.')
+        end
+
+        -- And what the phone would actually send for the current track.
+        local now = MusicLastUrl
+        if now and now ~= '' then
+            local fixed, err = MusicNormaliseUrl(now)
+            print(('  last track asked for   %s'):format(now))
+            print(('  after normalising      %s'):format(tostring(fixed or ('REFUSED: ' .. tostring(err)))))
+        else
+            print('  last track asked for   (nothing yet this session)')
+        end
+    end)
+end, false)
+
+RegisterNetEvent('v-phone:client:emergency', function(alert)
+    if type(alert) ~= 'table' then return end
+    SendNUIMessage({ action = 'emergency', alert = alert, strings = strings() })
+end)
+
 RegisterNetEvent('v-phone:client:open', function() if not isOpen then openPhone() end end)
 RegisterNetEvent('v-phone:client:close', function() if isOpen then closePhone() end end)
 
@@ -892,6 +946,9 @@ RegisterNUICallback('music', function(data, cb)
     local music = V.Use('v-music')
 
     if action == 'play' then
+        -- Remembered for `/phonemusic`: when there is no sound, the single most useful fact is
+        -- which URL the phone actually tried to play.
+        MusicLastUrl = tostring((data and data.url) or '')
         cb(music.Play({
             url = data and data.url, title = data and data.title,
             artist = data and data.artist, volume = data and data.volume,

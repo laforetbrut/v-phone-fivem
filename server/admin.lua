@@ -303,6 +303,20 @@ if ADMIN.commands ~= false then
             reply(src, info and ('%s: %s'):format(info.name or cid, info.number or '-')
                 or 'No such character.')
 
+        -- ── A citywide alert ────────────────────────────────────────────
+        --
+        -- `/phoneadmin alert [kind] [text...]`. The kind is the banner word - EARTHQUAKE,
+        -- TSUNAMI, EVACUATION - and the rest is the message.
+        elseif sub == 'alert' and actionOn('emergency') then
+            local kind = args[2]
+            local body = table.concat(args, ' ', 3)
+            if not kind or body == '' then
+                reply(src, 'Usage: /phoneadmin alert [kind] [message...]   e.g. alert EARTHQUAKE Get outside now')
+                return
+            end
+            local n = self:EmergencyAlert(kind, body)
+            reply(src, ('Alert sent to %d phone(s).'):format(n))
+
         -- ── A new number, in the phone's own format ─────────────────────
         --
         -- Behind `setNumber`, because that is what it is: setting a number, with the phone
@@ -367,8 +381,8 @@ if ADMIN.commands ~= false then
 
         else
             reply(src, 'phoneadmin: info | who | number | renumber | contacts | apps | open | ' ..
-                       'battery | batteryall | message | notify | announce | app | outage | ' ..
-                       'outages | brick | unbrick | bricked | verify | verified | wipe')
+                       'battery | batteryall | message | notify | announce | alert | app | ' ..
+                       'outage | outages | brick | unbrick | bricked | verify | verified | wipe')
         end
     end, false)
 
@@ -396,6 +410,7 @@ if ADMIN.commands ~= false then
         { 'battery', 'Set a battery level', { { 'id', 'server id' }, { '0-100', 'percent' } } },
         { 'batteryall', 'Set every phone online', { { '0-100', 'percent' } } },
         { 'renumber', "A new number in the phone's own format", { { 'id|cid|all', 'the target' }, { 'confirm', 'required' } } },
+        { 'alert', 'A loud full-screen alert on every phone', { { 'kind', 'e.g. EARTHQUAKE' }, { 'message...', 'what is happening' } } },
         { 'message', 'Send a text message, from Staff', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
         { 'notify', 'A banner on their phone (does not persist)', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
         { 'announce', 'That banner, to every phone online', { { 'text...', 'the message' } } },

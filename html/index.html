@@ -209,6 +209,11 @@
 
   <!-- The payphone. Also a surface of its own rather than part of the phone: a player at a
        call box has no handset in hand, so none is drawn. Hidden until the client raises it. -->
+  <!-- The emergency alert. OUTSIDE the handset markup on purpose: it has to draw with the
+       phone shut, because an alert that only appears once you open your phone is not an
+       alert. Same reasoning as the payphone panel below. -->
+  <div class="emergency" id="emergency" role="alertdialog" aria-live="assertive"></div>
+
   <div class="booth hidden" id="booth">
     <div class="boothwrap">
       <!-- The armored handset on its steel lanyard, hanging in the cradle. Decoration: the

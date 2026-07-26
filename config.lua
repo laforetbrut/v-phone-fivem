@@ -857,11 +857,23 @@ Config.Mail = {
     -- keeping their `@lspd.gov` address is a roleplay matter to settle in character, not a
     -- mailbox for a script to delete behind them - and revoking it would silently break every
     -- thread they are part of. Take the job away and they simply cannot make a NEW one.
+    -- Two shapes, because two different things get asked for:
+    --
+    --   a list of jobs          any grade of that job qualifies
+    --   a job -> minimum grade  only from that grade upwards
+    --
+    -- Mix them freely in the same table, and mix them inside one domain: a list entry means
+    -- "any grade", a `job = n` entry means "grade n or higher". So a domain every officer may
+    -- use and one only command staff may use are both expressible, and so is a domain the whole
+    -- of one force shares with only the chiefs of another.
     reserved = {
         -- ['lspd.gov']    = { 'police', 'sheriff', 'bcso' },
         -- ['ems.gov']     = { 'ambulance', 'ems' },
         -- ['ls.gov']      = { 'judge', 'mayor', 'government' },
         -- ['weazel.news'] = { 'reporter', 'journalist' },
+
+        -- Command staff only. Grade 4 and above of the police, any grade of `chief`.
+        -- ['command.lspd.gov'] = { police = 4, 'chief' },
     },
 
     -- ── How many addresses one character may hold ──────────────
@@ -1068,6 +1080,16 @@ Config.Admin = {
         notify       = true,
     },
 
+    -- ── The emergency alert ────────────────────────────────────
+    -- A full-screen, loud broadcast to every phone on the server: an earthquake, a wildfire,
+    -- a citywide evacuation.
+    --
+    -- It is the only thing on this phone that draws with the handset SHUT and ignores a
+    -- player's own volume setting - which is exactly why it is behind the staff ace and its own
+    -- switch. A channel that overrides somebody's silence has to be hard to reach, or it will
+    -- be used for things that are not emergencies and then muted along with everything else.
+    emergency = true,
+
     -- Accept the bare `command` ace as proof of being staff.
     --
     -- OFF, and it used to be on. `IsPlayerAceAllowed(src, 'command')` is true for anybody
@@ -1097,6 +1119,46 @@ Config.ExternalCharging = {
 
 -- ══════════════════════════════════════════════════════════════
 --  POLICE FORENSICS
+-- ══════════════════════════════════════════════════════════════
+--  THE HEALTH RECORD
+-- ══════════════════════════════════════════════════════════════
+-- Blood group, allergies, conditions, medication, next of kin, organ donor. A player writes
+-- their own; this is about who else may see it.
+Config.HealthRecord = {
+    -- Let a player hand their record to somebody standing next to them, over FruitDrop. Their
+    -- own record and nobody else's, and the other person has to accept it.
+    share = true,
+
+    -- ── Jobs that may READ a record without being handed it ────
+    -- A paramedic treating an unconscious player cannot ask them for their blood group. So a
+    -- job on this list gets a fourth tab in the Health app listing everybody nearby, and can
+    -- open the record of any of them.
+    --
+    -- Same two shapes as `Config.Mail.reserved`: a list means any grade of that job, a
+    -- `job = n` entry means grade n or higher, and both may be mixed.
+    --
+    --   readers = { 'ambulance', 'ems' }        every medic
+    --   readers = { ambulance = 3 }             only from grade 3
+    --   readers = { 'ambulance', police = 6 }   medics, plus police command
+    --
+    -- **This is a real privacy decision, so it ships EMPTY.** A record holds a person's
+    -- medical history; who may read it without being handed it is not something to default on
+    -- somebody's behalf.
+    readers = {},
+
+    -- How close a reader has to be, in metres. A record is read at the patient's side, not
+    -- from across the city - and this is checked on the server, from real positions, so a
+    -- modified client cannot ask about somebody it is nowhere near.
+    readRange = 5.0,
+
+    -- Tell the patient their record was read, and by whom.
+    --
+    -- ON, and deliberately: a record that can be read silently is a record whose owner has no
+    -- way of knowing it happened. Turn it off only if your server has decided that medics
+    -- reading records is routine enough not to mention.
+    notifyOwner = true,
+}
+
 -- ══════════════════════════════════════════════════════════════
 --  HOSPITALS
 -- ══════════════════════════════════════════════════════════════
