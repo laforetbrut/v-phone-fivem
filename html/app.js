@@ -4955,18 +4955,16 @@ RENDER.camera = async () => {
   //
   // Lua is told at the same moment: it puts the player in first person and hides the HUD and
   // minimap, so what is framed is what is photographed.
-  // Only on the way IN. `RENDER.camera` is re-run by the landscape button itself, so forcing
-  // the orientation on every render would make that button unable to do anything.
+  // Only on the way IN. `RENDER.camera` is re-run by the landscape button and by the selfie
+  // button, so anything done here unconditionally would fight them.
   const entering = !byId('device').classList.contains('camlive');
   byId('device').classList.add('camlive');
   if (entering) {
-    post('camMode', { on: true });
-    // The photograph IS the game screen, and that screen is wide. A portrait viewfinder
-    // promised a crop nothing downstream performs - screencapture uploads the frame as it is
-    // - so the shot never matched the frame. Landscape makes the two the same shape. The
-    // toggle still works for anyone who wants it upright, and now says something true: the
-    // photo will be wider than the frame they are looking at.
-    if (!landscape) { setLandscape(true); return RENDER.camera(); }
+    // The ENGINE frames the shot: CellCamActivate gives GTA's own phone-camera view, with
+    // its own aspect and field of view, and the picture is that view. So the phone stops
+    // being a fake viewfinder and becomes what it should have been all along - the controls.
+    // Orientation is left alone; portrait works, and it is the default.
+    post('camMode', { on: true, front: camFront });
   }
 
   body(

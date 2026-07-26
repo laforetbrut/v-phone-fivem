@@ -902,18 +902,26 @@ end)
 --- megabytes per shot, and the operator's upload target is the whole reason the camera
 --- setting has one.
 -- ══ Camera mode ═══════════════════════════════════════════════
--- The Camera app is a viewfinder, so while it is open the game has to look like one: first
--- person, and nothing on screen that would end up baked into the photograph.
+-- GTA has a phone camera of its own, and it is the right tool. `CellCamActivate` puts the
+-- game into that view: correct framing, correct field of view, and `CellFrontCamActivate`
+-- flips it to the selfie the engine already knows how to compose.
 --
--- The previous view mode is remembered and put back. Forcing a player into first person and
--- leaving them there is the sort of thing that gets a phone uninstalled.
-local camPrevPed, camPrevVeh, camActive = nil, nil, false
+-- The first attempt here built it by hand instead - force first person, and a scripted cam
+-- for the selfie placed in front of the ped's head. Both were wrong for the same reason:
+-- first person hides the player's own head, so the selfie aimed at a model that was not
+-- being drawn, and the shot never matched the frame because a gameplay camera is not a
+-- camera viewfinder. Every public phone resource uses these natives; there was no reason to
+-- invent a worse version.
+--
+-- The HUD and radar go every frame, because nothing on screen should end up in the picture.
+local camActive, camFront = false, false
 
 camModeOff = function()
     if not camActive then return end
     camActive = false
-    if camPrevPed then SetFollowPedCamViewMode(camPrevPed) camPrevPed = nil end
-    if camPrevVeh then SetFollowVehicleCamViewMode(camPrevVeh) camPrevVeh = nil end
+    camFront = false
+    CellFrontCamActivate(false)
+    CellCamActivate(false, false)
     DisplayRadar(true)
 end
 
@@ -924,48 +932,31 @@ RegisterNUICallback('camMode', function(data, cb)
     if camActive or not isOpen then return end
 
     camActive = true
-    -- 4 is first person for both. Remembered per surface because a player in a car and a
-    -- player on foot carry different modes.
-    camPrevPed = GetFollowPedCamViewMode()
-    camPrevVeh = GetFollowVehicleCamViewMode()
-    SetFollowPedCamViewMode(4)
-    SetFollowVehicleCamViewMode(4)
+    camFront = data.front == true
+    CellCamActivate(true, true)
+    CellFrontCamActivate(camFront)
     DisplayRadar(false)
 
     CreateThread(function()
-        local heldFirstPerson = true
         while camActive and isOpen do
-            -- Every frame, because the HUD redraws itself every frame. This covers the
-            -- minimap, the wanted stars, the cash and the weapon wheel in one call, which is
-            -- what a photograph should not contain.
             HideHudAndRadarThisFrame()
-
-            -- The selfie is the exception, and it has to be. First person hides the player's
-            -- own head, and the selfie camera is a scripted cam placed in front of that head
-            -- and pointed at it - so holding first person during a selfie aims the shot at
-            -- the inside of a model that is not being drawn. The hold is released while the
-            -- selfie cam is up and taken again when it comes down.
-            if selfieCam then
-                if heldFirstPerson then
-                    heldFirstPerson = false
-                    if camPrevPed then SetFollowPedCamViewMode(camPrevPed) end
-                    if camPrevVeh then SetFollowVehicleCamViewMode(camPrevVeh) end
-                end
-            else
-                if not heldFirstPerson then
-                    heldFirstPerson = true
-                    SetFollowPedCamViewMode(4)
-                    SetFollowVehicleCamViewMode(4)
-                end
-                -- A player who switches back to third person mid-shot would photograph their
-                -- own back, so the mode is held rather than merely set once.
-                if GetFollowPedCamViewMode() ~= 4 then SetFollowPedCamViewMode(4) end
-                if GetFollowVehicleCamViewMode() ~= 4 then SetFollowVehicleCamViewMode(4) end
+            -- The components a photograph must never contain, named individually because
+            -- HideHudAndRadarThisFrame alone leaves some of them drawing.
+            for _, id in ipairs({ 1, 2, 3, 4, 6, 7, 8, 9, 13, 19, 20, 22 }) do
+                HideHudComponentThisFrame(id)
             end
             Wait(0)
         end
         camModeOff()
     end)
+end)
+
+--- The selfie. `CellFrontCamActivate` is the engine's own flip, so the framing stays a
+--- camera's rather than a scripted cam pointed at a bone.
+RegisterNUICallback('camFacing', function(data, cb)
+    cb({ ok = true })
+    camFront = data and data.front == true
+    if camActive then CellFrontCamActivate(camFront) end
 end)
 
 RegisterNUICallback('shoot', function(_, cb)
@@ -1090,11 +1081,13 @@ local function setSelfie(on)
     end
 end
 
--- The camera app flips it; a FaceTime call raises it for the duration.
-RegisterNUICallback('camFacing', function(data, cb)
-    setSelfie(data and data.front == true)
-    cb('ok')
-end)
+-- The scripted cam above is now ONLY for FaceTime, where the phone is at the player's ear
+-- and there is no camera app open to hand the job to the engine.
+--
+-- The Camera app's own flip is registered further up and uses `CellFrontCamActivate`. There
+-- used to be a second `camFacing` callback here that drove this scripted cam instead - and
+-- being registered later it won, so the app's selfie button reached the wrong mechanism and
+-- pointed a camera at a head the engine was not drawing.
 AddEventHandler('v-phone:internal:selfie', function(on) setSelfie(on == true) end)
 
 -- The camera closing (or the phone closing) drops the selfie cam whatever state it is in.

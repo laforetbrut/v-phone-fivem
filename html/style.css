@@ -9219,34 +9219,18 @@ body.inframe.dark .uisearch {
 .codefill { margin: -4px 0 10px; font-weight: 600; }
 
 /* ── The viewfinder ────────────────────────────────────────────
-   A camera app that shows a black rectangle is not a viewfinder. While the Camera app is up,
-   the screen goes see-through so the game is visible THROUGH the handset - and Lua has put
-   the player in first person with the HUD and minimap hidden, so what is framed here is
-   exactly what the photograph will contain.
+   The engine frames the photograph now - `CellCamActivate` gives GTA's own phone-camera view
+   - so the phone is not a window onto the world and must not pretend to be one. An earlier
+   attempt made the screen transparent to fake a preview; it never worked, because the app
+   surface, the wallpaper and the camview each paint their own background and beating all of
+   them left a phone-shaped hole rather than a viewfinder.
 
-   No capture loop is involved. The NUI layer is already transparent over the game; this
-   simply stops painting over it. */
-.device.camlive .wallpaper { opacity: 0; }
-.device.camlive .screen { background: transparent; }
-.device.camlive .app.camfull,
-.device.camlive .app.camfull .appbody { background: transparent; }
-/* The app surface carries `backdrop-filter: blur(28px)` and its own gradients - which is
-   right for every other app and fatal for a viewfinder: a blurred, tinted sheet is exactly
-   what must NOT be between the player and what they are framing. Neutralised for camlive
-   only; every other panel keeps its glass. */
-.device.camlive .app {
-  background: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-.device.camlive .camview {
-  background: transparent;
-  /* Keep the frame readable against a bright sky without tinting the picture. */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
-}
+   What is left is honest: the frame guides sit over a dark screen, and the picture the player
+   is composing is the game itself, behind the handset, with the HUD hidden. */
 .device.camlive .camtop,
 .device.camlive .cammode,
 .device.camlive .camctl { background: rgba(0, 0, 0, .34); border-radius: 18px; }
+.device.camlive .camview { background: rgba(0, 0, 0, .18); }
 
 /* ── Zooming a photo ──────────────────────────────────────────
    A photograph is worth looking at closely. The wheel zooms about the cursor and a drag pans
