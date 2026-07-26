@@ -746,10 +746,58 @@ function Bridge.Properties.Owned(citizenid, src)
         if type(ids) == 'table' then
             local out = {}
             for _, id in ipairs(ids) do
-                out[#out + 1] = { label = tostring(id), address = tostring(id), owned = true }
+                -- Quasar hands back an id and nothing else. Its own coordinates live behind
+                -- an escrowed core, so a house is listed and named but cannot be pointed at
+                -- unless the operator fills in `Config.Property.houses`.
+                out[#out + 1] = { label = tostring(id), address = tostring(id), owned = true,
+                                  key = tostring(id) }
             end
             if #out > 0 then return out end
         end
+    end
+
+    -- qb-houses, which is what a qb-core server almost always runs, and which this bridge
+    -- did not read at all: it fell through to a generic `properties` table that qb-houses
+    -- does not have, so the app reported no readable housing script on every qb server.
+    --
+    -- Two tables, joined on the house name. Schema taken from qb-houses' own SQL file:
+    --   player_houses  (house, citizenid, keyholders)
+    --   houselocations (name, label, coords JSON, price, tier)
+    if housing == 'qb-houses' then
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT hl.name AS name, hl.label AS label,
+                    hl.coords AS coords, hl.price AS price, hl.tier AS tier,
+                    ph.citizenid AS owner
+                FROM player_houses ph
+                LEFT JOIN houselocations hl ON hl.name = ph.house
+                WHERE ph.citizenid = ?]], { citizenid })
+        end)
+        if ok and type(rows) == 'table' then
+            local out = {}
+            for _, r in ipairs(rows) do
+                local row = {
+                    label = r.label or r.name,
+                    address = r.label or r.name,
+                    key = r.name,
+                    price = tonumber(r.price),
+                    tier = tonumber(r.tier),
+                    owned = true,
+                }
+                -- `coords` is JSON in the column, not three numbers.
+                if type(r.coords) == 'string' and r.coords ~= '' then
+                    local decoded, at = pcall(json.decode, r.coords)
+                    if decoded and type(at) == 'table' then
+                        row.x, row.y = tonumber(at.x), tonumber(at.y)
+                    end
+                end
+                out[#out + 1] = row
+            end
+            if #out > 0 then return out end
+        end
+
+        -- Owning nothing is a real answer on a server whose housing IS readable, and it is
+        -- not the same as having no housing script. An empty table says so.
+        if ok then return {} end
     end
 
     if housing == 'ps-housing' then
@@ -758,6 +806,7 @@ function Bridge.Properties.Owned(citizenid, src)
                 FROM properties WHERE owner = ?]], { citizenid })
         end)
         if ok and type(rows) == 'table' and #rows > 0 then return rows end
+        if ok and type(rows) == 'table' then return {} end
     end
 
     if housing == 'esx_property' then

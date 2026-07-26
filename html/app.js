@@ -4083,28 +4083,106 @@ RENDER.music = async () => {
 // -- Property ---------------------------------------------------
 // A failed rent locks a door rather than deleting a property, so the one thing this app
 // has to be able to do is pay it off from anywhere.
+// Which tab of the Property app is showing. Two: what you own, and where to get one.
+let propertyTab = 'mine';
+
 RENDER.property = async () => {
+  tabbar([
+    { id: 'mine', icon: 'house', label: 'ph.my_property' },
+    { id: 'buy', icon: 'store', label: 'ph.buy_property' },
+  ], propertyTab, (t) => { propertyTab = t; RENDER.property(); });
   loading();
   const d = await post('app', { app: 'property' });
   if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'house')); return; }
+
   const list = d.rows || [];
-  if (!list.length) { body(UI.empty(L('ph.no_property'), 'house')); return; }
+  const agent = d.agent || {};
+
+  // ── Where to buy one ──────────────────────────────────────────
+  // Its own tab, and it works on a server with no housing script at all: the phone cannot
+  // sell a house, but it can tell you who does and put a marker on their door.
+  if (propertyTab === 'buy') {
+    body(
+      UI.hero({
+        icon: 'house',
+        eyebrow: L('ph.buy_property'),
+        title: agent.label || 'Dynasty 8',
+        subtitle: agent.address || '',
+      }) +
+      '<div class="groupfoot">' + esc(L('ph.buy_property_hint').replace('{name}', agent.label || 'Dynasty 8')) + '</div>' +
+      (agent.x && agent.y ? UI.button(L('ph.buy_property_go'), 'pgo', 'tinted') : '') +
+      (agent.x && agent.y ? '' : '<div class="groupfoot">' + esc(L('ph.buy_property_noplace')) + '</div>')
+    );
+    if (byId('pgo')) {
+      byId('pgo').addEventListener('click', async () => {
+        const set = await post('waypoint', { x: agent.x, y: agent.y });
+        toast(L(set && set.ok ? 'ph.veh_located' : 'ph.err_x'));
+        ui('key');
+      });
+    }
+    return;
+  }
+
+  // ── What you own ──────────────────────────────────────────────
+  if (!list.length) {
+    // Two different nothings: no house, or no housing script the phone can read. Saying
+    // which one is the difference between "go buy one" and "tell your server owner".
+    body(UI.empty(L(d.readable === false ? 'ph.err_nohousing' : 'ph.no_property'), 'house') +
+      '<div class="groupfoot">' + esc(L('ph.buy_property_where')) + '</div>');
+    return;
+  }
+
   body(UI.group(list.map((pr, i) => UI.row({
     icon: 'house', tint: '#12A5BC', title: pr.label,
     subtitle: L('ph.tenancy_' + (pr.tenancy || 'own')) +
+      (pr.address ? '  ·  ' + pr.address : '') +
       (Number(pr.arrears) > 0 ? '  ' + String(L('ph.arrears')).replace('%s', pr.arrears) : ''),
-    value: pr.locked ? L('ph.locked') : '',
+    value: pr.locked ? L('ph.locked') : (pr.x && pr.y ? L('ph.locate_short') : ''),
     tone: pr.locked ? 'neg' : '',
-    chevron: !!pr.locked, data: { i },
+    chevron: true, data: { i },
   })), { footer: L('ph.property_hint') }));
-  rows('.row[data-i]', (r) => r.addEventListener('click', async () => {
+
+  rows('.row[data-i]', (r) => r.addEventListener('click', () => {
     const pr = list[Number(r.dataset.i)];
-    if (!pr || !pr.locked) return;
-    const res = await post('payRent', { id: pr.property });
-    if (res && res.ok) { toast(L('ph.rent_paid')); RENDER.property(); }
-    else toast(L('ph.err_' + ((res && res.error) || 'x')));
+    if (!pr) return;
+    propertySheet(pr);
   }));
 };
+
+// One house: where it is, and the rent if the script says it is owed.
+function propertySheet(pr) {
+  sheet(pr.label || '',
+    UI.group([
+      pr.address ? UI.row({ icon: 'map', title: pr.address }) : '',
+      pr.tier !== undefined && pr.tier !== null
+        ? UI.row({ icon: 'star', title: L('ph.property_tier'), value: String(pr.tier), mono: true }) : '',
+      pr.price ? UI.row({ icon: 'bank', title: L('ph.property_price'), value: money(pr.price), mono: true }) : '',
+      UI.row({ icon: 'house', title: L('ph.tenancy_' + (pr.tenancy || 'own')) }),
+    ].filter(Boolean)) +
+    // Only when the server actually knows where it is: a button that cannot answer is worse
+    // than no button.
+    (pr.x && pr.y ? UI.button(L('ph.property_locate'), 'plocate', 'tinted') : '') +
+    (pr.locked ? UI.button(L('ph.pay_rent'), 'prent') : ''),
+    () => {
+      if (byId('plocate')) {
+        byId('plocate').addEventListener('click', async () => {
+          const set = await post('waypoint', { x: pr.x, y: pr.y });
+          toast(L(set && set.ok ? 'ph.veh_located' : 'ph.err_x'));
+          ui('key');
+        });
+      }
+      if (byId('prent')) {
+        byId('prent').addEventListener('click', async () => {
+          const epoch = sheetEpoch;
+          const res = await post('payRent', { id: pr.property });
+          if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+          if (!closeSheet(false, epoch)) return;
+          toast(L('ph.rent_paid'));
+          RENDER.property();
+        });
+      }
+    });
+}
 
 // -- MDT --------------------------------------------------------
 // Police only by default, and the server re-checks that on every call: the app gate only

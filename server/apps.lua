@@ -147,25 +147,55 @@ V.Callback('v-phone:property:data', function(src, resolve)
         return Bridge.Properties and Bridge.Properties.Owned
             and Bridge.Properties.Owned(p.citizenid, src)
     end)
-    if type(rows) ~= 'table' then resolve({ error = 'nohousing' }) return end
+
+    -- An unreadable housing script is no longer a dead end. It used to answer an error, and
+    -- the app became a single line of grey text with nothing to do - which is what "the
+    -- property app does not work" meant. The list is empty, `readable` says why, and the
+    -- second tab still tells somebody where to go and buy one.
+    local readable = type(rows) == 'table'
+    local PROP = Config.Property or {}
+    local named = PROP.houses or {}
 
     local out = {}
-    for _, r in ipairs(rows) do
+    for _, r in ipairs(readable and rows or {}) do
         if type(r) == 'table' then
             local label = r.label or r.name or r.house or r.property or r.address
             if label ~= nil then
+                local key = tostring(r.key or r.name or r.id or label)
+                -- The operator's own position for a house the script would not give up.
+                local override = named[key]
+                local x = tonumber(r.x) or (type(override) == 'table' and tonumber(override.x))
+                local y = tonumber(r.y) or (type(override) == 'table' and tonumber(override.y))
                 out[#out + 1] = {
-                    label = tostring(label):sub(1, 60),
+                    label = tostring((type(override) == 'table' and override.label) or label):sub(1, 60),
                     address = r.address and tostring(r.address):sub(1, 80) or nil,
                     -- Owned unless the script says otherwise. Housing scripts disagree on
                     -- the spelling, so both are accepted and anything else is a tenancy.
                     tenancy = (r.tenancy == 'rent' or r.rented == true or r.rent == true)
                         and 'rent' or 'own',
+                    price = tonumber(r.price),
+                    tier = tonumber(r.tier),
+                    x = x or nil,
+                    y = y or nil,
                 }
             end
         end
     end
-    resolve({ ok = true, rows = out })
+
+    local agent = PROP.agent or {}
+    resolve({
+        ok = true,
+        readable = readable,
+        rows = out,
+        -- Where to buy one. Sent whether or not anything is owned, because somebody with no
+        -- house is exactly who needs it.
+        agent = {
+            label = tostring(agent.label or 'Dynasty 8'),
+            address = agent.address and tostring(agent.address) or nil,
+            x = tonumber(agent.x) or nil,
+            y = tonumber(agent.y) or nil,
+        },
+    })
 end)
 
 -- ══════════════════════════════════════════════════════════════

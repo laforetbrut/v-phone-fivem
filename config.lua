@@ -835,6 +835,37 @@ Config.ExternalCharging = {
 -- ══════════════════════════════════════════════════════════════
 --  POLICE FORENSICS
 -- ══════════════════════════════════════════════════════════════
+--  PROPERTY
+-- ══════════════════════════════════════════════════════════════
+-- The Property app lists the houses a character owns and points at them on the map. It
+-- reads your housing script through the bridge - qb-houses, ps-housing, Quasar's, ESX's -
+-- and needs nothing here to do that.
+--
+-- What it CANNOT know is where somebody goes to buy one, because that is a decision you
+-- made when you placed the estate agent. So you say it here, and the app's second tab sends
+-- players there.
+Config.Property = {
+    -- The estate agent. `x` and `y` are what the button sets a waypoint to; leave them out
+    -- and the tab still explains where to go, it just cannot mark it.
+    --
+    -- The default is Dynasty 8's office on Portola Drive, which is where GTA's own property
+    -- signs point and where most servers put theirs.
+    agent = {
+        label = 'Dynasty 8',
+        address = 'Portola Drive, Rockford Hills',
+        x = -718.06,
+        y = 261.28,
+    },
+
+    -- Houses whose position your housing script does not expose - Quasar keeps its own
+    -- behind an escrowed core - so the app can still point at them. Keyed by the house id or
+    -- name the script uses.
+    --
+    --     houses = { ['1'] = { label = 'Mirror Park 12', x = 1234.5, y = -567.8 } },
+    houses = {},
+}
+
+-- ══════════════════════════════════════════════════════════════
 --  GARAGES
 -- ══════════════════════════════════════════════════════════════
 -- Only needed to OVERRIDE. The Garage app reads your garage script's own config for the
