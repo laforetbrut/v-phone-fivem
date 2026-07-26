@@ -4,6 +4,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.2.2] - 2026-07-26
+
+### Added (English first)
+
+- **A number can be grouped for reading without changing what it is.** `Config.NumberDisplay` puts a separator in every N characters **visually**, so a number minted as `##########` and stored as `4155550142` reads as `415-555-0142` on the lock screen, in Settings, in Contacts and wherever an app asks you to confirm it. Nothing about the stored value moves: the database, the dialler, the clipboard, an outgoing call and every export still carry the real number, and the Settings row's copy action deliberately copies the ungrouped one - pasting `415-555-0142` where `4155550142` was expected would be a bug this feature created. A **trailing group of one is absorbed** into the group before it, so ten digits at three give `415-555-0142` and never `415-555-014-2`; a single orphaned digit reads as a mistake rather than as a convention, which is what somebody means by "every three" as opposed to what they would want literally applied to the last character. A number that already carries its own punctuation - `555-0142`, because `Config.NumberFormat` said so - is **left exactly as it is**, since regrouping it would produce `555--01-42`; `onlyWhenPlain = false` regroups regardless, stripping the old punctuation first. `scope` is `own` by default and `all` extends it to every number the phone draws, because a contact's number is text somebody typed and silently disagreeing with what they entered is worse than leaving it. Grouping happens **before** masking, so a number hidden by streamer mode still reads as one: `•••-•••-••••`.
+
+### Ajouts (miroir français)
+
+- **Un numéro peut être groupé pour la lecture sans que ce qu'il est ne change.** `Config.NumberDisplay` insère un séparateur tous les N caractères **visuellement** : un numéro généré en `##########` et stocké `4155550142` se lit `415-555-0142` sur l'écran de verrouillage, dans les Réglages, dans les Contacts et partout où une application demande de le confirmer. Rien de la valeur stockée ne bouge : la base, le clavier d'appel, le presse-papiers, un appel sortant et chaque export portent toujours le vrai numéro, et l'action de copie de la ligne des Réglages copie volontairement la version non groupée — coller `415-555-0142` là où `4155550142` était attendu serait un bug créé par cette fonctionnalité. Un **groupe final d'un seul caractère est absorbé** par le groupe précédent : dix chiffres par trois donnent `415-555-0142` et jamais `415-555-014-2` ; un chiffre orphelin se lit comme une erreur et non comme une convention, ce qui correspond à ce qu'on veut dire par « tous les trois » plutôt qu'à son application littérale au dernier caractère. Un numéro qui porte déjà sa propre ponctuation — `555-0142`, parce que `Config.NumberFormat` l'a dit — est **laissé exactement tel quel**, puisque le regrouper produirait `555--01-42` ; `onlyWhenPlain = false` regroupe quand même, en retirant d'abord l'ancienne ponctuation. `scope` vaut `own` par défaut et `all` l'étend à tous les numéros affichés, parce que le numéro d'un contact est un texte saisi par quelqu'un et qu'être silencieusement en désaccord avec ce qu'il a entré est pire que de le laisser. Le groupement intervient **avant** le masquage : un numéro caché par le mode streameur se lit donc toujours comme un numéro — `•••-•••-••••`.
+
+---
+
 ## [1.2.1] - 2026-07-26
 
 ### Added (English first)

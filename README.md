@@ -321,6 +321,32 @@ Four `#` minimum, 20 characters maximum, and it must not collide with
 `Config.Booth.numberFormat` — a payphone is recognised by the shape of its number alone. The
 server checks all three at boot and says which one is wrong.
 
+### Grouping a number for reading
+
+Ten digits in a row is not something a person can read back over voice. `Config.NumberDisplay`
+puts a separator in **visually** while the stored value is untouched:
+
+```lua
+Config.NumberDisplay = {
+    groupEvery    = 3,      -- 0 turns it off
+    separator     = '-',
+    onlyWhenPlain = true,   -- leave a number that already has punctuation alone
+    scope         = 'own',  -- own | all
+}
+```
+
+`4155550142` reads as `415-555-0142`. A trailing group of one is absorbed into the group
+before it, so it is never `415-555-014-2` — a single orphaned digit looks like a bug rather
+than a convention.
+
+Nothing here changes the database, the dialler, the clipboard or what any export answers. It
+is the last step before text reaches a screen. A number that already carries its own
+punctuation — `555-0142`, because `Config.NumberFormat` said so — is left exactly as it is,
+since regrouping it would give `555--01-42`.
+
+`scope = 'own'` is your own number: the lock screen, Settings, Contacts, and where an app asks
+you to confirm it. `all` extends it to every number the phone draws.
+
 ### Already have players with numbers?
 
 qb-core writes a number into `charinfo` when a character is created, and ox_core keeps one in
@@ -777,6 +803,33 @@ donc tous ceux-ci fonctionnent :
 Quatre `#` au minimum, 20 caractères au maximum, et le format ne doit pas entrer en collision
 avec `Config.Booth.numberFormat` — une cabine est reconnue à la seule forme de son numéro. Le
 serveur vérifie les trois au démarrage et dit lequel ne va pas.
+
+### Grouper un numéro pour le lire
+
+Dix chiffres d'affilée, ce n'est pas quelque chose qu'une personne peut relire à voix haute.
+`Config.NumberDisplay` insère un séparateur **visuellement**, sans toucher à la valeur stockée :
+
+```lua
+Config.NumberDisplay = {
+    groupEvery    = 3,      -- 0 désactive
+    separator     = '-',
+    onlyWhenPlain = true,   -- laisser tel quel un numéro déjà ponctué
+    scope         = 'own',  -- own | all
+}
+```
+
+`4155550142` se lit `415-555-0142`. Un groupe final d'un seul caractère est absorbé par le
+groupe précédent : jamais `415-555-014-2` — un chiffre orphelin ressemble à un bug plutôt qu'à
+une convention.
+
+Rien ici ne change la base, le clavier d'appel, le presse-papiers ni ce que répond un export.
+C'est la dernière étape avant que le texte n'atteigne l'écran. Un numéro qui porte déjà sa
+propre ponctuation — `555-0142`, parce que `Config.NumberFormat` l'a dit — est laissé exactement
+tel quel, puisque le regrouper donnerait `555--01-42`.
+
+`scope = 'own'` concerne votre propre numéro : l'écran de verrouillage, les Réglages, les
+Contacts, et là où une application vous demande de le confirmer. `all` l'étend à tous les
+numéros que le téléphone affiche.
 
 ### Vous avez déjà des joueurs avec des numéros ?
 

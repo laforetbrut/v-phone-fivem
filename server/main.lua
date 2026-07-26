@@ -1630,6 +1630,15 @@ V.Callback('v-phone:open', function(src, resolve)
         -- falls back on its own if a file will not load, so this is a preference and
         -- not a promise.
         soundFiles = Config.Sounds.files ~= false,
+        -- How to GROUP a number for reading. Presentation only: the stored value, the dialled
+        -- value and everything any export answers are untouched.
+        numberDisplay = {
+            every = math.max(0, math.min(8, math.floor(
+                tonumber((Config.NumberDisplay or {}).groupEvery) or 0))),
+            separator = tostring((Config.NumberDisplay or {}).separator or '-'):sub(1, 2),
+            onlyWhenPlain = (Config.NumberDisplay or {}).onlyWhenPlain ~= false,
+            scope = ((Config.NumberDisplay or {}).scope == 'all') and 'all' or 'own',
+        },
         -- The page's boot tracing: what each layer paints, which inputs decided the camera,
         -- whether a keypress arrived. Off, the phone writes NOTHING to the browser console,
         -- which is what a live server wants and what this ships as.

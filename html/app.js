@@ -2067,6 +2067,55 @@ function hushDistanceText(metres) {
 // Display only, deliberately. Nothing is hidden from the server, calls and messages work
 // exactly as before, and a copy still yields the real number - the problem being solved is
 // what sits on camera, not what the phone knows.
+// ══ Reading a number ═══════════════════════════════════════════
+// A number minted as `##########` is stored as `4155550142`, and that is right - it is what
+// every script reading it gets. But ten digits in a row is not something a person can read
+// back over voice, so a separator goes in for the eye only.
+//
+// Nothing here touches the stored value. The clipboard, the dialler, the outgoing call and
+// every export still carry the real number; this is the last step before text reaches a screen.
+function groupNum(value) {
+  const nd = state.numberDisplay || {};
+  const every = Math.floor(Number(nd.every) || 0);
+  const text = String(value == null ? '' : value);
+  // Under two would put a separator between every character, which is not grouping.
+  if (every < 2 || !text) return text;
+
+  const sep = String(nd.separator == null ? '-' : nd.separator);
+  const plain = /^[0-9A-Za-z]+$/.test(text);
+  if (!plain) {
+    // The operator already chose what this number looks like - `555-####` means `555-0142`,
+    // and regrouping that gives `555--01-42`. Leave it, unless told to regroup regardless.
+    if (nd.onlyWhenPlain !== false) return text;
+  }
+  const bare = plain ? text : text.replace(/[^0-9A-Za-z]/g, '');
+  if (bare.length <= every) return bare;
+
+  const parts = [];
+  for (let i = 0; i < bare.length; i += every) parts.push(bare.slice(i, i + every));
+  // A trailing group of one reads as a mistake rather than as a convention, so it joins the
+  // group before it: ten digits at three give 415-555-0142, not 415-555-014-2.
+  if (parts.length > 1 && parts[parts.length - 1].length === 1) {
+    parts[parts.length - 2] += parts.pop();
+  }
+  return parts.join(sep);
+}
+
+// Your own number, ready for a screen: grouped, then masked if streamer mode is on. Grouped
+// FIRST so the bullets keep the shape - `•••-•••-••••` still reads as a phone number, which is
+// the whole point of masking rather than blanking.
+function myNum(value) {
+  return maskNum(groupNum(value));
+}
+
+// Any number the phone draws. Grouping applies here only when the operator asked for `all`;
+// `own` is the default, because a contact's number is text somebody typed and regrouping it
+// would silently disagree with what they entered.
+function anyNum(value) {
+  const nd = state.numberDisplay || {};
+  return maskNum(nd.scope === 'all' ? groupNum(value) : value);
+}
+
 function maskNum(value) {
   const text = String(value == null ? '' : value);
   if (!text || !(state.prefs || {}).streamer) return text;
@@ -2079,7 +2128,7 @@ function nameOfNumber(number) {
   const c = (state.contacts || []).find((x) => x.number === number);
   // A contact's NAME is not masked: "Bob" is not a phone number, and hiding it would make the
   // phone unusable on stream rather than safer. Only the bare number is.
-  return c ? c.name : (maskNum(number) || L('ph.unknown'));
+  return c ? c.name : (anyNum(number) || L('ph.unknown'));
 }
 
 RENDER.messages = async () => {
@@ -2404,7 +2453,7 @@ RENDER.contacts = () => {
   }));
   body(searchHtml(L('ph.search_contacts')) +
     UI.group([UI.row({ icon: 'airdrop', tint: '#0A84FF', title: L('ph.share_my_number'),
-      subtitle: maskNum(state.number), chevron: true, data: { me: '1' } })]) +
+      subtitle: myNum(state.number), chevron: true, data: { me: '1' } })]) +
     '<div id="clist"></div>');
   rows('.row', (r) => { if (r.dataset.me) r.addEventListener('click',
     () => airdropShare('number', { name: '', number: state.number })); });
@@ -2955,7 +3004,9 @@ RENDER.settings = () => {
       UI.row({ icon: 'phone', tint: '#0A84FF', title: p.deviceName || L('ph.setup_default_device'),
         subtitle: p.ownerName || '', chevron: true, data: { t: 'device_name' } }),
       // The copy still carries the real number: masking is about the screen.
-      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: maskNum(state.number),
+      // The copy carries the REAL number, ungrouped: grouping is for the eye, and pasting
+      // `415-555-0142` where `4155550142` was expected would be a bug this created.
+      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: myNum(state.number),
                data: { copy: state.number || '' } }),
       UI.row({ icon: 'folder', tint: '#5AC8FA', title: L('ph.grid'),
         value: (p.gridCols || 4) + ' x ' + (p.gridRows || 4), chevron: true, data: { t: 'grid' } }),
@@ -6719,7 +6770,7 @@ function socialSignup(app, then) {
       body(
         acctHead(app, L('ph.soc_join_sub')) + prog(1) +
         UI.group([UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.soc_number'),
-          value: state.number || L('ph.soc_no_number') })]) +
+          value: myNum(state.number) || L('ph.soc_no_number') })]) +
         UI.button(L('ph.soc_sendcode'), 'sc1') +
         '<div class="groupfoot">' + esc(L('ph.soc_number_hint')) + '</div>'
       );
@@ -8224,7 +8275,7 @@ async function paintLockMeta() {
   const host = byId('locknum');
   if (!host) return;
   const p = state.prefs || {};
-  const number = maskNum(state.number);
+  const number = myNum(state.number);
 
   if (p.showServerId === false) { host.textContent = number; return; }
   if (serverIdCache === null) {

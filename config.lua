@@ -349,6 +349,42 @@ Config.Hold = {
 -- `/phoneadmin renumber` and `Config.Compat.numbers` above.
 Config.NumberFormat = '555-####'
 
+-- ══════════════════════════════════════════════════════════════
+--  HOW A NUMBER IS DISPLAYED
+-- ══════════════════════════════════════════════════════════════
+-- Grouping for READING, which is a different question from `Config.NumberFormat` above.
+--
+-- A number minted as `##########` is stored as `4155550142` and that is what every script
+-- reading it gets. But ten digits in a row is not something a person can read back over voice,
+-- so the phone can put a separator in **visually** while the stored value is untouched.
+--
+-- Nothing here changes what is in the database, what is dialled, what is copied to the
+-- clipboard, or what any export answers. It is presentation and only presentation.
+Config.NumberDisplay = {
+    -- Insert a separator every N characters. 0 turns grouping off entirely.
+    --
+    -- A trailing group of ONE is merged into the one before it, so ten digits at three read
+    -- `415-555-0142` rather than `415-555-014-2`. A single orphaned digit looks like a bug
+    -- rather than a convention, and "every three" is what somebody means rather than what
+    -- they would want literally applied to the last character.
+    groupEvery = 3,
+
+    separator = '-',
+
+    -- **A number that already carries its own punctuation is left exactly as it is.**
+    --
+    -- If `Config.NumberFormat` is `555-####` then the operator has already decided what the
+    -- number looks like, and regrouping `555-0142` would produce `555--01-42`. So grouping
+    -- only ever applies to a number that is a bare run of letters and digits. Turn this off
+    -- to regroup regardless, which strips the existing punctuation first.
+    onlyWhenPlain = true,
+
+    -- Whose numbers. `own` is your own number, on the lock screen, in Settings, in Contacts
+    -- and where an app asks you to confirm it. `all` extends it to every number the phone
+    -- draws - a caller, a contact, a bank card.
+    scope = 'own',   -- own | all
+}
+
 -- ── Required contacts ─────────────────────────────────────────
 -- These entries are injected into every player's Phone and Contacts applications.
 -- They cannot be renamed or deleted by a player. Use real numbers handled by your
