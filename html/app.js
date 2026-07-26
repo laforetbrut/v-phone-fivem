@@ -8103,13 +8103,17 @@ byId('qtorch').addEventListener('click', toggleTorch);
 // Hold Alt and the mouse goes back to the camera. The page is the only side that sees this
 // key - Lua cannot, because the browser has the keyboard while the phone is focused - so it
 // reports the press and Lua watches for the release once focus is back in the game.
+// Hold Alt for the camera. The page keeps the keyboard throughout - Lua drops only the
+// cursor - so it is the page that sees the key come back up and says so. Nothing else can:
+// the game cannot read a key the browser is holding.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Alt' && !e.repeat) {
-    e.preventDefault();
-    if (state && state.debug) console.info('[v-phone] Alt seen by the page, asking Lua');
-    post('freelook', {});
-  }
+  if (e.key === 'Alt' && !e.repeat) { e.preventDefault(); post('freelook', { on: true }); }
 });
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Alt') { e.preventDefault(); post('freelook', { on: false }); }
+});
+// Losing focus with Alt down would otherwise strand the cursor off.
+window.addEventListener('blur', () => post('freelook', { on: false }));
 
 // What is painting outside the handset. Only with `set phone_debug true`.
 //

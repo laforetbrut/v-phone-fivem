@@ -136,7 +136,7 @@ input { font: inherit; }
   border-radius: 56px;
   background:
     linear-gradient(145deg, #8d8d8d 0%, #3a3a3c 18%, #1c1c1e 45%, #48484a 78%, #0e0e0f 100%);
-  box-shadow: 0 42px 90px rgba(0, 0, 0, .62), 0 6px 18px rgba(0, 0, 0, .5),
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .34), 0 4px 10px rgba(0, 0, 0, .26),
               inset 0 1px 0 rgba(255, 255, 255, .30),
               inset 0 -1px 0 rgba(0, 0, 0, .6); }
 .bezel::before { content: ''; position: absolute; inset: 6px; border-radius: 51px;
@@ -1694,9 +1694,17 @@ input { font: inherit; }
     linear-gradient(102deg,
       #161719 0%, #77787c 7%, #2a2b2e 17%, #0d0e10 48%,
       #4e5054 78%, #151618 94%, #050506 100%);
+  /* A phone's shadow, not a stage light. This was `0 46px 96px rgba(0,0,0,.62)` - a
+     96px cloud at 62% black hanging 46px below the handset - which over a daylit street
+     reads as a black rectangle sitting behind the phone rather than as depth. It is
+     invisible to a DOM probe too, because a shadow is painted but never hit-tested, which
+     is why "what is behind the phone" kept coming back as `body`.
+
+     Kept tight and soft: enough to lift the handset off the world, not enough to darken
+     it. The insets below are the bezel's own highlights and must stay. */
   box-shadow:
-    0 46px 96px rgba(0, 0, 0, .62),
-    0 10px 24px rgba(0, 0, 0, .56),
+    0 16px 38px rgba(0, 0, 0, .34),
+    0 4px 10px rgba(0, 0, 0, .26),
     inset 0 1px 0 rgba(255, 255, 255, .34),
     inset 1px 0 0 rgba(255, 255, 255, .14),
     inset -1px 0 0 rgba(255, 255, 255, .08),

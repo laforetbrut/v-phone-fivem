@@ -273,17 +273,6 @@ local function startGuard()
                 SetPauseMenuActive(false)
             end
 
-            -- Alt is pressed in the PAGE, which owns the keyboard, and released here, which
-            -- owns it again the moment focus is dropped. Reading the press from Lua was the
-            -- first attempt and it never fired: with `SetNuiFocus(true, true)` the browser
-            -- takes the key and the control never registers.
-            if freeLook and not IsControlPressed(0, 19) then
-                freeLook = false
-                SetNuiFocus(true, true)
-                SetNuiFocusKeepInput(true)
-                SendNUIMessage({ action = 'freelook', on = false })
-            end
-
             local ped = PlayerPedId()
             if phoneAnim and not IsEntityPlayingAnim(ped, Config.Hold.dict, phoneAnim, 3) then
                 phoneAnim = nil
@@ -816,19 +805,28 @@ local SOCIAL_OPS = {
 -- The page owns the keyboard while the phone is open, so it is the only side that sees Alt
 -- go down. It says so here; the guard thread notices the release, because by then focus has
 -- been dropped and the control reads normally again.
-RegisterNUICallback('freelook', function(_, cb)
-    if isOpen and not freeLook then
-        freeLook = true
-        -- keepInput OFF first. The phone runs with `SetNuiFocusKeepInput(true)` so the
-        -- player can still walk while browsing, and leaving it on means dropping focus does
-        -- not hand the mouse back - the cursor stays owned and the camera never moves. That
-        -- is why the page kept reporting Alt: focus was never actually released, so the
-        -- browser still had the keyboard to report it with.
-        SetNuiFocusKeepInput(false)
-        SetNuiFocus(false, false)
-        SendNUIMessage({ action = 'freelook', on = true })
+-- Hold Alt: the mouse goes back to the camera, the page keeps the keyboard.
+--
+-- `SetNuiFocus(true, false)` is the whole trick - focus without a cursor. Dropping focus
+-- entirely was the first attempt and it lasted one frame: with no keyboard the page could
+-- not tell Lua the key had come back up, and Lua could not read it either, because the game
+-- never sees a key the browser is holding. So it restored focus immediately, every time.
+--
+-- Keeping the keyboard means the page reports the release itself, which is the only side
+-- that actually knows.
+RegisterNUICallback('freelook', function(data, cb)
+    local on = not (data and data.on == false)
+    if isOpen and on ~= freeLook then
+        freeLook = on
+        if on then
+            SetNuiFocus(true, false)
+        else
+            SetNuiFocus(true, true)
+        end
+        SetNuiFocusKeepInput(true)
+        SendNUIMessage({ action = 'freelook', on = on })
         if GetConvar('phone_debug', '') == 'true' then
-            print('[v-phone] free look on')
+            print('[v-phone] free look ' .. (on and 'on' or 'off'))
         end
     end
     cb({ ok = true })
