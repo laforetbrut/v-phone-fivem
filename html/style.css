@@ -9219,66 +9219,15 @@ body.inframe.dark .uisearch {
 .codefill { margin: -4px 0 10px; font-weight: 600; }
 
 /* ── The viewfinder ────────────────────────────────────────────
-   Everything inside the handset stops painting while framing, so the game shows through it.
-   Nothing is captured or streamed: the NUI layer is already transparent over the game.
+   The handset is HIDDEN while framing, so there is nothing to make see-through. Three earlier
+   attempts cleared background after background to show the game through the phone's display;
+   it worked in a browser and leaked in the game, because transparency reveals whatever else
+   the page happens to be drawing - a half-exited camera showed the home screen through the
+   viewfinder with the shutter floating over it.
 
-   ONE rule with `!important`, on purpose. Six competing selectors is what lost the previous
-   attempts, and the reason is worth recording: `.screen.dark .app:not(.black):not([data-app=
-   "cipher"]):not([data-app="music"])` is (0,6,0) and silently beat the (0,4,0) reset that used
-   to live here - so dark-mode players saw an 87% black sheet while the light-mode twin,
-   being (0,4,0), lost on source order and looked fine. A flag here cannot be out-specified by
-   the next pass over the design system.
-
-   Three of these were never handled at all, and all three are invisible to a probe that reads
-   `backgroundColor`, because they are background-IMAGES and the `background` shorthand zeroes
-   the colour:
-     .bezel   - the titanium gradient paints across the whole 372x784 face, BEHIND its own
-                pseudo-element, so clearing `::before` only exposed it
-     .camui   - absolutely positioned across the whole screen with an opaque #000, and
-                `.camview` is its child, so clearing the child revealed the parent
-     7193     - the dark-mode app surface described above */
-.device.camlive .bezel,
-.device.camlive .bezel::before,
-.device.camlive .screen,
-.device.camlive .app,
-.device.camlive .appbody,
-.device.camlive .camui,
-.device.camlive .camview,
-.device.camlive .wallpaper,
-.device.camlive .wallpaper::before,
-.device.camlive .wallpaper::after {
-  background: none !important;
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-
-/* The wallpaper's opacity is belt to the braces above, not the mechanism. Its BACKGROUND is
-   cleared in the same rule as everything else, so the element paints nothing whatever its
-   opacity resolves to - which matters, because this is the one property in here I could not
-   verify: the harness stalls animations and a stalled animation reads as whatever its first
-   keyframe says. Depending on it would have been depending on the one measurement I know is
-   unreliable. An earlier comment blamed an animation for that; no @keyframes in this file
-   targets .wallpaper, so that explanation was invented and is now gone. */
-.device.camlive .wallpaper { opacity: 0 !important; }
-
-/* The titanium band WAS `.bezel`'s gradient, and it covered the screen too. Redrawn as an
-   inset ring so the phone still has an edge: 10px on a 57px radius lands on `.screen`'s 47px
-   radius at inset 10px, and an inset shadow paints over the background but under children. */
-.device.camlive .bezel {
-  box-shadow: inset 0 0 0 10px #17181a, 0 46px 96px rgba(0, 0, 0, .62) !important;
-}
-.device.camlive .bezel::before { box-shadow: none !important; }
-
-/* `filter: drop-shadow()` on `.device` derives its shadow from the subtree's alpha. With the
-   face transparent it traces the ring and smears black across the preview's own edges. */
-.device.camlive { filter: none !important; }
-
-/* The controls keep a tint so they stay readable over the world. Unflagged: these elements
-   declare no base background, so three classes is already enough - and this tint only starts
-   doing anything once everything above lands. */
-.device.camlive .camtop,
-.device.camlive .cammode,
-.device.camlive .camctl { background: rgba(0, 0, 0, .38); border-radius: 18px; }
+   GTA draws the camera frame itself (`CreateMobilePhone` + `CellCamActivate`), which is what
+   makes a photograph look like one, and it is the model qb-phone, gcphone and npwd all use. */
+.device.camlive { opacity: 0 !important; pointer-events: none !important; }
 
 /* ── Zooming a photo ──────────────────────────────────────────
    A photograph is worth looking at closely. The wheel zooms about the cursor and a drag pans

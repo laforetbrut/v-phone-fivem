@@ -27,7 +27,7 @@ local applyServerCall
 local camModeOff            -- defined with the camera mode, used by closePhone above it
 -- The camera's state, declared here because `startGuard` sits above the block that owns it
 -- and watches these. Lua binds lexically: from up there, a later `local` is a nil global.
-local camActive, camFront = false, false
+local camActive = false
 local camTick = 0           -- last frame the camera thread ran, so the guard can notice it
                             -- is flagged on with nothing running it
 local frontCam              -- the selfie toggle, defined with the camera block; forceReset
@@ -474,10 +474,10 @@ local function forceReset()
     -- The camera too. This is the documented way out of a stuck phone, and it used to free
     -- the cursor while leaving the game in the cellphone camera view with the HUD hidden.
     camActive = false
-    camFront = false
     pcall(function()
         frontCam(false)
         CellCamActivate(false, false)
+        DestroyMobilePhone()
         DisplayRadar(true)
     end)
 
@@ -934,38 +934,32 @@ end)
 --- megabytes per shot, and the operator's upload target is the whole reason the camera
 --- setting has one.
 -- ══ Camera mode ═══════════════════════════════════════════════
--- GTA already has a phone camera, and using it is the whole answer. `CellCamActivate` puts
--- the game into that view - correct aspect, correct field of view - and
--- `CellFrontCamActivate` is the selfie the engine composes itself.
+-- This is qb-phone's design, and it is used because it works. Three earlier attempts here
+-- tried to keep the handset on screen and make its display see-through so the preview would
+-- sit inside it. That leaks: the transparency reveals whatever else the page is drawing, and
+-- a half-exited camera showed the home screen through the viewfinder with the shutter still
+-- on top of it.
 --
--- **The preview is real, and it is in the handset.** No frames are captured or streamed: the
--- NUI layer is already transparent over the game, so making the phone's screen see-through
--- shows the camera view through it. Three earlier attempts failed for one reason, and it was
--- not the idea - it was that six things paint a background in there, and the last one found
--- was `.bezel::before`, which fills the whole inner face with #030304 behind the screen. A
--- probe that reported `backgroundColor` said the bezel was transparent, because that colour
--- lives on a pseudo-element.
+-- What qb-phone does instead, in order:
 --
--- The cursor still leaves, because the mouse has to aim. The keys below stand in for the
--- buttons the player can see but cannot click.
--- The selfie toggle has no name in FiveM's native list, so there is no global for it and it
--- can only be reached by hash. `CellFrontCamActivate` was called at four sites and defined at
--- none - a nil call that aborted the whole camMode handler on its first line, which is why
--- neither the preview nor the exit keys nor the focus release ever happened.
+--   SetNuiFocus(false, false)   the page stops owning input
+--   CreateMobilePhone(1)        GTA's OWN phone camera - this is what draws the frame, and
+--                               leaving it out is why the shot never looked like a photograph
+--   CellCamActivate(true, true) the camera view itself
+--   ... per frame: HideHudComponentThisFrame for 6,7,8,9,19, HideHudAndRadarThisFrame, and
+--       EnableAllControlActions(0) so the mouse can actually aim
+--   DestroyMobilePhone() + CellCamActivate(false, false) on the way out
 --
--- pcall'd because the hash is undocumented: four public resources ship it, and none of that
--- proves it is live on every build. A rejection should cost the selfie, not the phone.
-frontCam = function(on)
-    pcall(Citizen.InvokeNative, 0x2491A93618B7D838, on == true)
-end
+-- The handset is HIDDEN while this runs, so nothing of the page can bleed into the picture.
+-- Enter takes the photograph, Backspace leaves, arrow up flips to the selfie - the same keys
+-- qb-phone binds, so anybody who has used a QBCore server already knows them.
+local camActive = false
 
 camModeOff = function()
     if not camActive then return end
     camActive = false
-    camFront = false
-    -- Focus and the page come back BEFORE any native. closePhone calls this on its way out,
-    -- and a native that raised here aborted closePhone with the handset still drawn and no
-    -- cursor - which is the state a player had to reconnect to escape.
+    -- State and the page first, engine second. closePhone calls this on its way out and a
+    -- native that raises here used to abort the close, leaving no cursor and no way back.
     if isOpen then
         SendNUIMessage({ action = 'camLive', on = false })
         SetNuiFocus(true, true)
@@ -974,6 +968,7 @@ camModeOff = function()
     pcall(function()
         frontCam(false)
         CellCamActivate(false, false)
+        DestroyMobilePhone()
         DisplayRadar(true)
     end)
 end
@@ -985,67 +980,63 @@ RegisterNUICallback('camMode', function(data, cb)
     if camActive or not isOpen then return end
 
     camActive = true
-    camFront = data.front == true
     camTick = GetGameTimer()
+    local front = data.front == true
 
-    -- The handset STAYS on screen - the preview is meant to be in it. Only the cursor goes,
-    -- because the mouse has to aim the shot; the keys below do what its buttons would.
-    --
-    -- Sent BEFORE the natives, deliberately. This used to sit after them, so one nil call
-    -- took the preview, the exit keys and the cursor with it.
+    -- The handset leaves the screen before anything else happens, and the cursor with it.
     SendNUIMessage({ action = 'camLive', on = true })
     SetNuiFocus(false, false)
+
     pcall(function()
+        CreateMobilePhone(1)
         CellCamActivate(true, true)
-        frontCam(camFront)
+        frontCam(front)
         DisplayRadar(false)
     end)
 
     CreateThread(function()
-        local shot = false
         while camActive and isOpen do
             camTick = GetGameTimer()
-            HideHudAndRadarThisFrame()
-            for _, id in ipairs({ 1, 2, 3, 4, 6, 7, 8, 9, 13, 19, 20, 22 }) do
-                HideHudComponentThisFrame(id)
+
+            -- 27 is arrow up, 176 is Enter, 177 is Backspace: qb-phone's bindings.
+            if IsControlJustPressed(1, 27) then
+                front = not front
+                frontCam(front)
+            elseif IsControlJustPressed(1, 177) then
+                break
+            elseif IsControlJustPressed(1, 176) then
+                -- One capture path, the same one the shutter button uses, so there is one set
+                -- of error messages rather than two.
+                SendNUIMessage({ action = 'camShoot' })
+                Wait(1200)
             end
 
-            -- Instructions on screen, because the phone that would have carried them is not
-            -- being drawn. Left click shoots, E flips, Escape or Backspace leaves.
+            -- The handset is not on screen, so the keys have to be. Drawn every frame
+            -- because HideHudAndRadarThisFrame clears the help box along with everything else.
             SetTextComponentFormat('STRING')
             AddTextComponentString(L('ph.cam_prompt'))
             DisplayHelpTextFromStringLabel(0, 0, 0, -1)
 
-            DisableControlAction(0, 24, true)      -- attack: it must not fire a weapon
-            DisableControlAction(0, 25, true)      -- aim
-            DisableControlAction(0, 200, true)     -- pause
-            DisableControlAction(0, 199, true)
-
-            if IsDisabledControlJustPressed(0, 24) and not shot then
-                shot = true
-                -- Straight to the same capture the shutter button used, so there is one path
-                -- and one set of error messages.
-                SendNUIMessage({ action = 'camShoot' })
-                SetTimeout(1200, function() shot = false end)
-            end
-            if IsControlJustPressed(0, 38) then       -- E: flip
-                camFront = not camFront
-                frontCam(camFront)
-            end
-            if IsDisabledControlJustPressed(0, 200) or IsControlJustPressed(0, 177) then
-                break
-            end
+            HideHudComponentThisFrame(6)
+            HideHudComponentThisFrame(7)
+            HideHudComponentThisFrame(8)
+            HideHudComponentThisFrame(9)
+            HideHudComponentThisFrame(19)
+            HideHudAndRadarThisFrame()
+            -- Everything back on, every frame. The phone's guard thread disables aiming and
+            -- looking while it is open, which would leave the camera pointing wherever the
+            -- player last happened to be facing.
+            EnableAllControlActions(0)
             Wait(0)
         end
         camModeOff()
     end)
 end)
 
---- The selfie, from the phone's own button when it is showing.
+--- The selfie from the phone's own button, for the moment before the camera view opens.
 RegisterNUICallback('camFacing', function(data, cb)
     cb({ ok = true })
-    camFront = data and data.front == true
-    if camActive then frontCam(camFront) end
+    if camActive then frontCam(data and data.front == true) end
 end)
 
 RegisterNUICallback('shoot', function(_, cb)
