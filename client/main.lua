@@ -29,6 +29,8 @@ local camModeOff            -- defined with the camera mode, used by closePhone 
 -- and watches these. Lua binds lexically: from up there, a later `local` is a nil global.
 local camActive = false
 local camHidHud, camHidRadar = false, false   -- only restore what we hid
+local camShooting = false   -- a capture is in flight; the help box must stay off screen for
+                            -- all of it, not just the frame the shutter was pressed on
 local camTick = 0           -- last frame the camera thread ran, so the guard can notice it
                             -- is flagged on with nothing running it
 local refreshPose           -- re-plays the hold animation; the camera block below needs it
@@ -491,6 +493,7 @@ local function forceReset()
         if camHidRadar then DisplayRadar(true) end
     end)
     camHidHud, camHidRadar = false, false
+    camShooting = false
     selfieReset()
 
     -- Focus back to the game, both kinds, in case only one was cleared.
@@ -1112,25 +1115,47 @@ RegisterNUICallback('camMode', function(data, cb)
             elseif IsControlJustPressed(1, 177) then
                 break
             elseif IsControlJustPressed(1, 176) then
-                -- Clear the help box and give it a frame to go before the shutter fires,
-                -- or the instructions are baked into the photograph.
+                -- Off screen for the whole capture, not just this frame. `shoot` lowers this
+                -- again when the photograph is actually finished.
+                camShooting = true
                 ClearHelp(true)
                 Wait(0)
                 -- One capture path, the same one the shutter button uses, so there is one set
                 -- of error messages rather than two.
                 SendNUIMessage({ action = 'camShoot' })
-                Wait(1200)
+
+                -- Wait for the capture rather than a guessed 1200ms, and keep the watchdog fed
+                -- while doing it: it kills camera mode after 1500ms without a tick, which a
+                -- blind wait came within 200ms of tripping - close enough to explain a camera
+                -- that occasionally died mid-photograph. Capped so a capture that never calls
+                -- back cannot strand the player in the viewfinder.
+                local waited = 0
+                while camShooting and camActive and isOpen and waited < 15000 do
+                    camTick = GetGameTimer()
+                    Wait(50)
+                    waited = waited + 50
+                end
+                camShooting = false
+                ClearHelp(true)
             end
 
             -- The handset is not on screen, so the keys have to be. `~INPUT_...~` rather
             -- than key names: the game substitutes whatever the player actually has bound, so
             -- this stays true for somebody who rebound them - which hardcoded "ENTER" did not.
-            BeginTextCommandDisplayHelp(front and 'FOURSTRINGS' or 'THREESTRINGS')
-            AddTextComponentString(L('ph.cam_shoot_hint'))
-            AddTextComponentString(L('ph.cam_flip_hint'))
-            AddTextComponentString(L('ph.cam_exit_hint'))
-            if front then AddTextComponentString(L('ph.cam_selfie_hint')) end
-            EndTextCommandDisplayHelp(0, true, false, -1)
+            -- Nothing on screen while a capture is in flight. `ClearHelp` on the shutter
+            -- frame was not enough: the shot lands several frames later, and this loop redrew
+            -- the box on every one of them - so the instructions were in the photograph.
+            if not camShooting then
+                BeginTextCommandDisplayHelp(front and 'FOURSTRINGS' or 'THREESTRINGS')
+                AddTextComponentString(L('ph.cam_shoot_hint'))
+                AddTextComponentString(L('ph.cam_flip_hint'))
+                AddTextComponentString(L('ph.cam_exit_hint'))
+                if front then AddTextComponentString(L('ph.cam_selfie_hint')) end
+                -- `loop = false`. With it true the box keeps itself on screen after the loop
+                -- stops drawing, which is why the help sometimes stayed up after the camera
+                -- closed. Drawn every frame anyway, so nothing is lost letting each expire.
+                EndTextCommandDisplayHelp(0, false, false, -1)
+            end
 
             HideHudComponentThisFrame(6)
             HideHudComponentThisFrame(7)
@@ -1165,6 +1190,9 @@ RegisterNUICallback('shoot', function(_, cb)
     local finished = false
     local focusReleased = false
     local captureRequest = openRequest
+    -- Held here rather than in the key handler so both routes to a photograph - the Enter key
+    -- and the on-screen shutter - keep the help box out of the frame for the whole capture.
+    if camActive then camShooting = true end
 
     -- screenshot-basic and the upload endpoint are both asynchronous. Whichever path
     -- finishes first owns the reply; late callbacks become harmless no-ops.
@@ -1172,6 +1200,10 @@ RegisterNUICallback('shoot', function(_, cb)
         if finished then return end
         finished = true
         result = type(result) == 'table' and result or { error = 'x' }
+
+        -- The photograph is taken: the viewfinder may show its instructions again.
+        camShooting = false
+        ClearHelp(true)
 
         -- Not while the camera is framing. In camera mode Lua has deliberately taken the
         -- cursor away so the mouse aims the shot, and handing it back after every capture

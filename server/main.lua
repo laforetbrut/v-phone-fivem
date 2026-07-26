@@ -2374,6 +2374,21 @@ V.Callback('v-phone:photo', function(src, resolve, data)
         if shots[i] then
             if data.album ~= nil then shots[i].album = tostring(data.album):sub(1, 40) end
             if data.filter ~= nil then shots[i].filter = tostring(data.filter):sub(1, 20) end
+            -- The shape a photo is shown in. A screenshot is the game's window, so it arrives
+            -- 16:9 whatever the player wanted; this records how to frame it rather than
+            -- re-encoding anything, exactly as the filter does. Whitelisted so a client cannot
+            -- store an arbitrary string that the page then puts into a style attribute.
+            if data.crop ~= nil then
+                local crop = tostring(data.crop)
+                shots[i].crop = (crop == 'portrait' or crop == 'square' or crop == 'tall')
+                    and crop or ''
+            end
+            -- Where the crop sits vertically, 0 to 100. A 16:9 game screenshot squeezed into
+            -- portrait loses the sides and, centred, often loses the head with them, so the
+            -- player picks the band that matters.
+            if data.focus ~= nil then
+                shots[i].focus = math.floor(math.max(0, math.min(100, num(data.focus, 50))))
+            end
             changed = true
         end
     elseif op == 'album' then

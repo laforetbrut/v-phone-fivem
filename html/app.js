@@ -1823,6 +1823,19 @@ function mailCompose(o) {
 // A filter is a stored name drawn with CSS, never a re-encoded image: the phone holds a
 // link and how to draw it, which is the only thing it can honestly hold.
 const FILTERS = ['none', 'mono', 'noir', 'fade', 'warm', 'cool', 'vivid'];
+
+// ══ Shapes ═════════════════════════════════════════════════════
+// A screenshot is the game window, so every photograph arrives 16:9 however the player
+// wanted it framed. Recropping is a stored shape plus a vertical framing point, drawn with
+// `object-fit: cover` - the file is never re-encoded, exactly like the filters above.
+const CROPS = ['none', 'portrait', 'square', 'tall'];
+function cropRatio(c) {
+  return ({ portrait: 3 / 4, square: 1, tall: 9 / 16 })[c] || null;
+}
+function focusOf(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 50;
+}
 function filterCss(f) {
   return ({
     mono:  'grayscale(1)',
@@ -1848,7 +1861,10 @@ function inlineBackground(url) {
 }
 function photoStyle(v) {
   const r = photoRow(v);
-  return inlineBackground(r.url) + ';filter:' + filterCss(r.filter);
+  // The grid stays square, as a photo grid does, but it shows the band the player framed
+  // rather than the middle of the picture.
+  return inlineBackground(r.url) + ';filter:' + filterCss(r.filter) +
+    ';background-position:50% ' + focusOf(r.focus) + '%';
 }
 
 // The shared picker: any composer can ask for a photo from the phone rather than making
@@ -5079,7 +5095,12 @@ function wirePhotoZoom(wrapId, imgId) {
   let z = 1, ox = 0, oy = 0, drag = null;
   const MIN = 1, MAX = 6;
 
+  // A cropped preview draws with `object-fit: cover`, which a transform would fight, so
+  // zooming steps aside while a shape is chosen.
+  const off = () => wrap.dataset.nozoom === '1';
+
   const apply = () => {
+    if (off()) { img.style.transform = ''; return; }
     // Never leave a gap: at any zoom the picture must still cover its frame.
     const w = wrap.clientWidth, h = wrap.clientHeight;
     const maxX = Math.max(0, w * z - w), maxY = Math.max(0, h * z - h);
@@ -5091,6 +5112,7 @@ function wirePhotoZoom(wrapId, imgId) {
   };
 
   wrap.addEventListener('wheel', (e) => {
+    if (off()) return;
     e.preventDefault();
     const r = wrap.getBoundingClientRect();
     const px = e.clientX - r.left, py = e.clientY - r.top;
@@ -5105,7 +5127,7 @@ function wirePhotoZoom(wrapId, imgId) {
   }, { passive: false });
 
   wrap.addEventListener('pointerdown', (e) => {
-    if (z <= MIN + 0.001) return;
+    if (off() || z <= MIN + 0.001) return;
     drag = { x: e.clientX, y: e.clientY, ox, oy };
     wrap.classList.add('panning');
   });
@@ -5117,13 +5139,15 @@ function wirePhotoZoom(wrapId, imgId) {
   });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
     wrap.addEventListener(ev, () => { drag = null; wrap.classList.remove('panning'); }));
-  wrap.addEventListener('dblclick', () => { z = MIN; ox = 0; oy = 0; apply(); });
+  wrap.addEventListener('dblclick', () => { if (off()) return; z = MIN; ox = 0; oy = 0; apply(); });
   apply();
 }
 
 function photoSheet(shots, i, albums) {
   const r = photoRow(shots[i]);
   const url = r.url;
+  let crop = CROPS.includes(r.crop) ? r.crop : 'none';
+  let focus = focusOf(r.focus);
   sheet(L('app.gallery'),
     '<div class="shotzoom" id="shotwrap"><img class="shotbig" id="shotbig" src="' + esc(url) +
       '" style="filter:' + filterCss(r.filter) + '" />' +
@@ -5133,12 +5157,58 @@ function photoSheet(shots, i, albums) {
     '<div class="seg scroll" id="sfilters">' + FILTERS.map((f) =>
       '<button class="' + ((r.filter || 'none') === f ? 'on' : '') + '" data-f="' + f + '">' +
       esc(L('ph.filter_' + f)) + '</button>').join('') + '</div>' +
+    // Reshaping: the same idea one step further. Pick a shape and the preview above becomes
+    // that shape immediately; the slider says which band of the picture survives it.
+    '<div class="grouphead">' + esc(L('ph.crop')) + '</div>' +
+    '<div class="seg scroll" id="scrops">' + CROPS.map((c) =>
+      '<button class="' + (crop === c ? 'on' : '') + '" data-c="' + c + '">' +
+      esc(L('ph.crop_' + c)) + '</button>').join('') + '</div>' +
+    '<div class="focusrow" id="sfocusrow">' +
+      '<span>' + esc(L('ph.crop_focus')) + '</span>' +
+      '<input type="range" id="sfocus" min="0" max="100" step="1" value="' + focus +
+        '" aria-label="' + esc(L('ph.crop_focus')) + '" />' +
+    '</div>' +
     UI.button(L('ph.album_set'), 'salbum', 'plain') +
     UI.button(L('ph.airdrop_share'), 'sshare', 'tinted') +
     UI.button(L('ph.set_wallpaper'), 'swall') +
     UI.button(L('ph.delete'), 'sdel', 'destructive'),
     () => {
+      // Draw whatever shape is current. `cover` on the img plus a ratio on the frame is the
+      // whole crop: no canvas, no re-upload, and the stored filter still applies because
+      // object-fit and filter are independent properties.
+      const paint = () => {
+        const wrap = byId('shotwrap'), img = byId('shotbig'), ratio = cropRatio(crop);
+        if (!wrap || !img) return;
+        // Wind any zoom back to 1 while zooming still answers, or its internal scale survives
+        // the crop and the next wheel starts from 3x on a picture drawn at 1x.
+        if (ratio && wrap.dataset.nozoom !== '1') wrap.dispatchEvent(new MouseEvent('dblclick'));
+        wrap.dataset.nozoom = ratio ? '1' : '0';
+        wrap.style.aspectRatio = ratio ? String(ratio) : '';
+        img.style.height = ratio ? '100%' : '';
+        img.style.objectFit = ratio ? 'cover' : '';
+        img.style.objectPosition = ratio ? '50% ' + focus + '%' : '';
+        if (ratio) img.style.transform = '';
+        const row = byId('sfocusrow');
+        // Framing only means something once something is being cut off.
+        if (row) row.classList.toggle('off', !ratio);
+      };
+      paint();
       wirePhotoZoom('shotwrap', 'shotbig');
+      [...byId('sheet').querySelectorAll('#scrops button')].forEach((b) =>
+        b.addEventListener('click', async () => {
+          crop = b.dataset.c;
+          [...byId('scrops').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
+          paint();
+          await post('photos', { op: 'edit', index: i + 1, crop: crop === 'none' ? '' : crop });
+        }));
+      const slider = byId('sfocus');
+      if (slider) {
+        // Repaint on every movement, save when it stops: dragging must not post fifty times.
+        slider.addEventListener('input', () => { focus = focusOf(slider.value); paint(); });
+        ['change', 'pointerup'].forEach((ev) => slider.addEventListener(ev, async () => {
+          await post('photos', { op: 'edit', index: i + 1, focus });
+        }));
+      }
       [...byId('sheet').querySelectorAll('#sfilters button')].forEach((b) =>
         b.addEventListener('click', async () => {
           const f = b.dataset.f;
