@@ -3146,6 +3146,58 @@ exports('IsOnCall',      function(src) return CallOf[src] ~= nil end)
 --- A notification banner on somebody's phone. The one thing another module usually wants
 --- from a phone, and the reason it is an export rather than an event: the caller gets a
 --- yes/no back instead of shouting into the void.
+-- ══════════════════════════════════════════════════════════════
+-- Diagnosis
+-- ══════════════════════════════════════════════════════════════
+-- Why an app is not working, in the console a player can actually reach.
+--
+-- Written after two rounds were spent guessing at "something went wrong": the real reason
+-- was on the SERVER console every time, and the console anybody pastes is F8. This answers
+-- the only two questions that matter - did the server file that registers this callback
+-- load, and does the provider behind it return anything - and it lives in main.lua on
+-- purpose, because a file that failed to load cannot report that it failed to load.
+V.Callback('v-phone:diag', function(src, resolve)
+    local expected = {
+        'v-phone:bank:data', 'v-phone:garage:data', 'v-phone:property:data',
+        'v-phone:wallet:data', 'v-phone:jobs:data',
+    }
+    local callbacks = {}
+    for _, name in ipairs(expected) do
+        callbacks[#callbacks + 1] = { name = name, ok = V.Registered and V.Registered(name) or false }
+    end
+
+    -- And whether the bridge providers behind them answer at all, which is the difference
+    -- between "the phone is broken" and "this server has no garage script to read".
+    local p = Core and Core.GetPlayer and Core.GetPlayer(src)
+    local cid = p and p.citizenid or nil
+    local function probe(fn)
+        if not cid then return 'no character' end
+        local ok, result = pcall(fn, cid)
+        if not ok then return 'error: ' .. tostring(result) end
+        if type(result) ~= 'table' then return 'nothing readable' end
+        return ('%d row(s)'):format(#result)
+    end
+
+    resolve({
+        ok = true,
+        framework = tostring(Bridge and Bridge.framework or '?'),
+        resource = tostring(Bridge and Bridge.frameworkResource or '?'),
+        callbacks = callbacks,
+        providers = {
+            { name = 'vehicles', state = probe(function(c)
+                return Bridge.Vehicles and Bridge.Vehicles.Owned and Bridge.Vehicles.Owned(c, src) end) },
+            { name = 'properties', state = probe(function(c)
+                return Bridge.Properties and Bridge.Properties.Owned and Bridge.Properties.Owned(c, src) end) },
+            { name = 'licences', state = probe(function(c)
+                return Bridge.Licences and Bridge.Licences.Held and Bridge.Licences.Held(src, c) end) },
+            { name = 'jobs', state = probe(function()
+                return Bridge.Jobs and Bridge.Jobs.All and Bridge.Jobs.All() end) },
+            { name = 'balances', state = probe(function()
+                return Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src) end) },
+        },
+    })
+end)
+
 exports('Notify', function(src, app, title, body)
     if not Core.GetPlayer(src) then return false end
     TriggerClientEvent('v-phone:client:banner', src, {

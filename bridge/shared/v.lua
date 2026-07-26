@@ -114,11 +114,23 @@ if isServer then
         handlers[name] = fn
     end
 
+    --- Is this callback registered? Used by /phonediag to tell "the server file did not
+    --- load" apart from "the handler ran and failed", which look identical from the phone.
+    function V.Registered(name) return handlers[tostring(name)] ~= nil end
+
     RegisterNetEvent(CB_REQUEST, function(ticket, name, data)
         local src = source
         local fn = handlers[name]
         if not fn then
-            TriggerClientEvent(CB_ANSWER, src, ticket, nil)
+            -- Named, not nil. A nil answer used to become the app's generic "something went
+            -- wrong", which is the same four words for a callback that does not exist, a
+            -- query that threw, and a server that never replied. Three different problems
+            -- and one useless message: it cost two rounds of guessing to tell them apart,
+            -- because the real reason was only ever printed on the SERVER console while the
+            -- console anybody actually reads is F8.
+            print(('[v-phone] no callback registered for %s - is its server file loading?')
+                :format(tostring(name)))
+            TriggerClientEvent(CB_ANSWER, src, ticket, { error = 'nohandler', name = name })
             return
         end
         -- One answer per ticket, whatever the handler does. A handler that resolves twice
@@ -131,16 +143,42 @@ if isServer then
         end, data)
         if not ok then
             print(('[v-phone] callback %s failed: %s'):format(name, err))
-            if not answered then TriggerClientEvent(CB_ANSWER, src, ticket, nil) end
+            -- The detail travels to the client so it reaches F8 as well. It is a Lua error
+            -- message about this resource's own code, not anything about the player or the
+            -- server's configuration, so there is nothing here worth withholding.
+            if not answered then
+                TriggerClientEvent(CB_ANSWER, src, ticket,
+                    { error = 'server', name = name, detail = tostring(err) })
+            end
         end
     end)
 else
     local pending, ticketSeq = {}, 0
 
+    --- Whatever came back, plus a line in F8 when it came back broken.
+    ---
+    --- Every app turns a failed request into one short sentence on screen, which is right for
+    --- a player and useless for anybody fixing it. The reason is printed here instead, once,
+    --- in the console people actually paste - so a report arrives with its own diagnosis.
+    local function report(name, result)
+        if type(result) ~= 'table' then return end
+        if result.error == 'nohandler' then
+            print(('[v-phone] %s: no server callback registered. The server file that should '
+                .. 'register it is not loading - check the server console at startup.')
+                :format(tostring(name)))
+        elseif result.error == 'server' then
+            print(('[v-phone] %s failed on the server: %s')
+                :format(tostring(name), tostring(result.detail or '?')))
+        end
+    end
+
     function V.Request(name, cb, data)
         ticketSeq = ticketSeq + 1
         local ticket = ticketSeq
-        pending[ticket] = cb
+        pending[ticket] = function(result)
+            report(name, result)
+            cb(result)
+        end
         TriggerServerEvent(CB_REQUEST, ticket, name, data)
         -- A server that never answers must not leak a callback for the session. Ten
         -- seconds is far past any query this phone makes.
@@ -148,7 +186,13 @@ else
             local waiting = pending[ticket]
             if not waiting then return end
             pending[ticket] = nil
-            pcall(waiting, nil)
+            -- The third silent failure, named like the other two: no answer at all. A handler
+            -- that returns without ever calling `resolve` ends up here, and used to be
+            -- indistinguishable from one that threw.
+            print(('[v-phone] %s: no answer from the server after 10s - a handler that '
+                .. 'returned without resolving, or the server event never arrived.')
+                :format(tostring(name)))
+            pcall(waiting, { error = 'timeout', name = name })
         end)
     end
 

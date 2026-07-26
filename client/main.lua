@@ -525,6 +525,31 @@ end
 RegisterCommand('refreshphone', forceReset, false)
 RegisterCommand('refresh-phone', forceReset, false)
 
+--- `/phonediag` - why an app is not working, printed into F8.
+---
+--- An app that cannot read its data says one short sentence, which is right for a player and
+--- useless for anybody fixing it. This prints the two facts that actually decide it: whether
+--- each server file loaded and registered its callback, and whether the bridge provider
+--- behind it returns anything on this server.
+RegisterCommand('phonediag', function()
+    V.Request('v-phone:diag', function(r)
+        if type(r) ~= 'table' or not r.ok then
+            print('[v-phone] diag: no answer - ' ..
+                (type(r) == 'table' and tostring(r.error or '?') or 'nil'))
+            return
+        end
+        print(('[v-phone] diag | framework=%s (%s)')
+            :format(tostring(r.framework), tostring(r.resource)))
+        for _, c in ipairs(r.callbacks or {}) do
+            print(('[v-phone] diag | callback %-24s %s')
+                :format(tostring(c.name), c.ok and 'registered' or 'MISSING - its server file is not loading'))
+        end
+        for _, pr in ipairs(r.providers or {}) do
+            print(('[v-phone] diag | provider %-12s %s'):format(tostring(pr.name), tostring(pr.state)))
+        end
+    end)
+end, false)
+
 -- And a server nudge, so an admin can un-stick a player's phone remotely.
 RegisterNetEvent('v-phone:client:forceReset', forceReset)
 
