@@ -59,8 +59,23 @@ end
 -- The services
 -- ══════════════════════════════════════════════════════════════
 
+--- The services an operator configured, with anything that is not one dropped.
+---
+--- **Every entry is checked for being a table.** `serviceById` and `waitFor` both read `s.id`
+--- straight off whatever the list holds, and indexing a number in Lua is a hard error rather
+--- than nil - which is what "attempt to index a number value" means when it comes out of this
+--- file. One stray value in `Config.Emergency.services` took the whole 911 screen down with a
+--- message naming a line nowhere near the config that caused it.
+---
+--- Dropped rather than repaired: an entry that is not a table has no id, no label and no
+--- reasons, so there is nothing to call and nothing a guess would improve.
 local function services()
-    return type(CFG.services) == 'table' and CFG.services or {}
+    if type(CFG.services) ~= 'table' then return {} end
+    local out = {}
+    for _, s in ipairs(CFG.services) do
+        if type(s) == 'table' and s.id ~= nil then out[#out + 1] = s end
+    end
+    return out
 end
 
 local function serviceById(id)

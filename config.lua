@@ -642,6 +642,33 @@ Config.Messages = {
     maxLength   = 250,      -- characters
     pageSize    = 40,       -- messages loaded per conversation
     retentionDays = 30,     -- 0 keeps everything for ever
+
+    -- ── Written with no signal ─────────────────────────────────
+    -- A text typed in a dead spot used to be lost: the server refuses without bars, the page
+    -- said "no signal", and what somebody had written was gone. Every real phone keeps it and
+    -- sends it when the bars come back.
+    --
+    -- **The outbox belongs to the handset, not to the network.** It lives on the player's own
+    -- machine and is written to their KVP, so it survives a reconnect the way an unsent text
+    -- survives turning a phone off and on. Nothing is queued on the server: the server is the
+    -- network, and the network is what is missing.
+    --
+    -- Only MESSAGES. A bank transfer or a taxi callout made in a tunnel and quietly settled
+    -- twenty minutes later would be a worse surprise than being told it did not happen.
+    outbox = {
+        enabled = true,
+
+        -- How many may wait at once. This is a phone's outbox, not a mail server: somebody who
+        -- has written twenty texts underground has written enough.
+        max = 20,
+
+        -- How many times one may be retried before it is given up on and the player told.
+        --
+        -- Only refusals that could plausibly pass later are retried at all - no signal, a rate
+        -- limit. A number that does not exist does not start existing, so that answer is
+        -- final the first time.
+        tries = 6,
+    },
 }
 
 -- ── Cipher ────────────────────────────────────────────────────
@@ -671,6 +698,33 @@ Config.Calls = {
     --
     -- Somebody who is on their OWN call is never pulled in.
     speakerRange = 8.0,
+
+    -- ── Group calls ────────────────────────────────────────────
+    -- A call with more than two people on it. Anyone already talking is asked for; when they
+    -- answer they join the conversation everybody else is already having.
+    --
+    -- **The audio is free, and that is worth knowing before changing anything here.** A call
+    -- on pma-voice IS a channel, and a channel wires every member to every other member in
+    -- both directions - it has always been a conference, it simply never had more than two
+    -- people put on it. Everything below is about who may be put on one, not about how they
+    -- are heard.
+    group = {
+        enabled = true,
+
+        -- How many people can be on one call at once, INCLUDING the two who started it.
+        -- Clamped to 2..12 in code: one is not a call, and a dozen voices on one channel is
+        -- already past the point where anybody can follow it.
+        max = 5,
+
+        -- Only the person who PLACED the call may add to it, the way an iPhone conference
+        -- works. `false` lets anybody already on the call invite somebody else, which is
+        -- friendlier and is also how a call turns into a crowd nobody chose to be in.
+        hostOnly = true,
+
+        -- One invitation at a time. Without it, a single tap-through could set every phone
+        -- in a contact list ringing at once, and each of those rings is heard by the room.
+        oneAtATime = true,
+    },
 
     -- ── A call on a bad line ───────────────────────────────────
     -- **This is the switch for "calls break up on a weak signal".** `badSignal.enabled`.
@@ -779,8 +833,14 @@ Config.Apps = {
     -- system only works if everybody already has it when the alert goes out - an app a player
     -- has to hear about, find in the store and install first is an app that is not there on
     -- the day the city floods. See Config.Alerts.
+    --
+    -- `required`, and it was missing: the comment above said "installed by default and not
+    -- optional" and the entry only left `optional` out, which makes an app installed by default
+    -- and perfectly removable. So the home screen offered a minus badge on it and a player could
+    -- delete the alert system - the one app on this phone that exists to reach somebody who is
+    -- not looking at it.
     { id = 'alerts',   label = 'app.alerts',   icon = 'alerts',   owner = 'v-phone', slot = 4,
-      category = 'essentials' },
+      required = true, category = 'essentials' },
     -- Bank shares slot 5 with Mail rather than every later app being renumbered to make room
     -- for the one above. `slot` is a sort key and ties break on the app id, so `bank` still
     -- comes before `mail` - which is the order that was already here.
@@ -1432,6 +1492,174 @@ Config.Chargers = {
       coords = vector3(-1223.0, -1493.0, 4.4), radius = 6.0 },
 }
 normalisePlaces(Config.Chargers)
+
+-- ══════════════════════════════════════════════════════════════
+--  THE LOOK  (one place that changes the colour of the phone)
+-- ══════════════════════════════════════════════════════════════
+-- **This is the half of the theme that was missing.**
+--
+-- The stylesheet declared five colour tokens and then wrote every other value out by hand -
+-- about a hundred and thirty times - so changing "the green" changed four things and the phone
+-- stayed green. Every one of those is a token now, which fixed the stylesheet; this fixes the
+-- part an operator can reach, because editing CSS in a resource you did not write is not a
+-- theme, it is a fork.
+--
+-- Anything left as nil keeps the phone's own value. Set one colour and only that changes.
+--
+-- **These are the system colours, not the app tints.** An app's own tile keeps its identity -
+-- Zuber is black, the Lottery is green, the taxi is yellow - because those are brands rather
+-- than theme, and re-tinting them would make every icon on the home screen the same colour.
+Config.Theme = {
+    -- The colour of every control that is "the accent": links, switches, the selected tab, the
+    -- send button. This is the one most servers will set and nothing else.
+    --
+    --     accent = '#FF7A1A',
+    accent = nil,
+
+    -- The rest of the system palette. Each is used for what its name says: green for confirm
+    -- and money in, red for destructive and money out, orange for warnings, and so on.
+    --
+    --     green = '#30D158',   red = '#FF453A',    orange = '#FF9F0A',
+    --     yellow = '#FFD60A',  indigo = '#5E5CE6', pink = '#FF375F',
+    --     teal = '#40C8E0',    purple = '#BF5AF2', grey = '#8E8E93',
+    green = nil,
+    red = nil,
+    orange = nil,
+    yellow = nil,
+    indigo = nil,
+    pink = nil,
+    teal = nil,
+    purple = nil,
+    grey = nil,
+
+    -- Whether the phone starts in dark mode. nil leaves it to the player's own setting, which
+    -- is where it belongs - this is only the default for somebody who has never chosen.
+    dark = nil,
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  PLACES  (what the Maps app lists, and routes to)
+-- ══════════════════════════════════════════════════════════════
+-- **This is where the pins go.** The Maps app used to read one source - a v-world module most
+-- servers do not run - so on everybody else's server it drew "nothing on the map yet" and there
+-- was nowhere to put anything. Now it lists these, and v-world's own rows as well when that
+-- resource IS running: the two are merged rather than one replacing the other.
+--
+-- A player taps a place and their GPS is set to it. That is all the app does with a pin, and it
+-- is deliberately all: a waypoint is something they can then ignore, which a marker drawn on
+-- their screen is not.
+--
+-- ── The categories ────────────────────────────────────────────
+-- `key` is what a place refers to, `label` is what a player reads, and `icon` is the tile.
+--
+-- The label may be one of this resource's own phrases - the `ph.` ones below, which read in the
+-- player's language - or your own words, written straight in and passed through untouched. That
+-- is how a server adds "Docks" or "Cartel" without editing a locale file.
+Config.PlaceCategories = {
+    { key = 'garage',   label = 'ph.place_garage',   icon = 'garage' },
+    { key = 'shop',     label = 'ph.place_shop',     icon = 'store' },
+    { key = 'fuel',     label = 'ph.place_fuel',     icon = 'charging' },
+    { key = 'bank',     label = 'ph.place_bank',     icon = 'bank' },
+    { key = 'hospital', label = 'ph.place_hospital', icon = 'heart' },
+    { key = 'police',   label = 'ph.place_police',   icon = 'shield' },
+    { key = 'job',      label = 'ph.place_job',      icon = 'jobs' },
+    { key = 'leisure',  label = 'ph.place_leisure',  icon = 'music' },
+}
+
+-- ── The pins ──────────────────────────────────────────────────
+-- One row per place.
+--
+--   label   what a player reads. Your own words, or a `ph.` phrase.
+--   kind    a `key` from the categories above. An unknown one still shows, under its own name -
+--           a pin nobody can find is worse than a pin in a category you forgot to declare.
+--   coords  where it is. `vector3(x, y, z)` or `x = ..., y = ...` - both are accepted.
+--   enabled false hides one without deleting it, for a place that is closed this month.
+--
+-- The list below is a starting point of real Los Santos locations, not a prescription: delete
+-- the ones your server does not use and add your own. Nothing here is referenced by any other
+-- part of the phone, so this list is yours entirely.
+Config.Places = {
+    -- Garages and mechanics
+    { label = 'Los Santos Customs',   kind = 'garage', coords = vector3(-337.2, -136.8, 39.0) },
+    { label = "Benny's Original",     kind = 'garage', coords = vector3(-205.6, -1310.5, 31.3) },
+    { label = 'Hayes Autos',          kind = 'garage', coords = vector3(487.9, -1316.5, 29.2) },
+
+    -- Shops
+    { label = '24/7 Strawberry',      kind = 'shop',   coords = vector3(25.7, -1347.3, 29.5) },
+    { label = '24/7 Grapeseed',       kind = 'shop',   coords = vector3(1698.4, 4924.4, 42.1) },
+    { label = 'LTD Mirror Park',      kind = 'shop',   coords = vector3(1163.4, -323.8, 69.2) },
+    { label = 'Ammu-Nation Pillbox',  kind = 'shop',   coords = vector3(252.9, -50.0, 69.9) },
+
+    -- Fuel
+    { label = 'Xero Gas, Grove St',   kind = 'fuel',   coords = vector3(265.7, -1261.3, 29.3) },
+    { label = 'RON, Route 68',        kind = 'fuel',   coords = vector3(1039.9, 2671.1, 39.6) },
+    { label = 'LTD, Little Seoul',    kind = 'fuel',   coords = vector3(-707.5, -914.4, 19.2) },
+
+    -- Money
+    { label = 'Fleeca, Legion Square', kind = 'bank',  coords = vector3(149.2, -1040.2, 29.4) },
+    { label = 'Fleeca, Route 68',      kind = 'bank',  coords = vector3(-2957.7, 481.6, 15.7) },
+    { label = 'Pacific Standard',      kind = 'bank',  coords = vector3(235.0, 216.5, 106.3) },
+
+    -- Emergency
+    { label = 'Pillbox Hill Medical',  kind = 'hospital', coords = vector3(298.6, -584.7, 43.3) },
+    { label = 'Sandy Shores Medical',  kind = 'hospital', coords = vector3(1839.6, 3672.9, 34.3) },
+    { label = 'Mission Row PD',        kind = 'police',   coords = vector3(441.0, -982.1, 30.7) },
+    { label = 'Sandy Shores Sheriff',  kind = 'police',   coords = vector3(1853.2, 3686.6, 34.3) },
+    { label = 'Paleto Bay Sheriff',    kind = 'police',   coords = vector3(-448.6, 6013.3, 31.7) },
+
+    -- Work
+    { label = 'City Hall',             kind = 'job',    coords = vector3(-544.6, -204.2, 38.2) },
+    { label = 'Docks',                 kind = 'job',    coords = vector3(852.4, -3140.0, 5.9) },
+    { label = 'Weazel News',           kind = 'job',    coords = vector3(-598.5, -929.4, 23.9) },
+
+    -- Somewhere to be
+    { label = 'Vanilla Unicorn',       kind = 'leisure', coords = vector3(127.5, -1298.9, 29.2) },
+    { label = 'Bahama Mamas',          kind = 'leisure', coords = vector3(-1387.7, -618.3, 30.8) },
+    { label = 'Vespucci Beach',        kind = 'leisure', coords = vector3(-1223.0, -1493.0, 4.4) },
+}
+normalisePlaces(Config.Places)
+
+-- ══════════════════════════════════════════════════════════════
+--  THE FRUITSTORE  (downloading takes time, and updates exist)
+-- ══════════════════════════════════════════════════════════════
+-- An app used to appear the instant it was tapped, which made the store the one part of the
+-- phone where the network did not exist - everything else here refuses without bars.
+Config.Store = {
+    download = {
+        enabled = true,
+
+        -- **How long a full download takes, per signal bar.**
+        --
+        -- The rate is read EVERY SECOND, not once at the start, so this is not a fixed duration
+        -- somebody is sentenced to: a player who starts a download underground and drives into
+        -- town watches it speed up, and finishes early. That is both what a real phone does and
+        -- the kinder behaviour.
+        --
+        -- Zero bars does not fail - it HOLDS. Somebody walking through a tunnel expects to come
+        -- out the other side and find it still going.
+        secondsAtBars = {
+            [4] = 10,   -- full signal
+            [3] = 15,
+            [2] = 30,
+            [1] = 60,   -- one bar
+        },
+
+        -- Used for a bar count that is not in the table above, which should not happen.
+        seconds = 10,
+    },
+
+    -- ── Updates ────────────────────────────────────────────────
+    -- Every app in `Config.Apps` may carry a `version`. The store compares it against the
+    -- version the character actually installed and offers an update when they differ.
+    --
+    -- **An app installed before it had a version reads as up to date**, not as needing an
+    -- update on day one - the difference between a badge people act on and a badge everybody
+    -- learns to dismiss. Bump an app's `version` when you change it and everybody is offered
+    -- the new one; leave it alone and nobody is bothered.
+    --
+    -- An update is never charged for. What was paid for was the app.
+    updates = true,
+}
 
 -- ══════════════════════════════════════════════════════════════
 --  EXPORT  (what your haul is worth, before you drive across the map)
@@ -2304,6 +2532,17 @@ Config.Alerts = {
     -- A category may override it below with `loud = false`. A flood and a roadworks notice are
     -- not the same event, and a phone that klaxons for both is one people mute before the flood.
     ring = true,
+
+    -- **The strongest form: a card that takes the whole screen** and has to be acknowledged -
+    -- the same one `/phoneadmin alert` can draw, wearing the alert's own category name and
+    -- icon. Only ever shown for an alert that is already loud, so a category marked
+    -- `loud = false` never takes anybody's screen.
+    --
+    -- Off by default, and deliberately: a card that must be dismissed is right for an
+    -- evacuation and wrong for the fourth wanted notice of the evening. A screen people have to
+    -- clear is a screen they learn to clear without reading, which costs you the one that
+    -- mattered.
+    fullScreen = false,
 
     -- ── Deleting ───────────────────────────────────────────────
     -- Who may take an alert down: whoever wrote it, always, and staff. `staffAce` is the

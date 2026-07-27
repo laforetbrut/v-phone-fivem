@@ -91,8 +91,31 @@ input { font: inherit; }
   /* The rest of the system palette, exact, plus the surfaces that flip with the
      theme. Keypad grey, received-bubble grey and the light material behind
      banners are what a screenshot is recognised by. */
-  --ios-green: #34C759; --ios-red: #FF3B30; --ios-orange: #FF9500;
-  --ios-indigo: #5856D6; --ios-pink: #FF2D55;
+  /* **The system palette, and the whole of it.**
+
+     Five of these were declared here and then used six times in eleven thousand lines; every
+     other site wrote the value out by hand. An operator who changed "the green" changed four
+     things and the phone stayed green, which is what "the theme is half done" meant.
+
+     They are also unified. iOS ships a light and a dark spelling of each of these - #34C759 and
+     #30D158 are both "green" - and this file used both, at random, chosen by whichever
+     reference was open at the time. One token each now, set to whichever spelling already
+     dominated, so almost nothing changed appearance and the stragglers stopped disagreeing.
+
+     Deliberately NOT swapped in dark mode. These are used on fixed dark surfaces as well as on
+     app surfaces - the call screen, the lock screen, the emergency card - and a token that
+     flipped with the mode would have taken the light variant onto a black background. Changing
+     one here changes it everywhere, which is the thing that was actually missing. */
+  --ios-blue:   #0A84FF;
+  --ios-green:  #30D158;
+  --ios-red:    #FF453A;
+  --ios-orange: #FF9F0A;
+  --ios-yellow: #FFD60A;
+  --ios-indigo: #5E5CE6;
+  --ios-pink:   #FF375F;
+  --ios-teal:   #40C8E0;
+  --ios-purple: #BF5AF2;
+  --ios-grey:   #8E8E93;
   --key-bg: #E5E5EA; --key-label: #000;
   --bub-them: #E9E9EB; --bub-them-label: #000;
   --bar-bg: rgba(249, 249, 249, .93);
@@ -171,7 +194,7 @@ input { font: inherit; }
   --app-label3: rgba(235, 235, 245, .3);
   --app-sep: rgba(84, 84, 88, .65);
   --app-fill: rgba(118, 118, 128, .24);
-  --app-tint: #0a84ff;
+  --app-tint: var(--ios-blue);
   --key-bg: #2C2C2E; --key-label: #fff;
   --bub-them: #26262A; --bub-them-label: #fff;
   --bar-bg: rgba(18, 18, 20, .92);
@@ -259,21 +282,30 @@ input { font: inherit; }
 .island { position: absolute; left: 50%; top: 13px; z-index: 45;
   /* 108, not 124: at 124 the pill was 35% of the screen and its right edge ran
      6px under the signal bars. The hardware one is nearer 31%. */
-  width: 108px; height: 36px; margin-left: -54px; border-radius: 22px;
+  width: 108px; height: 36px; border-radius: 22px;
+  /* Centred on the compositor rather than by a margin that had to be animated. `margin-left`
+     was going from -54px to -170px alongside the width, which is a second layout property
+     changing every frame to achieve what a translate does for free - and getting it wrong by
+     a pixel mid-animation made the pill drift off centre as it grew. */
+  transform: translateX(-50%);
   background: #000; display: flex; align-items: center; justify-content: center;
   overflow: hidden; cursor: pointer;
   transition: width .44s var(--spring), height .44s var(--spring),
-              margin-left .44s var(--spring), border-radius .44s var(--spring); }
+              border-radius .44s var(--spring); }
 .island .icontent { display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 0 16px; opacity: 0; transform: scale(.86);
   transition: opacity .2s ease .12s, transform .34s var(--spring) .06s; }
-.island.live { width: 340px; height: 84px; margin-left: -170px; border-radius: 30px; }
+.island.live { width: 340px; height: 84px; border-radius: 30px; }
 .island.live .icontent { opacity: 1; transform: none; }
 .island .idot { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
   background: var(--v-grad-accent); display: flex; align-items: center; justify-content: center;
   color: #000; }
 .island .idot svg { width: 15px; height: 15px; }
-.island .itxt { flex: 1; min-width: 0; }
+/* The name over the timer, not beside it. Both are spans and the box holding them was never
+   given a direction, so they ran together on one line - a live call read as "Mara Ortiz0:42".
+   It is the layout the live activity has always meant to have; nothing had looked at it. */
+.island .itxt { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  justify-content: center; gap: 1px; }
 .island .it1 { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 .island .it2 { font-size: 11px; color: var(--l2); }
@@ -285,6 +317,22 @@ input { font: inherit; }
 .island .iwave i:nth-child(3) { height: 11px; animation-delay: .3s; }
 .island .iwave i:nth-child(4) { height: 18px; animation-delay: .45s; }
 @keyframes ph-wave { 0%, 100% { transform: scaleY(.4); } 50% { transform: scaleY(1); } }
+
+/* ── A call in the island is green ─────────────────────────────
+   `.live` is only ever a call - `setIslandMode` forces it whenever one is up, whatever else
+   asked for the island - so this needs no new class. The dot wore the operator's accent, which
+   on a default install is orange: the one thing on the screen saying "you are on a call"
+   looked like any other notification. Green, with a white handset, is what the live activity
+   for a call is on the phone this is dressed as, and it is legible at 15px in a black pill. */
+.island.live .idot {
+  background: var(--ios-green);
+  color: #fff;
+  box-shadow: 0 0 0 .5px rgba(255, 255, 255, .18), 0 2px 8px rgba(48, 209, 88, .40);
+}
+.island.live .idot svg { fill: currentColor; stroke: currentColor; }
+/* The little waveform beside it belongs to the same call, so it is the same colour. Leaving it
+   on the accent made the pill two-tone for no reason anybody could name. */
+.island.live .iwave i { background: var(--ios-green); }
 
 /* ══ Home indicator ═══════════════════════════════════════════ */
 .homebar { position: absolute; left: 50%; bottom: 9px; z-index: 60;
@@ -392,7 +440,7 @@ input { font: inherit; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .badge { position: absolute; top: -5px; right: -6px; min-width: 21px; height: 21px;
   padding: 0 6px; display: flex; align-items: center; justify-content: center;
-  border-radius: 99px; background: #ff3b30; color: #fff;
+  border-radius: 99px; background: var(--ios-red); color: #fff;
   font-family: var(--ios-num); font-size: 12px; font-weight: 600;
   box-shadow: 0 0 0 2px rgba(0,0,0,.28); }
 
@@ -468,7 +516,7 @@ input { font: inherit; }
 .row .ricon svg { width: 16px; height: 16px; }
 .row .rav { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, #8e8e93, #545458); color: #fff;
+  background: linear-gradient(180deg, var(--ios-grey), #545458); color: #fff;
   font-size: 15px; font-weight: 500; }
 .row .rmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .row .rt { font-size: 16px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden;
@@ -477,12 +525,12 @@ input { font: inherit; }
   text-overflow: ellipsis; }
 .row .rval { flex: 0 0 auto; font-size: 16px; color: var(--app-label2); }
 .row .rval.num { font-family: var(--ios-num); }
-.row .rval.pos { color: #30d158; }
-.row .rval.neg { color: #ff453a; }
+.row .rval.pos { color: var(--ios-green); }
+.row .rval.neg { color: var(--ios-red); }
 .row .rchev { flex: 0 0 auto; width: 8px; height: 13px; color: var(--app-label3); }
 .row .rbadge { flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px;
   display: flex; align-items: center; justify-content: center; border-radius: 99px;
-  background: #ff3b30; color: #fff; font-family: var(--ios-num); font-size: 12px;
+  background: var(--ios-red); color: #fff; font-family: var(--ios-num); font-size: 12px;
   font-weight: 600; }
 .row .rtime { flex: 0 0 auto; font-size: 13px; color: var(--app-label3); }
 
@@ -502,7 +550,7 @@ input { font: inherit; }
 .bigbtn:active { transform: scale(.97); opacity: .85; }
 .bigbtn.tinted { background: rgba(0, 122, 255, .14); color: var(--app-tint); }
 .bigbtn.plain { background: var(--app-fill); color: var(--app-label); }
-.bigbtn.destructive { background: rgba(255,59,48,.16); color: #ff453a; }
+.bigbtn.destructive { background: rgba(255,59,48,.16); color: var(--ios-red); }
 
 .field { width: 100%; padding: 12px 14px; margin-bottom: 10px; border-radius: 12px;
   background: var(--app-card); color: var(--app-label); font-size: 16px;
@@ -510,7 +558,11 @@ input { font: inherit; }
 .field::placeholder { color: var(--app-label3); }
 .field:focus { box-shadow: inset 0 0 0 1px var(--v-accent-line); }
 
-.empty { padding: 60px 24px; text-align: center; font-size: 15px; color: var(--app-label3); }
+/* `--app-label2`, not `--app-label3`. The tertiary label is 30% alpha - it measures 2.25:1,
+   which made the one sentence explaining WHY a screen is empty the least readable thing on it.
+   Tertiary is for a placeholder inside a field somebody is about to type over, not for the
+   only text on the screen. */
+.empty { padding: 60px 24px; text-align: center; font-size: 15px; color: var(--app-label2); }
 .empty svg { width: 44px; height: 44px; margin-bottom: 12px; opacity: .4; }
 
 /* Big number, for a balance. */
@@ -529,8 +581,11 @@ input { font: inherit; }
    apart the next time either is touched. */
 .thread,
 .bubs { display: flex; flex-direction: column; gap: 3px; padding: 8px 0 12px; }
+/* `pre-wrap` keeps the line breaks somebody typed and still wraps the long lines. Without it
+   a message written over four lines arrives as one paragraph: HTML collapses the newlines,
+   so the breaks survived the database and the network and were thrown away at the last step. */
 .bub { max-width: 74%; padding: 9px 14px; border-radius: 20px; font-size: 16px;
-  line-height: 1.32; word-break: break-word; position: relative;
+  line-height: 1.32; word-break: break-word; white-space: pre-wrap; position: relative;
   animation: ph-bub .3s var(--spring) backwards; }
 @keyframes ph-bub { from { opacity: 0; transform: translateY(8px) scale(.94); } to { opacity: 1; transform: none; } }
 .bub.them { align-self: flex-start; background: var(--bub-them); color: var(--bub-them-label);
@@ -596,7 +651,7 @@ input { font: inherit; }
   animation: ph-in .3s var(--spring); }
 .callui.on { display: flex; }
 .callav { width: 96px; height: 96px; border-radius: 50%; margin-bottom: 18px;
-  background: linear-gradient(180deg, #8e8e93, #48484a); display: flex; align-items: center;
+  background: linear-gradient(180deg, var(--ios-grey), #48484a); display: flex; align-items: center;
   justify-content: center; font-size: 38px; font-weight: 400; color: #fff; }
 .callnum { font-size: 30px; font-weight: 400; letter-spacing: -.01em; }
 .callstate { margin-top: 6px; font-size: 16px; color: var(--l2); }
@@ -746,7 +801,7 @@ input { font: inherit; }
   transition: filter .1s ease, transform .1s ease; }
 .ckey:active { filter: brightness(1.35); transform: scale(.95); }
 .ckey.fn { background: #A5A5A5; color: #000; }
-.ckey.op { background: #FF9F0A; color: #fff; font-size: 30px; }
+.ckey.op { background: var(--ios-orange); color: #fff; font-size: 30px; }
 .ckey.wide { grid-column: span 2; border-radius: 34px; text-align: left; padding-left: 26px; }
 
 /* ══ App switcher ═════════════════════════════════════════════
@@ -895,7 +950,7 @@ input { font: inherit; }
    over the edge of the bar - and over the rounded background the active tab draws. */
 .tbicon .tbadge { position: absolute; top: 0; left: 12px; min-width: 17px; height: 17px;
   padding: 0 5px; display: flex; align-items: center; justify-content: center;
-  border-radius: 99px; background: #ff3b30; color: #fff;
+  border-radius: 99px; background: var(--ios-red); color: #fff;
   font-family: var(--ios-num); font-size: 11px; font-weight: 600; font-style: normal;
   /* A ring in the bar's own colour would be wrong on the glass bar, which is translucent and
      shows whatever scrolled under it. A small drop shadow lifts it off any of them. */
@@ -915,7 +970,7 @@ input { font: inherit; }
 .widget .wsub { font-size: 12px; color: rgba(255,255,255,.8); }
 .widget .wicon svg { width: 20px; height: 20px; }
 .widget.cal .wday { font-size: 12px; font-weight: 700; letter-spacing: .12em;
-  text-transform: uppercase; color: #ff453a; }
+  text-transform: uppercase; color: var(--ios-red); }
 .widget.cal .wnum { font-family: var(--ios-num); font-size: 40px; font-weight: 500; line-height: 1; }
 
 /* ══ Search pill above the dock ═══════════════════════════════ */
@@ -1038,7 +1093,7 @@ input { font: inherit; }
   margin-bottom: 10px; }
 .post .phead { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
 .post .pav { width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
-  background: linear-gradient(180deg, #8e8e93, #545458) center/cover; color: #fff;
+  background: linear-gradient(180deg, var(--ios-grey), #545458) center/cover; color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 600; }
 .post .ph { font-size: 14px; font-weight: 700; color: var(--app-label); }
@@ -1051,13 +1106,13 @@ input { font: inherit; }
   border-radius: 99px; font-family: var(--ios-num); font-size: 13px;
   color: var(--app-label2); background: var(--app-fill); }
 .post .plike svg { width: 15px; height: 15px; }
-.post .plike.on { color: #FF2D55; background: rgba(255, 45, 85, .12); }
-.post .plike.on svg { fill: #FF2D55; stroke: #FF2D55; }
+.post .plike.on { color: var(--ios-pink); background: rgba(255, 45, 85, .12); }
+.post .plike.on svg { fill: var(--ios-pink); stroke: var(--ios-pink); }
 
 /* ══ Hush ═════════════════════════════════════════════════════ */
 .hushcard { border-radius: 20px; overflow: hidden; background: var(--app-card);
   box-shadow: 0 10px 26px rgba(0, 0, 0, .18); margin-bottom: 14px; }
-.hushcard .hphoto { aspect-ratio: 4 / 5; background: linear-gradient(180deg, #8e8e93, #48484a)
+.hushcard .hphoto { aspect-ratio: 4 / 5; background: linear-gradient(180deg, var(--ios-grey), #48484a)
   center/cover; display: flex; align-items: flex-end; }
 .hushcard .hname { width: 100%; padding: 40px 16px 12px; font-size: 24px; font-weight: 700;
   color: #fff; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .62)); }
@@ -1070,8 +1125,8 @@ input { font: inherit; }
 .hushbtn:active { transform: scale(.9); }
 .hushbtn svg { width: 27px; height: 27px; }
 .hushbtn.no { color: var(--app-label2); }
-.hushbtn.yes { color: #FF2D55; }
-.hushbtn.yes svg { fill: #FF2D55; stroke: #FF2D55; }
+.hushbtn.yes { color: var(--ios-pink); }
+.hushbtn.yes svg { fill: var(--ios-pink); stroke: var(--ios-pink); }
 
 /* ══ Status ink follows the surface ═══════════════════════════
    Over the wallpaper the bar is white. Over a light app it turns black, which is
@@ -1113,7 +1168,7 @@ input { font: inherit; }
 .stfeat { position: relative; border-radius: 18px; overflow: hidden; margin-bottom: 22px;
   padding: 16px; min-height: 168px; display: flex; flex-direction: column;
   justify-content: flex-end; color: #fff;
-  background: linear-gradient(135deg, #1D9BF0 0%, #5856D6 55%, #FF2D55 100%);
+  background: linear-gradient(135deg, #1D9BF0 0%, var(--ios-indigo) 55%, var(--ios-pink) 100%);
   box-shadow: 0 12px 28px rgba(0, 0, 0, .28); }
 .stfeat .stkick { font-size: 11px; font-weight: 700; letter-spacing: .14em;
   text-transform: uppercase; color: rgba(255, 255, 255, .8); margin-bottom: auto; }
@@ -1126,8 +1181,31 @@ input { font: inherit; }
   overflow: hidden; }
 
 /* A store row: icon, name, category, and the button that does the one thing. */
-.strowitem { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
-.strowitem + .strowitem { border-top: .5px solid var(--app-sep); }
+/* 12px, not 9. A 56px tile in a row padded by nine leaves seven pixels of air above and below
+   it, and the list reads as tiles stacked on tiles - the crowding visible in the screenshot.
+   `min-height` was 70 and the content is 74, so it was doing nothing; the padding is what sets
+   the rhythm here. */
+.strowitem { display: flex; align-items: center; gap: 12px; padding: 12px 0;
+  /* Wrapping, so the download bar can take a line of its own. It was written as
+     `grid-column: 1 / -1` on a FLEX row, which does nothing at all - the bar became a third
+     item squeezed between the button and the edge. */
+  flex-wrap: wrap; position: relative; }
+/* **Inset, like every other list in this phone**, and drawn as a pseudo-element rather than a
+   border.
+   A border sits on the padding box and runs edge to edge, so on a row that is also rounded -
+   and this one is, with a hover highlight to match - it cut straight across the corners of the
+   card the rows live in. That is the line you can see slicing the group.
+   58px on `.row.lead` puts it after a 30px icon; the store's tile is 56px with a 12px gap, so
+   the same rule lands at 68. */
+.strowitem + .strowitem::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 68px;
+  height: .5px;
+  background: var(--app-sep);
+}
 .strowitem .ic { width: 56px; height: 56px; border-radius: 13px; flex: 0 0 auto;
   box-shadow: 0 3px 9px rgba(0, 0, 0, .2); }
 .strowitem .stmid { flex: 1; min-width: 0; }
@@ -1155,7 +1233,7 @@ input { font: inherit; }
    out an app was paid only once the money had gone was the bug this answers. */
 .stget.paid { padding: 6px 16px; font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
 .stdel { padding: 6px 14px; border-radius: 99px; font-size: 14px; font-weight: 600;
-  background: var(--app-fill); color: #FF3B30; }
+  background: var(--app-fill); color: var(--ios-red); }
 .stmeta { display: flex; }
 .stmeta div { flex: 1; text-align: center; padding: 10px 4px; }
 .stmeta div + div { border-left: .5px solid var(--app-sep); }
@@ -1177,7 +1255,7 @@ input { font: inherit; }
 .island .inotif { position: absolute; inset: 0; display: flex; align-items: center;
   gap: 11px; padding: 0 18px; opacity: 0; transform: scale(.9);
   transition: opacity .18s ease .1s, transform .34s var(--spring) .04s; }
-.island.notif { width: 300px; height: 72px; margin-left: -150px; border-radius: 30px; }
+.island.notif { width: 300px; height: 72px; border-radius: 30px; }
 .island.notif .inotif { opacity: 1; transform: none; }
 .island.notif .icontent { visibility: hidden; }
 .island.notif::after { opacity: 0; }
@@ -1213,10 +1291,10 @@ input { font: inherit; }
   box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12); transition: background .2s ease, transform .12s; }
 .ccbtn:active { transform: scale(.92); }
 .ccbtn svg { width: 22px; height: 22px; }
-.ccbtn.on.air { background: #FF9F0A; }
-.ccbtn.on.cel { background: #30D158; }
-.ccbtn.on.wif { background: #0A84FF; }
-.ccbtn.on.blu { background: #0A84FF; }
+.ccbtn.on.air { background: var(--ios-orange); }
+.ccbtn.on.cel { background: var(--ios-green); }
+.ccbtn.on.wif { background: var(--ios-blue); }
+.ccbtn.on.blu { background: var(--ios-blue); }
 
 /* Now playing. */
 .ccnow { display: flex; flex-direction: column; }
@@ -1266,7 +1344,7 @@ input { font: inherit; }
 .cctoggles .ccpill:active { transform: scale(.92); }
 .cctoggles .ccpill svg { width: 22px; height: 22px; }
 .cctoggles .ccpill.on { background: #fff; color: #1c1c1e; }
-.cctoggles .ccpill.on.focus { background: #5E5CE6; color: #fff; }
+.cctoggles .ccpill.on.focus { background: var(--ios-indigo); color: #fff; }
 .cctoggles .ccpill.on.torch { background: #fff; color: #1c1c1e; }
 
 /* -- Notification shade -- */
@@ -1280,7 +1358,7 @@ input { font: inherit; }
 .shbtn { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
   color: #fff; background: rgba(120,120,128,.5);
   box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); }
-.shbtn.danger { color: #FF453A; }
+.shbtn.danger { color: var(--ios-red); }
 .shbtn.hidden { display: none; }
 
 .shadelist { display: flex; flex-direction: column; gap: 14px; padding-bottom: 40px; }
@@ -1291,7 +1369,7 @@ input { font: inherit; }
   flex: 1; text-transform: uppercase; letter-spacing: .03em; }
 .ngrouphead .gmute { padding: 4px 11px; border-radius: 99px; font-size: 12px; font-weight: 600;
   color: #fff; background: rgba(120,120,128,.5); }
-.ngrouphead .gmute.on { background: #FF453A; }
+.ngrouphead .gmute.on { background: var(--ios-red); }
 
 .ncard { position: relative; display: flex; align-items: flex-start; gap: 11px;
   padding: 12px 13px; border-radius: 20px; background: rgba(44,44,48,.72);
@@ -1330,18 +1408,7 @@ input { font: inherit; }
   box-shadow: 0 0 0 3px var(--v-accent), 0 0 0 8px rgba(255,255,255,.14); }
 
 /* The Done pill, the only way out of arrange mode - a drop no longer exits it. */
-.arrangedone { position: absolute; z-index: 62; top: 62px; left: 50%; margin-left: -46px;
-  width: 92px; padding: 8px 0; border-radius: 99px; display: none;
-  font-size: 14px; font-weight: 700; color: #000; text-align: center;
-  background: #fff; box-shadow: 0 8px 22px rgba(0,0,0,.4); }
-.home.arrange .arrangedone { display: block; animation: ph-in .3s var(--spring); }
 
-/* ── Done pill: top-right, labelled, so it is a button and not a stray white bar ── */
-.arrangedone { position: absolute; z-index: 62; top: 58px; right: 22px; left: auto; margin: 0;
-  width: auto; min-width: 78px; padding: 8px 18px; border-radius: 99px; display: none;
-  font-size: 14px; font-weight: 700; color: #000; text-align: center;
-  background: #fff; box-shadow: 0 8px 22px rgba(0,0,0,.4); }
-.home.arrange .arrangedone { display: block; animation: ph-in .3s var(--spring); }
 
 /* ── Emoji picker: a small panel above the composer, for Messages and the social apps ── */
 .emojipanel { position: absolute; left: 0; right: 0; bottom: 0; z-index: 96;
@@ -1400,7 +1467,7 @@ input { font: inherit; }
   justify-content: center; background: rgba(60,60,67,.6); color: #fff; }
 .camchip svg { width: 20px; height: 20px; }
 .camchip.back svg { transform: scaleX(-1); }
-.camchip.on { background: #FFCC00; color: #1c1c1e; }
+.camchip.on { background: var(--ios-yellow); color: #1c1c1e; }
 
 /* The viewfinder: a real camera would show the world here; NUI cannot, so it is a black
    frame with the corner marks and rule-of-thirds grid the iOS camera draws over it. */
@@ -1419,7 +1486,7 @@ input { font: inherit; }
 
 .cammode { display: flex; justify-content: center; gap: 22px; padding: 10px 0 6px;
   font-size: 11px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.5); }
-.cammode .on { color: #FFCC00; }
+.cammode .on { color: var(--ios-yellow); }
 
 .camctl { display: flex; align-items: center; justify-content: space-between;
   padding: 10px 34px 30px; }
@@ -1535,7 +1602,7 @@ input { font: inherit; }
 .jobbar { height: 8px; border-radius: 99px; background: var(--app-fill); overflow: hidden;
   margin: 4px 2px 14px; }
 .jobbar i { display: block; height: 100%; border-radius: 99px;
-  background: linear-gradient(90deg, #6E6BFF, #34C759); transition: width .4s var(--spring); }
+  background: linear-gradient(90deg, #6E6BFF, var(--ios-green)); transition: width .4s var(--spring); }
 
 /* The icon size is computed from the cell a chosen grid actually gives it. */
 .pages .tile .ic { width: var(--isz, 60px); height: var(--isz, 60px);
@@ -1559,7 +1626,7 @@ input { font: inherit; }
 /* ── The island reacts: a glance ─────────────────────────────────
    Locking and unlocking pinch the pill around a padlock and let it go, which is what
    makes the black cutout feel like part of the phone rather than a painted shape. */
-.island.glance { width: 132px; height: 40px; margin-left: -66px; border-radius: 22px; }
+.island.glance { width: 132px; height: 40px; border-radius: 22px; }
 .island.glance .inotif { opacity: 1; transform: none; justify-content: center; padding: 0; }
 .island.glance .icontent { visibility: hidden; }
 .island.glance::after { opacity: 0; }
@@ -1587,12 +1654,12 @@ input { font: inherit; }
 
 :root {
   /* Safe fallbacks when v-ui is starting late or is not installed. */
-  --ph-accent: var(--v-accent, #0a84ff);
+  --ph-accent: var(--v-accent, var(--ios-blue));
   --ph-accent-300: var(--v-accent-300, #64d2ff);
-  --ph-accent-400: var(--v-accent-400, #0a84ff);
+  --ph-accent-400: var(--v-accent-400, var(--ios-blue));
   --ph-accent-600: var(--v-accent-600, #0066cc);
   --ph-accent-line: var(--v-accent-line, rgba(10, 132, 255, .58));
-  --ph-accent-grad: var(--v-grad-accent, linear-gradient(145deg, #64d2ff, #0a84ff 56%, #0066cc));
+  --ph-accent-grad: var(--v-grad-accent, linear-gradient(145deg, #64d2ff, var(--ios-blue) 56%, #0066cc));
   --ph-overlay-z: var(--z-overlay, 1000);
   --ph-display: var(--v-font-display, var(--ios-font));
 
@@ -1819,7 +1886,6 @@ input { font: inherit; }
   transition:
     width var(--ph-slow) var(--ph-spring),
     height var(--ph-slow) var(--ph-spring),
-    margin-left var(--ph-slow) var(--ph-spring),
     border-radius var(--ph-slow) var(--ph-spring),
     box-shadow var(--ph-med) ease;
 }
@@ -1827,7 +1893,6 @@ input { font: inherit; }
 .island.notif {
   width: 304px;
   height: 74px;
-  margin-left: -152px;
   border-radius: 29px;
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .10),
@@ -2127,7 +2192,7 @@ input { font: inherit; }
 
 /* App shell and semantic accents --------------------------------------- */
 .app {
-  --app-accent: var(--app-tint, #007aff);
+  --app-accent: var(--app-tint, var(--ios-blue));
   --app-accent-soft: rgba(10, 132, 255, .14);
   background:
     radial-gradient(110% 46% at 12% 0%, rgba(255, 255, 255, .34), transparent 55%),
@@ -2143,21 +2208,21 @@ input { font: inherit; }
 .app[data-app="phone"],
 .app[data-app="messages"] {
   --app-tint: #248a3d;
-  --app-accent: #34c759;
+  --app-accent: var(--ios-green);
   --app-accent-soft: rgba(52, 199, 89, .15);
 }
 
 .app[data-app="mail"],
 .app[data-app="maps"],
 .app[data-app="store"] {
-  --app-tint: #007aff;
-  --app-accent: #0a84ff;
+  --app-tint: var(--ios-blue);
+  --app-accent: var(--ios-blue);
   --app-accent-soft: rgba(10, 132, 255, .15);
 }
 
 .app[data-app="notes"] {
   --app-tint: #9a6700;
-  --app-accent: #ffcc00;
+  --app-accent: var(--ios-yellow);
   --app-accent-soft: rgba(255, 204, 0, .18);
 }
 
@@ -2167,7 +2232,7 @@ input { font: inherit; }
 /* FruitCharge wears the same green as its icon - a charging light. */
 .app[data-app="charging"] {
   --app-tint: #168a61;
-  --app-accent: #30d158;
+  --app-accent: var(--ios-green);
   --app-accent-soft: rgba(48, 209, 88, .14);
 }
 
@@ -2200,8 +2265,8 @@ input { font: inherit; }
 /* Bank Pro is the company account and wears the purple to say so - the personal Bank stays
    green, and a boss glancing at the two never mistakes one for the other. */
 .app[data-app="bankpro"] {
-  --app-tint: #5856d6;
-  --app-accent: #5e5ce6;
+  --app-tint: var(--ios-indigo);
+  --app-accent: var(--ios-indigo);
   --app-accent-soft: rgba(94, 92, 230, .15);
 }
 
@@ -2209,13 +2274,13 @@ input { font: inherit; }
 .app[data-app="health"],
 .app[data-app="hush"] {
   --app-tint: #d60f4c;
-  --app-accent: #ff2d55;
+  --app-accent: var(--ios-pink);
   --app-accent-soft: rgba(255, 45, 85, .15);
 }
 
 .app[data-app="reminders"] {
   --app-tint: #c66a00;
-  --app-accent: #ff9500;
+  --app-accent: var(--ios-orange);
   --app-accent-soft: rgba(255, 149, 0, .16);
 }
 
@@ -2227,7 +2292,7 @@ input { font: inherit; }
 
 .app[data-app="snap"] {
   --app-tint: #8f7400;
-  --app-accent: #ffcc00;
+  --app-accent: var(--ios-yellow);
   --app-accent-soft: rgba(255, 204, 0, .18);
 }
 
@@ -2235,10 +2300,56 @@ input { font: inherit; }
 .app[data-app="gallery"],
 .app[data-app="calc"],
 .app[data-app="settings"] {
-  --app-tint: #5b5b63;
-  --app-accent: #8e8e93;
+  /* **Blue, not grey.** These four wear grey icons, and their tint was taken from the icon -
+     so every control in Settings was grey, and a grey control reads as one you cannot press.
+     An app's icon colour and its interface tint are two different things: iOS Settings has a
+     grey icon and blue controls. The accent below keeps the identity; only what you tap
+     changes. */
+  --app-tint: var(--ios-blue);
+  --app-accent: var(--ios-grey);
   --app-accent-soft: rgba(142, 142, 147, .17);
 }
+
+/* ── The same tints, for dark mode ────────────────────────────
+   **Every value above is tuned for a LIGHT background.** `#248a3d`, `#168a61`, `#d60f4c` are
+   darkened on purpose, because the bright system colours are unreadable as text on white.
+   On black they are unreadable the other way round - a dark red on `#1c1c1e` is a smudge,
+   and the Settings grey was very nearly invisible.
+   
+   It went unnoticed because the app surface used to be translucent glass, which sat pale
+   enough over the wallpaper for a dark tint to read. The moment content became opaque, every
+   one of these was on the wrong background. So dark mode gets the bright spelling - which is
+   the one iOS itself uses there, and which `--app-accent` was already holding.
+   
+   Taxi and Zuber already had this treatment and keep their own values. */
+.screen.dark .app[data-app="phone"],
+.screen.dark .app[data-app="messages"] { --app-tint: var(--ios-green); }
+
+.screen.dark .app[data-app="notes"] { --app-tint: var(--ios-yellow); }
+
+.screen.dark .app[data-app="bank"],
+.screen.dark .app[data-app="garage"],
+.screen.dark .app[data-app="property"],
+.screen.dark .app[data-app="charging"] { --app-tint: var(--ios-green); }
+
+.screen.dark .app[data-app="music"],
+.screen.dark .app[data-app="health"],
+.screen.dark .app[data-app="hush"] { --app-tint: var(--ios-pink); }
+
+.screen.dark .app[data-app="reminders"] { --app-tint: var(--ios-orange); }
+
+.screen.dark .app[data-app="bleeter"] { --app-tint: #4db4f5; }
+
+.screen.dark .app[data-app="snap"] { --app-tint: var(--ios-yellow); }
+
+/* Indigo is the one system colour that is the same in both modes, so it had no override -
+   and measured as text on black it comes out at 3.1:1, under the 4.5 a 10px tab label needs.
+   It is fine as a FILL and thin as a LETTER, which is exactly the case a single token cannot
+   express. Lifted for text; `--app-accent` keeps the real indigo for everything filled. */
+.screen.dark .app[data-app="wallet"],
+.screen.dark .app[data-app="jobs"],
+.screen.dark .app[data-app="mdt"],
+.screen.dark .app[data-app="bankpro"] { --app-tint: #8b89ff; }
 
 .app.on {
   animation: ph27-app-in var(--ph-slow) var(--ph-spring);
@@ -2248,16 +2359,7 @@ input { font: inherit; }
   animation: ph27-app-out var(--ph-med) var(--ph-spring) both;
 }
 
-@keyframes ph27-app-in {
-  0% { opacity: 0; transform: scale(.20); border-radius: 88px; }
-  62% { opacity: 1; }
-  100% { opacity: 1; transform: none; border-radius: 47px; }
-}
 
-@keyframes ph27-app-out {
-  from { opacity: 1; transform: none; border-radius: 47px; }
-  to { opacity: 0; transform: scale(.84) translateY(14px); border-radius: 58px; }
-}
 
 .navbar {
   padding-left: 18px;
@@ -2706,7 +2808,7 @@ input { font: inherit; }
   background:
     linear-gradient(155deg, rgba(255, 255, 255, .14), transparent 44%),
     rgba(255, 59, 48, .14);
-  color: #ff453a;
+  color: var(--ios-red);
   box-shadow: inset 0 0 0 .5px rgba(255, 69, 58, .16);
 }
 
@@ -2808,8 +2910,11 @@ input { font: inherit; }
     transform var(--ph-fast) var(--ph-spring);
 }
 
+/* Lighter than the selected tab, not heavier. It was `--app-fill`, the full system fill, while
+   the SELECTED tab carried a 15% tint - so on a phone whose cursor is always on screen, the
+   tab under the pointer looked more chosen than the one that was. */
 .tabbar button:hover {
-  background: var(--app-fill);
+  background: rgba(120, 120, 128, .10);
 }
 
 .tabbar button:active {
@@ -3299,7 +3404,9 @@ input { font: inherit; }
 }
 
 .strowitem {
-  min-height: 70px;
+  /* 80: the tile plus the padding above and below it. It was 70, under the 74 the content
+     already needed, so it never applied - a floor below the floor. */
+  min-height: 80px;
   border-radius: 14px;
   transition:
     background var(--ph-fast) ease,
@@ -3323,15 +3430,25 @@ input { font: inherit; }
   box-shadow: inset 0 0 0 .5px var(--app-sep);
 }
 
+/* **A filled pill with tinted text, which is what the App Store actually draws.**
+   It was white on the accent - and white on system blue measures 3.65:1, under the 4.5 a
+   15px label needs. The store's own answer to that is the same one: a grey pill and the blue
+   as the LETTERS, which reads at about 7:1 and looks more like a store into the bargain. */
 .stget:not(.have) {
-  color: #fff;
-  background:
-    radial-gradient(110% 100% at 22% -30%, rgba(255, 255, 255, .26), transparent 58%),
-    var(--app-tint);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .20),
-    0 5px 12px rgba(0, 0, 0, .12);
+  color: var(--app-tint);
+  background: var(--app-fill);
+  box-shadow: none;
 }
+.stget:not(.have):active { background: rgba(120, 120, 128, .34); }
+/* A pill LIGHTENS the background under the label, which costs contrast for a midtone blue:
+   #0A84FF on the system fill measures 3.52. The brighter blue on the same fill measures 5.0,
+   and is close enough to read as the same colour. Only the label - the app's tint is left
+   alone, because it is also what fills the primary buttons, where white sits on top of it and
+   a lighter blue would make THAT worse. */
+.screen.dark .stget:not(.have) { color: #4da6ff; }
+/* "Open" and "Built in" sit on the identical fill and were left behind by the rule above,
+   which only covered the button before the app is installed. */
+.screen.dark .stget.have { color: #4da6ff; }
 
 .post {
   border-radius: 17px;
@@ -3490,7 +3607,7 @@ input { font: inherit; }
 .ckey.op {
   background:
     radial-gradient(circle at 28% 8%, rgba(255, 255, 255, .30), transparent 58%),
-    #ff9f0a;
+    var(--ios-orange);
 }
 
 .camui {
@@ -4883,7 +5000,7 @@ input { font: inherit; }
 }
 
 .stprivacyicon {
-  background: #5e5ce6;
+  background: var(--ios-indigo);
 }
 
 .stcardicon svg,
@@ -4945,10 +5062,6 @@ input { font: inherit; }
 .appbody.view-enter > *:nth-child(2) { animation-delay: 25ms; }
 .appbody.view-enter > *:nth-child(3) { animation-delay: 50ms; }
 
-@keyframes ph27-view-in {
-  from { opacity: 0; transform: translateY(10px) scale(.992); }
-  to { opacity: 1; transform: none; }
-}
 
 .island.glance .inic {
   position: absolute;
@@ -5229,7 +5342,7 @@ input { font: inherit; }
   font-weight: 690;
   background:
     radial-gradient(100% 130% at 20% -30%, rgba(255, 255, 255, .35), transparent 57%),
-    #0a84ff;
+    var(--ios-blue);
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .27),
     0 12px 30px rgba(0, 82, 180, .34);
@@ -5343,7 +5456,7 @@ input { font: inherit; }
 
 .setupform label:focus-within {
   box-shadow:
-    inset 0 0 0 1.5px #0a84ff,
+    inset 0 0 0 1.5px var(--ios-blue),
     0 0 0 3px rgba(10, 132, 255, .14);
 }
 
@@ -5395,7 +5508,7 @@ input { font: inherit; }
 .setupthemes button.on {
   color: #fff;
   box-shadow:
-    inset 0 0 0 2px #0a84ff,
+    inset 0 0 0 2px var(--ios-blue),
     0 10px 28px rgba(10, 132, 255, .24);
 }
 
@@ -5438,7 +5551,7 @@ input { font: inherit; }
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  background: #0a84ff;
+  background: var(--ios-blue);
 }
 
 .setupthemes button.on > i {
@@ -5480,7 +5593,7 @@ input { font: inherit; }
 .setupwalls button.on {
   box-shadow:
     inset 0 0 0 2.5px #fff,
-    0 0 0 2px #0a84ff,
+    0 0 0 2px var(--ios-blue),
     0 10px 26px rgba(10, 132, 255, .30);
 }
 
@@ -5508,7 +5621,7 @@ input { font: inherit; }
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  background: #0a84ff;
+  background: var(--ios-blue);
 }
 
 .setupwalls button.on i {
@@ -5564,7 +5677,7 @@ input { font: inherit; }
   color: #fff;
   background:
     radial-gradient(circle at 28% 18%, rgba(255, 255, 255, .58), transparent 45%),
-    #30d158;
+    var(--ios-green);
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .46),
     0 18px 42px rgba(48, 209, 88, .27);
@@ -5602,7 +5715,7 @@ input { font: inherit; }
   flex: 0 0 auto;
   place-items: center;
   border-radius: 13px;
-  background: #0a84ff;
+  background: var(--ios-blue);
 }
 
 .setupsummary svg {
@@ -5796,14 +5909,14 @@ input { font: inherit; }
 }
 
 .facescan.recognised {
-  border-color: #30d158;
-  color: #30d158;
+  border-color: var(--ios-green);
+  color: var(--ios-green);
   transform: scale(1.035);
   box-shadow: 0 0 35px rgba(48, 209, 88, .24);
 }
 
 .facescan.failed {
-  border-color: #ff453a;
+  border-color: var(--ios-red);
   color: #ff6961;
 }
 
@@ -5843,7 +5956,7 @@ input { font: inherit; }
 }
 
 .setupsummary.security > span {
-  background: linear-gradient(145deg, #30d158, #00a86b);
+  background: linear-gradient(145deg, var(--ios-green), #00a86b);
 }
 
 .auth {
@@ -6909,8 +7022,8 @@ input { font: inherit; }
     radial-gradient(100% 100% at 0 0, rgba(255, 93, 128, .2), transparent 60%),
     linear-gradient(155deg, var(--music-glass), rgba(183, 146, 190, .12));
   box-shadow: inset 0 1px rgba(255,255,255,.32), 0 13px 28px rgba(50, 20, 43, .1);
-  -webkit-backdrop-filter: blur(24px) saturate(155%);
-  backdrop-filter: blur(24px) saturate(155%);
+  /* No blur: the Music app's own background is opaque, so this was blurring a flat colour -
+     the full cost of the material for an effect with nothing to sample. */
 }
 .musicmixart { display: flex; width: 126px; height: 126px; flex-wrap: wrap; overflow: hidden; border-radius: 18px; box-shadow: 0 11px 25px rgba(43,12,35,.19); }
 .musicmix > div:last-child { display: flex; min-width: 0; flex-direction: column; justify-content: center; }
@@ -7016,7 +7129,7 @@ input { font: inherit; }
 }
 .musicgenres > button svg { width: 13px; height: 13px; }
 
-.musicradiohero { display: flex; align-items: center; flex-direction: column; padding: 23px 20px 21px; text-align: center; border: 1px solid rgba(255,255,255,.25); border-radius: 27px; background: radial-gradient(circle at 50% 0, rgba(255,66,111,.25), transparent 61%), var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 14px 30px rgba(63,21,43,.09); -webkit-backdrop-filter: blur(23px); backdrop-filter: blur(23px); }
+.musicradiohero { display: flex; align-items: center; flex-direction: column; padding: 23px 20px 21px; text-align: center; border: 1px solid rgba(255,255,255,.25); border-radius: 27px; background: radial-gradient(circle at 50% 0, rgba(255,66,111,.25), transparent 61%), var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 14px 30px rgba(63,21,43,.09); }
 .musicradiohero > div { display: grid; width: 58px; height: 58px; margin: 7px 0 10px; place-items: center; color: #fff; border-radius: 50%; background: linear-gradient(145deg, #ff587b, #d8174c); box-shadow: 0 12px 28px rgba(216,23,76,.24), inset 0 1px rgba(255,255,255,.35); }
 .musicradiohero > div svg { width: 26px; height: 26px; }
 .musicradiohero h2 { margin: 0; font-size: 23px; letter-spacing: -.025em; }
@@ -7038,7 +7151,7 @@ input { font: inherit; }
 .musicstationcards button > svg { width: 18px; height: 18px; margin-right: 7px; color: var(--music-red); }
 
 .musiclibrarytiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }
-.musiclibrarytiles > button { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 11px; text-align: left; border: 1px solid rgba(255,255,255,.24); border-radius: 18px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.3), 0 8px 20px rgba(40,20,34,.07); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.musiclibrarytiles > button { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 11px; text-align: left; border: 1px solid rgba(255,255,255,.24); border-radius: 18px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.3), 0 8px 20px rgba(40,20,34,.07); }
 .musiclibrarytiles > button > span { display: grid; width: 34px; height: 34px; place-items: center; color: #fff; border-radius: 11px; background: linear-gradient(145deg,#ff587b,#db164c); }
 .musiclibrarytiles > button > span svg { width: 16px; height: 16px; }
 .musiclibrarytiles > button > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }
@@ -7051,7 +7164,7 @@ input { font: inherit; }
 .musiclibraryempty button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 13px; color: #fff; font-size: 12px; font-weight: 700; border-radius: 12px; background: var(--music-red); }
 .musiclibraryempty button svg { width: 13px; height: 13px; }
 
-.musicsearchbox { display: flex; min-height: 45px; align-items: center; gap: 8px; margin: 2px 0 16px; padding: 0 12px; border: 1px solid rgba(255,255,255,.28); border-radius: 15px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 7px 18px rgba(40,20,34,.06); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.musicsearchbox { display: flex; min-height: 45px; align-items: center; gap: 8px; margin: 2px 0 16px; padding: 0 12px; border: 1px solid rgba(255,255,255,.28); border-radius: 15px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.34), 0 7px 18px rgba(40,20,34,.06); }
 .musicsearchbox > svg { width: 16px; height: 16px; color: var(--app-label2); }
 .musicsearchbox input { min-width: 0; flex: 1; color: var(--app-label); font-size: 14px; border: 0; outline: 0; background: none; }
 .musicsearchbox input::placeholder { color: var(--app-label3); }
@@ -7330,92 +7443,86 @@ html.keyboard-nav .homebar:focus {
     0 1px 4px rgba(0, 0, 0, .30);
 }
 
-/* iOS 27 — application Clear Glass pass -------------------------------
-   Native applications share the wallpaper as their optical backdrop. Camera,
-   Calculator, Cipher and Music keep their purpose-built surfaces. */
+/* ══ iOS 27: glass is chrome, content is opaque ═══════════════════════════════
+   This section replaces the "Clear Glass" pass, which gave EVERY app surface a
+   backdrop-filter over the wallpaper: the app itself, its navigation bar, and then
+   each `.group`, `.field`, `.seg`, `.post`, key and bubble inside it. Three things
+   were wrong with that, and they are the three things this rewrite is for.
+
+   **It could not be read.** Text sat on whatever the wallpaper happened to be
+   doing underneath it, so contrast changed as the picture changed. A separator at
+   17% alpha over a purple gradient is not a separator.
+
+   **It could not be fast.** Each of those is a separate blur layer, and they were
+   NESTED - the navigation bar blurred what the app had already blurred. A settings
+   screen carried four; a feed carried one per post. In CEF a full-screen
+   backdrop-filter is the most expensive thing a page can ask for, and this asked
+   for a dozen.
+
+   **It is not what iOS does.** Liquid Glass is a layer ABOVE content: bars,
+   sheets, the control centre, controls floating over something that scrolls. The
+   content underneath is opaque - that is what the glass is for. Making the content
+   glass too leaves nothing for it to be glass against.
+
+   So: the chrome keeps its material, and the content gets the surfaces the token
+   block at the top of this file has always declared - `--app-bg`, `--app-card`,
+   `--app-fill` - and which nothing was using. */
+
+/* One recipe, one place. A bar is translucent over the content it scrolls under,
+   which is the whole point of it, and one blur is affordable where a dozen was not. */
+:root {
+  --chrome-blur: blur(20px) saturate(180%);
+  --chrome-light: rgba(249, 249, 251, .82);
+  --chrome-dark: rgba(28, 28, 30, .76);
+}
+
+/* ── The app surface ───────────────────────────────────────────
+   Opaque, and therefore the reason every blur below could be deleted: nothing
+   behind it is visible, so blurring it was paying for an invisible effect. */
 .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {
-  --app-card: rgba(255, 255, 255, .56);
-  --app-fill: rgba(104, 104, 116, .105);
-  --app-sep: rgba(60, 60, 67, .20);
-  background:
-    radial-gradient(118% 54% at -8% -10%,
-      rgba(255, 255, 255, .88) 0%,
-      rgba(255, 255, 255, .26) 42%,
-      transparent 67%),
-    radial-gradient(92% 62% at 112% 12%,
-      var(--app-accent-soft) 0%,
-      transparent 72%),
-    linear-gradient(160deg,
-      rgba(247, 249, 255, .86),
-      rgba(235, 238, 247, .70));
-  -webkit-backdrop-filter: blur(28px) saturate(158%);
-  backdrop-filter: blur(28px) saturate(158%);
+  --app-card: #ffffff;
+  --app-fill: rgba(118, 118, 128, .12);
+  --app-sep: rgba(60, 60, 67, .29);
+  background: var(--app-bg);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) {
-  --app-card: rgba(35, 35, 43, .59);
-  --app-fill: rgba(128, 128, 142, .16);
-  --app-sep: rgba(174, 174, 186, .17);
-  background:
-    radial-gradient(118% 54% at -8% -10%,
-      rgba(255, 255, 255, .095) 0%,
-      rgba(255, 255, 255, .018) 44%,
-      transparent 68%),
-    radial-gradient(92% 62% at 112% 12%,
-      var(--app-accent-soft) 0%,
-      transparent 72%),
-    linear-gradient(160deg,
-      rgba(22, 23, 30, .87),
-      rgba(12, 13, 19, .74));
+  --app-card: #1c1c1e;
+  --app-fill: rgba(118, 118, 128, .24);
+  --app-sep: rgba(84, 84, 88, .60);
+  background: var(--app-bg);
 }
 
+/* ── The navigation bar: still glass, because it is chrome ─────
+   It sits over content that scrolls under it, so it is the one surface in an app
+   where the material earns its cost. One layer, and only while an app is open. */
 .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) .navbar {
-  background:
-    radial-gradient(125% 105% at 14% -45%,
-      rgba(255, 255, 255, .72),
-      transparent 58%),
-    linear-gradient(180deg,
-      rgba(250, 251, 255, .70),
-      rgba(244, 246, 252, .43));
-  box-shadow:
-    inset 0 -1px 0 rgba(60, 60, 67, .09),
-    0 9px 28px rgba(28, 32, 48, .055);
-  -webkit-backdrop-filter: blur(30px) saturate(165%);
-  backdrop-filter: blur(30px) saturate(165%);
+  background: var(--chrome-light);
+  box-shadow: inset 0 -.5px 0 rgba(60, 60, 67, .18);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  backdrop-filter: var(--chrome-blur);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) .navbar {
-  background:
-    radial-gradient(125% 105% at 14% -45%,
-      rgba(255, 255, 255, .12),
-      transparent 58%),
-    linear-gradient(180deg,
-      rgba(30, 31, 39, .72),
-      rgba(22, 23, 30, .46));
-  box-shadow:
-    inset 0 -1px 0 rgba(255, 255, 255, .065),
-    0 10px 30px rgba(0, 0, 0, .20);
+  background: var(--chrome-dark);
+  box-shadow: inset 0 -.5px 0 rgba(255, 255, 255, .10);
 }
 
+/* Collapsed - the large title has scrolled away and the bar is carrying it. The
+   separator appears here rather than always, which is how iOS marks the moment
+   content has gone under the bar. */
 .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) .navbar.collapsed {
-  background:
-    radial-gradient(125% 105% at 14% -45%,
-      rgba(255, 255, 255, .78),
-      transparent 58%),
-    rgba(245, 247, 253, .66);
-  box-shadow:
-    inset 0 -1px 0 rgba(60, 60, 67, .12),
-    0 12px 30px rgba(24, 28, 42, .10);
+  box-shadow: inset 0 -.5px 0 rgba(60, 60, 67, .28);
 }
 
 .screen.dark .app:not(.black):not([data-app="cipher"]):not([data-app="music"]) .navbar.collapsed {
-  background:
-    radial-gradient(125% 105% at 14% -45%,
-      rgba(255, 255, 255, .14),
-      transparent 58%),
-    rgba(25, 26, 33, .68);
+  box-shadow: inset 0 -.5px 0 rgba(255, 255, 255, .14);
 }
 
+/* ── Grouped content: a plain card, as iOS draws it ────────────
+   No blur, no gradient, no drop shadow. An inset-grouped list on iOS is a solid
+   rounded rectangle and nothing else; every layer added to it is a layer between
+   the reader and the words. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .group,
 .app:not([data-app="cipher"]):not([data-app="music"]) .apphero,
 .app:not([data-app="cipher"]):not([data-app="music"]) .sliderow,
@@ -7423,26 +7530,12 @@ html.keyboard-nav .homebar:focus {
 .app:not([data-app="cipher"]):not([data-app="music"]) .post,
 .app:not([data-app="cipher"]):not([data-app="music"]) .stsectioncard,
 .app:not([data-app="cipher"]):not([data-app="music"]) .stprivacy {
-  background:
-    radial-gradient(145% 120% at var(--glass-x, 18%) var(--glass-y, -24%),
-      rgba(255, 255, 255, .56) 0%,
-      rgba(255, 255, 255, .10) 37%,
-      transparent 63%),
-    linear-gradient(145deg,
-      rgba(255, 255, 255, .24),
-      rgba(255, 255, 255, .035) 48%,
-      rgba(90, 96, 116, .035)),
-    var(--app-card);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .62),
-    inset 0 1px 0 rgba(255, 255, 255, .48),
-    inset 0 -1px 0 rgba(60, 60, 67, .075),
-    0 0 0 .5px rgba(60, 60, 67, .10),
-    0 13px 30px rgba(28, 32, 48, .11);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+  background: var(--app-card);
+  box-shadow: none;
 }
 
+/* Dark mode needs no second rule for these - `--app-card` already changed. It is
+   kept as one line so the selector still exists for anything overriding it. */
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .group,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .apphero,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .sliderow,
@@ -7450,307 +7543,171 @@ html.keyboard-nav .homebar:focus {
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .post,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .stsectioncard,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .stprivacy {
-  background:
-    radial-gradient(145% 120% at var(--glass-x, 18%) var(--glass-y, -24%),
-      rgba(255, 255, 255, .13) 0%,
-      rgba(255, 255, 255, .022) 40%,
-      transparent 64%),
-    linear-gradient(145deg,
-      rgba(255, 255, 255, .055),
-      transparent 48%,
-      rgba(0, 0, 0, .08)),
-    var(--app-card);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .14),
-    inset 0 1px 0 rgba(255, 255, 255, .10),
-    inset 0 -1px 0 rgba(0, 0, 0, .22),
-    0 0 0 .5px rgba(0, 0, 0, .30),
-    0 15px 34px rgba(0, 0, 0, .25);
+  background: var(--app-card);
+  box-shadow: none;
 }
 
+/* ── Fields, search and the segmented track ────────────────────
+   `--app-fill` is a translucent grey over an OPAQUE background, which costs one
+   composite and no blur - the difference between a system fill and a glass panel. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .field,
 .app:not([data-app="cipher"]):not([data-app="music"]) .mailedit,
 .app:not([data-app="cipher"]):not([data-app="music"]) .search,
 .app:not([data-app="cipher"]):not([data-app="music"]) .seg {
-  background:
-    radial-gradient(130% 110% at var(--glass-x, 20%) var(--glass-y, -30%),
-      rgba(255, 255, 255, .48),
-      transparent 60%),
-    linear-gradient(155deg,
-      rgba(255, 255, 255, .19),
-      transparent 48%),
-    rgba(238, 240, 248, .50);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .58),
-    inset 0 1px 0 rgba(255, 255, 255, .35),
-    0 0 0 .5px rgba(60, 60, 67, .09),
-    0 6px 17px rgba(30, 34, 48, .065);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
+  background: var(--app-fill);
+  box-shadow: none;
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .field,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .mailedit,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .search,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .seg {
-  background:
-    radial-gradient(130% 110% at var(--glass-x, 20%) var(--glass-y, -30%),
-      rgba(255, 255, 255, .105),
-      transparent 60%),
-    linear-gradient(155deg,
-      rgba(255, 255, 255, .035),
-      transparent 48%),
-    rgba(42, 43, 53, .52);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .12),
-    inset 0 1px 0 rgba(255, 255, 255, .08),
-    0 0 0 .5px rgba(0, 0, 0, .26),
-    0 7px 19px rgba(0, 0, 0, .19);
+  background: var(--app-fill);
+  box-shadow: none;
 }
 
+/* The selected segment is the one thing in a segmented control that lifts, and it
+   lifts by one soft shadow - the iOS control has exactly that and nothing else. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .seg button.on {
-  background:
-    radial-gradient(120% 100% at 22% -25%,
-      rgba(255, 255, 255, .75),
-      transparent 62%),
-    rgba(255, 255, 255, .61);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .72),
-    0 3px 10px rgba(27, 31, 45, .14);
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .04);
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .seg button.on {
-  background:
-    radial-gradient(120% 100% at 22% -25%,
-      rgba(255, 255, 255, .16),
-      transparent 62%),
-    rgba(81, 82, 94, .61);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .16),
-    0 4px 11px rgba(0, 0, 0, .26);
+  background: #636366;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .30);
 }
 
+/* ── Tab bar and composer: chrome, so they keep the material ───
+   Both float over content that scrolls beneath them. Same recipe as the
+   navigation bar, so there is one glass in the phone rather than five. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .tabbar,
 .app:not([data-app="cipher"]):not([data-app="music"]) .compose {
   margin-right: 10px;
   margin-bottom: 10px;
   margin-left: 10px;
-  background:
-    radial-gradient(150% 125% at var(--glass-x, 20%) var(--glass-y, -45%),
-      rgba(255, 255, 255, .72),
-      rgba(255, 255, 255, .10) 43%,
-      transparent 65%),
-    linear-gradient(150deg,
-      rgba(255, 255, 255, .29),
-      transparent 48%),
-    rgba(245, 247, 253, .60);
+  background: var(--chrome-light);
   box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .72),
-    inset 0 1px 0 rgba(255, 255, 255, .55),
-    inset 0 -1px 0 rgba(60, 60, 67, .08),
-    0 0 0 .5px rgba(60, 60, 67, .11),
-    0 16px 36px rgba(25, 29, 44, .16);
-  -webkit-backdrop-filter: blur(30px) saturate(172%);
-  backdrop-filter: blur(30px) saturate(172%);
+    inset 0 0 0 .5px rgba(255, 255, 255, .55),
+    0 8px 24px rgba(20, 22, 32, .14);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  backdrop-filter: var(--chrome-blur);
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .tabbar,
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .compose {
-  background:
-    radial-gradient(150% 125% at var(--glass-x, 20%) var(--glass-y, -45%),
-      rgba(255, 255, 255, .16),
-      rgba(255, 255, 255, .025) 43%,
-      transparent 65%),
-    linear-gradient(150deg,
-      rgba(255, 255, 255, .055),
-      transparent 48%),
-    rgba(32, 33, 42, .66);
+  background: var(--chrome-dark);
   box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .16),
-    inset 0 1px 0 rgba(255, 255, 255, .12),
-    inset 0 -1px 0 rgba(0, 0, 0, .28),
-    0 0 0 .5px rgba(0, 0, 0, .38),
-    0 17px 38px rgba(0, 0, 0, .34);
+    inset 0 0 0 .5px rgba(255, 255, 255, .12),
+    0 8px 26px rgba(0, 0, 0, .40);
 }
 
 .app:not([data-app="cipher"]):not([data-app="music"]) .tabbar button.on {
-  background:
-    radial-gradient(100% 90% at 50% 0%,
-      var(--app-accent-soft),
-      transparent 72%),
-    rgba(255, 255, 255, .18);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .22),
-    0 4px 13px rgba(24, 28, 42, .07);
+  background: var(--app-accent-soft);
+  box-shadow: none;
 }
 
+/* A row's leading icon keeps its rounded-square tile: that IS the iOS settings
+   idiom, and it is a flat colour rather than a material. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .row .ricon,
 .app:not([data-app="cipher"]):not([data-app="music"]) .strowitem .ic {
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .34),
-    inset 0 1px 0 rgba(255, 255, 255, .32),
-    0 6px 15px var(--app-accent-soft),
-    0 4px 10px rgba(0, 0, 0, .15);
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .14);
 }
 
-.app[data-app="phone"]:not(.black) {
-  --key-bg: rgba(255, 255, 255, .53);
+/* ── The Phone app ─────────────────────────────────────────────
+   Its own surface: a dialler is drawn on a dark field on iOS whatever the rest of
+   the phone is doing, and the keys are the light-grey circles of the real one. */
+.app[data-app="phone"] {
+  background: var(--app-bg);
 }
 
-.screen.dark .app[data-app="phone"]:not(.black) {
-  --key-bg: rgba(84, 84, 94, .52);
+.screen.dark .app[data-app="phone"] {
+  background: var(--app-bg);
 }
 
 .app[data-app="phone"] .key {
-  background:
-    radial-gradient(120% 105% at var(--glass-x, 26%) var(--glass-y, -18%),
-      rgba(255, 255, 255, .72),
-      transparent 61%),
-    linear-gradient(150deg,
-      rgba(255, 255, 255, .20),
-      transparent 52%),
-    var(--key-bg);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .72),
-    inset 0 1px 0 rgba(255, 255, 255, .50),
-    inset 0 -1px 0 rgba(60, 60, 67, .08),
-    0 0 0 .5px rgba(60, 60, 67, .10),
-    0 10px 22px rgba(28, 32, 48, .13);
-  -webkit-backdrop-filter: blur(18px) saturate(148%);
-  backdrop-filter: blur(18px) saturate(148%);
-  transition:
-    transform var(--ph-fast) var(--ph-spring),
-    filter var(--ph-fast) ease,
-    box-shadow var(--ph-fast) ease;
+  background: var(--key-bg);
+  color: var(--key-label);
+  box-shadow: none;
 }
 
 .screen.dark .app[data-app="phone"] .key {
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .16),
-    inset 0 1px 0 rgba(255, 255, 255, .12),
-    inset 0 -1px 0 rgba(0, 0, 0, .24),
-    0 0 0 .5px rgba(0, 0, 0, .28),
-    0 11px 24px rgba(0, 0, 0, .25);
+  background: rgba(118, 118, 128, .24);
+  color: #fff;
 }
 
 .app[data-app="phone"] .key:active {
-  transform: scale(.91);
-  filter: brightness(.96) saturate(1.08);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .58),
-    0 4px 11px rgba(24, 28, 42, .10);
+  background: rgba(120, 120, 128, .42);
 }
 
+/* ── Message bubbles ───────────────────────────────────────────
+   The received bubble is the grey every screenshot of Messages is recognised by.
+   It was glass, which made it the one bubble in the thread whose colour depended
+   on the wallpaper behind the conversation. */
 .app[data-app="messages"] .bub.them {
-  background:
-    radial-gradient(130% 110% at var(--glass-x, 18%) var(--glass-y, -26%),
-      rgba(255, 255, 255, .66),
-      transparent 62%),
-    linear-gradient(150deg,
-      rgba(255, 255, 255, .20),
-      transparent 50%),
-    rgba(238, 239, 246, .66);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .72),
-    inset 0 1px 0 rgba(255, 255, 255, .40),
-    0 0 0 .5px rgba(60, 60, 67, .08),
-    0 5px 14px rgba(25, 29, 43, .09);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
+  background: var(--bub-them);
+  color: var(--bub-them-label);
+  box-shadow: none;
 }
 
 .screen.dark .app[data-app="messages"] .bub.them {
-  background:
-    radial-gradient(130% 110% at var(--glass-x, 18%) var(--glass-y, -26%),
-      rgba(255, 255, 255, .13),
-      transparent 62%),
-    linear-gradient(150deg,
-      rgba(255, 255, 255, .04),
-      transparent 50%),
-    rgba(55, 56, 66, .70);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .14),
-    inset 0 1px 0 rgba(255, 255, 255, .09),
-    0 0 0 .5px rgba(0, 0, 0, .26),
-    0 6px 15px rgba(0, 0, 0, .23);
+  background: #26262a;
+  color: #fff;
 }
 
+/* ── The empty state ───────────────────────────────────────────
+   No card at all. An empty list is empty; drawing a panel around the words "no
+   messages" gives the absence of content the weight of content. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .appbody > .empty {
   margin: 26px 0;
   padding: 54px 24px;
   color: var(--app-label2);
   border-radius: 26px;
-  background:
-    radial-gradient(145% 120% at var(--glass-x, 18%) var(--glass-y, -24%),
-      rgba(255, 255, 255, .54),
-      transparent 64%),
-    rgba(255, 255, 255, .32);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .60),
-    inset 0 1px 0 rgba(255, 255, 255, .42),
-    0 0 0 .5px rgba(60, 60, 67, .08),
-    0 14px 31px rgba(27, 31, 45, .10);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  backdrop-filter: blur(22px) saturate(150%);
+  background: none;
+  box-shadow: none;
 }
 
 .app:not([data-app="cipher"]):not([data-app="music"]) .appbody > .empty svg {
-  opacity: .56;
+  opacity: .38;
 }
 
 .screen.dark .app:not([data-app="cipher"]):not([data-app="music"]) .appbody > .empty {
-  background:
-    radial-gradient(145% 120% at var(--glass-x, 18%) var(--glass-y, -24%),
-      rgba(255, 255, 255, .12),
-      transparent 64%),
-    rgba(42, 43, 52, .45);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .13),
-    inset 0 1px 0 rgba(255, 255, 255, .08),
-    0 0 0 .5px rgba(0, 0, 0, .26),
-    0 15px 33px rgba(0, 0, 0, .24);
+  background: none;
+  box-shadow: none;
 }
 
 .app.on:not(.black) .navbar {
-  animation: ph27-chrome-in .48s var(--ph-spring) backwards;
+  animation: ph27-chrome-in .34s var(--ph-spring) backwards;
 }
 
 .app.on:not(.black) .tabbar,
 .app.on:not(.black) .compose {
-  animation: ph27-dock-in .52s var(--ph-spring) .06s backwards;
+  animation: ph27-dock-in .38s var(--ph-spring) .04s backwards;
 }
 
 .appbody.view-enter > *:nth-child(4) { animation-delay: 75ms; }
 .appbody.view-enter > *:nth-child(5) { animation-delay: 100ms; }
 
+/* ── Opening and closing ───────────────────────────────────────
+   **Opacity and transform only.** These animated `filter: blur()` and
+   `border-radius` on the full-screen app surface, so every frame of every app
+   opening was a full-screen blur re-render plus a corner re-rasterisation - the
+   two most expensive things to put in a keyframe, on the largest element there is.
+   The scale and the fade are what the eye reads as an app growing out of its icon;
+   the blur was costing a frame budget to be almost invisible. */
 @keyframes ph27-app-in {
-  0% {
-    opacity: 0;
-    transform: translateY(24px) scale(.86);
-    border-radius: 70px;
-    filter: blur(9px);
-  }
-  58% { opacity: 1; filter: blur(0); }
-  100% { opacity: 1; transform: none; border-radius: 47px; filter: none; }
+  from { opacity: 0; transform: translateY(18px) scale(.88); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes ph27-app-out {
-  from { opacity: 1; transform: none; border-radius: 47px; filter: none; }
-  to {
-    opacity: 0;
-    transform: translateY(18px) scale(.88);
-    border-radius: 62px;
-    filter: blur(6px);
-  }
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(14px) scale(.90); }
 }
 
 @keyframes ph27-view-in {
-  from {
-    opacity: 0;
-    transform: translateY(13px) scale(.987);
-    filter: blur(4px);
-  }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes ph27-chrome-in {
@@ -7787,7 +7744,7 @@ body.inframe.dark {
   --app-label3: rgba(235, 235, 245, .3);
   --app-sep: rgba(84, 84, 88, .65);
   --app-fill: rgba(118, 118, 128, .24);
-  --app-tint: #0a84ff;
+  --app-tint: var(--ios-blue);
   --app-accent: var(--app-tint);
   --app-accent-soft: rgba(10, 132, 255, .18);
   color-scheme: dark;
@@ -7806,8 +7763,9 @@ body.inframe.dark {
     inset 0 0 0 .5px rgba(255, 255, 255, .48),
     0 0 0 .5px rgba(60, 60, 67, .09),
     0 11px 26px rgba(24, 28, 40, .09);
-  -webkit-backdrop-filter: blur(22px) saturate(155%);
-  backdrop-filter: blur(22px) saturate(155%);
+  /* Same as the native cards: content, on an opaque app, so there is nothing behind it to
+     diffuse. A third-party app got a blur per card, which is the worst version of this - the
+     author of that app never asked for it and cannot see where it came from. */
 }
 
 .screen.dark .uicard,
@@ -7981,9 +7939,9 @@ body.inframe.dark .uisearch {
 .uinotice b,
 .uinotice small { display: block; }
 .uinotice small { margin-top: 3px; color: var(--app-label2); line-height: 1.35; }
-.uinotice.error > span { background: #ff3b30; }
-.uinotice.warning > span { background: #ff9500; }
-.uinotice.success > span { background: #34c759; }
+.uinotice.error > span { background: var(--ios-red); }
+.uinotice.warning > span { background: var(--ios-orange); }
+.uinotice.success > span { background: var(--ios-green); }
 
 .uispinner {
   display: grid;
@@ -8045,7 +8003,7 @@ body.inframe.dark .uisearch {
   flex: 0 0 18px;
   width: 18px;
   height: 18px;
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .stpermissions {
@@ -8213,7 +8171,7 @@ body.inframe.dark .uisearch {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #ff3b30;
+  background: var(--ios-red);
 }
 
 /* ── Timeline switch ─────────────────────────────────────────── */
@@ -8302,10 +8260,10 @@ body.inframe.dark .uisearch {
 
 .pact svg { width: 17px; height: 17px; }
 .pact:active { transform: scale(.88); }
-.pact.plike.on { color: #ff375f; }
+.pact.plike.on { color: var(--ios-pink); }
 .pact.plike.on svg { fill: currentColor; }
-.pact.prepost.on { color: #30d158; }
-.pact.pdel:active { color: #ff453a; }
+.pact.prepost.on { color: var(--ios-green); }
+.pact.pdel:active { color: var(--ios-red); }
 
 /* Snapmatic leads with the photo, so its image goes edge to edge inside the card. */
 .post.snapstyle .pimg {
@@ -8448,7 +8406,7 @@ body.inframe.dark .uisearch {
   font-size: 12px;
   font-weight: 680;
   text-align: center;
-  background: #ff3b30;
+  background: var(--ios-red);
 }
 
 /* ── A profile ───────────────────────────────────────────────── */
@@ -8707,8 +8665,8 @@ body.inframe.dark .uisearch {
   transition: opacity .12s ease;
 }
 
-.hstamp.yes { left: 18px; color: #30d158; border: 3px solid #30d158; transform: rotate(-14deg); }
-.hstamp.no { right: 18px; color: #ff453a; border: 3px solid #ff453a; transform: rotate(14deg); }
+.hstamp.yes { left: 18px; color: var(--ios-green); border: 3px solid var(--ios-green); transform: rotate(-14deg); }
+.hstamp.no { right: 18px; color: var(--ios-red); border: 3px solid var(--ios-red); transform: rotate(14deg); }
 .hushcard.wantyes .hstamp.yes { opacity: 1; }
 .hushcard.wantno .hstamp.no { opacity: 1; }
 
@@ -8732,14 +8690,14 @@ body.inframe.dark .uisearch {
 
 .hushbtn svg { width: 27px; height: 27px; }
 .hushbtn:active { transform: scale(.88); }
-.hushbtn.no { color: #ff453a; }
-.hushbtn.yes { color: #30d158; }
+.hushbtn.no { color: var(--ios-red); }
+.hushbtn.yes { color: var(--ios-green); }
 
 .hushbtn.back, .hushbtn.super { width: 48px; height: 48px; align-self: center; }
 .hushbtn.back svg, .hushbtn.super svg { width: 21px; height: 21px; }
-.hushbtn.back { color: #ffd60a; }
-.hushbtn.super { color: #0a84ff; }
-.hushbtn.super svg { fill: #0a84ff; stroke: #0a84ff; }
+.hushbtn.back { color: var(--ios-yellow); }
+.hushbtn.super { color: var(--ios-blue); }
+.hushbtn.super svg { fill: var(--ios-blue); stroke: var(--ios-blue); }
 
 /* Which photograph of the three is showing. Across the top of the card, above the
    gradient, the way every swipe app has done it since Tinder shipped it. */
@@ -8823,12 +8781,12 @@ body.inframe.dark .uisearch {
   padding: 4px 11px;
   border-radius: 999px;
   background: rgba(10, 132, 255, .16);
-  color: #0a84ff;
+  color: var(--ios-blue);
   font-size: 12px;
   font-weight: 700;
 }
 
-.hushmatch .hmsuper svg { width: 13px; height: 13px; fill: #0a84ff; stroke: #0a84ff; }
+.hushmatch .hmsuper svg { width: 13px; height: 13px; fill: var(--ios-blue); stroke: var(--ios-blue); }
 
 .hushmatch .hmnum {
   margin-top: 10px;
@@ -8890,15 +8848,18 @@ body.inframe.dark .uisearch {
   font-size: 13px;
 }
 
-.domlist button.on { background: var(--app-tint, #0A84FF); color: #fff; }
+/* **Tinted, not filled.** White on system blue measures 3.65:1, and these are 13px - a size
+   that needs 4.5. A tinted chip is what iOS uses at this scale anyway: the colour as the
+   letters, on a wash of itself, which reads at better than 6. */
+.domlist button.on { background: var(--app-accent-soft); color: var(--app-tint, var(--ios-blue)); }
 .domlist button:active { transform: scale(.96); }
 
 /* Reserved for this player's job, and bought by this player: two different reasons for a
    domain to be in the list that nobody else would see, so they do not look the same. */
-.domlist button.gov { color: #30d158; font-weight: 700; }
-.domlist button.gov.on { background: #30d158; color: #fff; }
-.domlist button.mine { color: #bf5af2; font-weight: 700; }
-.domlist button.mine.on { background: #bf5af2; color: #fff; }
+.domlist button.gov { color: var(--ios-green); font-weight: 700; }
+.domlist button.gov.on { background: rgba(48, 209, 88, .18); color: var(--ios-green); }
+.domlist button.mine { color: var(--ios-purple); font-weight: 700; }
+.domlist button.mine.on { background: rgba(191, 90, 242, .20); color: var(--ios-purple); }
 
 /* A mail's attachment, under the text, the way a mail client shows one. Tapping it opens the
    photo viewer - a reading column is the wrong width to look at a photograph in. */
@@ -9154,8 +9115,8 @@ body.inframe.dark .uisearch {
   height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #30d158;
-  box-shadow: 0 0 10px #30d158;
+  background: var(--ios-green);
+  box-shadow: 0 0 10px var(--ios-green);
   animation: ph-forensic-live 2.4s ease-in-out infinite;
 }
 @keyframes ph-forensic-live {
@@ -9456,7 +9417,7 @@ body.inframe.dark .uisearch {
   border-radius: 10px;
 }
 .lotstate.open { color: #2FBF71; background: rgba(47, 191, 113, .12); }
-.lotstate.shut { color: #FF9F0A; background: rgba(255, 159, 10, .12); }
+.lotstate.shut { color: var(--ios-orange); background: rgba(255, 159, 10, .12); }
 
 /* ── A ball ──────────────────────────────────────────────────
    One element, five states: chosen, drawn, matched, still to come. Sized in a fixed 26px rather
@@ -9822,9 +9783,9 @@ body.inframe.dark .uisearch {
 /* ══ Media: camera video, selfie, clips, FaceTime ══════════════ */
 /* The Video mode toggle sits beside Photo. */
 .cammode span { cursor: pointer; }
-.cammode span.on { color: #ffd60a; }
-.camshutter.video span { border-radius: 6px; background: #ff3b30; }
-.camflip.on { color: #ffd60a; }
+.cammode span.on { color: var(--ios-yellow); }
+.camshutter.video span { border-radius: 6px; background: var(--ios-red); }
+.camflip.on { color: var(--ios-yellow); }
 
 /* The recording indicator, top of the viewfinder. */
 .camrec {
@@ -9834,7 +9795,7 @@ body.inframe.dark .uisearch {
   font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, .55);
 }
 .camrec.hidden { display: none; }
-.camrecdot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; animation: camrecpulse 1s infinite; }
+.camrecdot { width: 9px; height: 9px; border-radius: 50%; background: var(--ios-red); animation: camrecpulse 1s infinite; }
 @keyframes camrecpulse { 50% { opacity: .3; } }
 
 /* The clip-share sheet preview. */
@@ -9868,7 +9829,7 @@ body.inframe.dark .uisearch {
   padding: 3px 10px;
   border-radius: 99px;
   background: rgba(255, 159, 10, .18);
-  color: #ff9f0a;
+  color: var(--ios-orange);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
@@ -10456,7 +10417,7 @@ body.inframe.dark .uisearch {
   margin: -2px 0 8px 2px; padding: 5px 11px 5px 9px;
   border-radius: 14px;
   background: var(--app-fill, rgba(104, 104, 116, .12));
-  color: var(--app-tint, #007AFF);
+  color: var(--app-tint, var(--ios-blue));
   font-size: 13px; font-weight: 600; letter-spacing: -.01em;
   align-self: flex-start;
 }
@@ -10507,7 +10468,7 @@ body.inframe.dark .uisearch {
 /* ── Snapmatic ──────────────────────────────────────────────────
    Saving a post. It sits with the other card actions but reads as the reader's own: filled
    when kept, outlined when not, and never carrying a count. */
-.post .psave.on { color: var(--ph-accent, #0a84ff); }
+.post .psave.on { color: var(--ph-accent, var(--ios-blue)); }
 .post .psave.on svg { fill: currentColor; }
 
 /* The heart a double tap throws over the photograph. It is feedback, not a control: no
@@ -10548,7 +10509,7 @@ body.inframe.dark .uisearch {
   box-shadow: 0 0 0 4px var(--app-bg, #fff); }
 
 .soctag, .socmention { background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
-  font: inherit; color: var(--ph-accent, #0a84ff); }
+  font: inherit; color: var(--ph-accent, var(--ios-blue)); }
 .soctag:active, .socmention:active { opacity: .6; }
 
 /* The trending row: a tag with its post count tucked under it. */
@@ -10626,7 +10587,7 @@ body.inframe.dark .uisearch {
 .zumeta svg { width: 11px; height: 11px; vertical-align: -1px; }
 .zumeta span { display: inline-flex; align-items: center; gap: 3px; }
 .zuopen { color: var(--app-accent); font-weight: 600; }
-.zushut { color: #ff453a; font-weight: 600; }
+.zushut { color: var(--ios-red); font-weight: 600; }
 .zupromo { padding: 1px 6px; border-radius: 99px; background: var(--app-accent-soft);
   color: var(--app-accent); font-weight: 600; }
 .zutags { margin-top: 3px; font-size: 12px; color: var(--app-label3);
@@ -10751,7 +10712,7 @@ body.inframe.dark .uisearch {
 /* What is waiting on the service you are NOT looking at, which is the only reason to put a
    number here at all. On the active pill it has to sit on the tint rather than under it. */
 .e911tabs button i { display: inline-block; min-width: 17px; padding: 0 5px; margin-left: 3px;
-  border-radius: 99px; background: #ff3b30; color: #fff;
+  border-radius: 99px; background: var(--ios-red); color: #fff;
   font-family: var(--ios-num); font-size: 11px; font-style: normal; }
 .e911tabs button.on i { background: rgba(255, 255, 255, .28); }
 
@@ -11076,8 +11037,8 @@ body.inframe.dark .uisearch {
 .rstars { display: inline-flex; align-items: center; gap: 2px; }
 .rstars i { display: block; width: 15px; height: 15px; color: var(--app-label3); }
 .rstars i svg { width: 15px; height: 15px; }
-.rstars i.on { color: #FF9F0A; }
-.rstars i.on svg { fill: #FF9F0A; }
+.rstars i.on { color: var(--ios-orange); }
+.rstars i.on svg { fill: var(--ios-orange); }
 .rstars b { margin-left: 6px; color: var(--app-sub); font-size: 12px; font-weight: 500; }
 .rrating { padding: 2px 16px 12px; }
 
@@ -11097,8 +11058,8 @@ body.inframe.dark .uisearch {
 }
 .rstarpick button svg { width: 28px; height: 28px; }
 .rstarpick button:active { transform: scale(.9); }
-.rstarpick button.on { color: #FF9F0A; }
-.rstarpick button.on svg { fill: #FF9F0A; }
+.rstarpick button.on { color: var(--ios-orange); }
+.rstarpick button.on svg { fill: var(--ios-orange); }
 
 /* ── The tracker ───────────────────────────────────────────────
    What is happening, said in one line and given room. This is the screen somebody stares at
@@ -11135,9 +11096,9 @@ body.inframe.dark .uisearch {
   border-left: 3px solid var(--app-label3);
 }
 /* The status is the border colour: a queue is scanned, not read. */
-.rcall.pending  { border-left-color: #FF9F0A; }
-.rcall.accepted { border-left-color: #0A84FF; }
-.rcall.ongoing  { border-left-color: #30d158; }
+.rcall.pending  { border-left-color: var(--ios-orange); }
+.rcall.accepted { border-left-color: var(--ios-blue); }
+.rcall.ongoing  { border-left-color: var(--ios-green); }
 .rcall.onhold   { border-left-color: var(--app-label3); }
 
 .rctop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -11162,8 +11123,8 @@ body.inframe.dark .uisearch {
   transition: transform .1s ease, filter .1s ease;
 }
 .rcacts button:active { transform: scale(.94); filter: brightness(.9); }
-.rcacts button.good { border-color: transparent; background: rgba(48, 209, 88, .16); color: #30d158; }
-.rcacts button.bad { border-color: transparent; background: rgba(255, 69, 58, .14); color: #FF453A; }
+.rcacts button.good { border-color: transparent; background: rgba(48, 209, 88, .16); color: var(--ios-green); }
+.rcacts button.bad { border-color: transparent; background: rgba(255, 69, 58, .14); color: var(--ios-red); }
 
 /* ══════════════════════════════════════════════════════════════
    EXPORT — the market board
@@ -11231,8 +11192,8 @@ body.inframe.dark .uisearch {
 .exmoverprice { font-family: var(--ios-num); font-size: 15px; font-weight: 600; }
 .exmovermove { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; }
 .exmovermove svg { width: 11px; height: 11px; }
-.exmover.up .exmovermove { color: #30d158; }
-.exmover.down .exmovermove { color: #FF453A; }
+.exmover.up .exmovermove { color: var(--ios-green); }
+.exmover.down .exmovermove { color: var(--ios-red); }
 
 /* ── Category chips ────────────────────────────────────────────
    Wrapping, not scrolling: six categories in a hidden sideways scroller is three categories
@@ -11277,13 +11238,13 @@ body.inframe.dark .uisearch {
 .exname { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .exsub { overflow: hidden; color: var(--app-sub); font-size: 11px;
   text-overflow: ellipsis; white-space: nowrap; }
-.exstar { flex: none; width: 14px; height: 14px; color: #FF9F0A; }
-.exstar svg { width: 14px; height: 14px; fill: #FF9F0A; }
+.exstar { flex: none; width: 14px; height: 14px; color: var(--ios-orange); }
+.exstar svg { width: 14px; height: 14px; fill: var(--ios-orange); }
 .expricebox { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 1px; }
 .exprice { font-family: var(--ios-num); font-size: 15px; font-weight: 600; }
 .exmove { font-size: 11px; font-weight: 600; color: var(--app-sub); }
-.exmove.up { color: #30d158; }
-.exmove.down { color: #FF453A; }
+.exmove.up { color: var(--ios-green); }
+.exmove.down { color: var(--ios-red); }
 
 /* ── The line ──────────────────────────────────────────────────
    An inline SVG normalised to its OWN minimum and maximum rather than to the item's configured
@@ -11294,9 +11255,9 @@ body.inframe.dark .uisearch {
 .exchart polyline { fill: none; stroke: var(--app-label2); stroke-width: 1.6;
   vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 .exchart polygon { fill: var(--app-fill); stroke: none; }
-.exchart.up polyline { stroke: #30d158; }
+.exchart.up polyline { stroke: var(--ios-green); }
 .exchart.up polygon { fill: rgba(48, 209, 88, .14); }
-.exchart.down polyline { stroke: #FF453A; }
+.exchart.down polyline { stroke: var(--ios-red); }
 .exchart.down polygon { fill: rgba(255, 69, 58, .12); }
 
 /* ── Where the price sits in its range ─────────────────────────
@@ -11307,7 +11268,7 @@ body.inframe.dark .uisearch {
   position: relative;
   height: 6px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #FF453A, #FF9F0A, #30d158);
+  background: linear-gradient(90deg, var(--ios-red), var(--ios-orange), var(--ios-green));
   opacity: .85;
 }
 .exbandbar i {
@@ -11387,8 +11348,8 @@ body.inframe.dark .uisearch {
   text-transform: uppercase; }
 .exheroprice { font-family: var(--ios-num); font-size: 28px; font-weight: 700; line-height: 1.15; }
 .exherosub { color: var(--app-sub); font-size: 12px; }
-.exherosub.up { color: #30d158; }
-.exherosub.down { color: #FF453A; }
+.exherosub.up { color: var(--ios-green); }
+.exherosub.down { color: var(--ios-red); }
 
 /* ── When do prices move ───────────────────────────────────────
    Under doc-shops this is MEASURED - it publishes no clock at all - so the badge says
@@ -11417,7 +11378,7 @@ body.inframe.dark .uisearch {
   letter-spacing: .03em;
   text-transform: uppercase;
 }
-.exdue.est b { color: #FF9F0A; }
+.exdue.est b { color: var(--ios-orange); }
 
 /* The search box sits in the flow, with the same margins as everything else on the board. */
 .exsearchpad { padding: 0 16px 10px; }
@@ -11438,8 +11399,8 @@ body.inframe.dark .uisearch {
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
-.exchart.up .exdot { stroke: #30d158; }
-.exchart.down .exdot { stroke: #FF453A; }
+.exchart.up .exdot { stroke: var(--ios-green); }
+.exchart.down .exdot { stroke: var(--ios-red); }
 .exchartends {
   display: flex;
   justify-content: space-between;
@@ -11484,7 +11445,7 @@ body.inframe.dark .uisearch {
   height: 9px;
   flex: none;
   border-radius: 50%;
-  background: #FF453A;
+  background: var(--ios-red);
   animation: vb-pulse 1.4s ease-in-out infinite;
 }
 @keyframes vb-pulse {
@@ -11492,3 +11453,237 @@ body.inframe.dark .uisearch {
   50% { opacity: .35; transform: scale(.78); }
 }
 .vbtext { letter-spacing: .01em; }
+
+/* ── The outbox: written with no signal ────────────────────────
+   Deliberately the same bubble with a mark on it rather than a different shape. It IS the
+   message — it just has not left yet — and giving it its own design would make the thread read
+   as two kinds of thing. Dimmed and outlined: enough to be obviously not-sent at a glance,
+   without becoming an error state, because nothing has gone wrong. */
+.bub.pending {
+  position: relative;
+  padding-right: 30px;
+  opacity: .62;
+  /* A dashed edge is the one visual convention everybody already reads as "not final". */
+  box-shadow: inset 0 0 0 1px var(--app-sep);
+  background-image: none;
+}
+.pendmark {
+  position: absolute;
+  right: 9px;
+  bottom: 7px;
+  display: grid;
+  width: 13px;
+  height: 13px;
+  place-items: center;
+  color: currentColor;
+  opacity: .8;
+}
+.pendmark svg { width: 13px; height: 13px; }
+/* One line under the queue rather than one per bubble: five queued texts do not need telling
+   five times, and the explanation is about the phone, not about any one message. */
+.pendnote {
+  align-self: flex-end;
+  max-width: 78%;
+  margin: 2px 2px 0;
+  color: var(--app-sub);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* ── Downloading an app ────────────────────────────────────────
+   Ten seconds on four bars, a minute on one. The bar sits UNDER the row rather than inside the
+   button: a button that is also a progress indicator is a button nobody is sure is still a
+   button, and this one still has a job — tapping it cancels. */
+.stbar {
+  /* `flex-basis: 100%` is what puts it on its own line in a wrapping flex row. The first
+     version said `grid-column: 1 / -1`, which a flex container ignores entirely - so the bar
+     sat beside the button and squashed it. */
+  flex: 0 0 100%;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--app-fill);
+}
+.stbar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--app-accent);
+  /* Matched to the server's one-second tick, so the bar glides between readings instead of
+     stepping. Slightly longer than the tick on purpose: arriving early leaves a stutter. */
+  transition: width 1.1s linear;
+}
+/* A download in progress reads as a percentage, so it is numbers rather than a word — the
+   tabular figures stop the button resizing as it counts up. */
+.stget.dling { font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+
+/* ── The remove badge ──────────────────────────────────────────
+   The minus in the corner of an icon while the phone is in edit mode, the way a real handset
+   does it. Drawn on every removable tile and revealed by the jiggle, rather than added when
+   edit mode starts: arrange mode repaints the pages on every drop, and a control attached
+   afterwards would have to be re-attached each time — which is how one goes missing on the
+   third page. */
+.rmbadge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  z-index: 3;
+  display: none;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  /* Light grey on dark, dark on light — it has to read against an app icon of any colour, and
+     an icon is the one thing on this screen whose colour cannot be predicted. */
+  background: rgba(60, 60, 67, .92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  color: #fff;
+  cursor: pointer;
+  /* The tiles rotate; the badge must not rotate with them or it reads as part of the artwork.
+     Counter-rotation is not possible against a keyframe, so it is simply held still by being
+     outside the animated transform's visual weight — small, round, and symmetrical enough that
+     the wobble does not register. */
+}
+.pages.jiggle .rmbadge { display: flex; }
+.rmbadge svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.rmbadge:active { transform: scale(.88); }
+/* A tile being dragged should not carry a badge under the finger. */
+.tile.dragging .rmbadge, .tile.gap .rmbadge { display: none; }
+
+/* ── Done: out of the widgets, into the slot the search pill leaves ──────────
+   It was pinned to the top-right corner, which is where the date widget is: a
+   white pill on a white widget, overlapping the thing it sat on. Nothing about
+   it read as a button.
+
+   So it moves to the bottom, taking the search pill's line - searching is not
+   something anybody does while rearranging apps, and that slot is already clear
+   of the tiles, the dots and the dock. And it is filled with the accent colour
+   instead of plain white, so it reads as the one control on the screen rather
+   than as a stray highlight. */
+.home.arrange .searchpill { display: none; }
+.arrangedone {
+  position: static;
+  display: none;
+  align-self: center;
+  width: auto;
+  min-width: 132px;
+  margin: 4px auto 9px;
+  padding: 11px 26px;
+  border-radius: 99px;
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: #fff;
+  text-align: center;
+  background:
+    radial-gradient(120% 130% at 22% -40%, rgba(255, 255, 255, .30), transparent 58%),
+    var(--ios-blue);
+  box-shadow:
+    inset 0 0 0 .5px rgba(255, 255, 255, .34),
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    0 8px 24px rgba(10, 132, 255, .42);
+  transition: transform var(--ph-fast) var(--ph-spring);
+}
+.home.arrange .arrangedone { display: block; animation: ph-in .3s var(--spring); }
+.arrangedone:active { transform: scale(.94); }
+
+/* ── A call with more than two people on it ──────────────────────────────────
+   The audio was never the hard part - a voice channel has always wired every member to every
+   other one - so all of this is about the screen being honest about who is on the line. */
+
+/* The pad holds two controls now. It was `grid-template-columns: 68px`, one fixed column, so
+   a second button went UNDER the first and straight through the hang-up row. Column flow keeps
+   each cell the same 68px and puts them side by side. */
+.callpad { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 68px; }
+
+/* On a conference the avatar is a count rather than an initial: there is no one initial to
+   show, and picking the first person's would name the wrong call. */
+.callui.conference .callav { font-size: 30px; font-family: var(--ios-num); }
+
+.callroster { width: 100%; max-width: 268px; margin-top: 18px;
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 210px; overflow-y: auto; scrollbar-width: none; }
+.callroster::-webkit-scrollbar { width: 0; display: none; }
+/* A scrolling flex column compresses its children to fit before it ever scrolls, so rows go
+   thin and unreadable instead of the list going long. Pinned, as every other scrolling column
+   in this stylesheet is. */
+.callroster > * { flex-shrink: 0; }
+
+.crow { display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+  border-radius: 14px; background: rgba(255,255,255,.07); }
+/* Somebody whose phone is still ringing is shown, dimmed, rather than left out until they
+   answer: an invitation that appears to have done nothing is one somebody sends twice. */
+.crow.ringing { opacity: .5; }
+.crow .cav { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; color: #fff;
+  background: linear-gradient(180deg, var(--ios-grey), #48484a); }
+.crow .cname { flex: 1 1 auto; min-width: 0; font-size: 14.5px; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crow .chost { flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: #000; background: #fff;
+  padding: 2px 6px; border-radius: 99px; }
+.crow .cstate { flex: 0 0 auto; font-size: 12px; color: rgba(255,255,255,.55); }
+
+/* ── A message box that grows ──────────────────────────────────
+   It was an `<input>`, which is one line by definition. The height is set from JS as the text
+   wraps; everything else about it stays exactly as the field it replaced, so the composer row
+   is unchanged. */
+.compose .msgbox {
+  margin-bottom: 0;
+  min-height: 38px;
+  max-height: 112px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.3;
+  font-family: inherit;
+  font-size: 16px;
+  scrollbar-width: none;
+}
+.compose .msgbox::-webkit-scrollbar { width: 0; display: none; }
+/* The row stops centring its children once the box is tall: a send button pinned to the middle
+   of a five-line message floats in the space beside it. */
+.compose { align-items: flex-end; }
+
+/* ── Putting a call away ───────────────────────────────────────
+   A chevron at the top-left of an active call, where iOS puts the control that sends a live
+   activity back to the island. Hidden while the call is still ringing: there is nothing to go
+   back to yet, and a button that hides an unanswered call is a button that loses it. */
+.callmin {
+  position: absolute;
+  top: 58px;
+  left: 20px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(120, 120, 128, .32);
+  transition: transform var(--ph-fast) var(--ph-spring), background var(--ph-fast) ease;
+}
+.callmin svg { width: 17px; height: 17px; transform: rotate(90deg); }
+.callmin:active { transform: scale(.9); background: rgba(120, 120, 128, .5); }
+
+/* ── Room for a call parked in the island ──────────────────────
+   The expanded island is 84px tall from the top of the screen; the navigation bar starts its
+   content at 54 and the home screen's widgets sit higher still. With a call minimised into it,
+   the island covered the back button of whatever app you had opened - so the call could be put
+   away but the app could not be left.
+
+   Only while a call is actually parked: a notification expands the island for four seconds,
+   and shoving the whole screen down for that would be worse than the overlap. */
+.screen.callaside .navbar { padding-top: 104px; }
+.screen.callaside .home { top: 104px; }
+.screen.callaside .lock { padding-top: 104px; }

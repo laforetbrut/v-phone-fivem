@@ -441,6 +441,11 @@ local function appsFor(src, p)
     local ownedApps = {}
     for _, id in ipairs(prefs.purchased or {}) do ownedApps[id] = true end
 
+    -- Which version of each app this character actually holds, and what is being fetched right
+    -- now. Read once here rather than per app: this loop runs for every app on the phone.
+    local have = type(prefs.versions) == 'table' and prefs.versions or {}
+    local downloads = DownloadsOf and DownloadsOf(p.citizenid) or {}
+
     local out = {}
     for id, a in pairs(Apps) do
         local w = WorldApps[id]
@@ -486,6 +491,15 @@ local function appsFor(src, p)
                 price = price > 0 and price or nil,
                 account = (a.account == 'cash') and 'cash' or 'bank',
                 purchased = (price == 0) or ownedApps[id] == true,
+                version = a.version,
+                -- **Is there a newer one?** The version the character holds against the version
+                -- the config ships. An app installed before versions existed has none recorded
+                -- and reads as up to date rather than as needing an update on day one, which is
+                -- the difference between a useful badge and a badge everybody dismisses.
+                update = (a.version ~= nil)
+                    and (have[id] ~= nil)
+                    and (tostring(have[id]) ~= tostring(a.version)) or nil,
+                downloading = downloads[id] and downloads[id].progress or nil,
             }
         end
     end
@@ -522,6 +536,10 @@ local function appsFor(src, p)
                     price = price > 0 and price or nil,
                     account = (a.account == 'cash') and 'cash' or 'bank',
                     purchased = (price == 0) or ownedApps[id] == true,
+                    version = a.version,
+                    update = (a.version ~= nil) and (have[id] ~= nil)
+                        and (tostring(have[id]) ~= tostring(a.version)) or nil,
+                    downloading = downloads[id] and downloads[id].progress or nil,
                     custom = true,
                 }
             end
@@ -757,6 +775,10 @@ prefsOf = function(p, includeSecrets)
         -- Which apps the player has silenced. A muted app still exists; it just does not
         -- light up the island or land in the list.
         notifMuted = stringIdList(m.notifMuted, 64),
+        -- Seen but not heard. Stored beside the muted list rather than as a value per app: two
+        -- lists is the shape everything around this already uses, and one of them existing
+        -- without the other is what a half-applied setting looks like.
+        notifSilent = stringIdList(m.notifSilent, 64),
         -- Apps are light by default, as they are on iOS. This flips the six
         -- surface values and nothing else.
         dark      = m.dark == true,
@@ -1050,8 +1072,32 @@ end
 --- What a message may carry besides text. An image is a URL every reader's client will
 --- fetch, so it goes through the same host gate as wallpapers; a location is two numbers
 --- the sender chose to share. Returns body, attachment, errorKey.
+--- Normalise a message body: keep the line breaks, drop everything else that is not text.
+---
+--- Newlines are the one control character a message is allowed to contain, now that the
+--- composer can produce them. Everything else in that range - a stray carriage return from a
+--- paste, a null, an escape sequence - is removed rather than stored: none of it is anything a
+--- player typed, and a terminal escape inside a message is a message that can reformat a
+--- console reading it.
+---
+--- A run of blank lines is collapsed to one. Ten empty lines is not emphasis, it is a way to
+--- push the rest of a conversation off somebody's screen.
+local function cleanBody(text)
+    text = tostring(text or '')
+    -- Windows and some paste sources send CRLF; the phone stores LF and nothing else.
+    text = text:gsub('\r\n', '\n'):gsub('\r', '\n')
+    -- Every other control character goes. The pattern names the ranges either side of \n (10)
+    -- rather than using %c, which would take the newline with it - and the newline is the whole
+    -- point of this function.
+    text = text:gsub('[%z\1-\9\11-\31\127]', '')
+    -- A run of blank lines becomes one.
+    text = text:gsub('\n\n\n+', '\n\n')
+    text = text:gsub('^%s+', ''):gsub('%s+$', '')
+    return text
+end
+
 local function checkContent(body, kind, attachment)
-    body = tostring(body or ''):sub(1, math.max(1, math.floor(num(S('maxLength', Config.Messages.maxLength), 250))))
+    body = cleanBody(body):sub(1, math.max(1, math.floor(num(S('maxLength', Config.Messages.maxLength), 250))))
     attachment = tostring(attachment or ''):sub(1, 300)
 
     if kind == 'image' then
@@ -1217,14 +1263,185 @@ local function ringOut(who, on)
     end
 end
 
+-- ══ Who is on a call ═══════════════════════════════════════════
+-- A call used to be two source ids, `a` and `b`, and every piece of code that needed "the
+-- other end" wrote `(c.a == src) and c.b or c.a`. That expression cannot be extended - it
+-- assumes the answer is exactly one person - so a roster is kept alongside those two fields
+-- rather than replacing them.
+--
+-- **`a` and `b` still mean what they always meant**: who this call was BETWEEN. The call log,
+-- the voicemail offer and the payphone all attribute to them, and none of that changes when a
+-- third person joins - a conference is still a call somebody placed to somebody. What changes
+-- is who is currently attached, and that is `c.live`.
+--
+--   c.live[src]  = { num = '5550100', state = 'ringing' | 'active' }
+--   c.order      = the source ids, in the order they joined, for a stable list on screen
+--
+-- Somebody leaving is removed from `live`; `a` and `b` are never rewritten.
+
+local function groupCfg()
+    return (Config.Calls or {}).group or {}
+end
+
+--- The ceiling on one call, including the two who started it.
+---
+--- Clamped rather than trusted: one is not a call, and a dozen people on one voice channel is
+--- already past the point where anybody can follow a conversation.
+local function groupMax()
+    return math.max(2, math.min(12, math.floor(num(groupCfg().max, 5))))
+end
+
+--- `extra` marks somebody added to a call already in progress, as opposed to the two it was
+--- placed between. It decides who gets their own row in the call log: `logCall` writes the
+--- original pair, and it would be wrong about everybody else.
+local function callJoin(c, src, number, state, extra)
+    c.live = c.live or {}
+    c.order = c.order or {}
+    if not c.live[src] then c.order[#c.order + 1] = src end
+    c.live[src] = { num = tostring(number or ''), state = state or 'ringing',
+                    extra = extra == true }
+end
+
+--- The call log for somebody who joined a conference.
+---
+--- Two rows, the same shape `logCall` writes for the original pair: incoming for them, outgoing
+--- for the person who placed the call. Without this a conference appeared in nobody's history
+--- but the first two people on it - so being invited to a call left no trace that it happened.
+local function logExtra(c, m, answered)
+    local mine = cidOfNumber(m.num)
+    if mine then
+        MySQL.insert('INSERT INTO vphone_calls (citizenid, other_num, direction, answered) VALUES (?,?,?,?)',
+            { mine, c.anonymous and '' or c.aNum, 'in', answered and 1 or 0 })
+    end
+    local host = cidOfNumber(c.aNum)
+    if host then
+        MySQL.insert('INSERT INTO vphone_calls (citizenid, other_num, direction, answered) VALUES (?,?,?,?)',
+            { host, m.num, 'out', answered and 1 or 0 })
+    end
+end
+
+local function callLeave(c, src)
+    if not c.live or not c.live[src] then return false end
+    c.live[src] = nil
+    for i, s in ipairs(c.order or {}) do
+        if s == src then table.remove(c.order, i) break end
+    end
+    return true
+end
+
+--- Everybody attached, ringing or talking, in the order they joined.
+local function callMembers(c)
+    local out = {}
+    for _, s in ipairs(c.order or {}) do
+        if c.live and c.live[s] then out[#out + 1] = s end
+    end
+    return out
+end
+
+--- Only those actually in the conversation. Somebody whose phone is still ringing is on the
+--- call in the sense that they cannot take another one, and not on it in any sense that
+--- matters to audio, to the bad line or to the speakerphone.
+local function callActives(c)
+    local out = {}
+    for _, s in ipairs(callMembers(c)) do
+        if c.live[s].state == 'active' then out[#out + 1] = s end
+    end
+    return out
+end
+
+--- The active members other than `src`. What used to be a single `peer`.
+local function callPeers(c, src)
+    local out = {}
+    for _, s in ipairs(callActives(c)) do
+        if s ~= src then out[#out + 1] = s end
+    end
+    return out
+end
+
+--- The list as one member should see it.
+---
+--- A withheld number stays withheld: the caller who hid his number from the person he rang is
+--- not un-hidden by a third person joining. He sees his own number, because it is his.
+local function rosterFor(c, src)
+    local list = {}
+    for _, s in ipairs(callMembers(c)) do
+        local m = c.live[s]
+        local hide = c.anonymous and s == c.a and src ~= c.a
+        list[#list + 1] = {
+            src = s,
+            number = hide and '' or m.num,
+            state = m.state,
+            host = s == c.a,
+            me = s == src,
+        }
+    end
+    return list
+end
+
+--- Tell everyone on the call who is on it, and which server ids are theirs to degrade.
+---
+--- `peers` is per recipient and carries nothing but source ids. The single-peer version of this
+--- was already sent for the bad-line effect and the reasoning has not changed: a client knows
+--- the id of everybody it can see anyway, and turning somebody's voice down is addressed by id.
+--- Whether this member may put somebody else on the call.
+---
+--- Worked out here and sent, rather than left to the page to guess: the page does not know the
+--- ceiling, does not know whether the operator made it host-only, and a button that always
+--- fails is worse than no button. The server checks all of it again in `callAdd` regardless -
+--- this decides what is DRAWN, never what is allowed.
+local function canAddFrom(c, src)
+    local cfg = groupCfg()
+    if cfg.enabled == false then return false end
+    if c.booth then return false end
+    if c.state ~= 'active' then return false end
+    if not (c.live and c.live[src] and c.live[src].state == 'active') then return false end
+    if cfg.hostOnly ~= false and c.a ~= src then return false end
+    return #callMembers(c) < groupMax()
+end
+
+local function pushRoster(id)
+    local c = Calls[id]
+    if not c then return end
+    local members = callMembers(c)
+    local group = #members > 2
+    for _, s in ipairs(members) do
+        TriggerClientEvent('v-phone:client:callRoster', s, {
+            id = id, group = group, members = rosterFor(c, s), peers = callPeers(c, s),
+            canAdd = canAddFrom(c, s),
+        })
+    end
+end
+
+--- Everyone hears how good everyone else's line is, straight away.
+---
+--- The signal tick only speaks when a signal CHANGES, so a member who joins from a dead spot
+--- would sound perfect to the others until they happened to walk somewhere different.
+local function pushSignals(c)
+    local live = callActives(c)
+    for _, s in ipairs(live) do
+        for _, o in ipairs(live) do
+            if o ~= s then TriggerClientEvent('v-phone:client:peerSignal', s, o, Signal[o] or 4) end
+        end
+    end
+end
+
 local function endCall(id, reason)
     local c = Calls[id]
     if not c then return end
-    -- Whether it was answered, missed or cancelled, the ringing has stopped.
-    if c.b then ringOut(c.b, false) end
+    -- Whether it was answered, missed or cancelled, the ringing has stopped - on every phone
+    -- that is still ringing, which on a conference is more than one.
+    for _, s in ipairs(callMembers(c)) do
+        if c.live[s].state == 'ringing' then ringOut(s, false) end
+    end
     speakerOff(id)
     -- Log it once, as it ends, from the state it reached: active means it connected.
     logCall(c, c.state == 'active')
+    -- And a row each for anybody who joined it afterwards and was still on it. Somebody who
+    -- left earlier was logged then, which is why they are no longer in the roster to log twice.
+    for _, s in ipairs(callMembers(c)) do
+        local m = c.live[s]
+        if m.extra then logExtra(c, m, m.state == 'active') end
+    end
     -- Nobody picked up: offer the caller the voicemail, which is the whole point of one.
     -- Not from a booth, though: leaving a voicemail needs the phone's own recorder, and the
     -- caller at a payphone has no phone open to record into.
@@ -1233,12 +1450,46 @@ local function endCall(id, reason)
         TriggerClientEvent('v-phone:client:voicemailOffer', c.a, { number = c.bNum })
     end
     Calls[id] = nil
-    for _, s in ipairs({ c.a, c.b }) do
-        if s and CallOf[s] == id then
+    -- Everybody still attached, not just the two it was placed between. Somebody who already
+    -- left has had their end sent and their `CallOf` cleared, so the check below skips them.
+    for _, s in ipairs(callMembers(c)) do
+        if CallOf[s] == id then
             CallOf[s] = nil
             TriggerClientEvent('v-phone:client:callEnd', s, reason)
         end
     end
+end
+
+--- One person leaves. Returns whether the call carries on without them.
+---
+--- A conference needs two people in it: below that there is nobody to talk to, so the caller
+--- hands back false and the call is ended for whoever is left.
+local function callDrop(id, src, reason)
+    local c = Calls[id]
+    if not c or not (c.live and c.live[src]) then return false end
+    local m = c.live[src]
+    if m.state == 'ringing' then ringOut(src, false) end
+    if m.extra then logExtra(c, m, m.state == 'active') end
+    callLeave(c, src)
+    if CallOf[src] == id then
+        CallOf[src] = nil
+        TriggerClientEvent('v-phone:client:callEnd', src, reason or 'hangup')
+    end
+    if #callActives(c) < 2 then return false end
+    pushRoster(id)
+    return true
+end
+
+--- Somebody hung up, dropped, or was dropped. The one place that decides whether that ends
+--- the call for everybody.
+---
+--- **The person who placed it leaving ends it.** That is what an iPhone conference does, and it
+--- is what this record can support: `c.a` is who every log row and the voicemail offer are
+--- written against, so a call outliving its own caller would be a call with nobody to attribute.
+local function callPartOrEnd(id, src, reason)
+    local c = Calls[id]
+    if not c then return end
+    if c.a == src or not callDrop(id, src, reason) then endCall(id, reason) end
 end
 
 local function allocateCallId()
@@ -1297,6 +1548,11 @@ local function startCall(src, p, toNumber, anonymous, video)
     }
     Calls[id] = callRecord
     CallOf[src], CallOf[target] = id, id
+    -- The roster starts as the two ends. Both are 'ringing': the caller is waiting on an
+    -- answer just as surely as the phone that is making a noise about it, and treating the two
+    -- states as one is what lets `callActives` mean "in the conversation" and nothing else.
+    callJoin(callRecord, src, callRecord.aNum, 'ringing')
+    callJoin(callRecord, target, toNumber, 'ringing')
 
     -- "Silence unknown callers", the recipient's own choice. A caller who is not in their
     -- contacts arrives without a ring and without the phone opening itself; the call still
@@ -1334,8 +1590,27 @@ end
 local function answerCall(src)
     local id = CallOf[src]
     local c = id and Calls[id]
-    if not c or c.state ~= 'ringing' or c.b ~= src then return false end
+    if not c then return false end
+    local me = c.live and c.live[src]
+    if not me or me.state ~= 'ringing' then return false end
+
+    -- **Joining a call that is already running.** Nothing about the call starts again: it has
+    -- a length, a log entry waiting and people mid-sentence. Only this person becomes active,
+    -- and everybody already on it is told who arrived.
+    if c.state == 'active' then
+        me.state = 'active'
+        ringOut(src, false)
+        -- `peer` is the caller, for the one field the older two-party code reads. The roster
+        -- immediately after carries everybody, which is what the effect actually uses.
+        TriggerClientEvent('v-phone:client:callActive', src, { id = id, peer = c.a, group = true })
+        pushRoster(id)
+        pushSignals(c)
+        return true
+    end
+
+    if c.state ~= 'ringing' or c.b ~= src then return false end
     c.state, c.at = 'active', os.time()
+    c.live[c.a].state, c.live[c.b].state = 'active', 'active'
     -- Answered, so the room stops hearing it ring. `endCall` also does this, for the call that
     -- is never answered.
     ringOut(src, false)
@@ -1358,6 +1633,7 @@ local function answerCall(src)
     -- the other person until the caller happened to walk somewhere different.
     TriggerClientEvent('v-phone:client:peerSignal', c.a, c.b, Signal[c.b] or 4)
     TriggerClientEvent('v-phone:client:peerSignal', c.b, c.a, Signal[c.a] or 4)
+    pushRoster(id)
 
     local cap = math.floor(num(S('maxMinutes', Config.Calls.maxMinutes), 30))
     SetTimeout(cap * 60000, function()
@@ -1413,6 +1689,8 @@ function BoothCall(src, boothNumber, toNumber)
     }
     Calls[id] = callRecord
     CallOf[src], CallOf[target] = id, id
+    callJoin(callRecord, src, boothNumber, 'ringing')
+    callJoin(callRecord, target, toNumber, 'ringing')
 
     TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber, booth = true })
     TriggerClientEvent('v-phone:client:callIn', target, { id = id, number = boothNumber })
@@ -1478,6 +1756,13 @@ local function currentCallFor(src)
         -- Without it the bad-line effect worked until the first `restart v-phone` and then quietly
         -- did nothing for the rest of that call.
         peer = mineIsCaller and c.b or c.a,
+        -- And everybody, for a call with more than two people on it. Same reason as `peer`:
+        -- a client that resyncs after a restart has to be able to degrade every line it is on,
+        -- not just the first one it was told about.
+        peers = callPeers(c, src),
+        members = rosterFor(c, src),
+        group = #callMembers(c) > 2,
+        canAdd = canAddFrom(c, src),
     }
 end
 
@@ -1522,6 +1807,13 @@ exports('PhoneUsable', function(src) return phoneUsable(src) end)
 exports('GetBattery', function(src) return batteryOf(src) end)
 exports('AddBattery', function(src, delta) return setBattery(src, batteryRaw(src) + (tonumber(delta) or 0)) end)
 exports('GetSignal',  function(src) return Signal[src] or 4 end)
+
+--- The same number, as a plain global.
+---
+--- server/downloads.lua reads it every second for every download in flight, and going out
+--- through the export layer for that is a round trip through the resource's own export table
+--- to fetch one integer this file is already holding.
+function GetSignalOf(src) return Signal[tonumber(src) or 0] or 4 end
 exports('HasSignal',  function(src) return hasBars(src) end)
 
 --- The ceiling from any dead zone the player is standing in. Zones overlap on purpose:
@@ -1721,9 +2013,10 @@ CreateThread(function()
                             local cid = CallOf[src]
                             local live = cid and Calls[cid]
                             if live and live.state == 'active' then
-                                local far = (live.a == src) and live.b
-                                    or ((live.b == src) and live.a or nil)
-                                if far then
+                                -- Everybody on the call, not "the far end". On a conference
+                                -- there is no far end - there are several, and each of them
+                                -- hears this line get worse.
+                                for _, far in ipairs(callPeers(live, src)) do
                                     TriggerClientEvent('v-phone:client:peerSignal', far,
                                                        src, Signal[src])
                                 end
@@ -2672,6 +2965,9 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         if data.wifi      ~= nil then prefs.wifi      = data.wifi == true end
         if data.bluetooth ~= nil then prefs.bluetooth = data.bluetooth == true end
         if data.brightness ~= nil then prefs.brightness = math.max(0.35, math.min(1, num(data.brightness, 1))) end
+        if type(data.notifSilent) == 'table' then
+            prefs.notifSilent = stringIdList(data.notifSilent, 64)
+        end
         if type(data.notifMuted) == 'table' then
             prefs.notifMuted = stringIdList(data.notifMuted, 64)
         end
@@ -3363,13 +3659,54 @@ V.Callback('v-phone:install', function(src, resolve, data)
         keep = not want        -- a shipped app is listed while it is REMOVED
     end
 
-    local out = {}
-    for _, rid in ipairs(prefs[key] or {}) do
-        if rid ~= id then out[#out + 1] = rid end
+    --- Everything that actually installs it, as one closure.
+    ---
+    --- Handed to the download rather than run here, so the rules above - required, optional,
+    --- already owned, paid for - stay in one place and the download does not need to know any
+    --- of them. It also means the version stamp and the list update cannot drift apart: they
+    --- happen together or not at all.
+    local function grant()
+        local fresh = prefsOf(p)
+        local list = {}
+        for _, rid in ipairs(fresh[key] or {}) do
+            if rid ~= id then list[#list + 1] = rid end
+        end
+        if keep then list[#list + 1] = id end
+        fresh[key] = list
+
+        -- **Which version they now hold.** This is what makes an update possible at all: the
+        -- store compares the config's version against this one, and an app installed before
+        -- versions existed simply has none and reads as up to date.
+        local versions = type(fresh.versions) == 'table' and fresh.versions or {}
+        if want then
+            versions[id] = tostring(found.version or '')
+        else
+            versions[id] = nil
+        end
+        fresh.versions = versions
+
+        p.SetMetadata('phone', fresh)
     end
-    if keep then out[#out + 1] = id end
-    prefs[key] = out
-    p.SetMetadata('phone', prefs)
+
+    -- Removing one is instant. There is nothing to fetch, and making somebody watch a progress
+    -- ring to delete something would be a spinner for its own sake.
+    if not want then
+        grant()
+        resolve({ ok = true })
+        return
+    end
+
+    -- **The download.** Ten seconds on four bars, a minute on one - and the rate follows the
+    -- signal each second, so walking out of a tunnel speeds it up. The app is granted by the
+    -- closure above when it finishes, on the server, which is why closing the phone does not
+    -- cancel it and a client cannot skip it.
+    if DownloadStart then
+        local started = DownloadStart(src, p.citizenid, id, data and data.update == true, grant)
+        resolve(started)
+        return
+    end
+
+    grant()
     resolve({ ok = true })
 end)
 
@@ -3441,10 +3778,76 @@ V.Callback('v-phone:threadDelete', function(src, resolve, data)
     resolve({ ok = true, removed = n })
 end)
 
+--- What a category is called, and what it looks like.
+---
+--- Built per call rather than cached because the label is resolved for THIS player: a `ph.`
+--- phrase reads in their language, and anything else is the operator's own words passed through
+--- untouched. That is how a server adds "Docks" without editing a locale file - and it is the
+--- same lesson as `ph.export_c_metal`, which reached a screen unresolved because the key was
+--- sent instead of the sentence.
+local function placeCategories(src)
+    local out, order = {}, {}
+    for _, c in ipairs(Config.PlaceCategories or {}) do
+        local key = tostring(c.key or '')
+        if key ~= '' then
+            local label = tostring(c.label or key)
+            out[key] = {
+                label = label:sub(1, 3) == 'ph.' and LP(src, label) or label,
+                icon = tostring(c.icon or 'map'),
+            }
+            order[#order + 1] = key
+        end
+    end
+    return out, order
+end
+
+--- Everywhere the phone knows about.
+---
+--- **Two sources, merged.** `Config.Places` is the operator's own list and is always read; a
+--- v-world module's rows are added when that resource is running. It used to be v-world or
+--- nothing, which on a server without it drew an empty map with nowhere to put anything - the
+--- app was complete and had no data, and no config option existed to give it any.
 V.Callback('v-phone:places', function(src, resolve)
-    if GetResourceState('v-world') ~= 'started' then resolve({ error = 'off' }) return end
-    local world = V.Use('v-world')
     local out = {}
+    local cats, order = placeCategories(src)
+
+    -- The config's own pins first, in the order the categories were declared, so a server's
+    -- list reads the way its author wrote it rather than alphabetically by accident.
+    local byKind = {}
+    for _, place in ipairs(Config.Places or {}) do
+        if place.enabled ~= false and place.enabled ~= 0 and place.x then
+            local kind = tostring(place.kind or 'other')
+            byKind[kind] = byKind[kind] or {}
+            local label = tostring(place.label or kind)
+            byKind[kind][#byKind[kind] + 1] = {
+                kind = kind,
+                icon = (cats[kind] and cats[kind].icon) or 'map',
+                -- The category's NAME travels, not its key. A page that builds `ph.place_` ..
+                -- kind can only ever draw the categories this resource ships with, and prints
+                -- the raw key for an operator's own.
+                kindLabel = (cats[kind] and cats[kind].label) or kind,
+                label = label:sub(1, 3) == 'ph.' and LP(src, label) or label,
+                x = place.x + 0.0, y = place.y + 0.0, z = (place.z or 0.0) + 0.0,
+            }
+        end
+    end
+    for _, key in ipairs(order) do
+        for _, row in ipairs(byKind[key] or {}) do out[#out + 1] = row end
+        byKind[key] = nil
+    end
+    -- A pin in a category nobody declared still shows, under its own name. Losing it silently
+    -- would mean a typo in `kind` deletes a place from the map with nothing said.
+    for kind, rows in pairs(byKind) do
+        for _, row in ipairs(rows) do out[#out + 1] = row end
+    end
+
+    if GetResourceState('v-world') ~= 'started' then
+        if #out == 0 then resolve({ error = 'off' }) return end
+        resolve({ ok = true, places = out })
+        return
+    end
+
+    local world = V.Use('v-world')
     for _, src2 in ipairs(PLACE_SOURCES) do
         -- Belt and braces alongside the stub's own entries: a third-party v-world, or a
         -- future one that drops a getter, must cost this app its pins and not the whole
@@ -3457,6 +3860,10 @@ V.Callback('v-phone:places', function(src, resolve)
             if r.enabled ~= 0 and r.enabled ~= false and r.x then
                 out[#out + 1] = {
                     kind = src2.key, icon = src2.icon,
+                    -- Its own categories are this resource's, so they have a phrase; a config
+                    -- category with the same key wins, because the operator wrote that one.
+                    kindLabel = (cats[src2.key] and cats[src2.key].label)
+                        or LP(src, 'ph.place_' .. src2.key),
                     label = r.label or r.id or src2.key,
                     x = r.x, y = r.y, z = r.z or 0.0,
                 }
@@ -4097,13 +4504,15 @@ local function speakerSync(id)
     if not st or not c or c.state ~= 'active' then return end
 
     local near = {}
-    for _, holder in ipairs({ c.a, c.b }) do
+    -- Anybody on the call with their phone in their hand puts the room around THEM on it,
+    -- which on a conference is as many rooms as there are people holding a handset.
+    for _, holder in ipairs(callActives(c)) do
         local ped = holder and GetPlayerPed(holder)
         local at = ped and ped ~= 0 and GetEntityCoords(ped) or nil
         if at then
             for _, sid in ipairs(GetPlayers()) do
                 local t = tonumber(sid)
-                if t and t ~= c.a and t ~= c.b then
+                if t and not (c.live and c.live[t]) then
                     local tp = GetPlayerPed(t)
                     if tp and tp ~= 0 and #(GetEntityCoords(tp) - at) <= speakerRange() then
                         near[t] = true
@@ -4187,6 +4596,103 @@ V.Callback('v-phone:call', function(src, resolve, data)
     resolve({ ok = true, id = id })
 end)
 
+--- Add somebody to a call that is already running.
+---
+--- **The audio needs no help.** A call on pma-voice is a channel, and a channel wires every
+--- member to every other member both ways - the third phone simply joins the same one. What
+--- this callback is for is deciding who may be put on it, and every check `startCall` makes is
+--- made again here: an invitation is a call being placed, and it reaches somebody who did not
+--- ask for it.
+---
+--- Client-driven, so nothing in `data` is trusted beyond the number, and the number is looked
+--- up rather than believed.
+V.Callback('v-phone:callAdd', function(src, resolve, data)
+    local cfg = groupCfg()
+    if cfg.enabled == false then resolve({ error = 'nogroup' }) return end
+
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'x' }) return end
+
+    -- It has to be a call this player is actually TALKING on. Being in the roster is not
+    -- enough: somebody whose own phone is still ringing would otherwise be able to invite
+    -- people into a conversation they have not joined.
+    local id = CallOf[src]
+    local c = id and Calls[id]
+    if not c or c.state ~= 'active' then resolve({ error = 'nocall' }) return end
+    if not (c.live and c.live[src] and c.live[src].state == 'active') then
+        resolve({ error = 'nocall' }) return
+    end
+    -- A payphone is one handset bolted to a wall. There is no screen on it to run a
+    -- conference from, and the person at the box is the one who cannot be added to.
+    if c.booth then resolve({ error = 'booth' }) return end
+    if cfg.hostOnly ~= false and c.a ~= src then resolve({ error = 'nothost' }) return end
+    if #callMembers(c) >= groupMax() then resolve({ error = 'callfull' }) return end
+
+    -- One invitation at a time. Without it a tap-through could set every phone in a contact
+    -- list ringing at once, and each of those rings is heard by the room around it.
+    if cfg.oneAtATime ~= false then
+        for _, m in ipairs(callMembers(c)) do
+            if c.live[m].state == 'ringing' then resolve({ error = 'addbusy' }) return end
+        end
+    end
+
+    local toNumber = tostring((data and data.number) or '')
+    if Booth.IsNumber(toNumber) then resolve({ error = 'booth' }) return end
+    local toCid = cidOfNumber(toNumber)
+    if not toCid then resolve({ error = 'nonumber' }) return end
+    if toCid == p.citizenid then resolve({ error = 'self' }) return end
+
+    local target = Online[toNumber]
+    if not target then resolve({ error = 'offline' }) return end
+    if c.live[target] then resolve({ error = 'already' }) return end
+    if CallOf[target] then resolve({ error = 'busy_them' }) return end
+    if not requireItem(target) then resolve({ error = 'unreachable' }) return end
+    if not phoneReachable(target) then resolve({ error = 'unreachable' }) return end
+
+    local tp = Core.GetPlayer(target)
+    if tp and prefsOf(tp).dnd then resolve({ error = 'dnd' }) return end
+
+    -- The number on the invitation is the number of whoever sent it, not the call's caller:
+    -- being rung by the person who actually dialled you is the honest version, and on a
+    -- host-only conference the two are the same anyway.
+    local fromNum = c.live[src].num
+
+    callJoin(c, target, toNumber, 'ringing', true)
+    CallOf[target] = id
+
+    -- "Silence unknown callers", theirs, exactly as an ordinary inbound call honours it.
+    local silent = false
+    if tp and prefsOf(tp).silenceUnknown then
+        local known = MySQL.scalar.await(
+            'SELECT 1 FROM vphone_contacts WHERE citizenid = ? AND number = ? LIMIT 1',
+            { toCid, fromNum })
+        silent = not known
+    end
+    if not silent then ringOut(target, true) end
+
+    TriggerClientEvent('v-phone:client:callIn', target, {
+        id = id, number = fromNum, silent = silent,
+        -- Presented the way the call already is. Somebody added to a FaceTime who saw a plain
+        -- voice call would be on a different call from everybody else.
+        video = c.video == true,
+        -- So the invitation reads as one: "joining a call", with how many are already on it.
+        group = true, members = #callActives(c),
+    })
+    pushRoster(id)
+
+    -- An invitation nobody picks up gives up on its own, and takes only itself with it: the
+    -- conversation the other people are having is not ended by a phone that went unanswered.
+    local ring = math.floor(num(S('ringSeconds', Config.Calls.ringSeconds), 30))
+    SetTimeout(ring * 1000, function()
+        local live = Calls[id]
+        if live ~= c then return end
+        local m = live.live and live.live[target]
+        if m and m.state == 'ringing' then callPartOrEnd(id, target, 'noanswer') end
+    end)
+
+    resolve({ ok = true, number = toNumber })
+end)
+
 -- ── FaceTime live picture relay ────────────────────────────────
 -- One frame from one side of a video call to the other. Everything about it is checked
 -- here, because a relay a client can drive is a relay a client can abuse:
@@ -4218,8 +4724,11 @@ RegisterNetEvent('v-phone:server:faceFrame', function(frame)
     if type(frame) ~= 'string' then return end
     if #frame > math.floor(num(ft.maxFrameKb, 24)) * 1024 then return end
 
-    local other = (c.a == src) and c.b or c.a
-    if other then TriggerClientEvent('v-phone:client:faceFrame', other, frame) end
+    -- To everybody else on the call. The checks above are what make this safe to fan out:
+    -- the sender is in this call, and this call is the only place the frame can reach.
+    for _, other in ipairs(callPeers(c, src)) do
+        TriggerClientEvent('v-phone:client:faceFrame', other, frame)
+    end
 end)
 
 V.Callback('v-phone:answer', function(src, resolve)
@@ -4228,7 +4737,7 @@ end)
 
 V.Callback('v-phone:hangup', function(src, resolve)
     local id = CallOf[src]
-    if id then endCall(id, 'hangup') end
+    if id then callPartOrEnd(id, src, 'hangup') end
     resolve({ ok = true })
 end)
 
@@ -4285,14 +4794,18 @@ RegisterNetEvent('v-phone:call:badline', function(ms)
     local id = CallOf[src]
     local c = id and Calls[id]
     if not c or c.state ~= 'active' then return end
-    local other = (c.a == src) and c.b or ((c.b == src) and c.a or nil)
-    if not other then return end
+    local others = callPeers(c, src)
+    if #others == 0 then return end
 
     LastBadLine[src] = now
     local lo = math.max(60, math.floor(num(cfg.minMs, 250)))
     local hi = math.max(lo, math.floor(num(cfg.maxMs, 900)))
     local hold = math.max(lo, math.min(hi, math.floor(num(ms, lo))))
-    TriggerClientEvent('v-phone:client:peerBadLine', other, src, hold)
+    -- One break, heard by everybody on the call. A cut only some of them hear would be one
+    -- person going quiet for some of the room, which is not what a bad line is.
+    for _, other in ipairs(others) do
+        TriggerClientEvent('v-phone:client:peerBadLine', other, src, hold)
+    end
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -4560,7 +5073,9 @@ AddEventHandler('playerDropped', function()
         if offer.from == src or offer.to == src then AirOffers[offerId] = nil end
     end
     local id = CallOf[src]
-    if id then endCall(id, 'dropped') end
+    -- Somebody losing their connection is somebody hanging up badly. On a conference the
+    -- others keep talking, which is what would happen if they had put the phone down.
+    if id then callPartOrEnd(id, src, 'dropped') end
     for n, s in pairs(Online) do if s == src then Online[n] = nil end end
 end)
 

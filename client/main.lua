@@ -108,6 +108,31 @@ AddStateBagChangeHandler('lang', ('player:%s'):format(GetPlayerServerId(PlayerId
         SendNUIMessage({ action = 'strings', strings = strings(), locale = value })
     end)
 
+--- The operator's palette, for the page to apply.
+---
+--- Only what was actually set: a nil stays nil and the page leaves the stylesheet's own value
+--- alone. Sending the whole table with blanks in it would mean the page having to tell "not
+--- configured" from "configured as empty", which is a distinction nobody needs to make twice.
+function PhoneTheme()
+    local cfg = Config.Theme or {}
+    local out = {}
+    for _, key in ipairs({ 'accent', 'green', 'red', 'orange', 'yellow',
+                           'indigo', 'pink', 'teal', 'purple', 'grey' }) do
+        local value = cfg[key]
+        -- A hex code and nothing else. This ends up inside a CSS custom property, and a colour
+        -- is the only thing that has any business being there - the same check the Alerts app
+        -- makes on its category colours.
+        if type(value) == 'string' and value:match('^#%x%x%x%x?%x?%x?%x?%x?$') then
+            out[key] = value
+        end
+    end
+    return out
+end
+
+RegisterNUICallback('theme', function(_, cb)
+    cb({ ok = true, theme = PhoneTheme(), dark = (Config.Theme or {}).dark })
+end)
+
 --- Can a call carry audio at all?
 ---
 --- **Not `GetResourceState('v-voice')`.** There is no `v-voice` resource - bridge/shared/compat.lua
@@ -140,6 +165,7 @@ local ringSoundId = nil
 local prefsCache = {
     dnd = false, vibrate = true, ringVolume = 0.7, ringtone = 'default',
     notifMuted = {},
+    notifSilent = {},
 }
 local prefsCacheReady = false
 local speakerListens = {}
@@ -197,6 +223,12 @@ local function syncPrefsCache(pf)
     for _, app in ipairs(type(pf.notifMuted) == 'table' and pf.notifMuted or {}) do
         prefsCache.notifMuted[tostring(app)] = true
     end
+    -- The middle level: seen but not heard. A separate list rather than a value per app,
+    -- because that is the shape the prefs already store and the shape the page already sends.
+    prefsCache.notifSilent = {}
+    for _, app in ipairs(type(pf.notifSilent) == 'table' and pf.notifSilent or {}) do
+        prefsCache.notifSilent[tostring(app)] = true
+    end
     prefsCacheReady = true
     if prefsCache.dnd then
         stopRingSound()
@@ -204,12 +236,46 @@ local function syncPrefsCache(pf)
     end
 end
 
-local function notificationMuted(kind, data)
+--- Which app a notification belongs to.
+---
+--- One place, because "which app is this" was being worked out at every call site and the
+--- answer has to be the same for the mute check and the silence check or one of them applies to
+--- the wrong app.
+local function notificationApp(kind, data)
     local app = kind == 'message' and 'messages' or 'dot'
     if kind ~= 'message' and type(data) == 'table' then
         app = tostring(data.app or data.icon or app)
     end
+    return app
+end
+
+--- Apps whose notifications a player may never switch off.
+---
+--- Exactly one, and it is the point of that app: a public alert is unsolicited by definition -
+--- it reaches people who were not looking - so an off switch on it is an off switch on the thing
+--- it exists to do. Everything else on the phone can be silenced or stopped entirely.
+local NEVER_MUTABLE = { alerts = true }
+
+function PhoneNotifiable(app)
+    return NEVER_MUTABLE[tostring(app or '')] ~= true
+end
+
+--- Nothing at all: no banner, no card in the centre, no sound.
+local function notificationMuted(kind, data)
+    local app = notificationApp(kind, data)
+    if not PhoneNotifiable(app) then return false end
     return prefsCache.notifMuted[app] == true
+end
+
+--- Seen but not heard: the banner and the card arrive, the buzz and the tone do not.
+---
+--- The level most people actually want. "Stop notifications" loses the message; this keeps it
+--- and stops it interrupting, which is the difference between an app you mute and an app you
+--- turn off and then miss something important from.
+local function notificationSilent(kind, data)
+    local app = notificationApp(kind, data)
+    if not PhoneNotifiable(app) then return false end
+    return prefsCache.notifSilent[app] == true
 end
 
 -- The peek: the phone is in a pocket, so the top of it rises into view with the
@@ -257,7 +323,8 @@ function PhoneNotify(banner)
     if type(banner) ~= 'table' then return end
     if isOpen then
         SendNUIMessage({ action = 'banner', banner = banner })
-        if not notificationMuted('banner', banner) then buzz(false) end
+        if not notificationMuted('banner', banner)
+            and not notificationSilent('banner', banner) then buzz(false) end
     else
         peek('banner', banner)
     end
@@ -946,7 +1013,7 @@ RegisterNetEvent('v-phone:client:zuber', function(d)
         hasItem = true,
     }
     if isOpen then
-        if not notificationMuted('banner', b) then buzz(false) end
+        if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
     else
         peek('banner', b)
     end
@@ -1364,7 +1431,10 @@ RegisterNUICallback('bankproDeposit',  relay('v-phone:bankpro:deposit'))
 RegisterNUICallback('bankproPay',      relay('v-phone:bankpro:pay'))
 
 RegisterNUICallback('conversation',  relay('v-phone:conversation'))
-RegisterNUICallback('send',          relay('v-phone:send'))
+-- `send` is registered in client/outbox.lua, not here: a message written where there is no
+-- signal is held by the handset and sent when the bars come back, and that wrapper has to
+-- be the one the page reaches. Registering it in both files would leave which one wins
+-- depending on the manifest order.
 RegisterNUICallback('contactSave',   relay('v-phone:contactSave'))
 RegisterNUICallback('contactDelete', relay('v-phone:contactDelete'))
 RegisterNUICallback('groupCreate',   relay('v-phone:groupCreate'))
@@ -1641,7 +1711,7 @@ RegisterNetEvent('v-phone:client:chargeOffer', function(d)
         }
         SendNUIMessage({ action = 'chargeClear' })
         if isOpen then
-            if not notificationMuted('banner', b) then buzz(false) end
+            if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
         else
             peek('banner', b)
         end
@@ -1659,7 +1729,7 @@ RegisterNetEvent('v-phone:client:chargeOffer', function(d)
         }
         SendNUIMessage({ action = 'chargeRefresh' })
         if isOpen then
-            if not notificationMuted('banner', b) then buzz(false) end
+            if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
         else
             peek('banner', b)
         end
@@ -1676,7 +1746,7 @@ RegisterNetEvent('v-phone:client:chargeOffer', function(d)
             hasItem = true,
         }
         if isOpen then
-            if not notificationMuted('banner', b) then buzz(false) end
+            if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
         else
             peek('banner', b)
         end
@@ -1693,7 +1763,7 @@ RegisterNetEvent('v-phone:client:chargeOffer', function(d)
     }
     SendNUIMessage({ action = 'chargeOffer', offer = d, banner = b })
     if isOpen then
-        if not notificationMuted('banner', b) then buzz(false) end
+        if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
     else
         peek('banner', b)
     end
@@ -2479,6 +2549,9 @@ end
 -- `endCallLocal` runs above that point and has to be able to hand a player's voice back: a call
 -- that ended while the line was down must not leave the other person permanently quiet.
 local releaseBadLine = function() end
+-- Declared with it, and for the same reason: the call handlers below are far above the
+-- bad-line block that fills these in, and a name that is not local yet is a global.
+local releaseGonePeers = function() end
 
 -- ── A call on a bad line ───────────────────────────────────────
 -- One bar is not "a bit worse than four" - it is a call that keeps breaking up. While the
@@ -2489,10 +2562,14 @@ local releaseBadLine = function() end
 -- The voice half is the honest half. A glitch drawn on a call you can still hear perfectly
 -- reads as a broken phone rather than as a broken signal, which is the opposite of the point.
 local badLine = false          -- true while a cut-out is in progress
-local peerLevel = nil          -- the volume the far end is held at, or nil for normal
+-- **Per player, not per call.** These were single values, because a call had exactly one far
+-- end. On a conference each person is on their OWN line: holding all of them at the level the
+-- worst one deserves would make somebody standing under a mast sound like the one person in a
+-- tunnel, which is a lie about where both of them are.
+local peerLevel = {}           -- [serverId] = the volume they are held at, or absent for normal
 local peerCuts = {}            -- [serverId] = true while THEIR line is cutting out on our side
 local heldIds = {}             -- [serverId] = true for anyone we have turned down and not restored
-local peerBars = nil           -- how many bars the FAR END has, from the server
+local peerBars = {}            -- [serverId] = how many bars THEY have, from the server
 
 local function badCfg()
     return (Config.Calls or {}).badSignal or {}
@@ -2517,26 +2594,41 @@ local function volumeSupported()
     return type(MumbleSetVolumeOverrideByServerId) == 'function'
 end
 
---- Hold the far end at a level, or let them go.
+--- Everybody on the far end, as server ids. One on an ordinary call, several on a conference.
+---
+--- Falls back to the single `peer` field, which is what `callActive` sends before the roster
+--- arrives and what a two-party call is described by from beginning to end.
+local function farEnds()
+    if not call then return {} end
+    if type(call.peers) == 'table' and #call.peers > 0 then return call.peers end
+    return call.peer and { call.peer } or {}
+end
+
+local function onCallWith(peer)
+    if not (call and call.state == 'active') then return false end
+    for _, id in ipairs(farEnds()) do if id == peer then return true end end
+    return false
+end
+
+--- Hold one player at a level, or let them go.
 ---
 --- Idempotent on purpose: the thread asks for the same level every second while the signal stays
 --- where it is, and re-issuing an identical override each tick is work for no change.
-local function holdPeer(level)
-    local peer = call and call.peer
-    if not peer then peerLevel = nil return false end
+local function holdOne(peer, level)
+    if not peer then return false end
     if level == nil then
-        if peerLevel == nil then return true end
-        peerLevel = nil
+        if peerLevel[peer] == nil then return true end
+        peerLevel[peer] = nil
         heldIds[peer] = nil
         return mumbleVolume(peer, -1.0)
     end
-    if peerLevel == level then return true end
+    if peerLevel[peer] == level then return true end
     -- Recorded only if the write LANDED. Setting it first meant that on a build with no volume
     -- native `peerLevel` read 0.2 while the audio was untouched, so `/phonevoice` reported the
     -- far end as held down when nothing was holding it - the diagnostic somebody runs precisely
     -- because they cannot hear a difference.
     if not mumbleVolume(peer, level) then return false end
-    peerLevel = level
+    peerLevel[peer] = level
     heldIds[peer] = true
     return true
 end
@@ -2561,15 +2653,39 @@ local function releaseVoiceOverrides()
     peerCuts = {}
     -- Whose signal we were told about goes with the call. Keeping it would open the next call
     -- already degraded on behalf of somebody who is no longer on it.
-    peerBars = nil
-    peerLevel = nil
+    peerBars = {}
+    peerLevel = {}
     badLine = false
 end
 
 releaseBadLine = releaseVoiceOverrides
 
---- What the effect is doing, for `/phonevoice`.
-badLineReport = function() return badLine, peerLevel end
+--- Hand back the voices of everybody who has LEFT, while the call carries on.
+---
+--- A conference somebody walks out of is the one case the end-of-call release cannot cover: the
+--- call is still up, so nothing runs, and the override on the person who left is one that will
+--- never be undone - they stay quiet for this listener for the rest of the session. Every roster
+--- change goes through here, and the roster is the only thing that knows somebody has gone.
+releaseGonePeers = function(keep)
+    local live = {}
+    for _, id in ipairs(keep or {}) do live[tonumber(id) or 0] = true end
+    for id in pairs(heldIds) do
+        if not live[id] then
+            mumbleVolume(id, -1.0)
+            heldIds[id], peerLevel[id], peerBars[id] = nil, nil, nil
+        end
+    end
+    for id in pairs(peerCuts) do
+        if not live[id] then mumbleVolume(id, -1.0) peerCuts[id] = nil end
+    end
+end
+
+--- What the effect is doing, for `/phonevoice`. The level on the first far end, which on an
+--- ordinary call is the only one there is.
+badLineReport = function()
+    for _, id in ipairs(farEnds()) do return badLine, peerLevel[id] end
+    return badLine, nil
+end
 
 --- How loud the far end is at this many bars.
 ---
@@ -2608,9 +2724,10 @@ end
 --- end of it is in a tunnel.
 ---
 --- nil means "nothing to hold" - both ends are fine.
-local function lineLevel()
+local function lineLevel(peer)
     local mine = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
-    local theirs = peerBars and math.max(0, math.min(4, math.floor(peerBars))) or nil
+    local bars = peer and peerBars[peer] or nil
+    local theirs = bars and math.max(0, math.min(4, math.floor(bars))) or nil
 
     local threshold = math.floor(tonumber(badCfg().atBars) or 1)
     if threshold <= 0 then return nil end
@@ -2622,6 +2739,27 @@ local function lineLevel()
 
     if a and b then return math.min(a, b) end
     return a or b
+end
+
+--- Every voice on the call at the level its own line deserves.
+---
+--- Anybody mid-cut is skipped: that override is a hard zero with its own timer, and writing the
+--- standing level over it would end their drop-out early.
+---
+--- `force` re-issues the write even when the remembered level matches, which is what the restore
+--- after a cut needs - the volume on the wire is not what `peerLevel` says it is at that moment.
+local function applyHolds(force)
+    for _, peer in ipairs(farEnds()) do
+        if not peerCuts[peer] then
+            if force then peerLevel[peer] = nil end
+            holdOne(peer, lineLevel(peer))
+        end
+    end
+end
+
+--- Hand everybody back their normal volume, without ending anything.
+local function releaseHolds()
+    for _, peer in ipairs(farEnds()) do holdOne(peer, nil) end
 end
 
 --- Drop the line for a moment, and put it back.
@@ -2641,9 +2779,11 @@ local function cutOut(ms)
 
     if cfg.muteVoice ~= false then
         if volumeSupported() then
-            local peer = call and call.peer
-            if peer and mumbleVolume(peer, math.max(0.0, tonumber(cfg.cutVolume) or 0.0)) then
-                heldIds[peer] = true
+            -- Everybody on the call. A break that only silenced one of three voices would not
+            -- be this phone's line failing - it would be one person going quiet.
+            local cut = math.max(0.0, tonumber(cfg.cutVolume) or 0.0)
+            for _, peer in ipairs(farEnds()) do
+                if mumbleVolume(peer, cut) then heldIds[peer] = true end
             end
             -- And our own voice, on their side. They are the only ones who can turn us down.
             TriggerServerEvent('v-phone:call:badline', hold)
@@ -2672,8 +2812,7 @@ local function cutOut(ms)
             -- it is bad at whichever end is worse. Reading only this phone's bars here was the
             -- third place the effect was one-sided, and the easiest to miss - it is the restore
             -- rather than the cut.
-            peerLevel = nil                     -- force the write, whatever it was before
-            holdPeer(lineLevel())
+            applyHolds(true)                    -- force the write, whatever it was before
         else
             joinCallAudio()
         end
@@ -2688,23 +2827,22 @@ end
 --- four bars and sound perfect to everybody else.
 RegisterNetEvent('v-phone:client:peerSignal', function(who, bars)
     local peer = tonumber(who)
-    if not peer then return end
-    if not (call and call.state == 'active' and call.peer == peer) then return end
+    if not peer or not onCallWith(peer) then return end
 
-    peerBars = math.max(0, math.min(4, math.floor(tonumber(bars) or 4)))
+    peerBars[peer] = math.max(0, math.min(4, math.floor(tonumber(bars) or 4)))
 
     -- Applied at once rather than at the next tick: a second of hearing somebody perfectly
     -- after they have walked into a tunnel is a second that reads as the effect being late.
     if badCfg().muteVoice ~= false and not peerCuts[peer] then
-        peerLevel = nil
-        holdPeer(lineLevel())
+        peerLevel[peer] = nil
+        holdOne(peer, lineLevel(peer))
     end
 end)
 
 RegisterNetEvent('v-phone:client:peerBadLine', function(from, ms)
     local peer = tonumber(from)
     if not peer or not volumeSupported() then return end
-    if not (call and call.state == 'active' and call.peer == peer) then return end
+    if not onCallWith(peer) then return end
 
     local cfg = badCfg()
     peerCuts[peer] = true
@@ -2720,14 +2858,14 @@ RegisterNetEvent('v-phone:client:peerBadLine', function(from, ms)
 
     SetTimeout(math.max(60, math.floor(tonumber(ms) or 250)), function()
         peerCuts[peer] = nil
-        if not (call and call.state == 'active' and call.peer == peer) then
+        if not onCallWith(peer) then
             mumbleVolume(peer, -1.0)
             return
         end
         -- Back to what the LINE deserves once their break is over - both ends of it, not just
-        -- this one.
-        peerLevel = nil
-        holdPeer(lineLevel())
+        -- this one. Theirs only: the other people on the call never stopped.
+        peerLevel[peer] = nil
+        holdOne(peer, lineLevel(peer))
     end)
 end)
 
@@ -2749,9 +2887,11 @@ CreateThread(function()
             if cfg.muteVoice == false then
                 -- Switched off mid-session. Anything still held has to be handed back, or the
                 -- setting only takes effect for calls that had not started yet.
-                holdPeer(nil)
-            elseif not peerCuts[call.peer or 0] then
-                holdPeer(lineLevel())
+                releaseHolds()
+            else
+                -- Per person, and anybody mid-cut is left alone inside `applyHolds` rather than
+                -- the whole call being skipped because one of them is.
+                applyHolds(false)
             end
 
             -- No service at all is not a bad line, it is no line - the server ends those.
@@ -2791,6 +2931,21 @@ applyServerCall = function(nextCall, notifyUi)
             number = nextCall.number,
             booth = nextCall.booth == true,
             peer = tonumber(nextCall.peer),
+            -- The whole call, for one that has more than two people on it. Without this a
+            -- `restart v-phone` mid-conference left the phone able to degrade one line out of
+            -- three and drawing a member list it no longer had.
+            peers = (function()
+                local out = {}
+                for _, v in ipairs(nextCall.peers or {}) do
+                    local n = tonumber(v)
+                    if n then out[#out + 1] = n end
+                end
+                if #out == 0 and tonumber(nextCall.peer) then out[1] = tonumber(nextCall.peer) end
+                return out
+            end)(),
+            group = nextCall.group == true,
+            roster = nextCall.members,
+            canAdd = nextCall.canAdd == true,
         }
         if call.state == 'active'
             and (not previous or previous.id ~= call.id or previous.state ~= 'active') then
@@ -2856,6 +3011,11 @@ RegisterNUICallback('hangup', function(_, cb)
     V.Request('v-phone:hangup', function(res) cb(res or { error = 'x' }) end)
 end)
 
+--- Put somebody else on this call. The server decides whether that is allowed.
+RegisterNUICallback('callAdd', function(data, cb)
+    V.Request('v-phone:callAdd', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
 RegisterNetEvent('v-phone:client:callOut', function(data)
     call = { id = data.id, state = 'out', number = data.number, video = data.video == true,
              -- A call placed from a payphone belongs to the box, not to the handset in this
@@ -2871,7 +3031,11 @@ RegisterNetEvent('v-phone:client:callOut', function(data)
 end)
 
 RegisterNetEvent('v-phone:client:callIn', function(data)
-    call = { id = data.id, state = 'in', number = data.number, video = data.video == true }
+    call = { id = data.id, state = 'in', number = data.number, video = data.video == true,
+             -- Being invited onto a call already in progress is not the same as being rung,
+             -- and the screen says so: how many people are already talking is the difference
+             -- between answering a person and joining a room.
+             group = data.group == true, members = tonumber(data.members) or 0 }
     -- "Silence unknown callers" was decided on the server, where the contact list lives. A
     -- silenced call still connects if the player happens to be looking at their phone and
     -- answers it, and still becomes a missed call if they do not - it simply does not ring
@@ -2945,7 +3109,14 @@ RegisterNetEvent('v-phone:client:callActive', function(data)
              video = call and call.video or false, booth = wasBooth,
              -- Who is on the other end, as a server id. The bad-line effect turns THEIR voice
              -- down, and every way of doing that is addressed by id.
-             peer = tonumber(data.peer) }
+             --
+             -- `peers` is the same fact for a call with more than two people on it. The roster
+             -- event that follows fills it in; the single id is kept because it is what the
+             -- two-party paths above and `/phonevoice` read.
+             peer = tonumber(data.peer),
+             peers = { tonumber(data.peer) },
+             group = data.group == true,
+             members = call and call.members or nil }
     stopRinging()
     -- The audio is the same on a payphone: the same v-voice channel, joined the same way.
     -- Only the picture is different.
@@ -2962,6 +3133,33 @@ RegisterNetEvent('v-phone:client:callActive', function(data)
         startFaceFeed()
     end
     SendNUIMessage({ action = 'call', call = call })
+end)
+
+--- Who is on this call, and which server ids are ours to degrade.
+---
+--- It never CREATES a call: a roster for a call this phone is not on would be a stranger's
+--- conversation appearing on screen, so it only ever updates the one already here.
+RegisterNetEvent('v-phone:client:callRoster', function(d)
+    if type(d) ~= 'table' then return end
+    if not (call and call.id == tonumber(d.id)) then return end
+
+    local peers = {}
+    for _, v in ipairs(d.peers or {}) do
+        local n = tonumber(v)
+        if n then peers[#peers + 1] = n end
+    end
+    call.peers = peers
+    -- Kept in step, because it is what the two-party paths and `/phonevoice` read.
+    call.peer = peers[1] or call.peer
+    call.group = d.group == true
+    call.roster = d.members
+    call.canAdd = d.canAdd == true
+
+    -- Anybody who left gets their voice back NOW rather than at the end of the call: the call
+    -- has not ended, so nothing else will ever hand it back.
+    releaseGonePeers(peers)
+
+    SendNUIMessage({ action = 'callRoster', roster = d })
 end)
 
 RegisterNetEvent('v-phone:client:callEnd', function(reason)
@@ -2987,6 +3185,32 @@ RegisterNetEvent('v-phone:client:callEnd', function(reason)
     if reason and reason ~= 'hangup' then V.Notify(L('ph.call_' .. reason), 'info') end
 end)
 
+--- An app is downloading, and how far along it is.
+---
+--- Straight through to the page: the progress ring on the tile and the bar in the store are the
+--- same fact, and the client has nothing to add to it. The server owns the download - it keeps
+--- running with the phone in a pocket, which is why nothing here holds a timer.
+RegisterNetEvent('v-phone:client:download', function(d)
+    if type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'download', download = d })
+
+    -- Finished, and worth a banner: a download that started ten seconds ago is a download
+    -- somebody has already stopped watching.
+    if d.done and not d.failed and PhoneNotify then
+        PhoneNotify({
+            app = 'store', icon = 'store',
+            title = (PhoneString and PhoneString(d.update and 'ph.store_updated_title'
+                                                          or 'ph.store_ready_title')) or '',
+            body = (PhoneString and PhoneString('ph.store_ready')) or '',
+            hasItem = true,
+        })
+    end
+end)
+
+RegisterNUICallback('downloadCancel', function(data, cb)
+    V.Request('v-phone:download:cancel', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
 RegisterNetEvent('v-phone:client:power', function(p)
     local wasLow = power.battery
     power = p or power
@@ -3003,7 +3227,7 @@ RegisterNetEvent('v-phone:client:power', function(p)
                     body = L(key), hasItem = true }
         if isOpen then
             SendNUIMessage({ action = 'banner', banner = b })
-            if not notificationMuted('banner', b) then buzz(false) end
+            if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
         else
             peek('banner', b)
         end
@@ -3065,7 +3289,7 @@ end)
 RegisterNetEvent('v-phone:client:banner', function(b)
     if isOpen then
         SendNUIMessage({ action = 'banner', banner = b })
-        if not notificationMuted('banner', b) then buzz(false) end
+        if not notificationMuted('banner', b) and not notificationSilent('banner', b) then buzz(false) end
     else
         peek('banner', b)
     end

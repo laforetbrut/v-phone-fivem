@@ -961,21 +961,17 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
         { target, p.citizenid })
     if not mutual then resolve({ ok = true, match = false }) return end
 
-    -- The match: the one moment identity crosses, because both sides asked for it. Names
-    -- and numbers travel through v-phone, which owns numbers; each side gets a message
-    -- from the other, so the conversation already exists when they open it.
-    local phone = V.Use('v-phone')
-    local myNumber = phone.GetNumber(p.citizenid)
-    local theirNumber = phone.GetNumber(target)
+    -- The match: a first name, and nothing else.
+    --
+    -- **No phone number, and no SMS.** This used to look each side's number up and text both of
+    -- them, which handed each person the other's number at the moment of matching - the one
+    -- thing Hush is not supposed to do, and it survived the change that took the number out of
+    -- the match LIST because the number left by a different door. The conversation Hush needs
+    -- is its own: `hushChat` addresses by the match and never learns who is on the other end.
     local them = MySQL.single.await('SELECT firstname FROM vphone_characters WHERE citizenid = ?', { target })
 
-    if myNumber and theirNumber then
-        phone.SendMessage(p.citizenid, theirNumber, L(src, 'soc.match_line'))
-        phone.SendMessage(target, myNumber, L(src, 'soc.match_line'))
-    end
     Core.Log('social', ('hush match %s <-> %s'):format(p.citizenid, target), nil, p.citizenid)
-    resolve({ ok = true, match = true, name = them and them.firstname or '?',
-              number = theirNumber, super = super })
+    resolve({ ok = true, match = true, name = them and them.firstname or '?', super = super })
 end)
 
 --- Undo the last pass.

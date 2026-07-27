@@ -1,5 +1,27 @@
 -- v-phone | bridge/client/safety.lua
 --
+-- **First, before anything else: is there a config at all?**
+--
+-- This file is the first client script the manifest loads, which makes it the only place that
+-- can say something useful when `Config` is missing. Every client file indexes it - at load, in
+-- a thread, in a command - so a config that did not load produces eight or nine of these:
+--
+--     SCRIPT ERROR: @v-phone/client/main.lua:546: attempt to index a nil value (global 'Config')
+--
+-- Nine cryptic lines, none of which names the cause. One clear line is worth more than all of
+-- them, and the two causes are worth naming because they are the two that happen: a file edited
+-- while the server was running (a resource installed as a symlink to a working tree is being
+-- read as it is written), and a genuine Lua error inside config.lua that the console printed
+-- further up and nobody scrolled back to.
+if type(Config) ~= 'table' then
+    print('^1[v-phone] Config is nil: config.lua did not load.^7')
+    print('^3[v-phone] Look FURTHER UP this console for the first error - it will name the file '
+        .. 'and the line. If there is none, the resource was restarted while a file was being '
+        .. 'written; restart it again.^7')
+    -- Not stopped, and no default invented. A phone running on a config it made up would behave
+    -- almost right, which is worse to debug than a phone that plainly does not start.
+end
+--
 -- **The nets under the phone.**
 --
 -- Players report being "stuck in the phone": no cursor, no way out, reconnect. Every report is

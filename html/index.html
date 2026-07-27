@@ -130,9 +130,14 @@
 
         <!-- Call -->
         <section class="callui" id="callui">
+          <!-- Put the call away without ending it. The call carries on in the island, which is
+               where a modern iPhone keeps one while you use something else. -->
+          <button class="callmin" id="callmin" type="button" aria-label="Hide call"></button>
           <div class="callav" id="callav"></div>
           <div class="callnum" id="callnum"></div>
           <div class="callstate" id="callstate"></div>
+          <!-- Who else is on it. Empty on an ordinary call, which is most of them. -->
+          <div class="callroster" id="callroster"></div>
           <div class="callpad" id="callpad"></div>
           <div class="callbtns" id="callbtns"></div>
         </section>

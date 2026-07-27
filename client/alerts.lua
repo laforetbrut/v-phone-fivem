@@ -30,6 +30,20 @@
 -- alert is then refused by doc-civilalerte - annoying, and never dangerous, because the refusal is
 -- its own and it is authoritative.
 
+--- A wall clock, on the client.
+---
+--- **The `os` library does not exist here.** It is server-side in this runtime, and reaching for
+--- a time from a client file raises "attempt to index a nil value" - which is exactly what it
+--- did, in two files, until a restart put it in the console.
+---
+--- `GetCloudTimeAsInt` is the client-side equivalent: a unix timestamp from the game itself. The
+--- fallback keeps a number flowing if it ever answers nothing, because every caller here is
+--- stamping a record rather than deciding anything, and a zero beats a crash.
+local function clockNow()
+    local t = GetCloudTimeAsInt and GetCloudTimeAsInt() or 0
+    return math.floor(tonumber(t) or 0)
+end
+
 local function alertsOn()
     return (Config.Alerts or {}).enabled ~= false
 end
@@ -137,7 +151,7 @@ RegisterNUICallback('alertsDoc', function(data, cb)
     if op == 'list' then
         ask('doc-civilalerte:server:getAlerts', nil, function(res)
             if type(res) ~= 'table' then cb({ error = 'nodata' }) return end
-            local now = math.floor(tonumber(res.serverTime) or os.time())
+            local now = math.floor(tonumber(res.serverTime) or clockNow())
             local out = {}
             for _, r in ipairs(res.alerts or {}) do
                 local one = shape(r, now)
@@ -215,7 +229,13 @@ local function raise(alert)
 
     -- The page gets it whether or not it is looking: an open app adds the card without a refetch,
     -- and a closed one has it ready when it opens.
-    SendNUIMessage({ action = 'alert', alert = alert, loud = loud })
+    SendNUIMessage({
+        action = 'alert', alert = alert, loud = loud,
+        -- The strongest form. Off by default: a card that has to be dismissed is right for an
+        -- evacuation and wrong for the fourth wanted notice of the evening, and a screen people
+        -- have to clear is a screen they learn to clear without reading.
+        card = loud and (Config.Alerts or {}).fullScreen == true,
+    })
 
     -- **A warning has to reach somebody who is not looking at their phone.**
     --
@@ -271,7 +291,7 @@ end)
 -- ago by definition, so "is it still standing" has exactly one answer.
 RegisterNetEvent('doc-civilalerte:client:newAlert', function(alert)
     if not docMode() then return end
-    raise(shape(alert, os.time()))
+    raise(shape(alert, clockNow()))
 end)
 
 RegisterNetEvent('doc-civilalerte:client:alertDeleted', function(id)

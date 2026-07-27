@@ -124,11 +124,49 @@ function notifApp(b) { return b.app || b.icon || 'dot'; }
 
 // A player can silence an app from the shade. A muted app still runs; it just does not
 // light the island or land in the centre. The list lives in prefs, so it survives.
+// ══ Notifications, per app ═════════════════════════════════════
+// Three levels rather than two, because "off" and "on" leave out the one most people want:
+//
+//   on      the banner, the card in the centre, and the sound
+//   silent  the banner and the card, no sound and no buzz
+//   off     nothing at all
+//
+// The middle one is the difference between an app you silence and an app you switch off and
+// then miss something important from.
+
+/// Apps whose notifications cannot be switched off or silenced.
+///
+/// Exactly one, and it is the point of that app: a public alert is unsolicited by definition -
+/// it reaches people who were not looking - so an off switch on it is an off switch on the
+/// thing it exists to do. The same list exists on the client, because a page is not where a
+/// rule like this can be enforced.
+const NEVER_MUTABLE = { alerts: true };
+
+function appNotifiable(id) { return NEVER_MUTABLE[id] !== true; }
+
 function appMuted(id) { return ((state.prefs || {}).notifMuted || []).indexOf(id) !== -1; }
-async function setAppMuted(id, on) {
-  const cur = ((state.prefs || {}).notifMuted || []).filter((x) => x !== id);
-  if (on) cur.push(id);
-  const r = await post('prefs', { notifMuted: cur });
+function appSilent(id) { return ((state.prefs || {}).notifSilent || []).indexOf(id) !== -1; }
+
+/// What this app does now: 'on', 'silent' or 'off'.
+function appNotifLevel(id) {
+  if (!appNotifiable(id)) return 'on';
+  if (appMuted(id)) return 'off';
+  if (appSilent(id)) return 'silent';
+  return 'on';
+}
+
+/// Set it, as one call.
+///
+/// Both lists travel together. Sending only the one that changed would leave an app in both -
+/// silenced AND muted - which is not a state the three buttons can represent, so it would be a
+/// setting nobody could get back out of.
+async function setAppNotifLevel(id, level) {
+  if (!appNotifiable(id)) return;
+  const muted = ((state.prefs || {}).notifMuted || []).filter((x) => x !== id);
+  const silent = ((state.prefs || {}).notifSilent || []).filter((x) => x !== id);
+  if (level === 'off') muted.push(id);
+  if (level === 'silent') silent.push(id);
+  const r = await post('prefs', { notifMuted: muted, notifSilent: silent });
   if (r && r.ok) state.prefs = r.prefs;
 }
 let recents = [];       // app ids, most recently opened first
@@ -908,6 +946,30 @@ function unreadTotal() {
   return (state.conversations || []).reduce((n, c) => n + (c.unread || 0), 0);
 }
 
+/// The apps that are the phone, rather than apps on it.
+///
+/// Mirrors `ALWAYS_REQUIRED` on the server plus the alert system, so a badge cannot appear on
+/// one even if the config that should mark it required is edited or fails to reach the page.
+const NEVER_REMOVABLE = {
+  phone: true, settings: true, store: true, emergency: true, alerts: true,
+};
+
+/// Can this app be taken off the phone at all?
+///
+/// The same rule the store enforces, asked here so the badge only appears where it would do
+/// something. A minus sign on the Phone app that answers "you cannot remove this" is worse than
+/// no minus sign: it offers a thing and then refuses it.
+function canRemove(a) {
+  if (!a || a.required) return false;
+  // A floor under the config, not a replacement for it. `required` arriving is what normally
+  // stops the badge; this is here because "the alert system was deletable" is a bug worth
+  // making impossible twice, and because these five are the phone rather than apps on it.
+  if (NEVER_REMOVABLE[a.id]) return false;
+  // `optional` means it was downloaded and can go back. Everything else shipped with the
+  // handset, and removing one quietly breaks a feature the server expects to be there.
+  return a.optional === true;
+}
+
 function tileHTML(a, i) {
   const badge = a.id === 'messages' ? unreadTotal()
     : a.id === 'phone' ? Number(state.vmUnread || 0)
@@ -917,6 +979,15 @@ function tileHTML(a, i) {
     `aria-label="${esc(L(a.label))}">` +
     `<span class="wrap">${appTile(a)}` +
     (badge > 0 ? `<span class="badge">${badge > 99 ? '99+' : badge}</span>` : '') +
+    // The remove badge, drawn always and shown only in edit mode by the stylesheet. Drawn in
+    // the markup rather than added when the jiggle starts, because arrange mode re-renders the
+    // pages on every drop and anything attached afterwards would have to be re-attached each
+    // time - which is how a control ends up missing on the third page.
+    (canRemove(a)
+      ? `<span class="rmbadge" data-rm="${esc(a.id)}" role="button" ` +
+        `aria-label="${esc(L('ph.remove_app').replace('{app}', L(a.label)))}">` +
+        `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12h10"/></svg></span>`
+      : '') +
     `</span><span class="nm">${esc(L(a.label))}</span></button>`;
 }
 
@@ -944,6 +1015,10 @@ function renderHome() {
   // Arrange mode survives a re-render: a drop stays in the jiggle until Done.
   byId('home').classList.toggle('arrange', editing);
   byId('pages').classList.toggle('jiggle', editing);
+  // The badges lose their listeners with every repaint of the pages, so they are re-wired
+  // wherever the jiggle is turned on. Three call sites, because there are three ways into edit
+  // mode - the long press, a drop, and Done being cancelled.
+  if (editing) wireRemoveBadges();
 
   initArrange();
   renderWidgets();
@@ -1451,6 +1526,41 @@ function itemsIndexOfTile(tile) {
   return list.length;
 }
 
+/// The minus badge, wired.
+///
+/// Called after every repaint of the pages, because arrange mode redraws them on each drop and
+/// listeners do not survive `innerHTML`. Cheap: it is one listener per removable tile on the
+/// page in front of the player.
+function wireRemoveBadges() {
+  [...byId('pages').querySelectorAll('.rmbadge')].forEach((b) => {
+    b.addEventListener('pointerdown', (e) => {
+      // **Stopped here, at pointerdown.** The tile underneath starts a drag on this event, and
+      // a drag that begins the moment the badge is touched is a badge you cannot press.
+      e.stopPropagation();
+      e.preventDefault();
+    });
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = b.dataset.rm;
+      const a = (available || []).find((x) => x.id === id)
+        || (state.apps || []).find((x) => x.id === id);
+      if (!a) return;
+      confirmSheet(L('ph.store_delete_ask').replace('{app}', L(a.label)),
+        L('ph.store_delete'), async () => {
+          if (await storeInstall(id, false)) {
+            // Straight back into the jiggle: on a real phone deleting one app leaves you in
+            // edit mode to delete the next, and dropping out after each one would mean
+            // long-pressing again for every single app.
+            editing = true;
+            renderHome();
+            byId('pages').classList.add('jiggle');
+            wireRemoveBadges();
+          }
+        });
+    });
+  });
+}
+
 function paintArrange() {
   // Every tile may have shifted, so the cached geometry is now a lie.
   invalidateDragRects();
@@ -1458,6 +1568,7 @@ function paintArrange() {
   withGap.splice(Math.max(0, Math.min(withGap.length, arr.insert)), 0, { t: 'gap' });
   paintPages(withGap);
   byId('pages').classList.add('jiggle');
+  wireRemoveBadges();
 }
 
 function clearFolder() {
@@ -1523,13 +1634,27 @@ function onDragMove(e) {
   const edge = (p.x < 24 && page > 0) ? -1
     : (p.x > w - 24) ? 1
     : 0;
-  if (edge && !arr.edgeTimer) {
+  //
+  // **One action per visit to the edge.** The timer used to re-arm the instant it fired, and a
+  // finger does not move just because a page appeared under it - so holding at the right edge
+  // made a page, then another, then another, each one sliding the app away again. That is what
+  // "I struggle to drop it on an empty page" is: the page you were aiming at keeps being
+  // replaced by a newer empty one.
+  //
+  // `edgeUsed` latches when an edge action fires and clears only when the pointer comes back
+  // inside. Crossing several pages deliberately still works - you move, you come back to the
+  // edge - but standing still cannot run away with the drag.
+  if (edge && !arr.edgeTimer && !arr.edgeUsed) {
     arr.edgeTimer = setTimeout(() => {
       arr.edgeTimer = null;
+      arr.edgeUsed = true;
       if (edge === 1 && atLast) newPageDuringDrag();
       else flipPage(edge);
     }, 420);
-  } else if (!edge && arr.edgeTimer) { clearTimeout(arr.edgeTimer); arr.edgeTimer = null; }
+  } else if (!edge) {
+    if (arr.edgeTimer) { clearTimeout(arr.edgeTimer); arr.edgeTimer = null; }
+    arr.edgeUsed = false;
+  }
 
   // **Not `page * arrPerPage` any more.**
   //
@@ -1601,6 +1726,10 @@ function onDragEnd(e) {
     const items = layoutItems();
     paintPages(items);
     byId('pages').classList.toggle('jiggle', editing);
+  // The badges lose their listeners with every repaint of the pages, so they are re-wired
+  // wherever the jiggle is turned on. Three call sites, because there are three ways into edit
+  // mode - the long press, a drop, and Done being cancelled.
+  if (editing) wireRemoveBadges();
     // Its index in the restored layout, which is where it was before the drag lifted it out.
     const at = items.findIndex((it) => it && it.t === 'folder' && it.name === a.item.name
       && (it.apps || []).join(',') === (a.item.apps || []).join(','));
@@ -1629,6 +1758,10 @@ function endDrag(cancel) {
   arr = null;
   paintPages(items);
   byId('pages').classList.toggle('jiggle', editing);
+  // The badges lose their listeners with every repaint of the pages, so they are re-wired
+  // wherever the jiggle is turned on. Three call sites, because there are three ways into edit
+  // mode - the long press, a drop, and Done being cancelled.
+  if (editing) wireRemoveBadges();
 }
 
 // Attached once to the stable #pages container, so it survives every re-render.
@@ -2023,12 +2156,51 @@ function setNav(title, backLabel, action, onBack) {
   byId('navbar').classList.remove('collapsed');
 }
 
+/// The three levels, for one app.
+///
+/// A sheet rather than a cycling button: three states behind one tap means tapping twice to get
+/// back to where you were, and no way to see which one you are on without changing it.
+function notifLevelSheet(app) {
+  // The one app that has none. Said out loud rather than the row simply doing nothing, because
+  // a control that ignores you is indistinguishable from one that is broken.
+  if (!appNotifiable(app.id)) {
+    sheet(L(app.label),
+      '<div class="groupfoot">' + esc(L('ph.notif_always_hint')) + '</div>', () => {});
+    return;
+  }
+
+  const now = appNotifLevel(app.id);
+  const row = (key, icon, tint) => UI.row({
+    icon, tint,
+    title: L('ph.notif_level_' + key),
+    subtitle: L('ph.notif_level_' + key + '_hint'),
+    value: now === key ? L('ph.selected') : '',
+    data: { lvl: key },
+  });
+
+  sheet(L(app.label),
+    UI.group([
+      row('on', 'bell', '#FF9500'),
+      row('silent', 'belloff', '#5E5CE6'),
+      row('off', 'belloff', '#8E8E93'),
+    ], { footer: L('ph.notif_level_foot') }),
+    () => {
+      const epoch = sheetEpoch;
+      [...byId('sheet').querySelectorAll('[data-lvl]')].forEach((b) =>
+        b.addEventListener('click', async () => {
+          if (!closeSheet(false, epoch)) return;
+          await setAppNotifLevel(app.id, b.dataset.lvl);
+          toast(L('ph.notif_level_set').replace('{n}', L('ph.notif_level_' + b.dataset.lvl)));
+        }));
+    });
+}
+
 function appActions(app) {
   if (!app || !openApp) return;
   const searchInput = byId('appbody').querySelector(
     'input[type="search"], .search input, .uisearch input, #q'
   );
-  const muted = appMuted(app.id);
+  const level = appNotifLevel(app.id);
   const store = (state.apps || []).find((entry) => entry.id === 'store');
   const actionRows = [];
   if (searchInput) {
@@ -2044,9 +2216,14 @@ function appActions(app) {
       value: (state.prefs || {}).actionApp === app.id ? L('ph.selected') : '',
       data: { tool: 'action' },
     }),
+    // One row that opens the three choices, rather than a switch that only knows two. A
+    // toggle cannot express "seen but not heard", which is the level most people want.
     UI.row({
-      icon: muted ? 'belloff' : 'bell', tint: muted ? '#8E8E93' : '#FF9500',
-      title: muted ? L('ph.enable_notifications') : L('ph.mute_notifications'),
+      icon: level === 'off' ? 'belloff' : 'bell',
+      tint: level === 'on' ? '#FF9500' : '#8E8E93',
+      title: L('ph.notif_settings'),
+      value: L('ph.notif_level_' + level),
+      chevron: appNotifiable(app.id),
       data: { tool: 'notifications' },
     })
   );
@@ -2074,8 +2251,7 @@ function appActions(app) {
             toast(L('ph.action_app_saved'));
           }
         } else if (tool === 'notifications') {
-          await setAppMuted(app.id, !muted);
-          toast(L(muted ? 'ph.notifications_enabled' : 'ph.notifications_muted'));
+          notifLevelSheet(app);
         } else if (tool === 'store' && store) {
           enterApp(store, null);
           storeDetail(app);
@@ -3151,27 +3327,7 @@ function emergencyAlert(a) {
     body: [a.title, a.body].filter(Boolean).join(' - '),
   });
 
-  if (a.fullScreen) {
-    const host = byId('emergency');
-    if (host) {
-      host.innerHTML =
-        '<div class="emergencycard">' +
-          '<div class="emergencyicon">' + svg('warning') + '</div>' +
-          '<div class="emergencykind">' + esc(kind) + '</div>' +
-          '<div class="emergencytitle">' + esc(a.title || '') + '</div>' +
-          (a.body ? '<div class="emergencybody">' + esc(a.body) + '</div>' : '') +
-          UI.button(L('ph.emergency_ack'), 'emok', 'tinted') +
-        '</div>';
-      host.classList.add('on');
-      emergencyOpen = true;
-
-      byId('emok').addEventListener('click', () => {
-        host.classList.remove('on');
-        host.innerHTML = '';
-        emergencyOpen = false;
-      });
-    }
-  }
+  if (a.fullScreen) emergencyCard(kind, a.title, a.body, a.icon);
 
   emergencyKlaxon();
 }
@@ -3183,6 +3339,40 @@ function emergencyAlert(a) {
 /// of. `muted` is the honest variant - a player who was on a call was left out of the channel
 /// on purpose, and telling them a broadcast is happening that they cannot hear is better than
 /// letting them wonder later why everyone else knew.
+/// The operator's palette, applied over the stylesheet's own.
+///
+/// **This is what makes the theme reachable.** The stylesheet now declares every system colour
+/// as a token - it used to write most of them out by hand, a hundred and thirty times - and this
+/// sets those tokens from `Config.Theme`. One line in a config file re-colours the phone;
+/// before, it meant editing a stylesheet inside somebody else's resource, which is a fork rather
+/// than a theme.
+///
+/// Set on the document root, which is where the stylesheet declares these in the first place -
+/// so an operator's value simply wins over the default rather than fighting a more specific
+/// selector. The handset is not the right host: the emergency card and the broadcast strip are
+/// drawn OUTSIDE it, and they would have been left on the stock palette.
+///
+/// Only the keys that were actually configured. An unset colour leaves the stylesheet's own
+/// value exactly as it is.
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (!root || !theme) return;
+  const MAP = {
+    accent: '--app-tint', green: '--ios-green', red: '--ios-red', orange: '--ios-orange',
+    yellow: '--ios-yellow', indigo: '--ios-indigo', pink: '--ios-pink', teal: '--ios-teal',
+    purple: '--ios-purple', grey: '--ios-grey',
+  };
+  Object.keys(MAP).forEach((key) => {
+    const value = theme[key];
+    // Checked here as well as on the client. This string goes straight into a style property,
+    // and the two ends of a bridge each validating is what stops "it was clean when I sent it"
+    // from being the whole defence.
+    if (typeof value === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(value)) {
+      root.style.setProperty(MAP[key], value);
+    }
+  });
+}
+
 function voiceBroadcastStrip(on, muted) {
   const host = byId('vbstrip');
   if (!host) return;
@@ -3191,6 +3381,33 @@ function voiceBroadcastStrip(on, muted) {
     '<span class="vbdot"></span>' +
     '<span class="vbtext">' + esc(L(muted ? 'ph.vb_live_muted' : 'ph.vb_live')) + '</span>';
   host.classList.add('on');
+}
+
+/// The card that takes the whole screen.
+///
+/// Its own function because a public alert borrows it - a flood warning from the authorities is
+/// the same event to somebody holding a phone as a staff broadcast is, and a second card would
+/// be a second thing to keep in tune. The icon is passed in so an alert wears its category's
+/// rather than the generic triangle.
+function emergencyCard(kind, title, bodyText, icon) {
+  const host = byId('emergency');
+  if (!host) return;
+  host.innerHTML =
+    '<div class="emergencycard">' +
+      '<div class="emergencyicon">' + svg(icon || 'warning') + '</div>' +
+      '<div class="emergencykind">' + esc(kind || '') + '</div>' +
+      '<div class="emergencytitle">' + esc(title || '') + '</div>' +
+      (bodyText ? '<div class="emergencybody">' + esc(bodyText) + '</div>' : '') +
+      UI.button(L('ph.emergency_ack'), 'emok', 'tinted') +
+    '</div>';
+  host.classList.add('on');
+  emergencyOpen = true;
+
+  byId('emok').addEventListener('click', () => {
+    host.classList.remove('on');
+    host.innerHTML = '';
+    emergencyOpen = false;
+  });
 }
 
 /// **Louder than anything else, and it ignores the volume preference.**
@@ -3325,6 +3542,16 @@ RENDER.messages = async () => {
   threadGroup = null;
   setNav(L('app.messages'), null, { icon: 'add', onClick: newMessageSheet });
 
+  // What is waiting to go out, asked for rather than waited for. The handset pushes its queue
+  // shortly after the game starts, but a player who opens Messages before that - or after this
+  // page has been reloaded - would draw a thread with the queued texts simply missing from it,
+  // which reads as having lost them.
+  post('outbox', {}).then((r) => {
+    if (!r || !r.ok) return;
+    outbox = farr(r.items);
+    if (openApp && openApp.id === 'messages' && thread !== null) openThread(thread);
+  });
+
   // Re-read before drawing. `state.conversations` is a snapshot taken when the phone was
   // OPENED, so anything that arrived since - a text from another player, a verification code
   // from one of the apps - was simply not in the list. Opening Messages and seeing nothing
@@ -3346,7 +3573,9 @@ RENDER.messages = async () => {
       // nameOfNumber would try to resolve "Bleeter" as a phone number and come back empty.
       const title = c.service ? (c.name || c.number) : nameOfNumber(c.number);
       return UI.row({
-        avatar: title, title, subtitle: c.body,
+        // Flattened for the list: a message written over four lines is still one row here,
+        // and a raw newline in a row subtitle drops the rest of it onto the next line.
+        avatar: title, title, subtitle: String(c.body || '').replace(/\s*\n+\s*/g, ' '),
         badge: c.unread > 0 ? c.unread : null, chevron: true,
         data: { n: c.service ? c.other : c.number },
       });
@@ -3437,6 +3666,50 @@ async function openThread(number, draft) {
   if (c) c.unread = 0;
 }
 
+// ══════════════════════════════════════════════════════════════
+// The outbox: written with no signal, sent when there is some
+// ══════════════════════════════════════════════════════════════
+// The queue itself lives on the handset - see client/outbox.lua - and the page only draws it.
+// What matters up here is that a queued message is drawn as QUEUED and never as sent: a bubble
+// that looks delivered and is not is worse than an error, because the player stops thinking
+// about it.
+
+let outbox = [];      // what is waiting, oldest first, as the client sees it
+
+/// The queued messages belonging to the conversation currently open.
+///
+/// Matched on the same target the composer sends - a number, or a group id - because that is
+/// what the client stored and there is nothing else to match on until the server has seen it.
+function outboxFor() {
+  return outbox.filter((item) => {
+    const p = (item && item.payload) || {};
+    if (threadGroup) return Number(p.group) === Number(threadGroup.id);
+    return !p.group && String(p.number || '') === String(thread || '');
+  });
+}
+
+/// A queued message, drawn under the real ones.
+///
+/// Deliberately the same bubble with a mark on it rather than a different shape: it IS the
+/// message, it just has not left yet, and redesigning it would make the thread read as two
+/// kinds of thing.
+function outboxBubble(item) {
+  const p = (item && item.payload) || {};
+  return '<div class="bub me pending" data-out="' + esc(String(item.id)) + '">' +
+    esc(p.body || '') +
+    '<span class="pendmark" title="' + esc(L('ph.outbox_waiting')) + '">' +
+      svg('clock') + '</span>' +
+  '</div>';
+}
+
+/// Everything queued for this thread, plus the line that explains why.
+function outboxHtml() {
+  const mine = outboxFor();
+  if (!mine.length) return '';
+  return mine.map(outboxBubble).join('') +
+    '<div class="pendnote">' + esc(L('ph.outbox_note')) + '</div>';
+}
+
 function bubbleHtml(m) {
   let inner;
   if (m.kind === 'image') {
@@ -3472,7 +3745,7 @@ function wireLocButtons() {
 }
 
 function paintThread(messages, service) {
-  body(`<div class="thread" id="thread">${messages.map(bubbleHtml).join('')}</div>`);
+  body(`<div class="thread" id="thread">${messages.map(bubbleHtml).join('')}${outboxHtml()}</div>`);
   wireLocButtons();
   rows('.codecopy', (b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -3527,7 +3800,12 @@ function paintThread(messages, service) {
   foot(`<div class="compose">` +
     `<button class="attach" id="attach" type="button" aria-label="${esc(L('ph.attach'))}">+</button>` +
     `<button class="emoji" id="msgemoji" type="button" aria-label="${esc(L('ph.emoji'))}">😊</button>` +
-    UI.field('msg', L('ph.write'), '', 'maxlength="250"') +
+    // **A textarea, not an input.** An `<input>` cannot hold a newline at all - not typed,
+    // not pasted - so a long message was one unbroken paragraph however it was written. It
+    // starts one line high and grows with the text, up to a ceiling, so the thread above it
+    // is not pushed off the screen by somebody writing an essay.
+    '<textarea class="field msgbox" id="msg" rows="1" maxlength="250" ' +
+      'placeholder="' + esc(L('ph.write')) + '" aria-label="' + esc(L('ph.write')) + '"></textarea>' +
     `<button class="sendbtn" id="sendmsg" type="button" aria-label="${esc(L('ph.send'))}">${svg('send')}</button></div>`);
   byId('attach').addEventListener('click', () => attachSheet());
   byId('msgemoji').addEventListener('click', () => emojiOpen('msg'));
@@ -3536,14 +3814,38 @@ function paintThread(messages, service) {
   el.scrollTop = el.scrollHeight;
   byId('appbody').scrollTop = byId('appbody').scrollHeight;
 
+  /// Fit the box to its contents, up to five lines.
+  ///
+  /// Height is reset to `auto` first: a textarea's `scrollHeight` never shrinks below the
+  /// height already set on it, so measuring without clearing it makes the box grow and never
+  /// come back down.
+  const grow = () => {
+    const t = byId('msg');
+    if (!t) return;
+    t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 112) + 'px';
+  };
+
   const target = () => threadGroup ? { group: threadGroup.id } : { number: thread };
   const send = async () => {
     const input = byId('msg');
-    const text = input.value.trim();
+    // Trailing blank lines are not a message. Leading and trailing whitespace goes, and the
+    // breaks somebody put in the middle stay.
+    const text = input.value.replace(/^\s+|\s+$/g, '');
     if (!text) return;
     input.value = '';
+    grow();
     const res = await post('send', Object.assign({ body: text }, target()));
-    if (res && res.ok) {
+    if (res && res.queued) {
+      // Held by the handset until the bars come back. Said out loud rather than drawn as a
+      // sent message, and the bubble carries the mark - somebody who thinks a text went out
+      // and finds out an hour later that it did not is worse served than somebody told now.
+      outbox = outbox.concat([{ id: res.id, payload: Object.assign({ body: text }, target()) }]);
+      el.insertAdjacentHTML('beforeend', outboxBubble({ id: res.id, payload: { body: text } }));
+      ui('error');
+      toast(L('ph.outbox_queued'));
+      byId('appbody').scrollTop = byId('appbody').scrollHeight;
+    } else if (res && res.ok) {
       el.insertAdjacentHTML('beforeend', bubbleHtml({ mine: true, body: res.body, kind: res.kind, attachment: res.attachment }));
       ui('sent');
       byId('appbody').scrollTop = byId('appbody').scrollHeight;
@@ -3601,7 +3903,18 @@ function paintThread(messages, service) {
       });
   };
   byId('sendmsg').addEventListener('click', send);
-  byId('msg').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  // Enter sends and Shift+Enter breaks the line, which is the arrangement every messaging
+  // app has settled on: sending is what you do most, so it gets the bare key.
+  //
+  // `preventDefault` on the send path matters - without it the newline is inserted anyway and
+  // the box is left holding an empty line after the message has gone.
+  byId('msg').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (e.shiftKey) { grow(); return; }
+    e.preventDefault();
+    send();
+  });
+  byId('msg').addEventListener('input', grow);
 }
 
 function newMessageSheet() {
@@ -5490,17 +5803,21 @@ RENDER.maps = async () => {
   const d = await post('places');
   if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'map')); return; }
   const all = d.places || [];
+  // The category NAMES come from the server, resolved for this player. Building `ph.place_` +
+  // kind here could only ever draw the categories this resource ships with, and printed the raw
+  // key for an operator's own - the same way `ph.export_c_metal` reached a screen.
   const kinds = [...new Set(all.map((p) => p.kind))];
+  const kindName = (k) => (all.find((p) => p.kind === k) || {}).kindLabel || L('ph.place_' + k);
   const shown = placeFilter === 'all' ? all : all.filter((p) => p.kind === placeFilter);
 
   body(
     '<div class="seg">' +
       '<button class="' + (placeFilter === 'all' ? 'on' : '') + '" data-k="all">' + esc(L('ph.all')) + '</button>' +
-      kinds.map((k) => '<button class="' + (placeFilter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(L('ph.place_' + k)) + '</button>').join('') +
+      kinds.map((k) => '<button class="' + (placeFilter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(kindName(k)) + '</button>').join('') +
     '</div>' +
     (shown.length
       ? UI.group(shown.map((pl, i) => UI.row({
-          icon: pl.icon, title: pl.label, subtitle: L('ph.place_' + pl.kind),
+          icon: pl.icon, title: pl.label, subtitle: pl.kindLabel || L('ph.place_' + pl.kind),
           chevron: true, data: { i },
         })), { footer: L('ph.maps_hint') })
       : UI.empty(L('ph.no_places'), 'map'))
@@ -7105,11 +7422,16 @@ function renderShade() {
 
   list.innerHTML = order.map((appId) => {
     const a = appOf(appId);
-    const muted = appMuted(appId);
+    const lvl = appNotifLevel(appId);
     const head = '<div class="ngrouphead">' + appTile(a) +
       '<span class="gname">' + esc(L(a.label) || a.id) + '</span>' +
-      (shadeManage ? '<button class="gmute ' + (muted ? 'on' : '') + '" data-mute="' + esc(appId) + '">' +
-        esc(muted ? L('ph.notif_muted') : L('ph.notif_mute_app')) + '</button>' : '') + '</div>';
+      // The same three levels the app's own menu offers, opened from here too: the shade is
+      // where somebody is when an app annoys them, and sending them to the app to silence it
+      // is sending them to the thing they want to stop hearing from.
+      (shadeManage && appNotifiable(appId)
+        ? '<button class="gmute ' + (lvl !== 'on' ? 'on' : '') + '" data-mute="' + esc(appId) + '">' +
+          esc(L('ph.notif_level_' + lvl)) + '</button>'
+        : '') + '</div>';
     const cards = byApp[appId].map((n) =>
       '<div class="ncard" data-nid="' + n.id + '">' +
         '<span class="nic">' + UI.appIcon(n.icon) + '</span>' +
@@ -7133,10 +7455,10 @@ function renderShade() {
     notifs = notifs.filter((n) => String(n.id) !== x.dataset.x);
     paintNotifs(); renderShade();
   }));
-  qrows('shadelist', '.gmute', (b) => b.addEventListener('click', async (e) => {
+  qrows('shadelist', '.gmute', (b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
-    await setAppMuted(b.dataset.mute, !appMuted(b.dataset.mute));
-    renderShade();
+    const a = appOf(b.dataset.mute);
+    if (a) notifLevelSheet(a);
   }));
 }
 
@@ -7395,9 +7717,17 @@ function storeDetail(a) {
     if (app) enterApp(app, null);
   });
   const sg = byId('stget');
-  if (sg) sg.addEventListener('click', () => storeAskPrice(a.id, async () => {
-    if (await storeInstall(a.id, true)) storeDetail(a);
-  }));
+  if (sg) sg.addEventListener('click', () => {
+    // An update is never charged for - what was paid for was the app - so it skips the price
+    // question entirely rather than asking about a sum nobody is going to be charged.
+    if (a.update && isInstalled(a.id)) {
+      storeInstall(a.id, true, true).then((done) => { if (done) storeDetail(a); });
+      return;
+    }
+    storeAskPrice(a.id, async () => {
+      if (await storeInstall(a.id, true)) storeDetail(a);
+    });
+  });
   const sd = byId('stdel');
   // Confirmed, because it takes the icon off the home screen and any data the app kept goes
   // with it on some apps. Reinstalling is free - what was paid for is remembered against the
@@ -7455,18 +7785,30 @@ function storeAskPrice(id, after) {
     after);
 }
 
-async function storeInstall(id, install) {
+async function storeInstall(id, install, isUpdate) {
 
   // The arrangement you already have is yours. Without this the new app landed wherever
   // its slot said, shoving every icon after it along and spilling the last one onto a new
   // page - which is not what installing one app should do to a home screen.
   const before = layoutItems();
 
-  const r = await post('install', { app: id, install });
+  const r = await post('install', { app: id, install, update: isUpdate });
   if (!r || r.error) {
     // A refused purchase says what it costs, which is the one thing worth knowing.
     if (r && r.error === 'nomoney') { toast(L('ph.store_nomoney').replace('{price}', money(r.price))); }
     else { toast(L('ph.err_' + ((r && r.error) || 'x'))); }
+    return false;
+  }
+
+  // **It is fetching, not fetched.** The money is already taken and the app is not here yet -
+  // the server grants it when the download finishes, which is also what keeps it running with
+  // the phone in a pocket. Nothing below should run: there is no new app to fit onto the home
+  // screen until it lands.
+  if (r.downloading) {
+    downloads[id] = 0;
+    // In place: the row grows a bar. Only a row that is not on screen needs the list redrawn.
+    if (openApp && openApp.id === 'store' && !storeBarShow(id)) RENDER.store();
+    toast(L(isUpdate ? 'ph.store_updating' : 'ph.store_downloading'));
     return false;
   }
   // A paid app was just bought: the catalogue's `purchased` flag has moved on.
@@ -7493,21 +7835,95 @@ async function storeInstall(id, install) {
 
 /** What the button on a store listing says. A paid app the player has not bought yet shows
  *  its price instead of "Get", the way a store does. */
+// ══ Downloads ═════════════════════════════════════════════════
+// An app takes time to arrive now - ten seconds on four bars, a minute on one - and the server
+// owns the clock: it keeps running with the phone in a pocket, so this page only ever draws what
+// it is told. `downloads[id]` is a percentage, or undefined for an app that is not being fetched.
+
+let downloads = {};
+
 function storeLabel(a, has) {
   if (a.required) return L('ph.store_required');
+  if (downloads[a.id] !== undefined) return String(downloads[a.id]) + '%';
+  // **An update comes before "Open".** An app that is installed AND out of date is the one case
+  // where the interesting action is not the one you would offer for an installed app.
+  if (a.update) return L('ph.store_update');
   if (has) return L('ph.store_open');
   if (a.price && !a.purchased) return money(a.price);
   return L('ph.store_install');
 }
 
-function storeRow(a) {
+/// How many apps have an update waiting. Drawn on the store's own icon, the way an unread count
+/// is drawn on Messages - it is the same kind of fact.
+function storeUpdateCount() {
+  return (available || []).filter((a) => a.update && isInstalled(a.id)).length;
+}
+
+/// One app in the list.
+///
+/// `underHeading` is true when the section above already names the category. It exists because
+/// the row's second line was ALWAYS the category, so under a heading reading "Social" every row
+/// underneath it read "Social" as well - the same word three times down the screen, on the one
+/// line that could have said something. Under a heading it says what the app is instead; in a
+/// search result, where there is no heading, the category is genuinely the useful thing.
+function storeRow(a, underHeading) {
   const has = isInstalled(a.id);
   const label = storeLabel(a, has);
+  const pct = downloads[a.id];
+  const second = underHeading
+    ? descOf(a)
+    : L('ph.cat_' + (a.category || 'utilities'));
   return '<div class="strowitem" data-app="' + esc(a.id) + '">' + appTile(a) +
     '<div class="stmid"><div class="stt">' + esc(L(a.label)) + '</div>' +
-    '<div class="stc">' + esc(L('ph.cat_' + (a.category || 'utilities'))) + '</div></div>' +
-    '<button class="stget ' + (has || a.required ? 'have' : '') + '" data-act="' +
-      (a.required ? 'none' : (has ? 'open' : 'get')) + '" type="button">' + esc(label) + '</button></div>';
+    '<div class="stc">' + esc(second) + '</div></div>' +
+    '<button class="stget ' + (has || a.required ? 'have' : '') +
+      (pct !== undefined ? ' dling' : '') + '" data-act="' +
+      (pct !== undefined ? 'cancel'
+        : (a.required ? 'none' : (a.update && has ? 'update' : (has ? 'open' : 'get')))) +
+      '" type="button">' + esc(label) + '</button>' +
+    // The bar sits under the row rather than inside the button: a button that is also a progress
+    // indicator is a button nobody is sure is still a button.
+    (pct !== undefined
+      ? '<div class="stbar"><i style="width:' + Math.max(2, Number(pct)) + '%"></i></div>'
+      : '') +
+  '</div>';
+}
+
+/// Grow the progress bar on a row that is already on screen, and return whether it worked.
+///
+/// The list was being rebuilt to show a bar appearing: install an app and the whole store
+/// redrew, which threw away the scroll position and read as the page refreshing rather than as
+/// a download starting. Nothing about the list changes when a download begins - the same apps
+/// are on it, in the same order - so the only thing that should change is the row you tapped.
+///
+/// Returns false when the row is not on screen at all (a filtered list, a search, another view),
+/// which is the one case where the caller genuinely has to redraw.
+function storeBarShow(id) {
+  const host = byId('stbody');
+  const row = host && host.querySelector('.strowitem[data-app="' + id + '"]');
+  if (!row) return false;
+
+  const pct = Math.max(0, Number(downloads[id]) || 0);
+  let bar = row.querySelector('.stbar i');
+  if (!bar) {
+    const wrap = document.createElement('div');
+    wrap.className = 'stbar';
+    wrap.innerHTML = '<i></i>';
+    row.appendChild(wrap);
+    bar = wrap.querySelector('i');
+  }
+  bar.style.width = Math.max(2, pct) + '%';
+
+  // The listener reads `data-act` at click time, so re-pointing the button at cancel here is
+  // enough - it does not need re-wiring, and re-wiring is what a full render was for.
+  const btn = row.querySelector('.stget');
+  if (btn) {
+    btn.classList.add('dling');
+    btn.classList.remove('have');
+    btn.dataset.act = 'cancel';
+    btn.textContent = String(pct) + '%';
+  }
+  return true;
 }
 
 RENDER.store = () => {
@@ -7550,6 +7966,24 @@ RENDER.store = () => {
         if (app) enterApp(app, null);
         return;
       }
+      if (act === 'cancel') {
+        // Stopping a download is not a refund and does not need to be: what was paid for is
+        // remembered against the character, so starting again later costs nothing.
+        const res = await post('downloadCancel', { app: id });
+        if (res && res.ok) {
+          delete downloads[id];
+          toast(L('ph.store_cancelled'));
+          RENDER.store();
+        }
+        return;
+      }
+      if (act === 'update') {
+        // Never charged for. What was paid for was the app.
+        if (await storeInstall(id, true, true)) {
+          paint(byId('q') ? byId('q').value.trim().toLowerCase() : '');
+        }
+        return;
+      }
       storeAskPrice(id, async () => {
         if (await storeInstall(id, true)) {
           paint(byId('q') ? byId('q').value.trim().toLowerCase() : '');
@@ -7586,14 +8020,18 @@ RENDER.store = () => {
     }
 
     if (q || storeCat !== 'all') {
-      html += '<div class="group" style="padding:0 14px">' + list.map(storeRow).join('') + '</div>';
+      // A search result or a filtered list: no heading above it, so the category is the useful
+      // second line. `map(storeRow)` alone would pass the index as `underHeading` - truthy for
+      // every row except the first - which is the classic way this goes wrong quietly.
+      html += '<div class="group" style="padding:0 14px">' +
+        list.map((x) => storeRow(x, false)).join('') + '</div>';
     } else {
       cats.forEach((c) => {
         const inCat = list.filter((a) => (a.category || 'utilities') === c);
         if (!inCat.length) return;
         html += '<div class="stsection">' + esc(L('ph.cat_' + c)) + '</div>' +
           '<div class="group" style="padding:0 14px;margin-bottom:20px">' +
-          inCat.map(storeRow).join('') + '</div>';
+          inCat.map((x) => storeRow(x, true)).join('') + '</div>';
       });
     }
     byId('stbody').innerHTML = html;
@@ -11143,31 +11581,15 @@ function zuberCheckout(d, c) {
   if (!items.length) return;
 
   const food = zuberCartTotal();
-  // What the tier takes off the food. Shown here and recomputed on doc-restaurant's side, which
-  // is the authority - this is a preview of its arithmetic, never a substitute for it.
-  const loyaltyOff = (chosen && points >= chosen.points)
-    ? Math.floor(food * chosen.discount / 100) : 0;
-  // The fee and the tax belong to the CONFIG provider, where this app does the charging itself.
-  // In doc-restaurant mode both are zero, because it charges neither.
-  const ours = zuberChargesUs(d);
-  const fee = (ours && zuberKind === 'delivery') ? (Number(d.fee) || 0) : 0;
-  // The config provider ADDS its tax on top of the food, because it is the one charging.
-  const tax = ours ? Math.floor(food * (Number(d.tax) || 0) / 100) : 0;
-  const total = Math.max(0, food - loyaltyOff) + fee + tax;
-
-  // **doc-restaurant's tax is already INSIDE the price**, so it is shown as a breakdown of the
-  // total rather than added to it. Its own formula, exactly: HT = TTC / (1 + rate), and the tax
-  // is what is left over - the restaurant is paid the HT and the government the difference.
-  //
-  // Adding it instead would repeat the mistake this whole screen was just fixed for: a total the
-  // player is never charged. The rate comes from `Config.Zuber.docTaxRate`, which has to match
-  // doc-restaurant's own `Config.TaxRate` - its config is in its own resource and cannot be read
-  // from here.
-  const docRate = ours ? 0 : Math.max(0, Number(d.docTaxRate) || 0);
-  const ttc = Math.max(0, food - loyaltyOff);
-  const includedTax = docRate > 0 ? (ttc - Math.floor(ttc / (1 + docRate / 100))) : 0;
 
   // ── the loyalty card ──
+  // **Worked out BEFORE the money, because the money depends on it.** The two blocks used to be
+  // the other way round: `loyaltyOff` read `chosen` and `points` twenty-five lines above the
+  // `const` that declares them. `const` is not hoisted the way `var` is - it exists but cannot
+  // be touched until its declaration runs - so opening a basket threw
+  // "Cannot access 'chosen' before initialization" and the checkout never drew at all. Nothing
+  // in here needs the totals, so it simply moves up.
+  //
   // Only when the restaurant runs a scheme AND this customer holds an active card: an empty
   // loyalty block on every order would be furniture.
   const card = c.loyalty;
@@ -11195,6 +11617,30 @@ function zuberCheckout(d, c) {
   }
   const chosen = tiers.find((x) => x.n === zuberTier) || null;
   if (zuberTier && !chosen) zuberTier = 0;        // a tier that stopped being offered
+
+  // What the tier takes off the food. Shown here and recomputed on doc-restaurant's side, which
+  // is the authority - this is a preview of its arithmetic, never a substitute for it.
+  const loyaltyOff = (chosen && points >= chosen.points)
+    ? Math.floor(food * chosen.discount / 100) : 0;
+  // The fee and the tax belong to the CONFIG provider, where this app does the charging itself.
+  // In doc-restaurant mode both are zero, because it charges neither.
+  const ours = zuberChargesUs(d);
+  const fee = (ours && zuberKind === 'delivery') ? (Number(d.fee) || 0) : 0;
+  // The config provider ADDS its tax on top of the food, because it is the one charging.
+  const tax = ours ? Math.floor(food * (Number(d.tax) || 0) / 100) : 0;
+  const total = Math.max(0, food - loyaltyOff) + fee + tax;
+
+  // **doc-restaurant's tax is already INSIDE the price**, so it is shown as a breakdown of the
+  // total rather than added to it. Its own formula, exactly: HT = TTC / (1 + rate), and the tax
+  // is what is left over - the restaurant is paid the HT and the government the difference.
+  //
+  // Adding it instead would repeat the mistake this whole screen was just fixed for: a total the
+  // player is never charged. The rate comes from `Config.Zuber.docTaxRate`, which has to match
+  // doc-restaurant's own `Config.TaxRate` - its config is in its own resource and cannot be read
+  // from here.
+  const docRate = ours ? 0 : Math.max(0, Number(d.docTaxRate) || 0);
+  const ttc = Math.max(0, food - loyaltyOff);
+  const includedTax = docRate > 0 ? (ttc - Math.floor(ttc / (1 + docRate / 100))) : 0;
 
   const rows_ = items.map((key) => {
     const e = zuberCart[key];
@@ -13821,17 +14267,18 @@ function hushMatchSheet(c) {
     '<div class="hushmatch">' +
       '<div class="hmtitle">' + esc(L('ph.hush_match_line').replace('{name}', c.name || '?')) + '</div>' +
       (c.super ? '<div class="hmsuper">' + svg('star') + esc(L('ph.hush_super_sent')) + '</div>' : '') +
-      (c.number ? '<div class="hmnum">' + esc(maskNum(c.number)) + '</div>' : '') +
     '</div>' +
-    (c.number ? UI.button(L('ph.hush_say_hi'), 'hmsay', 'tinted') : '') +
+    // **No number, and no SMS.** Both of these were behind `c.number`, which the server stopped
+    // sending - so "Say hi" had quietly disappeared and the only thing a match offered was to
+    // carry on swiping. It goes to Hush's own conversation now, which is where the number does
+    // not have to be known for two people to talk.
+    UI.button(L('ph.hush_say_hi'), 'hmsay', 'tinted') +
     UI.button(L('ph.hush_keep_swiping'), 'hmnext', 'plain'),
     () => {
       const epoch2 = sheetEpoch;
-      if (byId('hmsay')) byId('hmsay').addEventListener('click', () => {
+      byId('hmsay').addEventListener('click', () => {
         if (!closeSheet(false, epoch2)) return;
-        // Straight into the conversation the match already created on both phones.
-        const app = (state.apps || []).find((x) => x.id === 'messages');
-        messageTo(c.number);
+        hushMatches();
       });
       byId('hmnext').addEventListener('click', () => {
         if (!closeSheet(false, epoch2)) return;
@@ -14755,6 +15202,86 @@ function paintNotifs() {
 // ══ Calls ══════════════════════════════════════════════════════
 let callSpeaker = false;
 
+/// The call screen is put away, but the call is still up.
+///
+/// A call used to own the whole handset: `renderCall` drew the full-screen sheet for as long as
+/// there was a call, so answering one meant losing the phone until it ended - no messages, no
+/// maps, no looking a number up while talking to somebody. That is not what a phone does. The
+/// call moves to the island and everything else is reachable again; the island brings it back.
+///
+/// Only an ACTIVE call can be put away. A ringing one is a question that has to be answered.
+let callHidden = false;
+
+// Who is on the call, as the server last described it: `{ members, peers, group, canAdd }`.
+// Null on a call with nobody on it yet - an outgoing call that has not been picked up has no
+// roster, because there is nothing to be a member of.
+let callRoster = null;
+
+/// The people on the call other than the person holding this phone.
+function rosterOthers() {
+  return ((callRoster || {}).members || []).filter((m) => !m.me);
+}
+
+/// True once there are more people on this call than the two it was placed between.
+function isConference() {
+  return ((callRoster || {}).members || []).length > 2;
+}
+
+/// One line in the member list.
+///
+/// A member whose phone is still ringing is shown, greyed, rather than left out until they
+/// answer: an invitation that appears to have done nothing is one somebody sends twice.
+function rosterRow(m) {
+  const name = m.me ? L('ph.you') : (m.number ? nameOfNumber(m.number) : L('ph.unknown'));
+  return '<div class="crow' + (m.state === 'ringing' ? ' ringing' : '') + '">' +
+    '<span class="cav">' + esc(name.slice(0, 1).toUpperCase()) + '</span>' +
+    '<span class="cname">' + esc(name) + '</span>' +
+    (m.host ? '<span class="chost">' + esc(L('ph.call_host')) + '</span>' : '') +
+    '<span class="cstate">' + esc(m.state === 'ringing' ? L('ph.calling') : '') + '</span>' +
+    '</div>';
+}
+
+/// Put somebody else on this call.
+///
+/// The contact book first and a number field underneath, the same way the message composer and
+/// the bank transfer do it: the person you want on the call is almost always already in your
+/// contacts, and reading a number off one screen to type it into another is the small daily
+/// annoyance a phone exists to remove.
+function callAddSheet() {
+  const on = new Set(((callRoster || {}).members || []).map((m) => String(m.number)));
+  const picks = (state.contacts || []).filter((c) => c && c.number && !on.has(String(c.number)));
+
+  const add = async (number) => {
+    if (!number) return;
+    const r = await post('callAdd', { number });
+    if (!r || r.error) { ui('error'); toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    toast(L('ph.call_adding').replace('{n}', nameOfNumber(number)));
+  };
+
+  sheet(L('ph.call_add'),
+    UI.field('canum', L('ph.number')) + UI.button(L('ph.call_add_go'), 'cago') +
+    (picks.length
+      ? UI.group(picks.map((c) => UI.row({
+          avatar: c.name, title: c.name, subtitle: maskNum(c.number),
+          chevron: true, data: { n: c.number },
+        })), { header: L('app.contacts') })
+      : '<div class="groupfoot">' + esc(L('ph.no_contacts')) + '</div>'),
+    () => {
+      const epoch = sheetEpoch;
+      byId('cago').addEventListener('click', () => {
+        const n = byId('canum').value.trim();
+        if (!closeSheet(false, epoch)) return;
+        add(n);
+      });
+      [...byId('sheet').querySelectorAll('.row[data-n]')].forEach((r) =>
+        r.addEventListener('click', () => {
+          const n = r.dataset.n;
+          if (!closeSheet(false, epoch)) return;
+          add(n);
+        }));
+    });
+}
+
 function fmtDuration(s) {
   const m = Math.floor(s / 60), r = s % 60;
   return `${m}:${String(r).padStart(2, '0')}`;
@@ -14766,20 +15293,47 @@ function renderCall() {
   if (call && call.state === 'in') playRingtone(); else stopRingtone();
   if (!call) {
     ui.classList.remove('on');
+    byId('screen').classList.remove('callaside');
     setIslandMode(null);
     clearInterval(callTimer); callTimer = null;
     return;
   }
-  ui.classList.add('on');
+  // Put away: the island keeps the call and the screen belongs to the phone again. The timer
+  // below still runs, because the island shows it.
+  const hidden = callHidden && call.state === 'active';
+  ui.classList.toggle('on', !hidden);
+  // **The island is 84px tall and the navigation bar starts at 54.** A parked call therefore
+  // sat squarely on top of an app's back button - `elementFromPoint` at the middle of "Home"
+  // returned the island - so the one thing somebody needs after taking a call into an app was
+  // the one thing they could not press. The screen is marked and the chrome moves down.
+  byId('screen').classList.toggle('callaside', hidden);
   // FaceTime: a real voice call presented as a video call. FiveM cannot stream a live
   // face, so the layout is the difference, not a video feed - honest, and it reads right.
   ui.classList.toggle('facetime', !!call.video);
-  const name = call.number ? nameOfNumber(call.number) : L('ph.unknown');
-  byId('callav').textContent = name.slice(0, 1).toUpperCase();
+  const conference = isConference();
+  const others = rosterOthers();
+  const one = call.number ? nameOfNumber(call.number) : L('ph.unknown');
+  // On a conference the header stops being one person. Showing the first name and hiding the
+  // rest would be a call screen that says who you rang rather than who you are talking to.
+  const name = conference ? L('ph.call_group') : one;
+  ui.classList.toggle('conference', conference);
+
+  byId('callav').textContent = (conference ? String(others.length + 1) : name.slice(0, 1).toUpperCase());
   byId('callnum').textContent = name;
   byId('callstate').textContent = call.video
     ? L('ph.facetime_video')
-    : (call.state === 'in' ? L('ph.incoming') : call.state === 'out' ? L('ph.calling') : '');
+    // Being invited onto a call already in progress is not the same as being rung by somebody.
+    : (call.state === 'in'
+        ? (call.group ? L('ph.call_join_ask').replace('{n}', String(call.members || 1))
+                      : L('ph.incoming'))
+        : call.state === 'out' ? L('ph.calling') : '');
+
+  // The list, once there is more than one person on the other end. It carries the ones still
+  // ringing too, greyed: an invitation that appears to have done nothing is one somebody sends
+  // a second time.
+  byId('callroster').innerHTML = (conference || others.some((m) => m.state === 'ringing'))
+    ? ((callRoster || {}).members || []).map(rosterRow).join('')
+    : '';
 
   // Live activity in the island, which is what a modern iPhone does with a call.
   setIslandMode('live');
@@ -14802,9 +15356,16 @@ function renderCall() {
       }, 1000);
     }
     byId('callpad').innerHTML =
-      `<div class="cpad ${callSpeaker ? 'on' : ''}" data-a="speaker"><span>${svg('speaker')}</span><em>${esc(L('ph.speaker'))}</em></div>`;
+      `<div class="cpad ${callSpeaker ? 'on' : ''}" data-a="speaker"><span>${svg('speaker')}</span><em>${esc(L('ph.speaker'))}</em></div>` +
+      // Drawn only when the server has said this member may use it. It knows the ceiling and
+      // whether the operator made conferences host-only; a button that always fails is worse
+      // than no button at all.
+      ((callRoster || {}).canAdd
+        ? `<div class="cpad" data-a="add"><span>${svg('add')}</span><em>${esc(L('ph.call_add'))}</em></div>`
+        : '');
     [...byId('callpad').querySelectorAll('.cpad')].forEach((p) => p.addEventListener('click', () => {
       // The only exposed audio control is backed by the real proximity speaker bridge.
+      if (p.dataset.a === 'add') { callAddSheet(); return; }
       if (p.dataset.a === 'speaker') {
         // A real speaker: the server works out who is close enough to hear it.
         callSpeaker = !callSpeaker;
@@ -14819,6 +15380,13 @@ function renderCall() {
   } else {
     byId('callpad').innerHTML = '';
   }
+
+  // Drawn only once the call is up: there is nothing to go back to while it is still ringing,
+  // and a button that hides an unanswered call is a button that loses it.
+  const min = byId('callmin');
+  min.style.display = call.state === 'active' ? 'flex' : 'none';
+  min.innerHTML = svg('chevron');
+  min.onclick = () => { callHidden = true; renderCall(); };
 
   byId('callbtns').innerHTML =
     (call.state === 'in' ? `<button class="cbtn ok" id="cans" type="button" aria-label="${esc(L('ph.answer'))}">${svg('answer')}</button>` : '') +
@@ -15365,6 +15933,16 @@ async function refresh() {
 }
 
 // ══ Wiring ═════════════════════════════════════════════════════
+
+// The operator's palette, once, as early as the page can ask for it.
+//
+// Before the phone is ever shown: a handset that appears in the stock blue and then re-tints a
+// moment later is worse than one that takes a fraction longer to appear. It is one request and
+// it is not awaited by anything - nothing else on this page depends on the colour.
+post('theme', {}).then((r) => {
+  if (r && r.ok) applyTheme(r.theme);
+});
+
 byId('lock').addEventListener('click', unlock);
 // The home indicator answers to a tap AND a swipe up, the way an iPhone does. It used to
 // be a bare click, which missed when the bar is thin and a gesture started a few pixels
@@ -15472,7 +16050,11 @@ byId('spill').addEventListener('click', () => {
       requestAnimationFrame(() => byId('appq').focus());
     }, 'spotlight');
 });
-byId('island').addEventListener('click', () => { if (call) renderCall(); });
+byId('island').addEventListener('click', () => {
+  if (!call) return;
+  callHidden = false;      // tapping the live activity is asking for the call back
+  renderCall();
+});
 // The status bar takes pointer events so a drag can START on it, but a tap does
 // nothing on purpose: the shade and the control centre are pull-downs, and a click
 // that also opened them made every stray tap up there flash a panel.
@@ -15723,9 +16305,21 @@ window.addEventListener('message', (e) => {
     byId('device').classList.add('hidden');
   } else if (d.action === 'call') {
     const was = call && call.state;
+    const wasId = call && call.id;
     call = d.call || null;
     if (!call || call.state !== 'active') { clearInterval(callTimer); callTimer = null; }
     if (call && call.state !== was) { callSpeaker = false; }
+    // A different call is a different question: it arrives on screen rather than inheriting
+    // the last one's dismissal. Ending one clears it too, or the next would open put away.
+    if (!call || call.id !== wasId) callHidden = false;
+    // The roster belongs to ONE call. Carried across a new one it would draw the last
+    // conversation's members over this one until the server got round to correcting it.
+    if (!call || call.id !== wasId) callRoster = null;
+    renderCall();
+  } else if (d.action === 'callRoster') {
+    // Who is on the call, from the server, whenever that changes. Only ever for the call this
+    // page is showing - the client checks the id before it forwards it.
+    callRoster = d.roster || null;
     renderCall();
   } else if (d.action === 'message') {
     const m = d.message || {};
@@ -15901,6 +16495,81 @@ window.addEventListener('message', (e) => {
     // The other side unsent it. Reopening the thread is how the screen agrees with the server,
     // and it only happens when this conversation is the one on screen.
     if (openApp && openApp.id === 'messages' && thread) openThread(thread);
+  } else if (d.action === 'download') {
+    // The server's own clock, ticking once a second. The page never counts anything itself:
+    // a download survives the phone being pocketed, and a local timer would not.
+    const dl = d.download || {};
+    if (dl.cancelled || dl.done) {
+      delete downloads[dl.app];
+      if (dl.done && !dl.failed) {
+        // It landed. The catalogue and the home screen both have to catch up - the app exists
+        // now, and it has a version it did not have a moment ago.
+        refresh().then(() => {
+          available = state.available || available;
+          renderHome();
+          if (openApp && openApp.id === 'store') RENDER.store();
+        });
+        ui('success');
+      } else if (openApp && openApp.id === 'store') {
+        RENDER.store();
+      }
+    } else {
+      downloads[dl.app] = Number(dl.progress) || 0;
+      // **The bar moves; the page does not.**
+      //
+      // This called `RENDER.store()` once a second, which rebuilt every row, every tile and
+      // every button in the list to move one bar three pixels - the whole store flickering
+      // through a scroll position once a second. A progress bar is the one thing on a screen
+      // that is guaranteed to change constantly, so it is the last thing that should be drawn
+      // by redrawing everything around it.
+      //
+      // Two elements are touched: the bar's width and the percentage on the button. The
+      // transition in the stylesheet does the rest, so it glides rather than steps.
+      // No bar yet on the first tick, so this both creates and moves it - and either way it
+      // touches two elements rather than rebuilding the list around them.
+      // The store's own markup is left in the app body after it is closed, so the in-place path
+      // is taken ONLY while the store is the app on screen - otherwise it would find a stale row,
+      // report success, and the home screen would never learn a download was running.
+      if (openApp && openApp.id === 'store') {
+        if (!storeBarShow(dl.app)) RENDER.store();
+      } else {
+        renderHome();
+      }
+    }
+  } else if (d.action === 'outbox') {
+    // The whole queue, as the handset holds it. A list rather than a diff: it is a handful of
+    // items, and a list the page simply draws cannot drift out of step with the one that owns it.
+    outbox = farr(d.items);
+    if (openApp && openApp.id === 'messages' && thread !== null) openThread(thread);
+  } else if (d.action === 'outboxSent') {
+    // It finally went. The queued bubble is replaced by the real one, using the SERVER's copy
+    // of the message rather than the text this page happened to still be holding.
+    outbox = outbox.filter((x) => Number(x.id) !== Number(d.id));
+    const el = byId('thread');
+    const pending = el && el.querySelector('[data-out="' + String(d.id) + '"]');
+    if (pending && d.message) {
+      pending.outerHTML = bubbleHtml({
+        mine: true, body: d.message.body, kind: d.message.kind,
+        attachment: d.message.attachment,
+      });
+      ui('sent');
+    } else if (openApp && openApp.id === 'messages') {
+      // Re-checked AFTER the await, not only before it: `refresh` is a round trip, and a player
+      // can leave Messages while it is in flight. Redrawing a thread onto whatever app they
+      // opened instead is the same class of bug as painting a late answer over a newer one.
+      refresh().then(() => {
+        if (openApp && openApp.id === 'messages' && thread !== null) openThread(thread);
+      });
+    }
+  } else if (d.action === 'outboxFailed') {
+    // Given up on. The bubble goes rather than sitting there for ever looking hopeful, and the
+    // toast says which refusal it was - a number that does not exist never will.
+    outbox = outbox.filter((x) => Number(x.id) !== Number(d.id));
+    const el = byId('thread');
+    const pending = el && el.querySelector('[data-out="' + String(d.id) + '"]');
+    if (pending) pending.remove();
+    ui('error');
+    toast(L('ph.err_' + (d.error || 'x')));
   } else if (d.action === 'exportBoard') {
     // The poll found a new price and this phone has the app open. See `Watching` in
     // server/export.lua: nothing is pushed to anybody who is not looking.
@@ -15933,6 +16602,13 @@ window.addEventListener('message', (e) => {
     // broadcast does - so it borrows the same klaxon rather than a quieter imitation of it.
     // Which categories are loud is the operator's decision: see Config.Alerts.ring.
     if (d.loud) emergencyKlaxon();
+    // The strongest form, for the categories an operator marked as such: the same card the staff
+    // broadcast draws, wearing the alert's own category name and icon. A flood warning nobody
+    // notices is a flood warning that did not happen.
+    if (d.loud && d.card) {
+      const cat = alertCat((d.alert || {}).category);
+      emergencyCard(cat.label, (d.alert || {}).title, (d.alert || {}).message, cat.icon);
+    }
     alertsArrived(d.alert);
   } else if (d.action === 'alertGone') {
     // Withdrawn by its author or by staff, everywhere at once.

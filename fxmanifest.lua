@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.4.6'
+version '1.5.0'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -82,6 +82,13 @@ client_scripts {
     -- The Export app's page routes and its price banner. doc-shops is read on the SERVER,
     -- so unlike the others there is no bridging here.
     'client/export.lua',
+    -- Messages written where there is no signal, held by the handset until the bars come
+    -- back. Registers `send`, so it must load AFTER client/main.lua - which no longer
+    -- registers it - and the outbox is what the page reaches.
+    'client/outbox.lua',
+    -- `/phonedebug doctor`: reads the resource's own shipped files at runtime and checks
+    -- that every seam between the config, the server, the client and the page joins up.
+    'client/doctor.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
@@ -153,7 +160,13 @@ server_scripts {
     'server/repair.lua',
     -- Export: the market board, watched on a timer so a price alert can fire while the app
     -- is closed. doc-shops publishes GetMarketData as a SERVER export, which is why it is here.
+    -- An app takes time to download, and a weak signal makes it take longer. Server-driven
+    -- so it keeps running with the phone in a pocket and a client cannot skip it.
+    'server/downloads.lua',
     'server/export.lua',
+    -- The half of the doctor only the server can answer: which callbacks really
+    -- registered, and what the app registry actually charges.
+    'server/doctor.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',
