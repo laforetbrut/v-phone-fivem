@@ -31,6 +31,24 @@ is not finished.
 - **Never** commit `test-procedures/`, `.claude/`, `CLAUDE.md`, or `preview/` — all gitignored.
 - Releases are cut by the maintainer. A contributor never bumps the version.
 
+**Release titles.** One shape, no exceptions:
+
+```
+vX.Y.Z — Short subtitle
+```
+
+An em dash, and a subtitle that names the release's headline change in a handful of words -
+taken from the first bullet of that version's `CHANGELOG.md` entry, shortened by hand. Four
+conventions had accumulated before this was written down (`v-phone 1.2.4`, a bare `v1.4.0`,
+`v1.4.3 - lowercase` and `v1.5.0 — Em dash`), which is what a rule that lives in somebody's
+head looks like after forty releases.
+
+- The tag is `vX.Y.Z`. The title repeats it, because a title reading only "Group calls" tells
+  nobody which version they are looking at.
+- No release ships without a subtitle. A version worth cutting is a version with something to
+  say about it.
+- Release notes are the version's `CHANGELOG.md` entry, verbatim, without its heading.
+
 ## 3. Code Conventions
 
 **Language.** All code, comments, variable names, log lines and console output in **English**.
