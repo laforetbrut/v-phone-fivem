@@ -243,6 +243,31 @@ local function peek(kind, data)
     buzz(false)
 end
 
+--- One phone notification, raised from another client file.
+---
+--- `peek`, `isOpen`, `buzz` and `notificationMuted` are file-level locals in here, which is
+--- right - the mute preferences and the pocket state have one owner. But client/taxi.lua listens
+--- for events a third-party resource broadcasts, and a notification it cannot raise is a
+--- notification that does not happen: that is exactly why a taxi booked through doc-taxijob
+--- reached every driver's queue and no driver's phone.
+---
+--- Behaves like every other notification in here: a peek when the phone is pocketed, a banner
+--- and a buzz when it is open, and both silent when the app is muted or DND is on.
+function PhoneNotify(banner)
+    if type(banner) ~= 'table' then return end
+    if isOpen then
+        SendNUIMessage({ action = 'banner', banner = banner })
+        if not notificationMuted('banner', banner) then buzz(false) end
+    else
+        peek('banner', banner)
+    end
+end
+
+--- The locale table, for a client file that needs a phrase and has no strings() of its own.
+function PhoneString(key)
+    return L(key)
+end
+
 -- ══════════════════════════════════════════════════════════════
 -- In hand: a prop and an animation, while you keep walking and driving
 -- ══════════════════════════════════════════════════════════════
@@ -987,6 +1012,13 @@ RegisterCommand('phonediag', function()
     end)
 end, false)
 
+-- Assigned in the bad-line section far below, which is where `badLine` and the levels live.
+-- Forward-declared here because `/phonevoice` is written above that point: reading `badLine`
+-- directly from up here would read a nil GLOBAL and print "nil" for a state that is a boolean -
+-- a diagnostic that lies is worse than one that is missing, since this is the command somebody
+-- runs precisely because they cannot tell what the effect is doing.
+local badLineReport = function() return nil, nil end
+
 --- `/phonevoice` - can this server carry a call at all, and can a speaker be heard?
 ---
 --- "Nobody hears anybody" and "the other end cannot hear the people next to me" are the same
@@ -1027,6 +1059,28 @@ RegisterCommand('phonevoice', function()
     if not voice() then
         print('  -> no voice script is running, so the line can only glitch visually.')
     end
+
+    -- Which of the two audio routes is live, and what it is doing right now. The whole reason
+    -- "the effect does nothing" was hard to pin down is that the answer was never on screen.
+    local native = type(MumbleSetVolumeOverrideByServerId) == 'function'
+    print(('  volume override native  %s'):format(native and 'yes - per-player volume, instant'
+        or 'NO - falling back to leaving the call channel'))
+    local levels = bad.volumeAtBars
+    if type(levels) == 'table' then
+        local level = tonumber(levels[bars])
+        print(('  level at %d bar(s)       %s'):format(bars,
+            level and (tostring(level) .. ' of normal volume') or 'not set - full volume'))
+    else
+        print('  level per bar           not configured: badSignal.volumeAtBars is missing, so')
+        print('                          the line drops out but is never muffled between drops.')
+    end
+    print(('  far end                 %s'):format(
+        (call and call.peer) and ('player ' .. tostring(call.peer))
+        or 'not on a call, so nothing to turn down'))
+    local cutting, held = badLineReport()
+    print(('  cutting out right now   %s'):format(tostring(cutting)))
+    print(('  far end held at         %s'):format(held and tostring(held) or 'normal volume'))
+
 end, false)
 
 -- And a server nudge, so an admin can un-stick a player's phone remotely. Quiet: a reset the
@@ -2271,6 +2325,11 @@ local function leaveCallAudio()
     if voice() then exports['v-voice']:PhoneCallEnd(call and call.id) end
 end
 
+-- Assigned below, next to the bad-line effect that owns the overrides. Declared here because
+-- `endCallLocal` runs above that point and has to be able to hand a player's voice back: a call
+-- that ended while the line was down must not leave the other person permanently quiet.
+local releaseBadLine = function() end
+
 -- ── A call on a bad line ───────────────────────────────────────
 -- One bar is not "a bit worse than four" - it is a call that keeps breaking up. While the
 -- signal is at or below `Config.Calls.badSignal.atBars`, the line cuts out at random: the
@@ -2280,26 +2339,142 @@ end
 -- The voice half is the honest half. A glitch drawn on a call you can still hear perfectly
 -- reads as a broken phone rather than as a broken signal, which is the opposite of the point.
 local badLine = false          -- true while a cut-out is in progress
+local peerLevel = nil          -- the volume the far end is held at, or nil for normal
+local peerCuts = {}            -- [serverId] = true while THEIR line is cutting out on our side
+local heldIds = {}             -- [serverId] = true for anyone we have turned down and not restored
 
 local function badCfg()
     return (Config.Calls or {}).badSignal or {}
 end
 
+--- Turn one player's voice down, for us only.
+---
+--- `MumbleSetVolumeOverrideByServerId` is the CFX native the voice layer itself is built on: it
+--- multiplies what we hear from one player, takes effect on the next audio frame, and needs no
+--- round trip to anybody. `-1.0` gives the player back their normal volume.
+---
+--- Guarded rather than called outright. It is a client native that has to exist on the build the
+--- player is running, and an unguarded call to a missing global is an error inside the effect -
+--- which would take the whole bad-line thread with it and leave the phone with no signal handling
+--- at all. A build without it degrades to the channel route below.
+local function mumbleVolume(serverId, volume)
+    if type(MumbleSetVolumeOverrideByServerId) ~= 'function' then return false end
+    return pcall(MumbleSetVolumeOverrideByServerId, serverId, volume + 0.0)
+end
+
+local function volumeSupported()
+    return type(MumbleSetVolumeOverrideByServerId) == 'function'
+end
+
+--- Hold the far end at a level, or let them go.
+---
+--- Idempotent on purpose: the thread asks for the same level every second while the signal stays
+--- where it is, and re-issuing an identical override each tick is work for no change.
+local function holdPeer(level)
+    local peer = call and call.peer
+    if not peer then peerLevel = nil return false end
+    if level == nil then
+        if peerLevel == nil then return true end
+        peerLevel = nil
+        heldIds[peer] = nil
+        return mumbleVolume(peer, -1.0)
+    end
+    if peerLevel == level then return true end
+    -- Recorded only if the write LANDED. Setting it first meant that on a build with no volume
+    -- native `peerLevel` read 0.2 while the audio was untouched, so `/phonevoice` reported the
+    -- far end as held down when nothing was holding it - the diagnostic somebody runs precisely
+    -- because they cannot hear a difference.
+    if not mumbleVolume(peer, level) then return false end
+    peerLevel = level
+    heldIds[peer] = true
+    return true
+end
+
+--- Give every override back. Called when a call ends, however it ends.
+---
+--- The one failure mode of a volume override is forgetting to undo it: a call that dropped mid-cut
+--- would leave that player quiet for this one for the rest of the session, with nothing on screen
+--- to explain it and no way for either of them to fix it. Every route out of a call goes through
+--- here, including the resource being stopped.
+local function releaseVoiceOverrides()
+    -- Every id we have touched, from `heldIds` rather than from `call.peer`.
+    --
+    -- Reading the peer off `call` was wrong in the one case that matters: a call that ended while
+    -- the line was down clears `call` first, so by the time this ran there was no id to restore
+    -- and the other player stayed quiet - for this listener, silently, until they reconnected.
+    -- The id is remembered the moment it is turned down, so losing the call cannot lose the way
+    -- back.
+    for id in pairs(heldIds) do mumbleVolume(id, -1.0) end
+    for id in pairs(peerCuts) do mumbleVolume(id, -1.0) end
+    heldIds = {}
+    peerCuts = {}
+    peerLevel = nil
+    badLine = false
+end
+
+releaseBadLine = releaseVoiceOverrides
+
+--- What the effect is doing, for `/phonevoice`.
+badLineReport = function() return badLine, peerLevel end
+
+--- How loud the far end is at this many bars.
+---
+--- This is the part that was missing, and the reason the effect read as "nothing happens". A call
+--- at one bar was a perfectly clear call interrupted by the occasional gap - and a gap every few
+--- seconds in otherwise clean audio does not sound like bad reception, it sounds like the other
+--- person pausing. Real one-bar reception is degraded THE WHOLE TIME, and the drop-outs happen on
+--- top of that. `Config.Calls.badSignal.volumeAtBars` is the level per bar.
+--- The floor, for a `config.lua` that predates this setting.
+---
+--- `config.lua` is the one file an update does not replace - correctly, it is the operator's - so
+--- a server that updates has no `volumeAtBars` and would get drop-outs with no muffling between
+--- them, which is the version of this effect that was reported as not working. The same mistake
+--- was made with 911 and with the Bank Pro icon: what must be true has to be stated in code.
+---
+--- An operator who genuinely wants drop-outs only sets `volumeAtBars = false`.
+local BAD_LEVELS = { [1] = 0.20, [2] = 0.55 }
+
+local function levelForBars(bars)
+    local levels = badCfg().volumeAtBars
+    if levels == false then return nil end
+    if type(levels) ~= 'table' then levels = BAD_LEVELS end
+    local level = tonumber(levels[bars])
+    if not level then return nil end
+    return math.max(0.0, math.min(1.0, level))
+end
+
 --- Drop the line for a moment, and put it back.
 ---
---- It leaves the call's voice channel and rejoins it, which is a real cut-out rather than a
---- simulated one: on pma-voice a call channel wires every member to every other, so leaving it
---- is exactly "neither end can hear the other" for as long as it lasts. The compat shim in
---- bridge/shared/compat.lua is what turns these two into `setCallChannel`.
+--- Two routes, and the first is the one that works. The volume override is local and instant, so a
+--- 300ms cut is a 300ms cut. The old route - leaving the call channel and rejoining it - is kept
+--- for a build without the native, but it was never a good fit: joining a pma-voice call channel
+--- goes through pma-voice's SERVER, which then rewires every member of the channel, and asking for
+--- that twice a second is both slow and rough on a resource that is not expecting it.
 ---
---- The rejoin is unconditional and on a timer of its own. A cut-out that failed to undo itself
---- would be a call nobody can hear again, which is far worse than no effect at all.
+--- The far end is told, through our server, so the break is mutual. A cut-out only one side can
+--- hear is not a bad line - it is one person's phone glitching while the conversation continues.
+---
+--- The restore is unconditional and on a timer of its own. A cut that failed to undo itself would
+--- be a call nobody can hear again, which is far worse than no effect at all.
 local function cutOut(ms)
     if badLine then return end
     badLine = true
     local cfg = badCfg()
+    local hold = math.max(60, math.floor(ms))
 
-    if cfg.muteVoice ~= false then leaveCallAudio() end
+    if cfg.muteVoice ~= false then
+        if volumeSupported() then
+            local peer = call and call.peer
+            if peer and mumbleVolume(peer, math.max(0.0, tonumber(cfg.cutVolume) or 0.0)) then
+                heldIds[peer] = true
+            end
+            -- And our own voice, on their side. They are the only ones who can turn us down.
+            TriggerServerEvent('v-phone:call:badline', hold)
+        else
+            leaveCallAudio()
+        end
+    end
+
     SendNUIMessage({ action = 'callGlitch', on = true,
                      flicker = cfg.flicker ~= false, static = cfg.static ~= false })
 
@@ -2308,14 +2483,52 @@ local function cutOut(ms)
     -- happen. A short buzz is the part that reaches somebody mid-conversation.
     if cfg.vibrate ~= false then SetPadShake(0, 120, 40) end
 
-    SetTimeout(math.max(60, math.floor(ms)), function()
+    SetTimeout(hold, function()
         badLine = false
         SendNUIMessage({ action = 'callGlitch', on = false })
-        -- Only if the call is still up: rejoining a call that ended while the line was down
-        -- would open a channel for a conversation that is over.
-        if cfg.muteVoice ~= false and call and call.state == 'active' then joinCallAudio() end
+        if cfg.muteVoice == false then return end
+        -- Only if the call is still up: restoring audio for a conversation that ended would
+        -- either open a channel for nobody or hand back a volume nobody is using.
+        if not (call and call.state == 'active') then return end
+        if volumeSupported() then
+            -- Back to the level this signal deserves, NOT to normal: the line is still bad.
+            local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+            peerLevel = nil                     -- force the write, whatever it was before
+            holdPeer(levelForBars(bars))
+        else
+            joinCallAudio()
+        end
     end)
 end
+
+--- The other end's line broke up. Their client said so and our server vouched for it.
+RegisterNetEvent('v-phone:client:peerBadLine', function(from, ms)
+    local peer = tonumber(from)
+    if not peer or not volumeSupported() then return end
+    if not (call and call.state == 'active' and call.peer == peer) then return end
+
+    local cfg = badCfg()
+    peerCuts[peer] = true
+    heldIds[peer] = true
+    mumbleVolume(peer, math.max(0.0, tonumber(cfg.cutVolume) or 0.0))
+    -- Their break is drawn on this end too, so it reads as the line rather than as them going
+    -- quiet for no reason.
+    SendNUIMessage({ action = 'callGlitch', on = true,
+                     flicker = cfg.flicker ~= false, static = cfg.static ~= false })
+
+    SetTimeout(math.max(60, math.floor(tonumber(ms) or 250)), function()
+        peerCuts[peer] = nil
+        SendNUIMessage({ action = 'callGlitch', on = false })
+        if not (call and call.state == 'active' and call.peer == peer) then
+            mumbleVolume(peer, -1.0)
+            return
+        end
+        -- Our own signal decides what we hear once their break is over.
+        local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+        peerLevel = nil
+        holdPeer(levelForBars(bars))
+    end)
+end)
 
 CreateThread(function()
     while true do
@@ -2325,6 +2538,16 @@ CreateThread(function()
         if cfg.enabled ~= false and threshold > 0
             and call and call.state == 'active' and not badLine then
             local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+
+            -- The standing degradation, before any drop-out is considered. Held while the signal
+            -- stays where it is and given back the moment it recovers, so walking out of a dead
+            -- spot mid-call is audible as the line clearing up.
+            if cfg.muteVoice ~= false and bars > 0 and bars <= threshold then
+                holdPeer(levelForBars(bars))
+            else
+                holdPeer(nil)
+            end
+
             -- No service at all is not a bad line, it is no line - the server ends those.
             if bars > 0 and bars <= threshold then
                 -- Weaker is proportionally worse: at 1 bar with a threshold of 2, twice the
@@ -2352,7 +2575,7 @@ end)
 applyServerCall = function(nextCall, notifyUi)
     local previous = call
     if type(nextCall) ~= 'table' then
-        if previous and previous.state == 'active' then leaveCallAudio() end
+        if previous and previous.state == 'active' then releaseBadLine() leaveCallAudio() end
         call = nil
         stopRinging()
     else
@@ -2361,6 +2584,7 @@ applyServerCall = function(nextCall, notifyUi)
             state = tostring(nextCall.state or ''),
             number = nextCall.number,
             booth = nextCall.booth == true,
+            peer = tonumber(nextCall.peer),
         }
         if call.state == 'active'
             and (not previous or previous.id ~= call.id or previous.state ~= 'active') then
@@ -2500,7 +2724,10 @@ end)
 RegisterNetEvent('v-phone:client:callActive', function(data)
     local wasBooth = call and call.booth or false
     call = { id = data.id, state = 'active', number = call and call.number or nil,
-             video = call and call.video or false, booth = wasBooth }
+             video = call and call.video or false, booth = wasBooth,
+             -- Who is on the other end, as a server id. The bad-line effect turns THEIR voice
+             -- down, and every way of doing that is addressed by id.
+             peer = tonumber(data.peer) }
     stopRinging()
     -- The audio is the same on a payphone: the same v-voice channel, joined the same way.
     -- Only the picture is different.
@@ -2521,7 +2748,9 @@ end)
 
 RegisterNetEvent('v-phone:client:callEnd', function(reason)
     -- Leave the voice channel even if the UI never got the start: an end that does not
-    -- release the channel leaves the player audible to strangers across the map.
+    -- release the channel leaves the player audible to strangers across the map. And hand back
+    -- any volume the bad line was holding down, before `call` is cleared and the peer id with it.
+    releaseBadLine()
     leaveCallAudio()
     stopRinging()
     -- And put the front camera and the picture feed away with it.
@@ -2673,6 +2902,9 @@ AddEventHandler('onResourceStop', function(res)
     pendingUiActions = {}
 
     -- Release every piece of state owned outside the Lua VM before this resource vanishes.
+    -- A volume override outlives this resource: it is held by the game's audio layer, so stopping
+    -- v-phone mid-call without clearing it leaves somebody inaudible until they reconnect.
+    releaseBadLine()
     if call then leaveCallAudio() end
     if voice() then
         for id in pairs(speakerListens) do

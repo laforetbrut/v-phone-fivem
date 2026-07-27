@@ -450,6 +450,53 @@ AddEventHandler('playerDropped', function()
     end
 end)
 
+-- ══════════════════════════════════════════════════════════════
+-- Reaching the passenger, on doc-taxijob
+-- ══════════════════════════════════════════════════════════════
+--- The phone number of a fare a driver has just accepted.
+---
+--- Asked for because a driver needs to be able to ring the person they are driving to - "I am
+--- outside", "which gate?" - and doc-taxijob's accept payload hands the driver the passenger's
+--- SERVER ID and name, and no number. The number is this resource's own data, so this is where
+--- it is resolved.
+---
+--- What is enforced here, and why it is not simply "look up any number":
+---
+---   * the caller holds the taxi job and is on duty, by the same `isDriver` every other part of
+---     this file uses - so a civilian cannot use it as a directory;
+---   * the operator can switch it off entirely with `Config.Taxi.docCallClient = false`;
+---   * every lookup is logged, with both citizen ids, so a driver mining numbers leaves a trail.
+---
+--- What is NOT enforced, stated plainly rather than implied: this server cannot verify that
+--- doc-taxijob really did pair these two, because that pairing lives in doc-taxijob's memory and
+--- reading it would mean modifying it. An on-duty driver could therefore ask for the number of
+--- any player id. That is the honest limit of integrating without touching the other resource -
+--- hence the job gate, the switch and the log.
+V.Callback('v-phone:taxi:peer', function(src, resolve, data)
+    if not enabled() or not docMode() then resolve({ error = 'notdoc' }) return end
+    if CFG.docCallClient == false then resolve({ error = 'off' }) return end
+
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'noplayer' }) return end
+    if not isDriver(p) then resolve({ error = 'notdriver' }) return end
+
+    local target = tonumber(data and data.target)
+    if not target then resolve({ error = 'args' }) return end
+    local other = Core.GetPlayer(target)
+    if not other then resolve({ error = 'gone' }) return end
+
+    local number = Bridge.Numbers.Get and Bridge.Numbers.Get(other.citizenid) or nil
+    if not number or number == '' then resolve({ error = 'nonumber' }) return end
+
+    V.Log(('taxi: %s looked up the number of their fare %s')
+        :format(tostring(p.citizenid), tostring(other.citizenid)))
+    resolve({
+        ok = true,
+        number = number,
+        name = tostring(Bridge.NameOfCitizen and Bridge.NameOfCitizen(other.citizenid) or ''),
+    })
+end)
+
 --- For a dispatch board, or a taxi script of your own on a framework doc-taxijob does not serve.
 exports('GetTaxiRides', function()
     local out = {}

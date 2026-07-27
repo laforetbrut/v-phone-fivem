@@ -6589,7 +6589,11 @@ input { font: inherit; }
   grid-template-columns: auto 1fr 36px;
   align-items: center;
   gap: 7px;
-  padding: 8px 11px 14px;
+  /* 22px at the bottom, not 14px. The home indicator sits at `bottom: 9px` and carries a 220px
+     invisible hit box reaching 26px up from the bottom edge (.homebar::before, z-index 60), so
+     at 14px the send button was drawn inside it: the field looked crowded and taps near the
+     button went to the home gesture instead. Same strip .soctabs and .compose reserve. */
+  padding: 8px 11px 22px;
   border-top: 1px solid rgba(138, 234, 212, .08);
   background: rgba(4, 13, 17, .82);
   box-shadow: 0 -12px 32px rgba(0, 0, 0, .16);
@@ -9442,6 +9446,179 @@ body.inframe.dark .uisearch {
   background: rgba(127, 212, 207, .1);
   box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .22);
 }
+
+/* ── The cryptanalysis bench ──────────────────────────────────
+   A panel over the terminal, not a new screen: the evidence row that opened it is still behind,
+   which is what keeps the crack attached to the message it belongs to. Instrument styling
+   throughout - monospace, hairlines, a green that means "holds" and an amber that means "time".
+   Nothing here is decorative: every colour change reports a state the officer needs. */
+.bench {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  /* Inset rather than full-bleed, so the terminal's own frame stays visible around it. */
+  top: 26px; right: 26px; bottom: 26px; left: 26px;
+  overflow: hidden;
+  border: 1px solid rgba(127, 212, 207, .3);
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(0deg, rgba(127, 212, 207, .035) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, rgba(9, 26, 30, .99), rgba(5, 16, 19, .99));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+}
+.benchhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(127, 212, 207, .16);
+}
+.benchtitle { display: flex; align-items: center; gap: 8px; min-width: 0; color: #cdeceb; font-size: 13px; }
+.benchtitle svg { width: 14px; height: 14px; }
+.benchattempts { color: #7f9ea1; font-size: 11px; }
+.benchclock {
+  margin-left: auto;
+  color: #9ad9d4;
+  font-family: var(--ios-num, ui-monospace, monospace);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+/* Amber, and only at twenty seconds. A clock that is always shouting is a clock nobody reads. */
+.benchclock.low { color: #ffb15c; }
+.benchgiveup {
+  padding: 5px 10px;
+  color: #ff9d8a;
+  font-size: 11px;
+  border: 1px solid rgba(255, 120, 100, .3);
+  border-radius: 6px;
+}
+.benchrail { display: flex; gap: 6px; padding: 9px 14px 0; }
+.benchstep {
+  flex: 1;
+  padding: 5px 8px;
+  color: #6f8b90;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-align: center;
+  text-transform: uppercase;
+  border-radius: 5px;
+  background: rgba(127, 212, 207, .05);
+}
+.benchstep.on { color: #062521; background: #7fd4cf; }
+.benchstep.done { color: #7fd4cf; box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .35); }
+.benchbody { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; }
+.benchfoot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(127, 212, 207, .16);
+}
+.benchhint { flex: 1; min-width: 0; color: #7f9ea1; font-size: 11px; line-height: 1.35; }
+.benchgo {
+  padding: 8px 16px;
+  color: #062521;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #8fe2dc, #52bdb6);
+}
+.benchwait { padding: 26px 0; color: #ffcf8a; font-size: 12px; text-align: center; }
+
+/* Bench one: the ciphertext, as clickable cells. The small letter is what was intercepted, the
+   large one is the officer's guess - that order on purpose, since the guess is what is read. */
+.benchcrypt { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 12px; }
+.benchcrypt .bgap { width: 11px; }
+.bcell {
+  display: flex;
+  width: 21px;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 0;
+  border-radius: 4px;
+  background: rgba(127, 212, 207, .07);
+}
+.bcell b { color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 13px; }
+.bcell small { color: #6f8b90; font-size: 8px; }
+.bcell.filled { background: rgba(127, 212, 207, .18); }
+.bcell.locked { background: rgba(127, 212, 207, .28); }
+.bcell.locked b { color: #062521; }
+.bcell.picked { box-shadow: 0 0 0 2px #ffb15c; }
+
+.benchfreq { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 12px; padding: 8px 0; border-top: 1px solid rgba(127, 212, 207, .1); border-bottom: 1px solid rgba(127, 212, 207, .1); }
+.bfreq { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.bfreq b { color: #9ad9d4; font-family: var(--ios-num, ui-monospace, monospace); font-size: 10px; }
+.bfreq i { display: block; width: 7px; border-radius: 2px 2px 0 0; background: rgba(127, 212, 207, .45); }
+.bfreq small { color: #56737a; font-size: 8px; }
+
+.benchkeys { display: flex; flex-wrap: wrap; gap: 4px; }
+.bkey {
+  width: 26px;
+  padding: 5px 0;
+  color: #cdeceb;
+  font-family: var(--ios-num, ui-monospace, monospace);
+  font-size: 12px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .05);
+}
+.bkey:disabled { opacity: .3; }
+.bkey.wipe { width: auto; padding: 5px 10px; color: #ff9d8a; font-size: 10px; }
+
+/* Bench two: the header to reach, the bytes as seized, the live decode, and the dials. */
+.benchtarget { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.benchtarget small { color: #7f9ea1; font-size: 10px; text-transform: uppercase; }
+.benchtarget code { color: #9ad9d4; font-family: var(--ios-num, ui-monospace, monospace); font-size: 13px; letter-spacing: .08em; }
+.benchbytes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.benchbytes span { padding: 3px 5px; color: #6f8b90; font-family: var(--ios-num, ui-monospace, monospace); font-size: 11px; border-radius: 3px; background: rgba(127, 212, 207, .06); }
+.benchout { padding: 10px 12px; margin-bottom: 12px; border-radius: 7px; background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .16); }
+.benchout code { color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 14px; letter-spacing: .1em; }
+/* The one unambiguous signal on this bench: the decode matches the header. */
+.benchout.good { background: rgba(90, 220, 160, .12); box-shadow: inset 0 0 0 1px rgba(90, 220, 160, .5); }
+.benchout.good code { color: #8ff0c2; }
+.benchdials { display: flex; flex-wrap: wrap; gap: 10px; }
+.bdial small { display: block; margin-bottom: 3px; color: #7f9ea1; font-size: 9px; text-transform: uppercase; }
+.bdialrow { display: flex; align-items: center; gap: 2px; }
+.bdialrow button { width: 22px; padding: 4px 0; color: #9ad9d4; font-size: 11px; border-radius: 4px; background: rgba(255, 255, 255, .05); }
+.bdialrow b { min-width: 30px; color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 14px; text-align: center; }
+
+/* Bench three: the clues, each going green on its own, and the four rotors. */
+.benchclues { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.bclue {
+  padding: 7px 10px;
+  color: #cdeceb;
+  font-family: var(--ios-num, ui-monospace, monospace);
+  font-size: 12px;
+  border-radius: 6px;
+  background: rgba(127, 212, 207, .06);
+  box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .12);
+}
+.bclue.ok { color: #8ff0c2; background: rgba(90, 220, 160, .1); box-shadow: inset 0 0 0 1px rgba(90, 220, 160, .45); }
+.benchrotors { display: flex; gap: 10px; }
+.brotor { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 11px; border-radius: 8px; background: rgba(0, 0, 0, .3); box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .14); }
+.brotor small { color: #7f9ea1; font-size: 9px; }
+.brotor button { width: 30px; padding: 3px 0; color: #9ad9d4; font-size: 13px; border-radius: 4px; background: rgba(255, 255, 255, .05); }
+.brotor b { color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 18px; }
+.brotor i { color: #56737a; font-size: 10px; font-style: normal; }
+
+/* ── Seized media ─────────────────────────────────────────────
+   A picture message and a photo post are drawn, not named. Bounded on purpose: an exhibit is
+   read alongside the rows around it, so a tall photo must not push the next message off the
+   panel. The frame reads as an exhibit rather than as a gallery - square corners, a hairline,
+   a plate underneath for the caption. */
+.fevidence { display: flex; flex-direction: column; gap: 6px; }
+.fimg {
+  display: block;
+  max-width: 210px;
+  max-height: 190px;
+  /* `contain`, not `cover`: cropping evidence to fit a box is not a cosmetic decision. */
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .45);
+  box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .22), 0 6px 16px rgba(0, 0, 0, .3);
+}
+.fcap { color: #b8cccf; font-size: 12px; font-style: italic; }
+.floc { color: #9ad9d4; font-family: var(--ios-num, ui-monospace, monospace); font-size: 12px; }
 
 /* ══ Media: camera video, selfie, clips, FaceTime ══════════════ */
 /* The Video mode toggle sits beside Photo. */

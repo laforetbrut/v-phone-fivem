@@ -202,6 +202,114 @@ RegisterNUICallback('taxiDoc', function(data, cb)
     cb({ error = 'x' })
 end)
 
+-- ══════════════════════════════════════════════════════════════
+-- What doc-taxijob broadcasts, and nobody was listening to
+-- ══════════════════════════════════════════════════════════════
+-- Three problems came from the same gap. A driver got no notification when somebody booked; a
+-- passenger's tracker sat on "looking for a driver" through the whole ride; and a driver who had
+-- accepted a fare had no way to reach the person they were driving to.
+--
+-- All three are already broadcast. doc-taxijob fires, without being asked and without being
+-- modified:
+--
+--   doc-taxijob:client:ReceiveCall   -> every on-duty driver, when a fare is booked
+--   doc-taxijob:client:CallAccepted  -> the driver who took it, WITH the client's src and name
+--   phone:sendNotificationOld        -> the caller, on accept and on completion
+--
+-- The last one is the legacy phone push API, so it carries `app = 'downtowncab'` and a line of
+-- text and nothing else. Text is not a state - it is written in doc-taxijob's own locale, which
+-- lives in its resource and cannot be read from here - so the push is treated as a NUDGE and the
+-- real state is asked for: `GetRatingState` answers "this ride is over and can be rated", which
+-- is doc-taxijob's own authority on completion. Anything else after a booking is "accepted".
+
+--- The passenger's side of a doc-taxijob ride, mirrored so the page can draw it.
+local docRide = { state = nil, driver = nil }
+--- The fare a driver accepted, and who is in the back.
+local docFare = { callId = nil, name = nil, src = nil, number = nil }
+
+local function pushPage(update)
+    SendNUIMessage({ action = 'taxiDoc', update = update })
+end
+
+--- Ask doc-taxijob whether the ride is over, then tell the page where it stands.
+local function refreshPassengerState()
+    ask('doc-taxijob:server:GetRatingState', nil, function(res)
+        -- Its own app read `canRate`; anything truthy on that answer means the ride finished and
+        -- the rating window is open. A miss leaves the ride as accepted, which is the safe way
+        -- round: an accepted ride that has actually ended still offers Rate on the next look.
+        local done = type(res) == 'table' and (res.canRate == true or res.pending == true)
+        docRide.state = done and 'done' or 'accepted'
+        pushPage({ kind = 'state', state = docRide.state, driver = docRide.driver })
+    end)
+end
+
+--- A driver was handed a fare: notify, and work out how to reach the passenger.
+RegisterNetEvent('doc-taxijob:client:ReceiveCall', function(data)
+    if not docMode() then return end
+    local msg = type(data) == 'table' and tostring(data.msg or '') or ''
+    if PhoneNotify then
+        PhoneNotify({
+            app = 'taxi', icon = 'taxi',
+            title = PhoneString and PhoneString('ph.taxi_doc_newfare') or 'Taxi',
+            -- doc-taxijob has already composed the line, in the server's own language: passing it
+            -- through says who and where to, which is the whole decision a driver makes.
+            body = msg ~= '' and msg or (PhoneString and PhoneString('ph.taxi_doc_newfare_body')),
+            hasItem = true,
+        })
+    end
+    pushPage({ kind = 'queue' })
+end)
+
+RegisterNetEvent('doc-taxijob:client:CallAccepted', function(data)
+    if not docMode() or type(data) ~= 'table' then return end
+    docFare.callId = data.callId
+    docFare.name = tostring(data.clientName or '')
+    docFare.src = tonumber(data.clientSrc)
+    docFare.number = nil
+
+    -- The passenger's number, so the driver can ring them. Resolved on the SERVER from the
+    -- player id doc-taxijob just handed over, because a client has no business being told
+    -- numbers it did not already have - and refused there unless this really is a taxi driver.
+    if docFare.src and (Config.Taxi or {}).docCallClient ~= false then
+        V.Request('v-phone:taxi:peer', function(res)
+            if type(res) == 'table' and res.ok then
+                docFare.number = res.number
+                docFare.name = res.name ~= '' and res.name or docFare.name
+            end
+            pushPage({ kind = 'fare', fare = docFare })
+        end, { target = docFare.src })
+    else
+        pushPage({ kind = 'fare', fare = docFare })
+    end
+end)
+
+--- The legacy push. Fired at the caller by doc-taxijob, and by other resources for their own
+--- apps - so anything that is not the cab company is left alone rather than notified twice.
+RegisterNetEvent('phone:sendNotificationOld', function(data)
+    if type(data) ~= 'table' then return end
+    if tostring(data.app or ''):lower() ~= 'downtowncab' then return end
+    if not docMode() then return end
+
+    if PhoneNotify then
+        PhoneNotify({
+            app = 'taxi', icon = 'taxi',
+            title = tostring(data.title or (PhoneString and PhoneString('app.taxi')) or 'Taxi'),
+            body = tostring(data.text or ''),
+            hasItem = true,
+        })
+    end
+    refreshPassengerState()
+end)
+
+--- Where the page reads the mirrored state from, since a render can happen long after the event.
+RegisterNUICallback('taxiDocState', function(_, cb)
+    cb({ ok = true, state = docRide.state, driver = docRide.driver, fare = docFare })
+end)
+
+-- Ringing the passenger needs no relay of its own: the page already routes every call it places
+-- through `placeCall`, which is the one path that plays the reorder tone and shows the reason
+-- when a number does not answer. A second way to dial would be a second way to fail silently.
+
 --- Route to a waiting fare, or to anywhere else the app points at.
 RegisterNUICallback('taxiRoute', function(data, cb)
     local x, y = tonumber(data and data.x), tonumber(data and data.y)
@@ -241,16 +349,8 @@ RegisterNetEvent('v-phone:client:taxi', function(d)
     SendNUIMessage({ action = 'taxi', update = d })
 end)
 
---- doc-taxijob tells a driver a call arrived, and tells a passenger theirs was accepted. Both
---- are ITS events; this only forwards them to the page so an open app stops being stale, and
---- files the notification the original app had no way to show.
----
---- Registered here rather than in client/main.lua because nothing in it needs that file's
---- locals: the page owns the card, and `SendNUIMessage` is global.
-RegisterNetEvent('doc-taxijob:client:ReceiveCall', function()
-    SendNUIMessage({ action = 'taxiPing', kind = 'incoming' })
-end)
-
-RegisterNetEvent('doc-taxijob:client:CallAccepted', function()
-    SendNUIMessage({ action = 'taxiPing', kind = 'accepted' })
-end)
+-- `doc-taxijob:client:ReceiveCall` and `:CallAccepted` were listened for here as well, twice over:
+-- these two stubs forwarded a ping to the page, and the handlers further up do the same thing plus
+-- the part that was missing. The comment on them claimed they "filed the notification the original
+-- app had no way to show", and they did not - nothing in them raised one, which is precisely why a
+-- driver's phone stayed silent while their queue filled up. One listener each now, up there.

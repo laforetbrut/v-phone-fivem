@@ -572,6 +572,33 @@ Config.Calls = {
         -- This is the honest half of the effect; turn it off and the glitch is decoration.
         muteVoice = true,
 
+        -- **How loud the other person is, per bar of signal.** 1.0 is normal, 0.0 is silent.
+        --
+        -- This is what makes one bar sound like one bar. Drop-outs alone were not enough and the
+        -- reason is worth understanding: a perfectly clear call with an occasional gap in it does
+        -- not read as bad reception, it reads as the other person pausing. Real bad reception is
+        -- degraded the WHOLE time, and the drop-outs land on top of it.
+        --
+        -- Only bars at or below `atBars` are ever looked up here, so raising `atBars` to 2 without
+        -- adding a `[2]` entry gives two-bar calls the drop-outs and none of the muffling.
+        --
+        -- Needs `MumbleSetVolumeOverrideByServerId`, which is present on any current FiveM build.
+        -- On a build without it the phone falls back to leaving and rejoining the voice channel,
+        -- which still cuts out but cannot hold a level - `/phonevoice` says which one is in use.
+        --
+        -- Set `volumeAtBars = false` for drop-outs and no muffling. Removing the block entirely
+        -- does NOT do that: these same defaults are applied in code, because this file is not
+        -- replaced by an update and a server upgrading into the setting would otherwise never see
+        -- the half of the effect that makes it work.
+        volumeAtBars = {
+            [1] = 0.20,   -- one bar: audible that somebody is talking, hard work to follow
+            [2] = 0.55,   -- two bars: muffled, but a conversation
+        },
+
+        -- The level DURING a drop-out. 0.0 is a real cut; a little above it leaves a trace of the
+        -- other person, which some servers prefer to total silence.
+        cutVolume = 0.0,
+
         -- The screen stutter that goes with it, and the static. Off leaves the call silent for
         -- a moment with no explanation, which reads as a bug.
         flicker = true,
@@ -1890,6 +1917,20 @@ Config.Taxi = {
     -- sees the queue, which reads as a broken app rather than as a wrong job name.
     job = 'taxi',
 
+    -- **May a driver ring the passenger they accepted?** doc-taxijob mode only.
+    --
+    -- It hands the driver the passenger's name and player id when a fare is accepted, and no
+    -- number, so there was no way to say "I am outside" without leaving the game. With this on,
+    -- the phone resolves that player id to their number - our own data, not doc-taxijob's - and
+    -- offers a Call button on the accepted fare.
+    --
+    -- The honest limit, since it is worth knowing before switching it on: the pairing between a
+    -- driver and a passenger lives in doc-taxijob's memory, and reading it would mean modifying
+    -- doc-taxijob. So the server can only check that the ASKER is an on-duty driver of this job -
+    -- it cannot prove they were really assigned that passenger. Every lookup is logged with both
+    -- citizen ids. Set false on a server where that trade is not worth making.
+    docCallClient = true,
+
     -- ── Config-provider settings ───────────────────────────────
     -- Ignored in doc-taxijob mode: fares, ratings and tips are its own there.
     --
@@ -2401,8 +2442,58 @@ Config.Police = {
         intercept = false,
 
         -- The crack, when intercept is on. Deliberately expensive.
-        crackSeconds = 20,       -- real seconds of "processing" per message
-        successChance = 0.6,     -- and it can still fail, so it is never a sure thing
+        --
+        -- With `minigame` on - the default - reading a message is WORK: the officer is given a
+        -- cryptanalysis bench and has to break it. The old behaviour was a twenty second wait
+        -- and a dice roll, which meant the outcome had nothing to do with the officer and the
+        -- terminal sat there saying "processing" at somebody who could do nothing about it.
+        --
+        -- Set `minigame = false` to go back to the wait and the roll, and `successChance`
+        -- becomes meaningful again.
+        minigame = true,
+        crackSeconds = 20,       -- the roll route only: real seconds of "processing"
+        successChance = 0.6,     -- the roll route only: and it can still fail
+
+        -- ── The bench ────────────────────────────────────────────
+        crack = {
+            -- Which benches, in order. Each is a different real technique and each is
+            -- generated fresh per message, so a solution cannot be memorised:
+            --   'substitution' - frequency analysis against a monoalphabetic cipher
+            --   'xorkey'       - align the key bytes until the known header decodes
+            --   'rotors'       - satisfy a system of modular constraints on four rotors
+            -- Fewer entries is an easier crack. An empty list makes the crack free.
+            stages = { 'substitution', 'xorkey', 'rotors' },
+
+            -- Seconds on the clock per stage. Expiry loses the attempt, not the message.
+            seconds = 150,
+
+            -- Attempts per message, per officer. Spent when the clock runs out or a stage is
+            -- given up - never by a wrong guess, because guessing is how you solve these.
+            attempts = 3,
+
+            -- The floor under which a solve is not believed. Three stages cleared in two
+            -- seconds is a script, not an officer, and the server refuses it: the page can be
+            -- replaced but the clock is kept here. Seconds, per stage.
+            minSeconds = 4,
+
+            -- How many of the substitution's letter mappings are given away. Lower is harder;
+            -- 0 is a genuine cold frequency attack, which is very hard on one short phrase.
+            hints = 4,
+
+            -- The cover phrases the substitution bench uses. Never the seized message - the
+            -- content is what the crack is FOR, so it cannot also be the puzzle. Letters and
+            -- spaces only; case does not matter.
+            phrases = {
+                'MEET ME BEHIND THE PIER AT MIDNIGHT',
+                'THE SHIPMENT LANDS ON THE NORTH DOCK',
+                'BURN THE LEDGER AND LEAVE THE CITY',
+                'THE KEY IS UNDER THE THIRD PLANTER',
+                'NOBODY TALKS AND EVERYBODY WALKS',
+                'THE COURIER WEARS A GREY JACKET',
+                'PAYMENT CLEARS AFTER THE HANDOVER',
+                'NEW PLATES ARE IN THE BLUE CRATE',
+            },
+        },
     },
 }
 normalisePlaces(Config.Police.points)

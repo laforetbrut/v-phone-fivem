@@ -1254,8 +1254,18 @@ local function answerCall(src)
     -- is never answered.
     ringOut(src, false)
 
-    TriggerClientEvent('v-phone:client:callActive', c.a, { id = id })
-    TriggerClientEvent('v-phone:client:callActive', c.b, { id = id })
+    -- Each side is told WHO is on the other end, as a server id.
+    --
+    -- Needed for the bad-line effect and for nothing else. Degrading a call means turning the
+    -- other person's voice down, and every way of doing that - the Mumble volume override, or
+    -- pma-voice's own per-player calls - is addressed by server id. Without it the effect had
+    -- only one lever available, leaving the whole call channel, which is a round trip through
+    -- pma-voice's server for something that has to happen in under a second.
+    --
+    -- It is a player id and nothing more: no name, no citizen id, no number. A client already
+    -- knows the id of everybody it can see.
+    TriggerClientEvent('v-phone:client:callActive', c.a, { id = id, peer = c.b })
+    TriggerClientEvent('v-phone:client:callActive', c.b, { id = id, peer = c.a })
 
     local cap = math.floor(num(S('maxMinutes', Config.Calls.maxMinutes), 30))
     SetTimeout(cap * 60000, function()
@@ -1371,6 +1381,11 @@ local function currentCallFor(src)
         -- Carried so a client resyncing after a restart knows not to draw a booth call on
         -- the handset. Only the caller is at the box; the person he rang is on a normal phone.
         booth = (c.booth == true) and mineIsCaller or false,
+        -- The other end's server id, same as `callActive` sends. Carried here as well so a client
+        -- that resyncs - after a restart, or after rejoining mid-call - can still degrade the line.
+        -- Without it the bad-line effect worked until the first `restart v-phone` and then quietly
+        -- did nothing for the rest of that call.
+        peer = mineIsCaller and c.b or c.a,
     }
 end
 
@@ -4044,6 +4059,51 @@ RegisterNetEvent('v-phone:call:dropped', function()
     if id then endCall(id, 'nosignal') end
 end)
 
+--- A cut-out on one end, relayed to the other.
+---
+--- The break has to be MUTUAL or it is not a bad line - it is one person's screen glitching while
+--- the conversation carries on. The far end's client is the only place that can turn its own audio
+--- down, so the client whose signal is failing says so and this passes it on.
+---
+--- Client-driven, and therefore checked here rather than trusted:
+---
+---   * there must really be a call, and the relay only ever reaches the OTHER end of it;
+---   * the server checks the signal itself - `Signal[src]` is its own measurement, so a client
+---     claiming a bad line while standing under a mast is refused;
+---   * once a second at most, so a spammed event cannot hold a call silent;
+---   * the duration is clamped to the configured range, not taken as sent.
+---
+--- Worst case if all of that were bypassed: one player's voice is quieter for one other player
+--- for a fraction of a second. Cheap to get wrong, which is why it is allowed to be a client
+--- event at all.
+local LastBadLine = {}
+
+RegisterNetEvent('v-phone:call:badline', function(ms)
+    local src = source
+    local cfg = (Config.Calls or {}).badSignal or {}
+    if cfg.enabled == false then return end
+    if cfg.muteVoice == false then return end
+
+    local now = GetGameTimer()
+    if LastBadLine[src] and (now - LastBadLine[src]) < 900 then return end
+
+    local threshold = math.floor(num(cfg.atBars, 1))
+    local bars = Signal[src] or 4
+    if threshold <= 0 or bars <= 0 or bars > threshold then return end
+
+    local id = CallOf[src]
+    local c = id and Calls[id]
+    if not c or c.state ~= 'active' then return end
+    local other = (c.a == src) and c.b or ((c.b == src) and c.a or nil)
+    if not other then return end
+
+    LastBadLine[src] = now
+    local lo = math.max(60, math.floor(num(cfg.minMs, 250)))
+    local hi = math.max(lo, math.floor(num(cfg.maxMs, 900)))
+    local hold = math.max(lo, math.min(hi, math.floor(num(ms, lo))))
+    TriggerClientEvent('v-phone:client:peerBadLine', other, src, hold)
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Exports for other modules
 -- ══════════════════════════════════════════════════════════════
@@ -4295,6 +4355,7 @@ AddEventHandler('playerDropped', function()
     ChargeReason[src] = nil
     if PaidChargeDrop then PaidChargeDrop(src) end
     FrameLast[src] = nil
+    LastBadLine[src] = nil
     MessageLastSend[src], MessageBusy[src] = nil, nil
     CipherUnlocked[src], CipherAttempts[src], CipherLastSend[src] = nil, nil, nil
     AirLastSend[src] = nil

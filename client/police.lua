@@ -67,8 +67,15 @@ RegisterNUICallback('forensicRead', function(data, cb)
     V.Request('v-phone:police:' .. what, function(res) cb(res or { error = 'x' }) end, {})
 end)
 
+-- Opening the bench, and submitting what was worked out on it. Two calls, because the puzzle
+-- has to reach the page before anything can be solved on it - and because the answers must be
+-- CHECKED on the server rather than the page reporting its own verdict.
 RegisterNUICallback('forensicCrack', function(data, cb)
     V.Request('v-phone:police:crack', function(res) cb(res or { error = 'x' }) end, data)
+end)
+
+RegisterNUICallback('forensicCrackSolve', function(data, cb)
+    V.Request('v-phone:police:cracksolve', function(res) cb(res or { error = 'x' }) end, data)
 end)
 
 -- ══════════════════════════════════════════════════════════════

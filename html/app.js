@@ -7984,14 +7984,32 @@ function taxiRideOf(d) {
   if (d.ride) return d.ride;                       // config provider
   // doc-taxijob does not hand back a ride object - its own app tracked a callId it had been
   // given. `taxiCall` remembers it, so a booking made in this session is still followed.
-  if (d.doc && taxiLastCall) return { id: taxiLastCall, state: 'pending' };
+  //
+  // The STATE used to be hard-coded 'pending' here, and that was the bug: a passenger whose
+  // driver had accepted, arrived and finished the ride watched "looking for a driver" the entire
+  // time. doc-taxijob does not answer "what is my ride doing" - it BROADCASTS, and client/taxi.lua
+  // now listens and mirrors what it heard into `taxiDocState`.
+  if (d.doc && taxiLastCall) {
+    return { id: taxiLastCall, state: taxiDocState || 'pending', driver: taxiDocDriver || '' };
+  }
   return null;
 }
 let taxiLastCall = null;
+let taxiDocState = null;    // 'pending' | 'accepted' | 'done', mirrored from doc-taxijob
+let taxiDocDriver = null;   // never a name: doc-taxijob keeps the driver anonymous to the client
+let taxiDocFare = null;     // the driver's side: the fare they accepted, and how to ring them
 
-/// The steps of a ride, so the strip can draw progress rather than one word.
-function taxiStep(state) {
-  const order = ['pending', 'accepted', 'riding', 'done'];
+/// The steps a ride passes through, which is not the same list on both providers.
+///
+/// doc-taxijob has three states - pending, accepted, completed - and no separate "on board". The
+/// four-step rail drew a step that could never light on that provider, and a progress bar that
+/// stops at three quarters on a finished ride reads as something having gone wrong.
+function taxiSteps(doc) {
+  return doc ? ['pending', 'accepted', 'done'] : ['pending', 'accepted', 'riding', 'done'];
+}
+
+function taxiStep(state, doc) {
+  const order = taxiSteps(doc);
   const at = order.indexOf(String(state || 'pending'));
   return at < 0 ? 0 : at;
 }
@@ -8004,6 +8022,15 @@ RENDER.taxi = async () => {
   if (d && d.doc) {
     const doc = await post('taxiDoc', { op: 'state' });
     if (doc && !doc.error) d = Object.assign({}, d, doc, { doc: true });
+    // The mirrored state lives in client/taxi.lua, because the events that set it arrive whether
+    // this app is open or not. Read on every render so reopening the app shows where the ride
+    // actually is rather than where it was when the page last happened to be looking.
+    const live = await post('taxiDocState', {});
+    if (live && live.ok) {
+      taxiDocState = live.state || taxiDocState;
+      taxiDocDriver = live.driver || taxiDocDriver;
+      taxiDocFare = (live.fare && live.fare.callId) ? live.fare : taxiDocFare;
+    }
   }
   if (!d || d.error) {
     body(UI.empty(L('ph.taxi_e_' + ((d && d.error) || 'off')), 'taxi'));
@@ -8035,13 +8062,15 @@ RENDER.taxi = async () => {
   // ── the live strip ──
   // Only while a ride is on. It is the reason somebody opens this app twice.
   const strip = ride ? (() => {
-    const step = taxiStep(ride.state);
+    const steps = taxiSteps(d.doc);
+    const step = taxiStep(ride.state, d.doc);
     return '<div class="txtrack">' +
       '<div class="txtrackrow"><b>' + esc(L('ph.taxi_st_' + String(ride.state || 'pending'))) +
         '</b><span>' + esc(ride.driver || '') + '</span></div>' +
-      '<div class="txbar"><i style="width:' + Math.round(((step + 1) / 4) * 100) + '%"></i></div>' +
+      '<div class="txbar"><i style="width:' +
+        Math.round(((step + 1) / steps.length) * 100) + '%"></i></div>' +
       '<div class="txsteps">' +
-        ['pending', 'accepted', 'riding', 'done'].map((s, i) =>
+        steps.map((s, i) =>
           '<span class="' + (step >= i ? 'on' : '') + '">' +
           esc(L('ph.taxi_step_' + s)) + '</span>').join('') +
       '</div>' +
@@ -8285,14 +8314,37 @@ async function taxiDriver(d) {
     data: { txc: String(c.callId || c.id) },
   });
 
+  // The fare this driver accepted, and the one thing they could not do about it: reach the
+  // passenger. doc-taxijob hands the driver the client's name and server id on accept, so the
+  // number is resolved on our server and the call goes out through the phone's own dialler.
+  const fare = taxiDocFare && taxiDocFare.callId ? taxiDocFare : null;
+  const mineCard = fare ? UI.group([
+    UI.row({
+      icon: 'taxi', tint: '#ffb300',
+      title: fare.name || L('ph.taxi_anon'),
+      subtitle: L('ph.taxi_doc_onboard'),
+    }),
+    fare.number
+      ? UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.taxi_doc_callclient'),
+                 value: anyNum(fare.number), chevron: true, data: { txcall: fare.number } })
+      : UI.row({ icon: 'phone', title: L('ph.taxi_doc_nonumber'), subtitle: '' }),
+  ], { header: L('ph.taxi_doc_myfare') }) : '';
+
   body(
     UI.hero({ appicon: 'taxi', eyebrow: L('ph.taxi_tab_drive'),
               value: calls.length ? String(calls.length) : L('ph.taxi_queue_empty'),
               subtitle: calls.length ? L('ph.taxi_queue') : L('ph.taxi_queue_empty_hint') }) +
+    mineCard +
     (calls.length
       ? UI.group(calls.map(row), { footer: L('ph.taxi_queue_hint') })
       : UI.empty(L('ph.taxi_queue_empty'), 'taxi'))
   );
+
+  rows('[data-txcall]', (el) => el.addEventListener('click', () => {
+    // Straight through placeCall, which is the one path that plays the reorder tone and says why
+    // when a number does not answer.
+    placeCall(el.dataset.txcall);
+  }));
 
   rows('[data-txc]', (el) => el.addEventListener('click', () => {
     const c = calls.find((x) => String(x.callId || x.id) === el.dataset.txc);
@@ -8558,9 +8610,14 @@ RENDER.zuber = async () => {
   const favs = d.favourites || [];
   const isFav = (c) => favs.indexOf('r:' + c.id) !== -1;
 
+  // Searchable means orderable. A dish with no price is not for sale, so matching one would send
+  // somebody to a restaurant for something that is not on its menu - the same reason those rows
+  // are gone from the menu itself.
+  const sellable = (c) => (c.menu || []).filter((m) => !m.unpriced);
+
   const card = (c) => {
     const dish = q && !String(c.label).toLowerCase().includes(q)
-      ? (c.menu || []).find((m) => String(m.label).toLowerCase().includes(q))
+      ? sellable(c).find((m) => String(m.label).toLowerCase().includes(q))
       : null;
     return '<button class="zucard' + (c.open ? '' : ' shut') + '" data-zr="' + esc(c.id) + '" type="button">' +
       '<div class="zutint" style="background:' + esc(c.tint || '#111') + '"></div>' +
@@ -8592,7 +8649,7 @@ RENDER.zuber = async () => {
     const hits = cards.filter((c) => {
       if (!query) return true;
       if (String(c.label).toLowerCase().includes(query)) return true;
-      return (c.menu || []).some((m) => String(m.label).toLowerCase().includes(query));
+      return sellable(c).some((m) => String(m.label).toLowerCase().includes(query));
     });
     host.innerHTML = hits.length
       ? hits.map(card).join('')
@@ -8629,8 +8686,23 @@ function zuberMenu(d, c) {
     },
   }, () => { zuberOpenId = null; RENDER.zuber(); });
 
+  // A dish with no price row is not on sale, so it is not on the menu.
+  //
+  // It used to be listed and labelled "no price set", which is the right thing to tell the
+  // OWNER and pointless for a customer: on doc-restaurant, where prices live in its own config
+  // and a new dish often has no row yet, half a seafood menu read as unbuyable placeholders and
+  // the two dishes that could actually be ordered were lost among them. A menu is a list of what
+  // you can have.
+  //
+  // Counted rather than silently dropped: the footer says how many were withheld, so a restaurant
+  // owner looking at their own menu still learns that something needs a price - the fact was
+  // worth keeping, the row was not.
+  const full = (c.menu || []);
+  const menu = full.filter((m) => !m.unpriced);
+  const hiddenCount = full.length - menu.length;
+
   const byCat = {};
-  (c.menu || []).forEach((m) => {
+  menu.forEach((m) => {
     if (!byCat[m.category]) byCat[m.category] = [];
     byCat[m.category].push(m);
   });
@@ -8643,11 +8715,9 @@ function zuberMenu(d, c) {
     const row = UI.row({
       icon: 'zuber', tint: m.enabled === false ? '#8E8E93' : (c.tint || '#111'),
       title: m.label,
-      // "Unavailable" and "no price set" are different facts, and a restaurant owner reading
-      // their own menu on a phone needs to know which one they are looking at.
-      subtitle: m.unpriced ? L('ph.zuber_noprice')
-        : (m.enabled === false ? L('ph.zuber_soldout')
-          : (m.promo ? L('ph.zuber_promo').replace('{n}', String(m.promo)) : '')),
+      // Sold out is still worth showing: the dish exists, it has a price, and it will be back.
+      subtitle: m.enabled === false ? L('ph.zuber_soldout')
+        : (m.promo ? L('ph.zuber_promo').replace('{n}', String(m.promo)) : ''),
       // The old price struck through beside the new one, which is what a promotion looks like.
       value: m.enabled === false ? '' : money(m.price),
       mono: true,
@@ -8684,8 +8754,16 @@ function zuberMenu(d, c) {
       ? UI.button(L(zuberMyRating(d, c) ? 'ph.zuber_rate_again' : 'ph.zuber_rate'),
                   'zuratebtn', 'plain')
       : '') +
-    cats.map((cat) =>
-      UI.group(byCat[cat].map(line), { header: L('ph.zuber_cat_' + cat) })).join('') +
+    (menu.length
+      ? cats.map((cat) =>
+          UI.group(byCat[cat].map(line), { header: L('ph.zuber_cat_' + cat) })).join('')
+      // Every dish withheld means a restaurant that is open and has nothing priced. Saying so
+      // beats an empty screen, which reads as the app having failed to load the menu.
+      : UI.empty(L(hiddenCount ? 'ph.zuber_all_unpriced' : 'ph.zuber_no_menu'), 'zuber')) +
+    (hiddenCount && menu.length
+      ? '<div class="groupfoot">' +
+          esc(L('ph.zuber_unpriced_hidden').replace('{n}', String(hiddenCount))) + '</div>'
+      : '') +
     (count
       ? '<div class="zubasket" id="zubasket">' +
           '<b>' + esc(L('ph.zuber_basket').replace('{n}', String(count))) + '</b>' +
@@ -13376,11 +13454,21 @@ window.addEventListener('message', (e) => {
     // A short burst of noise. Synthesised rather than a file: it is a hiss, and shipping a
     // wav of a hiss is a download for something six lines of oscillator does better.
     if (d.on === true && d.static !== false) callStatic();
-  } else if (d.action === 'taxiPing') {
-    // doc-taxijob told a driver a call came in, or told a passenger theirs was accepted. It
-    // notifies on its own account; this only stops an open app being stale.
+  } else if (d.action === 'taxiDoc') {
+    // doc-taxijob broadcast something, and client/taxi.lua worked out what it meant. The phone
+    // notification is raised there, where the mute preferences and the pocket state live; this
+    // is the app's half - the mirrored state, and a redraw so an open app is never stale.
+    const u = d.update || {};
+    const kind = String(u.kind || '');
+    if (kind === 'state') {
+      taxiDocState = u.state || taxiDocState;
+      taxiDocDriver = u.driver || taxiDocDriver;
+    } else if (kind === 'fare') {
+      taxiDocFare = u.fare || null;
+    } else if (kind === 'queue') {
+      ui('received');
+    }
     if (openApp && openApp.id === 'taxi') RENDER.taxi();
-    if (d.kind === 'incoming') ui('received');
   } else if (d.action === 'taxi') {
     // The config provider's own ride events, which carry what happened.
     if (d.strings && !Object.keys(S || {}).length) S = d.strings;
@@ -13465,6 +13553,10 @@ function forensicOpen() {
 }
 
 function forensicClose() {
+  // The bench is a panel over the terminal with a running clock on it. Leaving it behind meant
+  // an officer who closed the terminal mid-crack had an interval still counting down against a
+  // screen that was gone, and a submission fired at nothing when it reached zero.
+  benchClose();
   byId('forensic').classList.add('hidden');
   byId('forensicbody').innerHTML = '';
   forensicTarget = null;
@@ -13574,8 +13666,41 @@ async function forensicMessages() {
         '<span class="ftag">' + fesc(L(m.outgoing ? 'ph.forensic_sent' : 'ph.forensic_recv')) + '</span>' +
         '<span>' + fesc(m.outgoing ? (m.to_num || '?') : (m.from_num || '?')) + '</span>' +
         '<span class="ft">' + fwhen(m.at) + '</span></div>' +
-      '<div class="fbody">' + fesc(m.body) + '</div></div>').join('')
+      forensicEvidence(m) + '</div>').join('')
     : forensicEmpty(L('ph.forensic_no_messages')));
+}
+
+/// What a seized message actually contained, drawn rather than described.
+///
+/// A picture message keeps its file in `attachment` and leaves `body` empty, so reading only the
+/// body produced a row with a blank line in it - and a blank line in an evidence list reads as a
+/// broken terminal, not as "there was nothing here". The photo goes through `photoImg`, the same
+/// helper the phone's own thread uses, so a crop or a filter the sender applied is what the
+/// officer sees; a caption sent with it is kept underneath.
+///
+/// A shared position is not an image and must not be drawn as one: its `attachment` is `x;y`,
+/// which is evidence in its own right, so it is printed as coordinates.
+function forensicEvidence(m) {
+  const kind = String((m && m.kind) || 'text');
+  const file = String((m && m.attachment) || '');
+  const caption = String((m && m.body) || '');
+
+  if (kind === 'image' && file) {
+    return '<div class="fbody fevidence">' + photoImg(file, 'fimg') +
+      (caption ? '<div class="fcap">' + fesc(caption) + '</div>' : '') + '</div>';
+  }
+  if (kind === 'location' && file) {
+    const at = file.split(';');
+    return '<div class="fbody fevidence"><i class="floc">' + svg('map') + fesc(
+      L('ph.forensic_location').replace('{x}', Number(at[0]).toFixed(1))
+        .replace('{y}', Number(at[1]).toFixed(1))) + '</i></div>';
+  }
+  // An empty text message is still a row worth showing - it says a message was sent - but it
+  // says so in words rather than as a gap.
+  if (!caption) {
+    return '<div class="fbody"><i class="fenc">' + fesc(L('ph.forensic_no_body')) + '</i></div>';
+  }
+  return '<div class="fbody">' + fesc(caption) + '</div>';
 }
 
 async function forensicContacts() {
@@ -13615,7 +13740,9 @@ async function forensicSocial() {
       '<span class="ftag">' + fesc(p.app) + '</span>' +
       '<span class="ft">' + fwhen(p.at) + '</span></div>' +
       (p.body ? '<div class="fbody">' + fesc(p.body) + '</div>' : '') +
-      (p.image ? '<div class="fbody"><i>' + fesc(L('ph.forensic_image')) + '</i></div>' : '') +
+      // The picture itself. This said the word "image" in italics, which told an officer that
+      // something was posted and nothing about what - and on Snapmatic the picture IS the post.
+      (p.image ? '<div class="fbody fevidence">' + photoImg(p.image, 'fimg') + '</div>' : '') +
       '</div>').join('');
   }
   if (dms.length) {
@@ -13624,7 +13751,9 @@ async function forensicSocial() {
       '<span class="ftag">' + fesc(d.app) + '</span><span>' +
       (d.outgoing ? '&rarr; @' + fesc(d.to_handle || '?') : '@' + fesc(d.from_handle || '?')) +
       '</span><span class="ft">' + fwhen(d.at) + '</span></div>' +
-      (d.body ? '<div class="fbody">' + fesc(d.body) + '</div>' : '') + '</div>').join('');
+      (d.body ? '<div class="fbody">' + fesc(d.body) + '</div>' : '') +
+      (d.image ? '<div class="fbody fevidence">' + photoImg(d.image, 'fimg') + '</div>' : '') +
+      '</div>').join('');
   }
   forensicList(html || forensicEmpty(L('ph.forensic_no_social')));
 }
@@ -13657,6 +13786,10 @@ async function forensicCipher() {
       b.disabled = true;
       cell.innerHTML = '<i class="fcracking">' + fesc(L('ph.forensic_cracking')) + '</i>';
       const cr = await fpost('forensicCrack', { id: Number(b.dataset.id) });
+
+      // The bench route: the server sent a puzzle rather than a verdict.
+      if (cr && cr.ok && cr.bench) { forensicBench(cr.bench, cell); return; }
+
       if (cr && cr.ok && cr.cracked) {
         cell.innerHTML = '<span class="fcracked">' + fesc(cr.body) + '</span>';
       } else if (cr && cr.ok) {
@@ -13668,6 +13801,319 @@ async function forensicCipher() {
         cell.innerHTML = '<i class="fenc">' + fesc(forensicErr(cr)) + '</i>';
       }
     }));
+}
+
+// ══ The cryptanalysis bench ════════════════════════════════════
+// Three stages, one at a time, over the evidence list. Each is a different real technique and
+// each arrives generated by the server, which keeps the answers: nothing here decides whether a
+// crack succeeded, it only collects what the officer worked out and submits it.
+//
+// The state is module-level rather than passed around because the clock, the stage index and the
+// working answers are all read by handlers that outlive any one render.
+let benchData = null;      // the server's puzzle, while the bench is up
+let benchStage = 0;        // which stage is on screen
+let benchAnswers = [];     // what will be submitted, one entry per stage
+let benchClock = null;     // the countdown interval
+let benchLeft = 0;         // seconds remaining
+let benchCell = null;      // the row that opened it, to write the result back into
+let benchWork = null;      // the current stage's working state
+
+/// A list from Lua, as a list.
+///
+/// An EMPTY Lua table serialises to `{}` and not to `[]`, so a bench configured with no hints,
+/// or a stage whose clue list happened to be empty, arrived here as an object - and the first
+/// `.map` on it threw inside a render, which takes the whole panel down rather than drawing one
+/// bench without hints. Every list off the wire goes through this.
+function farr(v) { return Array.isArray(v) ? v : []; }
+
+function forensicBench(bench, cell) {
+  benchData = bench;
+  benchCell = cell;
+  benchStage = 0;
+  benchAnswers = [];
+  benchLeft = Math.max(20, Number(bench.seconds) || 150);
+  cell.innerHTML = '<i class="fcracking">' + fesc(L('ph.forensic_bench_open')) + '</i>';
+  benchDraw();
+  benchTick();
+}
+
+function benchTick() {
+  if (benchClock) clearInterval(benchClock);
+  benchClock = setInterval(() => {
+    benchLeft -= 1;
+    const el = byId('benchclock');
+    if (el) {
+      el.textContent = benchTime(benchLeft);
+      el.classList.toggle('low', benchLeft <= 20);
+    }
+    // Out of time is a submission, not a silence: the server counts the attempt either way, so
+    // telling it what happened is what keeps the two sides agreeing on how many are left.
+    if (benchLeft <= 0) benchSubmit(true);
+  }, 1000);
+}
+
+function benchTime(s) {
+  const n = Math.max(0, Math.floor(s));
+  return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+}
+
+function benchClose() {
+  if (benchClock) { clearInterval(benchClock); benchClock = null; }
+  const host = byId('bench');
+  if (host) host.remove();
+  benchData = null;
+  benchWork = null;
+}
+
+/// The frame: a stage rail, the clock, and whichever bench is current.
+function benchDraw() {
+  const stages = farr(benchData && benchData.stages);
+  const stage = stages[benchStage];
+  if (!stage) return;
+  benchWork = null;
+
+  let host = byId('bench');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'bench';
+    host.className = 'bench';
+    byId('forensic').appendChild(host);
+  }
+
+  host.innerHTML =
+    '<div class="benchhead">' +
+      '<div class="benchtitle">' + svg('lockshut') + '<b>' +
+        fesc(L('ph.forensic_bench')) + '</b>' +
+        '<span class="benchattempts">' + fesc(L('ph.forensic_bench_attempts')
+          .replace('{n}', String(benchData.attemptsLeft || 1))) + '</span></div>' +
+      '<div class="benchclock" id="benchclock">' + benchTime(benchLeft) + '</div>' +
+      '<button class="benchgiveup" id="benchgiveup" type="button">' +
+        fesc(L('ph.forensic_bench_abort')) + '</button>' +
+    '</div>' +
+    '<div class="benchrail">' + stages.map((s, i) =>
+      '<span class="benchstep' + (i === benchStage ? ' on' : (i < benchStage ? ' done' : '')) +
+      '">' + fesc(L('ph.forensic_bench_' + s.kind)) + '</span>').join('') + '</div>' +
+    '<div class="benchbody" id="benchbody"></div>' +
+    '<div class="benchfoot">' +
+      '<div class="benchhint" id="benchhint">' +
+        fesc(L('ph.forensic_bench_hint_' + stage.kind)) + '</div>' +
+      '<button class="benchgo" id="benchgo" type="button">' +
+        fesc(L(benchStage + 1 >= stages.length
+          ? 'ph.forensic_bench_submit' : 'ph.forensic_bench_next')) + '</button>' +
+    '</div>';
+
+  byId('benchgiveup').addEventListener('click', () => benchSubmit(true));
+  byId('benchgo').addEventListener('click', benchAdvance);
+
+  if (stage.kind === 'substitution') benchSubstitution(stage);
+  else if (stage.kind === 'xorkey') benchXor(stage);
+  else if (stage.kind === 'rotors') benchRotors(stage);
+}
+
+/// Stage on to the next, or submit everything.
+function benchAdvance() {
+  const stages = farr(benchData && benchData.stages);
+  benchAnswers[benchStage] = benchCollect(stages[benchStage]);
+  if (benchStage + 1 < stages.length) { benchStage += 1; benchDraw(); return; }
+  benchSubmit(false);
+}
+
+function benchCollect(stage) {
+  if (!stage || !benchWork) return null;
+  if (stage.kind === 'substitution') return benchWork.plain();
+  if (stage.kind === 'xorkey') return benchWork.key.slice();
+  if (stage.kind === 'rotors') return benchWork.rotors.slice();
+  return null;
+}
+
+async function benchSubmit(gaveup) {
+  if (!benchData) return;
+  const id = benchData.id;
+  if (benchClock) { clearInterval(benchClock); benchClock = null; }
+
+  // A stage the officer never reached submits whatever it had, which is nothing - the server
+  // marks it wrong, which is the truth. Only the LAST stage needs collecting here, because
+  // every earlier one was collected on its way past.
+  if (!gaveup) benchAnswers[benchStage] = benchCollect(farr(benchData.stages)[benchStage]);
+
+  const body = byId('benchbody');
+  if (body) body.innerHTML = '<div class="benchwait">' +
+    fesc(L('ph.forensic_bench_checking')) + '</div>';
+
+  const r = await fpost('forensicCrackSolve',
+    { id, answers: benchAnswers, gaveup: gaveup === true });
+  const cell = benchCell;
+  benchClose();
+  if (!cell) return;
+
+  if (r && r.ok && r.cracked) {
+    cell.innerHTML = '<span class="fcracked">' + fesc(r.body) + '</span>';
+    return;
+  }
+  if (r && r.ok) {
+    // Why it failed, in the officer's terms. `corrupt` is the one worth separating: the key WAS
+    // recovered and the intercepted fragment was unusable anyway, which is the wiretap's fault
+    // and not theirs - saying "wrong key" there would teach them the wrong lesson.
+    const reason = String(r.reason || 'wrong');
+    const key = reason === 'corrupt' ? 'ph.forensic_bench_corrupt'
+      : (reason === 'gaveup' ? 'ph.forensic_bench_aborted' : 'ph.forensic_bench_wrong');
+    cell.innerHTML = '<i class="fenc">' + fesc(L(key)) + '</i>';
+    // Redrawn so the Crack button comes back with a live listener on it, and with the attempt
+    // count the server now holds rather than the one this page remembered.
+    setTimeout(forensicCipher, 1600);
+    return;
+  }
+  cell.innerHTML = '<i class="fenc">' + fesc(forensicErr(r)) + '</i>';
+}
+
+// ── Bench one: frequency analysis ──────────────────────────────
+// The ciphertext, a histogram, and a keyboard of assignments. Clicking a cipher letter and then
+// a plaintext letter binds them, and every occurrence updates at once - which is the whole point
+// of a substitution attack: one good guess cascades.
+function benchSubstitution(stage) {
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const map = {};            // cipher letter -> plain letter
+  const locked = {};         // the mappings the server gave away, which cannot be undone
+  farr(stage.hints).forEach((h) => { map[h.c] = h.p; locked[h.c] = true; });
+  let picked = null;         // the cipher letter awaiting a plaintext letter
+
+  benchWork = {
+    plain: () => String(stage.cipher || '').split('')
+      .map((ch) => (ch === ' ' ? ' ' : (map[ch] || '.'))).join(''),
+  };
+
+  const draw = () => {
+    const body = byId('benchbody');
+    if (!body) return;
+    const cipher = String(stage.cipher || '');
+    body.innerHTML =
+      '<div class="benchcrypt">' + cipher.split('').map((ch) => ch === ' '
+        ? '<span class="bgap"></span>'
+        : '<button class="bcell' + (picked === ch ? ' picked' : '') +
+          (locked[ch] ? ' locked' : (map[ch] ? ' filled' : '')) +
+          '" type="button" data-c="' + fesc(ch) + '">' +
+          '<b>' + fesc(map[ch] || '·') + '</b><small>' + fesc(ch) + '</small></button>').join('') +
+      '</div>' +
+      '<div class="benchfreq">' + farr(stage.freq).map((f) =>
+        '<span class="bfreq"><b>' + fesc(f.c) + '</b>' +
+        '<i style="height:' + Math.max(3, Math.min(26, Number(f.n) * 5)) + 'px"></i>' +
+        '<small>' + fesc(String(f.n)) + '</small></span>').join('') + '</div>' +
+      '<div class="benchkeys">' + LETTERS.split('').map((p) =>
+        '<button class="bkey" type="button" data-p="' + p + '"' +
+        (picked ? '' : ' disabled') + '>' + p + '</button>').join('') +
+        '<button class="bkey wipe" type="button" data-p="">' +
+          fesc(L('ph.forensic_bench_clear')) + '</button>' +
+      '</div>';
+
+    [...body.querySelectorAll('.bcell')].forEach((b) => b.addEventListener('click', () => {
+      if (locked[b.dataset.c]) return;
+      picked = picked === b.dataset.c ? null : b.dataset.c;
+      draw();
+    }));
+    [...body.querySelectorAll('.bkey')].forEach((b) => b.addEventListener('click', () => {
+      if (!picked) return;
+      if (b.dataset.p) map[picked] = b.dataset.p; else delete map[picked];
+      picked = null;
+      draw();
+    }));
+  };
+  draw();
+}
+
+// ── Bench two: align the key ───────────────────────────────────
+// A repeating-key XOR whose header is known. Each key byte is a dial, and the decode under it
+// updates live, so the officer turns each dial until the header appears. Known-plaintext, played.
+function benchXor(stage) {
+  const bytes = farr(stage.bytes).map((b) => Number(b) || 0);
+  const width = Math.max(1, Number(stage.width) || 3);
+  const key = new Array(width).fill(0);
+  benchWork = { key };
+
+  const decoded = () => bytes.map((b, i) => {
+    const code = b ^ key[i % width];
+    return (code >= 32 && code < 127) ? String.fromCharCode(code) : '·';
+  }).join('');
+
+  const draw = () => {
+    const body = byId('benchbody');
+    if (!body) return;
+    const out = decoded();
+    const want = String(stage.header || '');
+    const good = out === want;
+    body.innerHTML =
+      '<div class="benchtarget"><small>' + fesc(L('ph.forensic_bench_header')) +
+        '</small><code>' + fesc(want) + '</code></div>' +
+      '<div class="benchbytes">' + bytes.map((b) =>
+        '<span>' + fesc(b.toString(16).toUpperCase().padStart(2, '0')) + '</span>').join('') +
+      '</div>' +
+      '<div class="benchout' + (good ? ' good' : '') + '"><code>' + fesc(out) + '</code></div>' +
+      '<div class="benchdials">' + key.map((v, i) =>
+        '<div class="bdial"><small>' + fesc(L('ph.forensic_bench_byte')
+          .replace('{n}', String(i + 1))) + '</small>' +
+        '<div class="bdialrow">' +
+          '<button type="button" data-d="' + i + '" data-s="-16">&laquo;</button>' +
+          '<button type="button" data-d="' + i + '" data-s="-1">&lsaquo;</button>' +
+          '<b>' + fesc(v.toString(16).toUpperCase().padStart(2, '0')) + '</b>' +
+          '<button type="button" data-d="' + i + '" data-s="1">&rsaquo;</button>' +
+          '<button type="button" data-d="' + i + '" data-s="16">&raquo;</button>' +
+        '</div></div>').join('') + '</div>';
+
+    [...body.querySelectorAll('.bdialrow button')].forEach((b) =>
+      b.addEventListener('click', () => {
+        const at = Number(b.dataset.d);
+        // Wraps rather than clamps: a dial that stops at FF makes the officer walk all the way
+        // back down to try the other end.
+        key[at] = ((key[at] + Number(b.dataset.s)) % 256 + 256) % 256;
+        draw();
+      }));
+  };
+  draw();
+}
+
+// ── Bench three: the rotors ────────────────────────────────────
+// Four rotors and a system of modular constraints. Each clue reads as an equation and turns
+// green when it holds, so the officer can work the system rather than guess at it.
+function benchRotors(stage) {
+  const rotors = [0, 0, 0, 0];
+  const clues = farr(stage.clues);
+  benchWork = { rotors };
+
+  const holds = (c) => {
+    const v = Number(c.v) || 0;
+    if (c.op === 'sum') return ((rotors[c.a - 1] + rotors[c.b - 1]) % 26) === v;
+    if (c.op === 'diff') return (((rotors[c.a - 1] - rotors[c.b - 1]) % 26 + 26) % 26) === v;
+    if (c.op === 'total') return rotors.reduce((n, x) => n + x, 0) === v;
+    return false;
+  };
+  const label = (c) => {
+    if (c.op === 'sum') return 'R' + c.a + ' + R' + c.b + ' ≡ ' + c.v + ' (mod 26)';
+    if (c.op === 'diff') return 'R' + c.a + ' − R' + c.b + ' ≡ ' + c.v + ' (mod 26)';
+    if (c.op === 'total') return 'R1 + R2 + R3 + R4 = ' + c.v;
+    return '?';
+  };
+
+  const draw = () => {
+    const body = byId('benchbody');
+    if (!body) return;
+    body.innerHTML =
+      '<div class="benchclues">' + clues.map((c) =>
+        '<span class="bclue' + (holds(c) ? ' ok' : '') + '">' + fesc(label(c)) + '</span>').join('') +
+      '</div>' +
+      '<div class="benchrotors">' + rotors.map((v, i) =>
+        '<div class="brotor"><small>R' + (i + 1) + '</small>' +
+        '<button type="button" data-r="' + i + '" data-s="1">+</button>' +
+        '<b>' + String(v).padStart(2, '0') + '</b>' +
+        '<button type="button" data-r="' + i + '" data-s="-1">&minus;</button>' +
+        '<i>' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[v] + '</i></div>').join('') + '</div>';
+
+    [...body.querySelectorAll('.brotor button')].forEach((b) =>
+      b.addEventListener('click', () => {
+        const at = Number(b.dataset.r);
+        rotors[at] = ((rotors[at] + Number(b.dataset.s)) % 26 + 26) % 26;
+        draw();
+      }));
+  };
+  draw();
 }
 
 byId('forensicx').addEventListener('click', forensicClose);
