@@ -328,6 +328,73 @@ RegisterNetEvent('v-phone:client:repairCall', function(d)
     SendNUIMessage({ action = 'repairQueue' })
 end)
 
+-- ══════════════════════════════════════════════════════════════
+-- doc-mechanicmdt's own two staff events
+-- ══════════════════════════════════════════════════════════════
+-- **The phone did not beep.** doc-mechanicmdt tells its on-duty employees about a new callout
+-- with a framework notification and a sound of its own - which is a notification on the SCREEN
+-- and a noise in the game, not a phone doing anything. A mechanic who has the Repair app should
+-- get it the way they get everything else: a banner, a buzz, and a card in the notification
+-- centre they can come back to.
+--
+-- Two events, and it broadcasts both to exactly the right people already - every employee of
+-- that garage who is clocked on - so there is nothing to gate here:
+--
+--     doc-mechanicmdt:client:callSound     a NEW callout. Fired only on create.
+--     doc-mechanicmdt:client:callsUpdated  the queue changed somehow.
+--
+-- Neither carries any detail, so the customer's name is fetched from the queue - one callback,
+-- and only at the moment a callout actually arrives.
+
+local lastBeep = 0
+
+RegisterNetEvent('doc-mechanicmdt:client:callSound', function()
+    if not docMode() or not PhoneNotify then return end
+
+    -- Its own sound plays too, and two alerts a second apart read as a bug rather than as
+    -- urgency. One beep per five seconds is enough for a queue that gains a job at a time.
+    local now = GetGameTimer()
+    if now - lastBeep < 5000 then return end
+    lastBeep = now
+
+    local title = (PhoneString and PhoneString('ph.repair_new_call')) or 'Callout'
+
+    ask('doc-mechanicmdt:server:getGarageCalls', nil, function(res)
+        -- The newest one waiting, which is the one that just arrived. Its queue comes back
+        -- oldest first, so this walks backwards to the last still-pending row.
+        local newest
+        if type(res) == 'table' then
+            for i = #res, 1, -1 do
+                local r = res[i]
+                if type(r) == 'table' and tostring(r.status or '') == 'pending' then
+                    newest = r
+                    break
+                end
+            end
+        end
+
+        PhoneNotify({
+            app = 'repair', icon = 'repair',
+            title = title,
+            -- The name if the queue answered, and the bare title if it did not: a beep that
+            -- says nothing still beats no beep at all, which is what was reported.
+            body = newest and (tostring(newest.client_name or '') ..
+                ((tostring(newest.message or '')) ~= '' and (' - ' .. tostring(newest.message)) or ''))
+                or '',
+            hasItem = true,
+        })
+        SendNUIMessage({ action = 'repairQueue' })
+    end)
+end)
+
+--- The queue changed - taken, held, finished, cancelled. No banner: a mechanic does not need
+--- telling about their own tap, and the other three are their colleagues working. The open app
+--- just stops being wrong.
+RegisterNetEvent('doc-mechanicmdt:client:callsUpdated', function()
+    if not docMode() then return end
+    SendNUIMessage({ action = 'repairQueue' })
+end)
+
 --- My callout moved. Config provider only, for the same reason.
 RegisterNetEvent('v-phone:client:repairStatus', function(d)
     if type(d) ~= 'table' then return end

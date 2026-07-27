@@ -356,6 +356,38 @@ if ADMIN.commands ~= false then
             local n = self:EmergencyAlert(kind, body)
             reply(src, ('Alert sent to %d phone(s).'):format(n))
 
+        -- ── Speaking into every phone ───────────────────────────────────
+        --
+        -- `/phoneadmin voice [seconds]` opens the staff member's microphone into every handset
+        -- on the server; `/phoneadmin voice stop` closes it early.
+        elseif sub == 'voice' and actionOn('voice') then
+            local cfg = (ADMIN.voice or {})
+            if cfg.enabled == false then
+                reply(src, 'Voice broadcasts are switched off on this server.')
+                return
+            end
+
+            if tostring(args[2] or ''):lower() == 'stop' then
+                local n = VoiceBroadcastStop()
+                reply(src, n > 0 and 'Broadcast closed.' or 'Nothing was being broadcast.')
+                return
+            end
+
+            local seconds = math.floor(tonumber(args[2]) or tonumber(cfg.seconds) or 60)
+            local most = math.floor(tonumber(cfg.maxSeconds) or 300)
+            if seconds < 1 then seconds = 1 end
+            if seconds > most then seconds = most end
+
+            local n, why = VoiceBroadcastStart(src, seconds)
+            if not n then
+                reply(src, why == 'busy'
+                    and 'A broadcast is already running. Use "voice stop" first.'
+                    or 'That did not work.')
+                return
+            end
+            reply(src, ('Live to %d phone(s) for %d second(s). "/phoneadmin voice stop" ends it.')
+                :format(n, seconds))
+
         -- ── A new number, in the phone's own format ─────────────────────
         --
         -- Behind `setNumber`, because that is what it is: setting a number, with the phone
@@ -487,6 +519,8 @@ if ADMIN.commands ~= false then
         { 'batteryall', 'Set every phone online', { { '0-100', 'percent' } } },
         { 'renumber', "A new number in the phone's own format", { { 'id|cid|all', 'the target' }, { 'confirm', 'required' } } },
         { 'alert', 'A loud full-screen alert on every phone', { { 'kind', 'e.g. EARTHQUAKE' }, { 'message...', 'what is happening' } } },
+        { 'voice', 'Speak into every phone in the city', { { 'seconds', 'omit for the default' } } },
+        { 'voice stop', 'Close the broadcast early', {} },
         { 'message', 'Send a text message, from Staff', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
         { 'notify', 'A banner on their phone (does not persist)', { { 'id|cid', 'the target' }, { 'text...', 'the message' } } },
         { 'announce', 'That banner, to every phone online', { { 'text...', 'the message' } } },

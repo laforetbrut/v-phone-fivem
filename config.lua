@@ -245,6 +245,7 @@ Config.Compat = {
         property = true,   -- your houses, and a route to one
         taxi     = true,   -- hail a ride, or drive one
         repair   = true,   -- reach a mechanic, and the callout queue on the other side
+        export   = true,   -- the market board: prices, favourites and price alerts
 
         -- ── Work and paperwork ────────────────────────────────
         jobs     = true,   -- open positions, and your own contract
@@ -852,6 +853,13 @@ Config.Apps = {
     -- Taxi: hail a ride, or drive one. A free download. See Config.Taxi.
     { id = 'taxi',     label = 'app.taxi',     icon = 'taxi',     owner = 'v-phone',    slot = 27,
       optional = true, category = 'travel', version = '1.0' },
+    -- Export: the market price of everything worth selling. A DOWNLOAD, and a PAID one at
+    -- $1,000 - knowing what your haul is worth before you drive across the map is worth a
+    -- morning's work, and a price board that anybody can read for nothing is a price board
+    -- nobody has an edge from. Bought once and remembered against the character, so removing
+    -- it and installing it again later is free. See Config.Export.
+    { id = 'export',   label = 'app.export',   icon = 'export',   owner = 'v-phone',    slot = 29,
+      optional = true, category = 'finance', price = 1000, account = 'bank', version = '1.0' },
     -- Repair: reaching a mechanic. A FREE download, because a player who has broken down needs
     -- it at the moment they break down, and an app that costs money is one they do not have
     -- installed yet. Not on the home screen by default: most characters never call one out.
@@ -893,6 +901,11 @@ Config.AppMetadata = {
         features = { 'Alertes officielles', 'Notification sur tous les téléphones',
                      'Archives consultables', 'Diffusion pour les autorités' },
         keywords = { 'alerte', 'gouvernement', 'police', 'urgence', 'population' },
+    },
+    export = {
+        features = { 'Cours en direct', 'Favoris', 'Alertes de prix',
+                     'Historique et tendance', 'Marché export et import' },
+        keywords = { 'export', 'import', 'cours', 'prix', 'marché', 'vendre', 'bourse' },
     },
     repair = {
         features = { 'Garages ouverts et notes', 'Demande de dépannage géolocalisée',
@@ -1419,6 +1432,149 @@ Config.Chargers = {
       coords = vector3(-1223.0, -1493.0, 4.4), radius = 6.0 },
 }
 normalisePlaces(Config.Chargers)
+
+-- ══════════════════════════════════════════════════════════════
+--  EXPORT  (what your haul is worth, before you drive across the map)
+-- ══════════════════════════════════════════════════════════════
+-- A free download. Free because it is a price board: charging somebody to find out what their
+-- goods are worth is charging them for the information they need to decide whether to bother.
+--
+-- Two providers, one app, and a player never learns which one answered:
+--
+--   * **doc-shops**, when that resource is started. Its markets, its items, its fluctuating
+--     prices and its history. It publishes `GetMarketData(market)` as a **server export**, which
+--     is what makes the alerts possible at all: the phone's own server reads the board directly,
+--     on a timer, so an alert can fire while the app is closed and the player is in a field
+--     somewhere. **Nothing in doc-shops is edited, wrapped or replaced.**
+--   * **`items` below** otherwise, which is what makes the app worth having on an ESX, ox or
+--     standalone server: the phone's own board, its own fluctuation, its own history.
+--
+-- **The app never sells anything.** It says what a thing is worth and where the price is going;
+-- selling happens at the shop, in front of the person buying it. An app that moved goods would
+-- be a second inventory system nobody asked for.
+Config.Export = {
+    enabled = true,
+
+    -- 'auto' uses doc-shops when it is started and the board below when it is not.
+    -- 'doc-shops' or 'config' pin it, for a server that wants to be sure which is live.
+    provider = 'auto',
+
+    -- Which boards the app shows, in this order. doc-shops keeps two - what it pays you for
+    -- goods, and what it charges to import them - and they move together, because its import
+    -- price is the export price plus a margin.
+    --
+    -- One entry gives a single board with no switcher, which is the right shape for a server
+    -- that only sells.
+    markets = {
+        { key = 'export', label = 'ph.export_m_export' },
+        { key = 'import', label = 'ph.export_m_import' },
+    },
+
+    -- ── Watching the board ─────────────────────────────────────
+    -- How often the SERVER re-reads the prices, in seconds. This is what alerts are checked
+    -- against, so it is the shortest delay between a price moving and a phone buzzing.
+    --
+    -- doc-shops fluctuates every twenty minutes, so there is nothing to gain from asking every
+    -- second - and each read is a database query on its side. Two minutes notices a change
+    -- within a tenth of the time it takes to happen.
+    pollSeconds = 120,
+
+    -- How many points of history the phone keeps per item, for the line on an item's page.
+    -- doc-shops keeps five of its own; anything beyond that is what the phone has watched
+    -- since it started.
+    history = 24,
+
+    -- ── Favourites ─────────────────────────────────────────────
+    -- The items a player wants at the top. Capped because it is a list on a phone screen: a
+    -- hundred favourites is the whole board again with extra steps.
+    maxFavourites = 24,
+
+    -- ── Alerts ─────────────────────────────────────────────────
+    -- "Tell me when it goes above 900." Three kinds, and they answer different questions:
+    --
+    --   above   a price to sell at        - the one everybody sets first
+    --   below   a price to buy at         - the same thing from the import side
+    --   move    a percentage swing        - "tell me when something happens", for people who
+    --                                       do not know what the number should be
+    --
+    -- Set to false to remove a kind from the app entirely.
+    alerts = { above = true, below = true, move = true },
+
+    -- How many an ordinary player may have standing at once.
+    maxAlerts = 12,
+
+    -- Seconds before the SAME alert may fire again. Without this, a price that sits just over
+    -- the line buzzes on every poll for as long as it stays there - which is how somebody ends
+    -- up muting the app and missing the one that mattered.
+    alertCooldown = 1800,
+
+    -- An alert fires once and then goes quiet until the price crosses back. Off makes it fire
+    -- every time the condition holds, subject to the cooldown above - louder, and honest about
+    -- being louder.
+    alertRearm = true,
+
+    -- Does an alert survive being fired? Off deletes it, which suits "tell me once, when my
+    -- haul is finally worth selling".
+    alertKeep = true,
+
+    notify = true,
+
+    -- ── The board, when doc-shops is not there ─────────────────
+    -- Ignored entirely under doc-shops, which has its own items, categories and prices.
+    --
+    --   name      the item name your inventory uses
+    --   label     what a player reads
+    --   category  a key from `categories` below
+    --   min/max   the range the price wanders between, inclusive
+    --
+    -- Prices move on `fluctuateSeconds`, the same way doc-shops moves its own: a new value in
+    -- the range rather than a drift, because a market that only ever creeps is one nobody
+    -- watches.
+    -- Where item pictures come from, for the board below. Every inventory in FiveM lays them
+    -- out the same way - one PNG per item name - so this is the folder and the app adds
+    -- `<item>.png`. A trailing slash is optional; it is added if you forget it.
+    --
+    --     imageBase = 'nui://qs-inventory/html/images/',
+    --     imageBase = 'nui://ox_inventory/web/images/',
+    --     imageBase = 'https://your-cdn.example/items/',
+    --
+    -- An item may also carry its own `image` for the one that does not follow the pattern.
+    -- Empty leaves every row with its initial, which is what they looked like before there
+    -- were any pictures.
+    --
+    -- **Ignored under doc-shops**, which builds its own URLs and knows which inventory that
+    -- server runs - guessing at it from here would be worse information, not better.
+    imageBase = 'nui://qs-inventory/html/images/',
+
+    categories = {
+        metal   = 'ph.export_c_metal',
+        food    = 'ph.export_c_food',
+        chem    = 'ph.export_c_chem',
+        luxury  = 'ph.export_c_luxury',
+        general = 'ph.export_c_general',
+    },
+
+    items = {
+        { name = 'copper',      label = 'Copper',        category = 'metal',   min = 55,   max = 140 },
+        { name = 'iron',        label = 'Iron',          category = 'metal',   min = 40,   max = 110 },
+        { name = 'aluminium',   label = 'Aluminium',     category = 'metal',   min = 70,   max = 180 },
+        { name = 'steel',       label = 'Steel',         category = 'metal',   min = 90,   max = 220 },
+        { name = 'gold',        label = 'Gold',          category = 'luxury',  min = 600,  max = 1400 },
+        { name = 'diamond',     label = 'Diamond',       category = 'luxury',  min = 1200, max = 3200 },
+        { name = 'wheat',       label = 'Wheat',         category = 'food',    min = 20,   max = 60 },
+        { name = 'fish',        label = 'Fish',          category = 'food',    min = 35,   max = 95 },
+        { name = 'meat',        label = 'Meat',          category = 'food',    min = 45,   max = 120 },
+        { name = 'sulfur',      label = 'Sulphur',       category = 'chem',    min = 80,   max = 200 },
+        { name = 'petrol',      label = 'Petrol',        category = 'chem',    min = 110,  max = 260 },
+        { name = 'plastic',     label = 'Plastic',       category = 'general', min = 25,   max = 70 },
+        { name = 'glass',       label = 'Glass',         category = 'general', min = 30,   max = 85 },
+        { name = 'rubber',      label = 'Rubber',        category = 'general', min = 28,   max = 78 },
+    },
+
+    -- Twenty minutes, which is doc-shops' own interval - so a server that switches provider
+    -- does not also change how often the board moves under its players.
+    fluctuateSeconds = 1200,
+}
 
 -- ══════════════════════════════════════════════════════════════
 --  REPAIR  (reaching a mechanic, from the side of the road)
@@ -2085,14 +2241,21 @@ Config.Alerts = {
     -- arrives grey, wearing its key.
     --
     -- The order written here is the order the composer offers them.
+    -- `loud` overrides `ring` for one category. Left out means "whatever `ring` says", which is
+    -- how a server that wants everything to klaxon writes nothing extra at all.
     categories = {
         { key = 'population',  label = 'ph.alert_c_population',  color = '#EF4444', icon = 'warning' },
         { key = 'incendie',    label = 'ph.alert_c_fire',        color = '#F97316', icon = 'fire' },
         { key = 'catastrophe', label = 'ph.alert_c_disaster',    color = '#DC2626', icon = 'house' },
         { key = 'recherche',   label = 'ph.alert_c_wanted',      color = '#F59E0B', icon = 'search' },
-        { key = 'route',       label = 'ph.alert_c_road',        color = '#EAB308', icon = 'car' },
-        { key = 'meteo',       label = 'ph.alert_c_weather',     color = '#3B82F6', icon = 'weather' },
-        { key = 'officiel',    label = 'ph.alert_c_official',    color = '#94A3B8', icon = 'shield' },
+        -- Roadworks and the weather are information, not evacuation orders. They arrive as an
+        -- ordinary notification with the phone's own text tone.
+        { key = 'route',       label = 'ph.alert_c_road',        color = '#EAB308', icon = 'car',
+          loud = false },
+        { key = 'meteo',       label = 'ph.alert_c_weather',     color = '#3B82F6', icon = 'weather',
+          loud = false },
+        { key = 'officiel',    label = 'ph.alert_c_official',    color = '#94A3B8', icon = 'shield',
+          loud = false },
     },
 
     -- ── How long an alert stands ───────────────────────────────
@@ -2129,6 +2292,18 @@ Config.Alerts = {
     notify = true,
     -- Buzz as well as show. Off leaves the banner silent.
     vibrate = true,
+
+    -- **Does it RING?**
+    --
+    -- On, a public alert gets the same treatment `/phoneadmin alert` gets: the klaxon at full
+    -- volume whatever the player's ring setting says, the pad shaking, and the handset coming
+    -- out of a pocket. That is the whole point of a civil warning - it has to reach somebody who
+    -- is not looking at their phone - and it is deliberately the one thing in this app that
+    -- steps past a player's own volume, which is why it is a switch rather than simply always on.
+    --
+    -- A category may override it below with `loud = false`. A flood and a roadworks notice are
+    -- not the same event, and a phone that klaxons for both is one people mute before the flood.
+    ring = true,
 
     -- ── Deleting ───────────────────────────────────────────────
     -- Who may take an alert down: whoever wrote it, always, and staff. `staffAce` is the
@@ -2738,6 +2913,54 @@ Config.Admin = {
         -- Off leaves staff with the read-only routes: `info`, `contacts`, `apps`, and the
         -- police forensics terminal.
         view         = true,
+        -- **Speak into every phone in the city.** `/phoneadmin voice`. See Config.Admin.voice
+        -- below - this is the switch that hides the command entirely.
+        voice        = true,
+    },
+
+    -- ── Speaking into every phone ──────────────────────────────
+    -- `/phoneadmin voice [seconds]` opens the staff member's microphone into every handset on
+    -- the server, and `/phoneadmin voice stop` closes it early.
+    --
+    -- **How it works, and where the limit is.** pma-voice has no listen-only channel: joining
+    -- a call channel makes every member a mutual voice target, so sixty players on one would
+    -- all be open-mic to each other. Making it one-way is therefore done on each LISTENER's
+    -- machine - every listener turns every other listener down to zero and keeps only the
+    -- broadcaster, with `MumbleSetVolumeOverrideByServerId`, the same native the bad-line
+    -- effect uses. It is local and instant, and it is restored on a timer that runs whether or
+    -- not the broadcast ends cleanly.
+    --
+    -- On saltychat, or with no voice script at all, this is SILENT and says so rather than
+    -- reporting a broadcast that nobody heard.
+    voice = {
+        enabled = true,
+
+        -- The channel it runs on. Deliberately outside `Config.Compat.voiceChannel` and the
+        -- 256 above it, so a broadcast can never land in the middle of somebody's phone call.
+        channel = 690,
+
+        -- How long one broadcast may last, in seconds, and what it lasts when no length is
+        -- given. The ceiling is not a courtesy: this is an open microphone into every player's
+        -- game, and one left running is one nobody can escape.
+        seconds = 60,
+        maxSeconds = 300,
+
+        -- Draw a banner on every phone while it is live, so a player knows why a voice is
+        -- coming out of their handset rather than thinking their game has broken.
+        banner = true,
+
+        -- Buzz the pad when it starts. The phone rings for this the way it rings for an
+        -- emergency alert, because a voice arriving out of nowhere with no warning is worse
+        -- than one announced.
+        ring = true,
+
+        -- Whether a player on their OWN call is included.
+        --
+        -- Off leaves them alone, which is the kinder default: joining somebody to a broadcast
+        -- channel mid-conversation drops them out of it, and ending the broadcast would set
+        -- their channel to zero - hanging up on them from across the map. They still get the
+        -- banner, so they know they missed something.
+        interruptCalls = false,
     },
 
     -- How long a held phone stays held before it lets go on its own. Seconds.

@@ -294,6 +294,23 @@ phone:PhoneUsable(src)                       --> boolean
 phone:NumberOf(src)                          --> '555-0182' | nil
 ```
 
+#### Export
+
+```lua
+-- The market board as the phone last read it - for a price sign in the world, a news ticker, or
+-- a shop that wants to show the going rate. `market` is 'export' or 'import'; omit it for the
+-- first one the operator listed.
+--
+-- Answers under BOTH providers, unlike the other apps' exports: under doc-shops this is a cached
+-- copy of that resource's own answer, and saying so is more useful than nil to a script that
+-- only wants a number.
+phone:GetExportMarket('export')              --> { at, shop, doc, categories = { { key, label, items = { { name, label, price, min, max, previous, percent, history } } } } } | nil
+
+-- One item's price, which is the question most callers actually have. The item's whole row
+-- comes back as a second return value.
+phone:GetExportPrice('gold', 'export')       --> price, item | nil
+```
+
 #### Repair
 
 ```lua
@@ -734,6 +751,23 @@ phone:PhoneUsable(src)                       --> boolean
 
 -- Le numero de la personne sur cette source, sans passer par le citizenid.
 phone:NumberOf(src)                          --> '555-0182' | nil
+```
+
+#### Export
+
+```lua
+-- Le cours du marche tel que le telephone l a lu en dernier - pour un panneau de prix dans le
+-- monde, un bandeau d information, ou un magasin qui veut afficher le tarif du jour. `market`
+-- vaut 'export' ou 'import' ; omettez-le pour le premier que l operateur a liste.
+--
+-- Repond sous LES DEUX fournisseurs, contrairement aux exports des autres applications : sous
+-- doc-shops c est une copie en cache de sa propre reponse, et le dire est plus utile qu un nil
+-- pour un script qui ne veut qu un chiffre.
+phone:GetExportMarket('export')              --> { at, shop, doc, categories = { { key, label, items = { { name, label, price, min, max, previous, percent, history } } } } } | nil
+
+-- Le prix d un article, qui est la question que la plupart des appelants se posent vraiment. La
+-- ligne complete de l article revient en deuxieme valeur de retour.
+phone:GetExportPrice('gold', 'export')       --> prix, article | nil
 ```
 
 #### Depannage

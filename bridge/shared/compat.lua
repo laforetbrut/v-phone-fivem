@@ -254,6 +254,28 @@ STUBS['v-voice'] = {
         if isServer or voiceResource() ~= 'pma-voice' then return end
         exports['pma-voice']:setCallChannel(on and callChannel(callId) or 0)
     end,
+
+    --- A staff voice broadcast: one person, every phone in the city.
+    ---
+    --- The same call channel machinery, on a channel of its own outside the range calls use -
+    --- see `Config.Admin.voice.channel`. Joining it is what makes the broadcaster audible.
+    ---
+    --- **A call channel is MUTUAL**, which is the whole difficulty: pma-voice has no
+    --- listen-only channel to ask for, so sixty players joined to one would all be open-mic to
+    --- each other. Making it one-way is the CLIENT's job and is done with
+    --- `MumbleSetVolumeOverrideByServerId` - every listener turns every other listener down to
+    --- zero locally, keeping only the broadcaster. See `v-phone:client:voiceBroadcast`.
+    ---
+    --- Only pma-voice exposes calls this way. On saltychat or with no voice script at all the
+    --- broadcast is silent, and the phone says so rather than pretending it went out.
+    VoiceBroadcast = function(_, channel, on)
+        if isServer or voiceResource() ~= 'pma-voice' then return false end
+        local n = math.floor(tonumber(channel) or 0)
+        if n <= 0 then return false end
+        return pcall(function()
+            exports['pma-voice']:setCallChannel(on and n or 0)
+        end)
+    end,
 }
 
 -- ── v-status ───────────────────────────────────────────────────

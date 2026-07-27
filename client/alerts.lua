@@ -191,13 +191,43 @@ end)
 --- banner and a buzz when it is open, and silence when the app is muted or DND is on. That last
 --- one matters more than it sounds - a broadcast a player cannot silence is not a phone, it is an
 --- alarm clock - and it is why this goes through `PhoneNotify` rather than drawing its own.
+--- Does THIS alert ring, or merely notify?
+---
+--- `Config.Alerts.ring` is the default and a category may override it with `loud`. A flood and a
+--- roadworks notice are not the same event, and a phone that klaxons for both is one people turn
+--- off before the flood.
+local function isLoud(alert)
+    local cfg = Config.Alerts or {}
+    if cfg.ring == false then return false end
+    for _, c in ipairs(cfg.categories or {}) do
+        if tostring(c.key) == tostring(alert.category) and c.loud ~= nil then
+            return c.loud == true
+        end
+    end
+    return cfg.ring ~= false
+end
+
 local function raise(alert)
     if type(alert) ~= 'table' then return end
     if not alertsOn() then return end
 
+    local loud = isLoud(alert)
+
     -- The page gets it whether or not it is looking: an open app adds the card without a refetch,
     -- and a closed one has it ready when it opens.
-    SendNUIMessage({ action = 'alert', alert = alert })
+    SendNUIMessage({ action = 'alert', alert = alert, loud = loud })
+
+    -- **A warning has to reach somebody who is not looking at their phone.**
+    --
+    -- The same treatment `/phoneadmin alert` gets, and for the same reason: the pad shakes, the
+    -- handset comes out of the pocket, and the klaxon on the page above plays at full volume
+    -- whatever the ring setting says. This is deliberately the ONE thing in the app that steps
+    -- past a player's own volume - which is why it is behind a config switch and a per-category
+    -- override rather than simply always on.
+    if loud then
+        SendNUIMessage({ action = 'buzz' })
+        SetPadShake(0, 420, 110)
+    end
 
     if (Config.Alerts or {}).notify == false then return end
     if not PhoneNotify then return end
@@ -220,9 +250,9 @@ local function raise(alert)
         hasItem = true,
     })
 
-    if (Config.Alerts or {}).vibrate ~= false then
-        -- The game's own alert tone. A public warning that arrives silently while the phone is in
-        -- a pocket is a warning nobody acted on.
+    -- The game's own text tone, for the quiet ones. A loud alert has already sounded the klaxon
+    -- and does not want a second chime under it.
+    if not loud and (Config.Alerts or {}).vibrate ~= false then
         PlaySoundFrontend(-1, 'Text_Arrive_Tone', 'Phone_SoundSet_Default', true)
     end
 end

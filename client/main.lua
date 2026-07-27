@@ -674,6 +674,118 @@ end)
 --- Two things it does that no other notification does, and both are deliberate: the buzz
 --- ignores Do Not Disturb, and the sound ignores the ring volume. That is the whole point of
 --- an emergency channel, and it is why it sits behind a staff ace and its own switch.
+-- ══════════════════════════════════════════════════════════════
+-- A staff voice, in every phone
+-- ══════════════════════════════════════════════════════════════
+-- `/phoneadmin voice`. The channel is what makes the broadcaster audible; everything below is
+-- about making it ONE-WAY, because pma-voice has no listen-only channel to ask for.
+--
+-- Every listener turns every OTHER listener down to zero and keeps only the speaker. That is
+-- local, instant, and needs nothing from any other resource - it is the same
+-- `MumbleSetVolumeOverrideByServerId` the bad-line effect uses.
+--
+-- **Everything here is undone on a timer that runs whether or not the broadcast ends cleanly.**
+-- A restore that only happens on the closing event is one that never happens when the server
+-- restarts mid-broadcast, and the symptom of that is a player who can no longer hear anybody -
+-- which they would report as the phone breaking their voice chat, correctly.
+
+local vbOn = false          -- true while a broadcast is being listened to
+local vbQuieted = {}        -- [serverId] = true for everyone we turned down
+local vbGuard = nil         -- the id of the safety timer, so a second broadcast replaces it
+local vbJoined = false      -- did WE actually join the channel? Only then do we leave it.
+
+--- Hand everybody their voice back, and let go of the channel.
+---
+--- Written to be safe to call at any time, including twice: this is the function that stops a
+--- failed broadcast from leaving somebody deaf, so it must never depend on the state being what
+--- it is expected to be.
+local function vbRelease()
+    for id in pairs(vbQuieted) do
+        if type(MumbleSetVolumeOverrideByServerId) == 'function' then
+            pcall(MumbleSetVolumeOverrideByServerId, id, -1.0)   -- -1 is "back to normal"
+        end
+    end
+    vbQuieted = {}
+
+    if vbJoined then
+        pcall(function() exports['v-voice']:VoiceBroadcast(0, false) end)
+        vbJoined = false
+    end
+
+    if vbOn then
+        vbOn = false
+        SendNUIMessage({ action = 'voiceBroadcast', on = false })
+    end
+end
+
+RegisterNetEvent('v-phone:client:voiceBroadcast', function(d)
+    if type(d) ~= 'table' then return end
+
+    if not d.on then vbRelease() return end
+
+    -- Somebody on their own call is left alone unless the operator said otherwise. Joining
+    -- them to this channel would drop them out of their conversation, and closing the
+    -- broadcast would set their channel to zero - hanging up on them from across the map.
+    -- They still get the banner, so they know they missed something.
+    local onCall = call and call.state == 'active'
+    local join = (not onCall) or d.interruptCalls == true
+
+    local speaker = tonumber(d.speaker)
+    local me = GetPlayerServerId(PlayerId())
+
+    if join then
+        vbJoined = pcall(function()
+            return exports['v-voice']:VoiceBroadcast(math.floor(tonumber(d.channel) or 0), true)
+        end) and true or false
+
+        -- **The one-way part.** Everybody on the channel is a mutual voice target, so every
+        -- other listener is turned down here - keeping the speaker, and keeping ourselves,
+        -- which the native ignores anyway.
+        if type(MumbleSetVolumeOverrideByServerId) == 'function' then
+            for _, pid in ipairs(GetActivePlayers()) do
+                local id = GetPlayerServerId(pid)
+                if id and id ~= speaker and id ~= me then
+                    if pcall(MumbleSetVolumeOverrideByServerId, id, 0.0) then
+                        vbQuieted[id] = true
+                    end
+                end
+            end
+        end
+    end
+
+    vbOn = true
+
+    -- The banner is drawn whether or not this player joined the channel: somebody on a call
+    -- who was deliberately left out still wants to know a broadcast happened.
+    if d.banner ~= false then
+        SendNUIMessage({ action = 'voiceBroadcast', on = true, muted = not join })
+    end
+
+    -- The same buzz an emergency alert gets. A voice arriving out of nowhere with no warning
+    -- is worse than one announced.
+    if d.ring ~= false and prefsCache.vibrate ~= false then
+        SendNUIMessage({ action = 'buzz' })
+        SetPadShake(0, 300, 90)
+    end
+
+    -- The safety net. A little longer than the broadcast, so the server's own close arrives
+    -- first in the ordinary case and this only fires when something went wrong.
+    if vbGuard then vbGuard = nil end
+    local seconds = math.max(1, math.floor(tonumber(d.seconds) or 60))
+    local mine = {}
+    vbGuard = mine
+    SetTimeout(seconds * 1000 + 4000, function()
+        if vbGuard ~= mine then return end   -- a newer broadcast owns the state now
+        vbGuard = nil
+        vbRelease()
+    end)
+end)
+
+--- Leaving the server with a broadcast running must not be how somebody discovers this.
+AddEventHandler('onResourceStop', function(res)
+    if res == GetCurrentResourceName() then vbRelease() end
+end)
+
 RegisterNetEvent('v-phone:client:emergency', function(alert)
     if type(alert) ~= 'table' then return end
 
@@ -2380,6 +2492,7 @@ local badLine = false          -- true while a cut-out is in progress
 local peerLevel = nil          -- the volume the far end is held at, or nil for normal
 local peerCuts = {}            -- [serverId] = true while THEIR line is cutting out on our side
 local heldIds = {}             -- [serverId] = true for anyone we have turned down and not restored
+local peerBars = nil           -- how many bars the FAR END has, from the server
 
 local function badCfg()
     return (Config.Calls or {}).badSignal or {}
@@ -2446,6 +2559,9 @@ local function releaseVoiceOverrides()
     for id in pairs(peerCuts) do mumbleVolume(id, -1.0) end
     heldIds = {}
     peerCuts = {}
+    -- Whose signal we were told about goes with the call. Keeping it would open the next call
+    -- already degraded on behalf of somebody who is no longer on it.
+    peerBars = nil
     peerLevel = nil
     badLine = false
 end
@@ -2479,6 +2595,33 @@ local function levelForBars(bars)
     local level = tonumber(levels[bars])
     if not level then return nil end
     return math.max(0.0, math.min(1.0, level))
+end
+
+--- How loud the far end should be, given BOTH ends of the line.
+---
+--- **A line is as bad as its worst end.** This is the fix for the half of the effect that was
+--- one-sided: the degradation used to be worked out from this phone's bars alone, so somebody
+--- at one bar heard the other person at a fifth of the volume while the other person heard them
+--- perfectly. Only one of the two was on a bad line.
+---
+--- The weaker of the two levels wins, which is what a real line does: it does not matter which
+--- end of it is in a tunnel.
+---
+--- nil means "nothing to hold" - both ends are fine.
+local function lineLevel()
+    local mine = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+    local theirs = peerBars and math.max(0, math.min(4, math.floor(peerBars))) or nil
+
+    local threshold = math.floor(tonumber(badCfg().atBars) or 1)
+    if threshold <= 0 then return nil end
+
+    -- No service at all is not a bad line, it is no line - the server ends those calls - so a
+    -- zero on either side is left to it rather than turned into silence here.
+    local a = (mine > 0 and mine <= threshold) and levelForBars(mine) or nil
+    local b = (theirs and theirs > 0 and theirs <= threshold) and levelForBars(theirs) or nil
+
+    if a and b then return math.min(a, b) end
+    return a or b
 end
 
 --- Drop the line for a moment, and put it back.
@@ -2525,10 +2668,12 @@ local function cutOut(ms)
         -- either open a channel for nobody or hand back a volume nobody is using.
         if not (call and call.state == 'active') then return end
         if volumeSupported() then
-            -- Back to the level this signal deserves, NOT to normal: the line is still bad.
-            local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+            -- Back to the level the LINE deserves, NOT to normal: it is still a bad line, and
+            -- it is bad at whichever end is worse. Reading only this phone's bars here was the
+            -- third place the effect was one-sided, and the easiest to miss - it is the restore
+            -- rather than the cut.
             peerLevel = nil                     -- force the write, whatever it was before
-            holdPeer(levelForBars(bars))
+            holdPeer(lineLevel())
         else
             joinCallAudio()
         end
@@ -2536,6 +2681,26 @@ local function cutOut(ms)
 end
 
 --- The other end's line broke up. Their client said so and our server vouched for it.
+--- How many bars the OTHER phone has.
+---
+--- Sent by the server when the call goes live and again whenever their signal changes. It is the
+--- server's own measurement, never a client's claim, so somebody in a dead zone cannot announce
+--- four bars and sound perfect to everybody else.
+RegisterNetEvent('v-phone:client:peerSignal', function(who, bars)
+    local peer = tonumber(who)
+    if not peer then return end
+    if not (call and call.state == 'active' and call.peer == peer) then return end
+
+    peerBars = math.max(0, math.min(4, math.floor(tonumber(bars) or 4)))
+
+    -- Applied at once rather than at the next tick: a second of hearing somebody perfectly
+    -- after they have walked into a tunnel is a second that reads as the effect being late.
+    if badCfg().muteVoice ~= false and not peerCuts[peer] then
+        peerLevel = nil
+        holdPeer(lineLevel())
+    end
+end)
+
 RegisterNetEvent('v-phone:client:peerBadLine', function(from, ms)
     local peer = tonumber(from)
     if not peer or not volumeSupported() then return end
@@ -2545,22 +2710,24 @@ RegisterNetEvent('v-phone:client:peerBadLine', function(from, ms)
     peerCuts[peer] = true
     heldIds[peer] = true
     mumbleVolume(peer, math.max(0.0, tonumber(cfg.cutVolume) or 0.0))
-    -- Their break is drawn on this end too, so it reads as the line rather than as them going
-    -- quiet for no reason.
-    SendNUIMessage({ action = 'callGlitch', on = true,
-                     flicker = cfg.flicker ~= false, static = cfg.static ~= false })
+
+    -- **No glitch drawn here.** It used to be, on the reasoning that a break should read as the
+    -- line rather than as somebody going quiet - but the screen effect is this HANDSET's own
+    -- signal being bad, and this handset's signal is fine. Somebody standing under a mast
+    -- watching their phone flicker and hiss is being told a lie about where they are.
+    --
+    -- The audio break is mutual and stays mutual; the picture belongs to the end that earned it.
 
     SetTimeout(math.max(60, math.floor(tonumber(ms) or 250)), function()
         peerCuts[peer] = nil
-        SendNUIMessage({ action = 'callGlitch', on = false })
         if not (call and call.state == 'active' and call.peer == peer) then
             mumbleVolume(peer, -1.0)
             return
         end
-        -- Our own signal decides what we hear once their break is over.
-        local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+        -- Back to what the LINE deserves once their break is over - both ends of it, not just
+        -- this one.
         peerLevel = nil
-        holdPeer(levelForBars(bars))
+        holdPeer(lineLevel())
     end)
 end)
 
@@ -2573,13 +2740,18 @@ CreateThread(function()
             and call and call.state == 'active' and not badLine then
             local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
 
-            -- The standing degradation, before any drop-out is considered. Held while the signal
-            -- stays where it is and given back the moment it recovers, so walking out of a dead
-            -- spot mid-call is audible as the line clearing up.
-            if cfg.muteVoice ~= false and bars > 0 and bars <= threshold then
-                holdPeer(levelForBars(bars))
-            else
+            -- The standing degradation, before any drop-out is considered. Held while either
+            -- signal stays where it is and given back the moment BOTH recover, so walking out of
+            -- a dead spot mid-call is audible as the line clearing up - on both handsets.
+            --
+            -- Skipped while their line is mid-cut: that override is a hard zero with its own
+            -- timer, and writing the standing level over it would end the drop-out early.
+            if cfg.muteVoice == false then
+                -- Switched off mid-session. Anything still held has to be handed back, or the
+                -- setting only takes effect for calls that had not started yet.
                 holdPeer(nil)
+            elseif not peerCuts[call.peer or 0] then
+                holdPeer(lineLevel())
             end
 
             -- No service at all is not a bad line, it is no line - the server ends those.

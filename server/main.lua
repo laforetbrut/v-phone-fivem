@@ -1353,6 +1353,12 @@ local function answerCall(src)
     TriggerClientEvent('v-phone:client:callActive', c.a, { id = id, peer = c.b })
     TriggerClientEvent('v-phone:client:callActive', c.b, { id = id, peer = c.a })
 
+    -- And how good each end's signal is, straight away. The tick above only speaks when a
+    -- signal CHANGES, so without this a call answered from a dead spot would sound perfect to
+    -- the other person until the caller happened to walk somewhere different.
+    TriggerClientEvent('v-phone:client:peerSignal', c.a, c.b, Signal[c.b] or 4)
+    TriggerClientEvent('v-phone:client:peerSignal', c.b, c.a, Signal[c.a] or 4)
+
     local cap = math.floor(num(S('maxMinutes', Config.Calls.maxMinutes), 30))
     SetTimeout(cap * 60000, function()
         if Calls[id] == c then endCall(id, 'timeout') end
@@ -1697,6 +1703,31 @@ CreateThread(function()
 
                         if Signal[src] ~= oldSignal or Charging[src] ~= oldCharging then
                             pushPower(src)
+                        end
+
+                        -- **The far end is told how many bars this phone has.**
+                        --
+                        -- A bad line is bad for BOTH people on it. The standing degradation was
+                        -- applied only on the weak end - somebody at one bar heard the other
+                        -- person at a fifth of the volume, and the other person heard them
+                        -- perfectly - so only one of the two experienced the call as a bad line
+                        -- at all. The drop-outs were relayed; the degradation underneath them
+                        -- never was.
+                        --
+                        -- Sent from the SERVER's own measurement rather than claimed by the
+                        -- client, which is what stops somebody standing in a dead zone from
+                        -- announcing four bars and sounding perfect to everybody else.
+                        if Signal[src] ~= oldSignal then
+                            local cid = CallOf[src]
+                            local live = cid and Calls[cid]
+                            if live and live.state == 'active' then
+                                local far = (live.a == src) and live.b
+                                    or ((live.b == src) and live.a or nil)
+                                if far then
+                                    TriggerClientEvent('v-phone:client:peerSignal', far,
+                                                       src, Signal[src])
+                                end
+                            end
                         end
                         -- A call cannot survive a phone with no service. Checked here rather
                         -- than on the drain tick so it ends when the signal goes, not up to

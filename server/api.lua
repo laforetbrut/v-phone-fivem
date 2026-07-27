@@ -174,6 +174,130 @@ exports('EmergencyAlert', function(kind, body, title)
 end)
 
 -- ══════════════════════════════════════════════════════════════
+-- Speaking into every phone
+-- ══════════════════════════════════════════════════════════════
+-- The sibling of the emergency alert above, and the same idea taken one step: instead of a
+-- written warning, the staff member's own microphone.
+--
+-- **Where the difficulty is.** pma-voice has no listen-only channel - joining a call channel
+-- makes every member a mutual voice target - so a channel with sixty players on it is sixty
+-- open microphones. The channel is what makes the broadcaster audible; making it ONE-WAY is
+-- done on each listener's machine, by turning every other listener down to zero and keeping
+-- only the broadcaster. See `v-phone:client:voiceBroadcast` in client/main.lua.
+--
+-- One broadcast at a time, server-wide. Two people talking into every phone at once is not a
+-- feature anybody asked for, and the second would silently join the first's channel.
+
+local Broadcast = nil       -- { by, name, until_ } while one is live
+
+local function voiceCfg()
+    return (Config.Admin and Config.Admin.voice) or {}
+end
+
+--- Everybody, and what it costs to reach them.
+---
+--- Like the emergency alert, this ignores signal, battery and whether a phone is even in the
+--- player's pocket: it is a staff tool, not a phone call, and a broadcast that skipped a flat
+--- battery would skip exactly the player who needed telling.
+function VoiceBroadcastStart(src, seconds)
+    if voiceCfg().enabled == false then return nil, 'off' end
+    if Broadcast and os.time() < Broadcast.until_ then return nil, 'busy' end
+
+    src = tonumber(src) or 0
+    seconds = math.max(1, math.floor(tonumber(seconds) or 60))
+    local channel = math.floor(tonumber(voiceCfg().channel) or 690)
+
+    Broadcast = {
+        by = src,
+        name = GetPlayerName(src) or 'Staff',
+        until_ = os.time() + seconds,
+    }
+
+    local n = 0
+    for _, raw in ipairs(GetPlayers()) do
+        local id = tonumber(raw)
+        if id then
+            TriggerClientEvent('v-phone:client:voiceBroadcast', id, {
+                on = true,
+                channel = channel,
+                -- Who to KEEP audible. Every other listener is turned down on each machine,
+                -- so this one id is the difference between a broadcast and a riot.
+                speaker = src,
+                seconds = seconds,
+                -- Whether a player already on a call is pulled in. Off by default: joining
+                -- them to this channel drops them out of their conversation, and ending the
+                -- broadcast would set their channel to zero - hanging up on them.
+                interruptCalls = voiceCfg().interruptCalls == true,
+                banner = voiceCfg().banner ~= false,
+                ring = voiceCfg().ring ~= false,
+            })
+            n = n + 1
+        end
+    end
+
+    -- The close is scheduled here rather than trusted to each client's own timer. A client
+    -- that crashed mid-broadcast is a client that never turned anybody's voice back up.
+    SetTimeout(seconds * 1000 + 500, function()
+        if Broadcast and Broadcast.by == src and os.time() >= Broadcast.until_ then
+            VoiceBroadcastStop()
+        end
+    end)
+
+    Core.Log('admin', ('voice broadcast: %s to %d phone(s) for %ds')
+        :format(Broadcast.name, n, seconds))
+    return n
+end
+
+--- Close it, from the command or from the timer. Safe to call when nothing is running.
+function VoiceBroadcastStop()
+    if not Broadcast then return 0 end
+    Broadcast = nil
+
+    local n = 0
+    for _, raw in ipairs(GetPlayers()) do
+        local id = tonumber(raw)
+        if id then
+            TriggerClientEvent('v-phone:client:voiceBroadcast', id, { on = false })
+            n = n + 1
+        end
+    end
+    return n
+end
+
+--- Somebody who joined mid-broadcast still gets it. Without this they are the one player who
+--- cannot hear the announcement everybody else is listening to.
+AddEventHandler('playerJoining', function()
+    if not Broadcast or os.time() >= Broadcast.until_ then return end
+    local id = source
+    SetTimeout(8000, function()
+        if not Broadcast or os.time() >= Broadcast.until_ then return end
+        TriggerClientEvent('v-phone:client:voiceBroadcast', id, {
+            on = true,
+            channel = math.floor(tonumber(voiceCfg().channel) or 690),
+            speaker = Broadcast.by,
+            seconds = math.max(1, Broadcast.until_ - os.time()),
+            interruptCalls = voiceCfg().interruptCalls == true,
+            banner = voiceCfg().banner ~= false,
+            ring = false,       -- they have just loaded in; a klaxon on arrival is not a welcome
+        })
+    end)
+end)
+
+--- A broadcast whose speaker disconnected is a channel nobody is talking on.
+AddEventHandler('playerDropped', function()
+    if Broadcast and Broadcast.by == source then VoiceBroadcastStop() end
+end)
+
+--- For a staff menu, or a script of your own.
+---
+---     exports['v-phone']:VoiceBroadcast(source, 30)
+---     exports['v-phone']:VoiceBroadcast(nil)          -- stop
+exports('VoiceBroadcast', function(src, seconds)
+    if not src then return VoiceBroadcastStop() end
+    return VoiceBroadcastStart(src, seconds)
+end)
+
+-- ══════════════════════════════════════════════════════════════
 -- Messages
 -- ══════════════════════════════════════════════════════════════
 

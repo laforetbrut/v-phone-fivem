@@ -124,6 +124,12 @@
     // A siren horn with two arcs of sound. The stroke twin of the `alerts` tile, used on the
     // cards, the tabs and the empty states inside the Alerts app.
     alerts: 'M4 14V9l9-4v14l-9-4Zm0 0H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1m13-1a3 3 0 0 1 0 6m2-9a7 7 0 0 1 0 12',
+    // A rising line over an axis, for the Export app: a price board is a chart before it is
+    // anything else.
+    export: 'M4 19h16M4 19V5m3 10 3.5-4L14 14l5-6',
+    // The two arrows a market moves in. Used on the price rows and in the alert sheet.
+    up: 'M12 19V5m0 0-6 6m6-6 6 6',
+    down: 'M12 5v14m0 0 6-6m-6 6-6-6',
     // A spanner at an angle, for the Repair app: the rows, the tabs and the empty states.
     repair: 'M14.7 6.3a4 4 0 0 0 5.2 5.2l-8.2 8.2a2.5 2.5 0 0 1-3.5-3.5l8.2-8.2Zm0 0L17.5 3.5M9.5 14.5l-4 4',
     // A star, for the rating rows. Filled by the fill rule rather than a second path.
@@ -434,6 +440,13 @@
     shield: { bg: 'linear-gradient(180deg,#3C82F6,#0A48C4)', d: G.shield },
     // 911. Red, because every emergency service on every phone is, and because it has to be
     // findable on a crowded home screen by somebody who is not reading.
+    // Export. Green over dark, which is what a market board looks like everywhere - and green
+    // rather than the Bank's green because this one is a price, not a balance: a hair darker,
+    // and it carries a chart rather than a building.
+    export: { bg: 'linear-gradient(180deg,#1F2A24,#0B120E)', fill: '#34C759',
+      d: 'M4.2 18.4h15.6a1 1 0 0 1 0 2H3.9a1.1 1.1 0 0 1-1.1-1.1V4.2a1 1 0 0 1 2 0v14.2Zm2.5-3.1a1'
+       + ' 1 0 0 1-.14-1.4l3.5-4.2a1 1 0 0 1 1.44-.11l2.72 2.4 3.6-4.32a1 1 0 1 1 1.54 1.28l-4.25'
+       + ' 5.1a1 1 0 0 1-1.43.12l-2.73-2.4-2.85 3.42a1 1 0 0 1-1.4.11Z' },
     // Repair. Deep blue with a white spanner: a workshop app, and blue rather than the orange
     // FruitCharge wears so the two utility tiles are not the same colour at a glance.
     repair: { bg: 'linear-gradient(180deg,#4C8DFF,#1B3FAE)', fill: '#FFFFFF',

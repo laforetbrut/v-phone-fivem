@@ -11164,3 +11164,331 @@ body.inframe.dark .uisearch {
 .rcacts button:active { transform: scale(.94); filter: brightness(.9); }
 .rcacts button.good { border-color: transparent; background: rgba(48, 209, 88, .16); color: #30d158; }
 .rcacts button.bad { border-color: transparent; background: rgba(255, 69, 58, .14); color: #FF453A; }
+
+/* ══════════════════════════════════════════════════════════════
+   EXPORT — the market board
+   ══════════════════════════════════════════════════════════════
+   A price board is read at a glance and acted on in one tap, so everything here is built round
+   two facts per line: what it costs, and which way it went. Green up, red down, and nothing at
+   all when there is no previous reading to compare against - a confident "0%" the first time an
+   item is seen is a lie in the shape of a number. */
+
+/* ── Which board ───────────────────────────────────────────────
+   Drawn only when there is more than one, so a server that only sells never sees a switcher
+   with a single option in it. */
+.exmarkets {
+  display: flex;
+  gap: 6px;
+  margin: 2px 16px 12px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--app-fill);
+}
+.exmarkets button {
+  flex: 1;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-sub);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.exmarkets button.on { background: var(--app-card); color: var(--app-label); font-weight: 600; }
+
+/* ── What moved ────────────────────────────────────────────────
+   Three cards across the top: the board sorted alphabetically is a list, and the board with
+   what changed at the top is the thing somebody opened the app for. */
+.exmovers { display: flex; gap: 8px; padding: 0 16px 14px; }
+.exmover {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--app-card);
+  color: var(--app-label);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: transform .12s ease;
+}
+.exmover:active { transform: scale(.97); }
+/* min-width: 0 on the flex child AND the ellipsis here, or a long name stretches the card and
+   the three stop being equal thirds. */
+.exmovername {
+  overflow: hidden;
+  color: var(--app-sub);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exmoverprice { font-family: var(--ios-num); font-size: 15px; font-weight: 600; }
+.exmovermove { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; }
+.exmovermove svg { width: 11px; height: 11px; }
+.exmover.up .exmovermove { color: #30d158; }
+.exmover.down .exmovermove { color: #FF453A; }
+
+/* ── Category chips ────────────────────────────────────────────
+   Wrapping, not scrolling: six categories in a hidden sideways scroller is three categories
+   nobody knows are there. */
+.excats { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 10px; }
+.excats button {
+  padding: 7px 11px;
+  border: 1px solid var(--app-sep);
+  border-radius: 999px;
+  background: var(--app-card);
+  color: var(--app-sub);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.excats button.on {
+  border-color: transparent;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-weight: 600;
+}
+
+/* ── The board ─────────────────────────────────────────────────*/
+.exlist { display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
+  margin: 0 16px 14px; background: var(--app-card); }
+.exrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--app-label);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.exrow + .exrow { box-shadow: inset 0 .5px 0 var(--app-sep); }
+.exrow:active { background: var(--app-fill); }
+/* The name gives way first: the price and the move are four characters each and must not. */
+.exmain { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+.exname { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.exsub { overflow: hidden; color: var(--app-sub); font-size: 11px;
+  text-overflow: ellipsis; white-space: nowrap; }
+.exstar { flex: none; width: 14px; height: 14px; color: #FF9F0A; }
+.exstar svg { width: 14px; height: 14px; fill: #FF9F0A; }
+.expricebox { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 1px; }
+.exprice { font-family: var(--ios-num); font-size: 15px; font-weight: 600; }
+.exmove { font-size: 11px; font-weight: 600; color: var(--app-sub); }
+.exmove.up { color: #30d158; }
+.exmove.down { color: #FF453A; }
+
+/* ── The line ──────────────────────────────────────────────────
+   An inline SVG normalised to its OWN minimum and maximum rather than to the item's configured
+   range: a chart pinned flat against the bottom of its box tells nobody anything. */
+.exchartbox { margin: 2px 16px 14px; padding: 12px 14px; border-radius: 14px;
+  background: var(--app-card); }
+.exchart { display: block; width: 100%; height: 68px; }
+.exchart polyline { fill: none; stroke: var(--app-label2); stroke-width: 1.6;
+  vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.exchart polygon { fill: var(--app-fill); stroke: none; }
+.exchart.up polyline { stroke: #30d158; }
+.exchart.up polygon { fill: rgba(48, 209, 88, .14); }
+.exchart.down polyline { stroke: #FF453A; }
+.exchart.down polygon { fill: rgba(255, 69, 58, .12); }
+
+/* ── Where the price sits in its range ─────────────────────────
+   2,900 means nothing until you know the range is 1,200 to 3,200, and a bar says it in less
+   space than three rows of numbers. */
+.exband { margin: 0 16px 16px; }
+.exbandbar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #FF453A, #FF9F0A, #30d158);
+  opacity: .85;
+}
+.exbandbar i {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--app-bg);
+  border-radius: 50%;
+  background: var(--app-label);
+  transform: translate(-50%, -50%);
+}
+.exbandends { display: flex; justify-content: space-between; margin-top: 7px;
+  color: var(--app-sub); font-size: 11px; }
+
+/* ── Which kind of alert ───────────────────────────────────────*/
+.exkinds { display: flex; gap: 6px; padding: 4px 0 8px; }
+.exkinds button {
+  flex: 1;
+  padding: 9px 8px;
+  border: 1px solid var(--app-sep);
+  border-radius: 10px;
+  background: var(--app-card);
+  color: var(--app-label);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.exkinds button.on {
+  border-color: transparent;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-weight: 600;
+}
+
+/* ── Export: pictures, the clock, and a chart worth reading ────
+   Added after the first pass, which shipped a board of text rows and a sparkline. A market app
+   is looked at more than it is read: the picture is how somebody finds copper without reading
+   the word, and the clock is the answer to the only question a price board raises. */
+
+/* One box whatever is in it, so a row's height never depends on whether an image loaded. The
+   `.none` variant is the fallback the onerror handler switches to - a letter on a tile, exactly
+   like the avatars everywhere else in this phone. */
+.expic {
+  display: grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--app-fill);
+}
+.expic img { width: 100%; height: 100%; object-fit: contain; }
+.expic.none {
+  color: var(--app-label2);
+  font-size: 14px;
+  font-weight: 600;
+}
+.expic.big { width: 60px; height: 60px; border-radius: 15px; }
+.expic.big.none { font-size: 24px; }
+
+/* ── The item's head ───────────────────────────────────────────
+   Its own block rather than `UI.hero`, because a hero centres one number and this needs the
+   picture beside the price - the two things somebody is comparing. */
+.exhero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 16px 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--app-card);
+}
+.exheromain { min-width: 0; }
+.exheroeyebrow { color: var(--app-sub); font-size: 11px; letter-spacing: .04em;
+  text-transform: uppercase; }
+.exheroprice { font-family: var(--ios-num); font-size: 28px; font-weight: 700; line-height: 1.15; }
+.exherosub { color: var(--app-sub); font-size: 12px; }
+.exherosub.up { color: #30d158; }
+.exherosub.down { color: #FF453A; }
+
+/* ── When do prices move ───────────────────────────────────────
+   Under doc-shops this is MEASURED - it publishes no clock at all - so the badge says
+   "estimated" rather than letting a countdown that is thirty seconds out look authoritative. */
+.exdue {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 16px 10px;
+  padding: 9px 12px;
+  border-radius: 11px;
+  background: var(--app-fill);
+  color: var(--app-label);
+  font-size: 12px;
+}
+.exdue svg { width: 14px; height: 14px; flex: none; color: var(--app-sub); }
+.exdue span { flex: 1; min-width: 0; }
+.exdue b {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--app-card);
+  color: var(--app-sub);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.exdue.est b { color: #FF9F0A; }
+
+/* The search box sits in the flow, with the same margins as everything else on the board. */
+.exsearchpad { padding: 0 16px 10px; }
+
+/* ── The chart, on an item's page ──────────────────────────────*/
+.exchart .exgrid {
+  stroke: var(--app-sep);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+/* The last reading, marked: on a line of eight the eye needs telling which end is now, and it
+   is the only one anybody is deciding from. `vector-effect` keeps the ring round despite the
+   viewBox being stretched horizontally. */
+.exchart .exdot {
+  fill: var(--app-card);
+  stroke: var(--app-label2);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.exchart.up .exdot { stroke: #30d158; }
+.exchart.down .exdot { stroke: #FF453A; }
+.exchartends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--app-sub);
+  font-size: 11px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   A STAFF VOICE, LIVE IN EVERY PHONE
+   ══════════════════════════════════════════════════════════════
+   `/phoneadmin voice`. A strip rather than a card, and outside the handset rather than on its
+   screen: it lasts as long as somebody is talking, and a full-screen panel for a minute of
+   speech would cover whatever the player was in the middle of. What it has to say is one
+   sentence - why a voice is coming out of a phone - and it has to be visible with the handset
+   pocketed, which is exactly when a player will be wondering. */
+.vbstrip {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 120;
+  display: none;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, .92);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .34);
+  color: #fff;
+  font-size: 13px;
+  transform: translateX(-50%);
+  /* The transform is doing the centring, so the entrance animates opacity only - animating
+     both would fight over the same property and the strip would slide in from the left. */
+  animation: vb-in .22s ease;
+}
+.vbstrip.on { display: flex; }
+@keyframes vb-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* The pulse is what says LIVE. Red, and it is the only red on screen while it runs. */
+.vbdot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: #FF453A;
+  animation: vb-pulse 1.4s ease-in-out infinite;
+}
+@keyframes vb-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .35; transform: scale(.78); }
+}
+.vbtext { letter-spacing: .01em; }

@@ -1962,6 +1962,10 @@ function closeApp(instant) {
   // set it, so a tracker left running would keep asking the server every few seconds for an app
   // nobody is looking at - and would still be doing it after five more apps were opened.
   repairStopPoll();
+  // The Export board is PUSHED rather than polled, so leaving has to be said out loud or the
+  // server keeps sending prices to a screen nobody is reading.
+  exportStopClock();
+  if (exportData) { exportData = null; exportDue = null; post('exportLeave', {}); }
   if (!wasOpen || instant) {
     app.classList.remove('on', 'closing');
     delete app.dataset.app;
@@ -3169,13 +3173,38 @@ function emergencyAlert(a) {
     }
   }
 
-  // **Louder than anything else, and it ignores the volume preference.**
-  //
-  // `ui()` returns immediately when the player has set their ring volume to zero, which is
-  // right for every other sound and wrong for this one: a silenced phone still sounds an
-  // emergency alert on a real handset, and a staff broadcast that a muted player never hears
-  // is a broadcast that did not happen. So this plays the file directly rather than going
-  // through `ui()`, at full volume, with the synthesised score as the fallback.
+  emergencyKlaxon();
+}
+
+/// The strip that shows while a staff voice is live in every phone.
+///
+/// Deliberately not a card and not a takeover: it lasts as long as somebody is talking, and a
+/// full-screen panel for a minute of speech would cover whatever the player was in the middle
+/// of. `muted` is the honest variant - a player who was on a call was left out of the channel
+/// on purpose, and telling them a broadcast is happening that they cannot hear is better than
+/// letting them wonder later why everyone else knew.
+function voiceBroadcastStrip(on, muted) {
+  const host = byId('vbstrip');
+  if (!host) return;
+  if (!on) { host.classList.remove('on'); host.innerHTML = ''; return; }
+  host.innerHTML =
+    '<span class="vbdot"></span>' +
+    '<span class="vbtext">' + esc(L(muted ? 'ph.vb_live_muted' : 'ph.vb_live')) + '</span>';
+  host.classList.add('on');
+}
+
+/// **Louder than anything else, and it ignores the volume preference.**
+///
+/// `ui()` returns immediately when the player has set their ring volume to zero, which is right
+/// for every other sound and wrong for this one: a silenced phone still sounds an emergency
+/// alert on a real handset, and a broadcast a muted player never hears is a broadcast that did
+/// not happen. So this plays the file directly rather than going through `ui()`, at full volume,
+/// with the synthesised score as the fallback.
+///
+/// Its own function because the public Alerts app borrows it - a civil warning from the
+/// authorities has to be as hard to miss as a staff one, and a second copy of this would be a
+/// second thing to keep in tune.
+function emergencyKlaxon() {
   const src = soundUrl('ui', 'emergency');
   let played = false;
   if (src) {
@@ -9319,6 +9348,588 @@ async function repairFetch() {
   return base;
 }
 
+// ══════════════════════════════════════════════════════════════
+// Export: what your haul is worth, and where the price is going
+// ══════════════════════════════════════════════════════════════
+// One app over two providers - doc-shops when it is running, the phone's own board when it is
+// not - and nothing below knows which answered. The server keeps one cached reading per market
+// and everything reads THAT, so twenty phones open at once is still one read of the provider.
+//
+// Three tabs over one answer: the board, the starred items, and the standing alerts. Switching
+// tabs re-renders from the cache and never refetches, which is the anti-refresh rule this
+// resource follows everywhere.
+
+let exportData = null;     // the last answer: the board, the favourites, the alerts
+let exportTab = 'board';
+let exportMarket = null;   // which board, when the server offers more than one
+let exportOpenItem = null; // the item being read, so a live alert can redraw under it
+let exportCat = null;      // the category filter, null for all of them
+let exportQuery = '';      // what is typed in the search box
+let exportDue = null;      // seconds until the next price change, counted down locally
+let exportClock = null;    // the one-second tick that draws it
+
+function exportLive() { return !!(openApp && openApp.id === 'export'); }
+
+/// Every item on the board, flattened. The tabs each want a different slice of the same list,
+/// and flattening once beats three nested loops that can disagree.
+function exportItems() {
+  const out = [];
+  farr(exportData && exportData.categories).forEach((c) => {
+    farr(c.items).forEach((it) => out.push(Object.assign({ cat: c.key, catLabel: c.label }, it)));
+  });
+  return out;
+}
+
+function exportItem(name) {
+  return exportItems().filter((x) => x.name === name)[0] || null;
+}
+
+/// An item's picture, or its initial.
+///
+/// The URL is the provider's: under doc-shops it is the `nui://qs-inventory/...` one IT built,
+/// because it knows which inventory that server runs and this page does not. `onerror` is the
+/// point of the whole helper - a missing PNG in a NUI resource fails silently and leaves a
+/// broken-image glyph, so the element replaces itself with the letter it would have shown if
+/// there had never been a picture.
+function exportPic(it, cls) {
+  const c = 'expic ' + (cls || '');
+  const letter = esc(String(it.label || it.name || '?').slice(0, 1).toUpperCase());
+  if (!it.image) return '<span class="' + c + ' none">' + letter + '</span>';
+  return '<span class="' + c + '">' +
+    '<img src="' + esc(it.image) + '" alt="" loading="lazy" ' +
+      'onerror="this.parentNode.className=\'' + c + ' none\';' +
+      'this.parentNode.textContent=\'' + letter + '\';">' +
+  '</span>';
+}
+
+/// "in 12 min", "in 40 s", or "any moment now".
+function exportDueText() {
+  if (exportDue === null || exportDue === undefined) return '';
+  if (exportDue <= 0) return L('ph.export_due_now');
+  if (exportDue < 90) return L('ph.export_due_s').replace('{n}', String(exportDue));
+  return L('ph.export_due_m').replace('{n}', String(Math.ceil(exportDue / 60)));
+}
+
+/// The countdown, ticking.
+///
+/// Counted down HERE rather than asked for every second: the server said how long was left when
+/// the board was read, and a clock is arithmetic. One interval for the whole app, cleared when
+/// the app is left - an interval outlives the screen that set it.
+function exportStopClock() {
+  if (exportClock) { clearInterval(exportClock); exportClock = null; }
+}
+
+function exportStartClock() {
+  exportStopClock();
+  if (exportDue === null || exportDue === undefined) return;
+  exportClock = setInterval(() => {
+    if (!exportLive()) { exportStopClock(); return; }
+    if (exportDue > 0) exportDue -= 1;
+    const el = byId('exdue');
+    if (el) el.textContent = exportDueText();
+  }, 1000);
+}
+
+/// "+12.4%", with its sign, or nothing at all.
+///
+/// Nothing when there is no previous reading, rather than a confident "0%": the first time an
+/// item is seen there is no change to report, and printing zero says there was one.
+function exportMove(it) {
+  if (it.percent === undefined || it.percent === null) return '';
+  const n = Number(it.percent);
+  return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
+}
+
+function exportTone(it) {
+  if (it.percent === undefined || it.percent === null) return '';
+  const n = Number(it.percent);
+  return n > 0 ? 'up' : (n < 0 ? 'down' : '');
+}
+
+/// Where a price sits between its floor and its ceiling, as a percentage.
+///
+/// This is the one number that says whether a price is worth acting on: 2,900 means nothing
+/// until you know the range is 1,200 to 3,200.
+function exportBand(it) {
+  const lo = Number(it.min) || 0;
+  const hi = Number(it.max) || 0;
+  if (hi <= lo) return null;
+  return Math.max(0, Math.min(100, Math.round(((Number(it.price) - lo) / (hi - lo)) * 100)));
+}
+
+/// The line, as an inline SVG.
+///
+/// Drawn by hand rather than with a library: it is a polyline over a handful of points, and a
+/// charting library in a phone UI is three hundred kilobytes to draw eight numbers. The shape is
+/// normalised to its own minimum and maximum rather than to the item's configured range, because
+/// a chart flat against the bottom of its box tells nobody anything.
+function exportChart(points, tone, full) {
+  const list = farr(points).map(Number).filter((n) => !Number.isNaN(n));
+  if (list.length < 2) return '';
+  const lo = Math.min(...list);
+  const hi = Math.max(...list);
+  const span = hi - lo || 1;
+  const w = 100;
+  const h = 34;
+  const step = w / (list.length - 1);
+  const x = (i) => i * step;
+  const y = (v) => h - ((v - lo) / span) * h;
+  const at = (v, i) => x(i).toFixed(2) + ',' + y(v).toFixed(2);
+  const line = list.map(at).join(' ');
+
+  // The last point, marked. On a line of eight readings the eye needs telling which end is
+  // now - and it is the only one anybody is deciding anything from.
+  const lastX = x(list.length - 1);
+  const lastY = y(list[list.length - 1]);
+
+  return '<svg class="exchart ' + esc(tone || '') + '" viewBox="0 0 ' + w + ' ' + h +
+    '" preserveAspectRatio="none" aria-hidden="true">' +
+    // The fill first, so the line is drawn over its own shading rather than under it.
+    '<polygon points="0,' + h + ' ' + line + ' ' + w + ',' + h + '"/>' +
+    (full
+      // The high and the low, as hairlines. `vector-effect` keeps them one pixel however hard
+      // the viewBox is stretched, which is the whole reason this is not a border.
+      ? '<line class="exgrid" x1="0" y1="0.5" x2="' + w + '" y2="0.5"/>' +
+        '<line class="exgrid" x1="0" y1="' + (h - 0.5) + '" x2="' + w + '" y2="' + (h - 0.5) + '"/>'
+      : '') +
+    '<polyline points="' + line + '"/>' +
+    (full ? '<circle class="exdot" cx="' + lastX.toFixed(2) + '" cy="' + lastY.toFixed(2) +
+      '" r="2.4"/>' : '') +
+  '</svg>' +
+  (full
+    ? '<div class="exchartends"><span>' + esc(money(hi)) + '</span>' +
+      '<span>' + esc(L('ph.export_readings').replace('{n}', String(list.length))) + '</span>' +
+      '<span>' + esc(money(lo)) + '</span></div>'
+    : '');
+}
+
+/// One row on the board. Written by hand rather than with `UI.row` because a price row has four
+/// things competing for one line - name, price, move, star - and a row puts the last two in the
+/// same place.
+function exportRow(it, starred) {
+  const band = exportBand(it);
+  return '<button class="exrow" type="button" data-item="' + esc(it.name) + '">' +
+    exportPic(it) +
+    '<span class="exmain">' +
+      '<span class="exname">' + esc(it.label) + '</span>' +
+      '<span class="exsub">' + esc(it.catLabel || '') +
+        (band !== null ? '  ·  ' + esc(L('ph.export_band').replace('{n}', String(band))) : '') +
+      '</span>' +
+    '</span>' +
+    (starred ? '<span class="exstar on">' + svg('star') + '</span>' : '') +
+    '<span class="expricebox">' +
+      '<span class="exprice">' + esc(money(it.price)) + '</span>' +
+      (exportMove(it)
+        ? '<span class="exmove ' + exportTone(it) + '">' + esc(exportMove(it)) + '</span>'
+        : '') +
+    '</span>' +
+  '</button>';
+}
+
+RENDER.export = async (cached) => {
+  if (!cached || !exportData) {
+    loading();
+    const d = await post('exportOpen', exportMarket ? { market: exportMarket } : {});
+    if (!exportLive()) return;
+    if (!d || d.error) {
+      body(UI.empty(L('ph.export_e_' + ((d && d.error) || 'off')), 'export'));
+      return;
+    }
+    exportData = d;
+    exportMarket = d.market;
+    exportDue = (d.nextIn === undefined || d.nextIn === null) ? null : Number(d.nextIn);
+  }
+
+  const d = exportData;
+  const starred = exportItems().filter((it) => d.watch && d.watch[it.name]);
+
+  tabbar([
+    { id: 'board', icon: 'export', label: 'ph.export_tab_board' },
+    { id: 'watch', icon: 'star', label: 'ph.export_tab_watch', badge: starred.length },
+    { id: 'alerts', icon: 'bell', label: 'ph.export_tab_alerts',
+      badge: farr(d.alerts).length },
+  ], exportTab, (tab) => {
+    exportTab = tab;
+    exportOpenItem = null;
+    RENDER.export(true);
+  });
+
+  if (exportTab === 'alerts') { exportAlertsTab(); return; }
+  if (exportTab === 'watch') { exportWatchTab(starred); return; }
+
+  setNav(L('app.export'), null, null);
+
+  const items = exportItems();
+  const cats = farr(d.categories);
+  const q = exportQuery.trim().toLowerCase();
+  // Searching looks through the WHOLE board, not the chosen category: somebody typing "gold"
+  // wants gold, and being told there is none because they were on Metals is the app arguing
+  // with them. The category chips are hidden while a search is running, for the same reason.
+  const shown = (q
+    ? items.filter((it) => (it.label + ' ' + it.name + ' ' + (it.catLabel || ''))
+        .toLowerCase().includes(q))
+    : (exportCat ? items.filter((it) => it.cat === exportCat) : items));
+
+  // Movers first, then everything else. A board sorted alphabetically is a list; a board with
+  // what changed at the top is the thing somebody opened the app for.
+  const movers = items.filter((it) => it.percent !== undefined && it.percent !== null)
+    .slice()
+    .sort((a, b) => Math.abs(Number(b.percent)) - Math.abs(Number(a.percent)))
+    .slice(0, 3);
+
+  body(
+    // The market switcher, only when there is more than one board to switch between.
+    (farr(d.markets).length > 1
+      ? '<div class="exmarkets">' + farr(d.markets).map((m) =>
+          '<button class="' + (m.key === d.market ? 'on' : '') + '" type="button" ' +
+            'data-mkt="' + esc(m.key) + '">' + esc(L(m.label)) + '</button>').join('') + '</div>'
+      : '') +
+
+    // The clock. Under doc-shops it is measured rather than published - see `nextChangeIn` in
+    // server/export.lua - so it says so rather than pretending to be exact.
+    (d.nextIn !== undefined && d.nextIn !== null
+      ? '<div class="exdue' + (d.estimated ? ' est' : '') + '">' +
+          svg('clock') + '<span id="exdue">' + esc(exportDueText()) + '</span>' +
+          '<b>' + esc(d.estimated ? L('ph.export_due_est') : L('ph.export_due_exact')) + '</b>' +
+        '</div>'
+      : '') +
+
+    '<div class="exsearchpad">' + UI.search('exq', L('ph.export_search'), exportQuery) + '</div>' +
+
+    (movers.length && !q
+      ? '<div class="grouphead">' + esc(L('ph.export_movers')) + '</div>' +
+        '<div class="exmovers">' + movers.map((it) =>
+          '<button class="exmover ' + exportTone(it) + '" type="button" data-item="' +
+            esc(it.name) + '">' +
+            '<span class="exmovername">' + esc(it.label) + '</span>' +
+            '<span class="exmoverprice">' + esc(money(it.price)) + '</span>' +
+            '<span class="exmovermove">' + svg(Number(it.percent) >= 0 ? 'up' : 'down') +
+              esc(exportMove(it)) + '</span>' +
+          '</button>').join('') + '</div>'
+      : '') +
+
+    // Category chips, so a board of sixty items is not one scroll. "All" is a chip rather than
+    // a cleared filter, because a filter with no way back to everything is a trap.
+    (cats.length > 1 && !q
+      ? '<div class="excats">' +
+          '<button class="' + (exportCat ? '' : 'on') + '" type="button" data-cat="">' +
+            esc(L('ph.export_all')) + '</button>' +
+          cats.map((c) => '<button class="' + (exportCat === c.key ? 'on' : '') + '" ' +
+            'type="button" data-cat="' + esc(c.key) + '">' + esc(c.label) + '</button>').join('') +
+        '</div>'
+      : '') +
+
+    (shown.length
+      ? '<div class="exlist">' +
+          shown.map((it) => exportRow(it, d.watch && d.watch[it.name])).join('') + '</div>'
+      : UI.empty(L(q ? 'ph.export_no_hits' : 'ph.export_none'), 'export')) +
+
+    '<div class="groupfoot">' + esc(L('ph.export_updated')
+      .replace('{n}', String(Math.max(1, Math.round((Number(d.every) || 120) / 60))))) + '</div>'
+  );
+
+  // Typing filters the list in place. `RENDER.export(true)` redraws from the cache with no
+  // request at all, and the caret is put back where it was - a search box that loses focus on
+  // the second letter is a search box nobody finishes a word in.
+  const box = byId('exq');
+  if (box) {
+    box.addEventListener('input', () => {
+      exportQuery = box.value;
+      const pos = box.selectionStart;
+      RENDER.export(true);
+      const again = byId('exq');
+      if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (e) { /* */ } }
+    });
+  }
+  exportStartClock();
+
+  rows('[data-mkt]', (b) => b.addEventListener('click', () => {
+    if (b.dataset.mkt === exportMarket) return;
+    exportMarket = b.dataset.mkt;
+    exportCat = null;
+    RENDER.export();
+  }));
+  rows('[data-cat]', (b) => b.addEventListener('click', () => {
+    exportCat = b.dataset.cat || null;
+    RENDER.export(true);
+  }));
+  rows('[data-item]', (b) => b.addEventListener('click', () => {
+    const it = exportItem(b.dataset.item);
+    if (it) exportDetail(it);
+  }));
+};
+
+/// One item: where the price is, where it has been, and what to do about it.
+function exportDetail(it) {
+  exportOpenItem = it.name;
+  const d = exportData;
+  const band = exportBand(it);
+  const starredNow = !!(d.watch && d.watch[it.name]);
+  const mine = farr(d.alerts).filter((a) => a.item === it.name && a.market === d.market);
+
+  setNav(it.label, L('app.export'), null, () => {
+    exportOpenItem = null;
+    RENDER.export(true);
+  });
+  foot('');
+
+  body(
+    '<div class="exhero">' + exportPic(it, 'big') +
+      '<div class="exheromain">' +
+        '<div class="exheroeyebrow">' + esc(it.catLabel || '') + '</div>' +
+        '<div class="exheroprice">' + esc(money(it.price)) + '</div>' +
+        '<div class="exherosub ' + exportTone(it) + '">' +
+          esc(exportMove(it)
+            ? L('ph.export_since').replace('{n}', exportMove(it))
+            : L('ph.export_no_change')) + '</div>' +
+      '</div>' +
+    '</div>' +
+
+    (farr(it.history).length > 1
+      ? '<div class="exchartbox">' + exportChart(it.history, exportTone(it), true) + '</div>'
+      : '<div class="groupfoot">' + esc(L('ph.export_no_history')) + '</div>') +
+
+    // The range, drawn. A price means nothing without its floor and its ceiling, and a bar
+    // says it in less space than three rows of numbers.
+    (band !== null
+      ? '<div class="exband">' +
+          '<div class="exbandbar"><i style="left:' + band + '%"></i></div>' +
+          '<div class="exbandends">' +
+            '<span>' + esc(money(it.min)) + '</span>' +
+            '<span>' + esc(L('ph.export_band').replace('{n}', String(band))) + '</span>' +
+            '<span>' + esc(money(it.max)) + '</span>' +
+          '</div>' +
+        '</div>'
+      : '') +
+
+    UI.group([
+      UI.row({
+        icon: 'star', tint: '#FF9F0A',
+        title: L(starredNow ? 'ph.export_unstar' : 'ph.export_star'),
+        subtitle: L('ph.export_star_hint'),
+        data: { exstar: '1' },
+      }),
+      UI.row({
+        icon: 'bell', tint: '#0A84FF', title: L('ph.export_add_alert'),
+        subtitle: L('ph.export_add_alert_hint'), chevron: true, data: { exalert: '1' },
+      }),
+    ]) +
+
+    (mine.length
+      ? UI.group(mine.map((a) => UI.row({
+          icon: a.armed ? 'bell' : 'belloff',
+          tint: a.armed ? '#30d158' : '#8E8E93',
+          title: exportAlertLabel(a),
+          subtitle: a.armed ? L('ph.export_armed') : L('ph.export_fired'),
+          data: { exdrop: String(a.id) },
+        })), { header: L('ph.export_your_alerts'), footer: L('ph.export_drop_hint') })
+      : '')
+  );
+
+  rows('[data-exstar]', (el) => el.addEventListener('click', async () => {
+    const r = await post('exportWatch', {
+      market: d.market, item: it.name, on: !starredNow,
+    });
+    if (!r || r.error) { toast(L('ph.export_e_' + ((r && r.error) || 'x'))); return; }
+    // Kept in the cache rather than refetched: the answer is known, and a round trip here would
+    // redraw the whole board to move one star.
+    d.watch = d.watch || {};
+    if (r.on) d.watch[it.name] = true; else delete d.watch[it.name];
+    ui(r.on ? 'success' : 'toggleoff');
+    exportDetail(it);
+  }));
+
+  rows('[data-exalert]', (el) => el.addEventListener('click', () => exportAlertSheet(it)));
+
+  rows('[data-exdrop]', (el) => el.addEventListener('click', () => {
+    confirmSheet(L('ph.export_drop_ask'), L('ph.export_drop'), async () => {
+      const r = await post('exportAlert', { remove: Number(el.dataset.exdrop) });
+      if (!r || r.error) { toast(L('ph.export_e_' + ((r && r.error) || 'x'))); return; }
+      d.alerts = farr(d.alerts).filter((a) => a.id !== Number(el.dataset.exdrop));
+      toast(L('ph.export_dropped'));
+      exportDetail(it);
+    });
+  }));
+}
+
+/// What an alert says, in one line.
+function exportAlertLabel(a) {
+  if (a.kind === 'move') return L('ph.export_a_move').replace('{n}', String(a.value));
+  return L(a.kind === 'below' ? 'ph.export_a_below' : 'ph.export_a_above')
+    .replace('{n}', money(a.value));
+}
+
+/// Setting one.
+///
+/// The kinds the operator left switched on, and the value box changes what it means with them -
+/// a price for two of them, a percentage for the third. The current price is offered as the
+/// starting value, because "a bit more than it is now" is what almost everybody wants and typing
+/// it from scratch is the step that stops people bothering.
+function exportAlertSheet(it) {
+  const d = exportData;
+  const kinds = [];
+  if (d.kinds.above !== false) kinds.push('above');
+  if (d.kinds.below !== false) kinds.push('below');
+  if (d.kinds.move !== false) kinds.push('move');
+  if (!kinds.length) { toast(L('ph.export_e_kind')); return; }
+
+  let kind = kinds[0];
+
+  const draw = () => (
+    '<div class="exkinds">' + kinds.map((k) =>
+      '<button class="' + (k === kind ? 'on' : '') + '" type="button" data-kind="' + k + '">' +
+        esc(L('ph.export_k_' + k)) + '</button>').join('') + '</div>' +
+    '<div class="groupfoot" id="exkindhint">' + esc(L('ph.export_h_' + kind)) + '</div>' +
+    UI.field('exvalue', L('ph.export_f_value'),
+      String(kind === 'move' ? 10 : Math.round(Number(it.price) * 1.1)),
+      'inputmode="numeric" maxlength="9"') +
+    UI.button(L('ph.export_set'), 'exset')
+  );
+
+  sheet(it.label, draw(), () => {
+    const epoch = sheetEpoch;
+    const wire = () => {
+      [...document.querySelectorAll('[data-kind]')].forEach((b) =>
+        b.addEventListener('click', () => {
+          if (b.dataset.kind === kind) return;
+          kind = b.dataset.kind;
+          // Only the chips and the hint are repainted, and the value box is re-seeded because
+          // 3,200 is a price and means nothing as a percentage. Redrawing the whole sheet would
+          // work too and would drop the keyboard mid-typing.
+          [...document.querySelectorAll('[data-kind]')].forEach((x) =>
+            x.classList.toggle('on', x.dataset.kind === kind));
+          const hint = byId('exkindhint');
+          if (hint) hint.textContent = L('ph.export_h_' + kind);
+          const box = byId('exvalue');
+          if (box) box.value = String(kind === 'move' ? 10 : Math.round(Number(it.price) * 1.1));
+        }));
+    };
+    wire();
+    byId('exset').addEventListener('click', async () => {
+      const value = Math.floor(Number((byId('exvalue') || {}).value) || 0);
+      if (value <= 0) { toast(L('ph.export_e_value')); return; }
+      const r = await post('exportAlert', {
+        market: d.market, item: it.name, kind, value,
+      });
+      if (!r || r.error) { toast(L('ph.export_e_' + ((r && r.error) || 'x'))); return; }
+      if (!closeSheet(false, epoch)) return;
+      d.alerts = [{ id: r.id, market: d.market, item: it.name, kind, value, armed: true }]
+        .concat(farr(d.alerts));
+      ui('success');
+      toast(L('ph.export_set_done'));
+      exportDetail(it);
+    });
+  });
+}
+
+/// The starred items, and only those. This is the tab somebody opens forty times a session.
+function exportWatchTab(starred) {
+  setNav(L('ph.export_tab_watch'), null, null);
+  body(starred.length
+    ? '<div class="exlist">' + starred.map((it) => exportRow(it, true)).join('') + '</div>' +
+      '<div class="groupfoot">' + esc(L('ph.export_watch_hint')) + '</div>'
+    : UI.empty(L('ph.export_no_watch'), 'star'));
+  exportStopClock();
+
+  rows('[data-item]', (b) => b.addEventListener('click', () => {
+    const it = exportItem(b.dataset.item);
+    if (it) exportDetail(it);
+  }));
+}
+
+/// Every standing alert, across every item and both boards.
+function exportAlertsTab() {
+  const d = exportData;
+  const alerts = farr(d.alerts);
+  setNav(L('ph.export_tab_alerts'), null, null);
+
+  body(alerts.length
+    ? UI.group(alerts.map((a) => {
+        const it = exportItem(a.item);
+        return UI.row({
+          icon: a.armed ? 'bell' : 'belloff',
+          tint: a.armed ? '#30d158' : '#8E8E93',
+          title: (it && it.label) || a.item,
+          subtitle: exportAlertLabel(a) +
+            (it ? '  ·  ' + L('ph.export_now').replace('{n}', money(it.price)) : ''),
+          value: a.market !== d.market ? a.market : undefined,
+          data: { exrow: String(a.id), exitem: a.item },
+        });
+      }), { header: L('ph.export_your_alerts'), footer: L('ph.export_alerts_hint') })
+    : UI.empty(L('ph.export_no_alerts'), 'bell'));
+
+  rows('[data-exrow]', (el) => el.addEventListener('click', () => {
+    // Straight to the item, which is where the alert can be read against a price and dropped.
+    // A sheet here would be a second place to delete the same thing from.
+    const it = exportItem(el.dataset.exitem);
+    if (it) exportDetail(it);
+    else toast(L('ph.export_e_gone'));
+  }));
+}
+
+/// The board moved while the app was open.
+///
+/// Pushed by the server rather than polled for, and merged into the cache in place - the new
+/// prices came with the event, so refetching would be asking for what is already here and would
+/// repaint the screen somebody is reading.
+///
+/// The item being read is redrawn too, because that is the one screen where a stale price is
+/// actively misleading: it is where the decision gets made.
+function exportBoardMoved(b) {
+  if (!b || !exportData || b.market !== exportData.market) return;
+
+  const byName = {};
+  farr(b.items).forEach((x) => { byName[x.name] = x; });
+
+  farr(exportData.categories).forEach((c) => {
+    farr(c.items).forEach((it) => {
+      const n = byName[it.name];
+      if (!n) return;
+      it.previous = n.previous;
+      it.price = Number(n.price);
+      it.percent = n.percent;
+      if (farr(n.history).length) it.history = n.history;
+    });
+  });
+
+  if (b.nextIn !== undefined && b.nextIn !== null) {
+    exportDue = Number(b.nextIn);
+    exportStartClock();
+  }
+
+  if (!(openApp && openApp.id === 'export')) return;
+  if (exportOpenItem) {
+    const it = exportItem(exportOpenItem);
+    if (it) exportDetail(it);
+    return;
+  }
+  RENDER.export(true);
+}
+
+/// A price somebody asked about has been reached.
+///
+/// The board is updated where it stands rather than refetched: the new price came with the
+/// event, and asking the server to resend what it just pushed is the reload flash in miniature.
+function exportArrived(a) {
+  if (!a || !exportData) return;
+  if (a.market === exportData.market) {
+    farr(exportData.categories).forEach((c) => {
+      farr(c.items).forEach((it) => {
+        if (it.name !== a.item) return;
+        it.previous = it.price;
+        it.price = Number(a.price) || it.price;
+        it.percent = a.percent;
+      });
+    });
+  }
+  // The alert has fired, so it is no longer armed - shown honestly rather than left looking
+  // ready to fire again.
+  farr(exportData.alerts).forEach((x) => {
+    if (x.item === a.item && x.market === a.market && x.kind === a.kind) x.armed = false;
+  });
+  if (openApp && openApp.id === 'export' && !exportOpenItem) RENDER.export(true);
+}
+
 RENDER.repair = async (cached) => {
   if (!cached || !repairData) {
     loading();
@@ -15181,6 +15792,11 @@ window.addEventListener('message', (e) => {
     clearTimeout(shutterTimer);
     shutterTimer = null;
     byId('device').classList.remove('capturing');
+  } else if (d.action === 'voiceBroadcast') {
+    // A staff member is speaking into every phone on the server. The voice itself is the
+    // client's business; this is the strip that says why a voice is coming out of a handset,
+    // because otherwise a player's first thought is that their game has broken.
+    voiceBroadcastStrip(d.on === true, d.muted === true);
   } else if (d.action === 'emergency') {
     // A staff broadcast about something happening to the whole city.
     //
@@ -15285,6 +15901,14 @@ window.addEventListener('message', (e) => {
     // The other side unsent it. Reopening the thread is how the screen agrees with the server,
     // and it only happens when this conversation is the one on screen.
     if (openApp && openApp.id === 'messages' && thread) openThread(thread);
+  } else if (d.action === 'exportBoard') {
+    // The poll found a new price and this phone has the app open. See `Watching` in
+    // server/export.lua: nothing is pushed to anybody who is not looking.
+    exportBoardMoved(d.board);
+  } else if (d.action === 'exportAlert') {
+    // A price somebody asked about has been reached. The banner is the client's job; this keeps
+    // the board itself current whether or not the app happens to be open.
+    exportArrived(d.alert);
   } else if (d.action === 'repairStatus') {
     // My callout moved. The card is updated where it is rather than the app being refetched:
     // asking the server to resend what it just pushed is the reload flash in miniature.
@@ -15303,6 +15927,12 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'alert') {
     // A public alert, pushed to every phone in the city. The banner is the client's job; this
     // keeps the app itself current whether or not it happens to be open.
+    //
+    // `loud` is the difference between a notification and a warning. A flood or an evacuation
+    // has to reach somebody who is not looking at their phone, which is exactly what the staff
+    // broadcast does - so it borrows the same klaxon rather than a quieter imitation of it.
+    // Which categories are loud is the operator's decision: see Config.Alerts.ring.
+    if (d.loud) emergencyKlaxon();
     alertsArrived(d.alert);
   } else if (d.action === 'alertGone') {
     // Withdrawn by its author or by staff, everywhere at once.

@@ -54,7 +54,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus nine downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, FruitCharge and the Lottery.
+Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus ten downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, **Export**, FruitCharge and the Lottery.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -80,6 +80,13 @@ Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Mus
   alerts, a searchable archive, and a composer for whoever may broadcast. It is not optional
   and it cannot be bought: an alert system only works if everybody already has it when the
   alert goes out.
+- **Export** (a paid download, $1,000): what your haul is worth, before you drive across the map. Runs
+  on **doc-shops** when present - its markets, items, fluctuating prices and history, read
+  through its `GetMarketData` **server** export - and on `Config.Export.items` otherwise. The
+  board with what moved at the top, a line per item, where a price sits between its floor and
+  its ceiling, favourites, and **price alerts**: rises to, falls to, or swings by a percentage.
+  The phone's own server watches the board on a timer, so an alert fires while the app is
+  closed and the phone is in a pocket. It never sells anything - that happens at the shop.
 - **Repair** (a free download): reaching a mechanic from the side of the road. Runs on
   **doc-mechanicmdt** when present - its garages, opening states, ratings, invoice rule and
   callout queue, through the eight server callbacks its own tablet and iframe used - and on
@@ -207,7 +214,7 @@ bar), `RingOut`, `Booth` (payphones), `Airdrop` (sharing between two phones in t
 `Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
 
 **The paid and the optional**
-`Charging`, `PaidCharging` (public chargers) and `PlugIn` (charging on purpose), `Zuber`, `Taxi`, `Repair`, `Lottery`, `Alerts`, `Media` (photo and
+`Charging`, `PaidCharging` (public chargers) and `PlugIn` (charging on purpose), `Zuber`, `Taxi`, `Repair`, `Export`, `Lottery`, `Alerts`, `Media` (photo and
 video hosting), `Music`, `Vehicle`, `Police` (the forensics terminal), `Social`, `Store`.
 
 **Staff**
@@ -720,7 +727,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus neuf téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, FruitCharge et la Loterie.
+Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus dix téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, **Export**, FruitCharge et la Loterie.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
@@ -746,6 +753,14 @@ Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil pho
   propre liste de métiers. Alertes en cours, archives consultables, et un formulaire de
   diffusion pour ceux qui en ont le droit. Ni optionnelle ni payante : un système d'alerte ne
   sert que si tout le monde l'a déjà quand l'alerte part.
+- **Export** (téléchargement payant, 1 000 $) : ce que vaut votre chargement, avant de traverser la
+  carte. Fonctionne sur **doc-shops** quand il est présent — ses marchés, ses articles, ses
+  cours fluctuants et son historique, via son export **serveur** `GetMarketData` — et sur
+  `Config.Export.items` sinon. Le tableau avec ce qui bouge en tête, une courbe par article,
+  la position du prix entre son plancher et son plafond, les favoris, et des **alertes de
+  prix** : monte à, descend à, ou bouge de X%. Le serveur du téléphone surveille les cours sur
+  une minuterie, donc une alerte part application fermée, téléphone en poche. L'application ne
+  vend jamais rien : cela se passe au magasin.
 - **Dépannage** (téléchargement gratuit) : joindre un mécano depuis le bord de la route.
   Fonctionne sur **doc-mechanicmdt** quand il est présent — ses garages, leurs états, les notes,
   sa règle de facture et sa centrale d'appel, via les huit callbacks serveur que sa tablette et
@@ -873,7 +888,7 @@ ouvre l'application).
 `Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
 
 **Payantes et optionnelles**
-`Charging`, `PaidCharging` (bornes publiques) et `PlugIn` (charge volontaire), `Zuber`, `Taxi`, `Repair`, `Lottery`, `Alerts`, `Media` (hébergement
+`Charging`, `PaidCharging` (bornes publiques) et `PlugIn` (charge volontaire), `Zuber`, `Taxi`, `Repair`, `Export`, `Lottery`, `Alerts`, `Media` (hébergement
 photo et vidéo), `Music`, `Vehicle`, `Police` (terminal scientifique), `Social`, `Store`.
 
 **Staff**

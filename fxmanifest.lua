@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.4.5'
+version '1.4.6'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -79,6 +79,9 @@ client_scripts {
     'client/alerts.lua',
     -- The Repair app's doc-mechanicmdt side: its garages, its ratings and its callout queue.
     'client/repair.lua',
+    -- The Export app's page routes and its price banner. doc-shops is read on the SERVER,
+    -- so unlike the others there is no bridging here.
+    'client/export.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
@@ -148,6 +151,9 @@ server_scripts {
     -- Repair: the config provider's garages, callouts and reviews, plus the two things
     -- doc-mechanicmdt has no way to do - ringing a garage, and ringing the client back.
     'server/repair.lua',
+    -- Export: the market board, watched on a timer so a price alert can fire while the app
+    -- is closed. doc-shops publishes GetMarketData as a SERVER export, which is why it is here.
+    'server/export.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',
