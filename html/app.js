@@ -14342,6 +14342,55 @@ function wireHushDrag(card, choose) {
 
 // Hush has its own profile, because who you are to a date is not who you are to the
 // whole network.
+/// Your own Hush profile: the bio, the photo, and whether you are on the deck at all.
+///
+/// **This function was called and did not exist.** The tab bar has always had a third tab for
+/// it and `socialRender` has always routed to `hushProfile()`, but the definition was lost -
+/// so from 1.4.4 onwards tapping it threw a ReferenceError and the screen simply did nothing.
+/// Nothing pointed at it: a missing function is not a syntax error, the other two tabs worked,
+/// and the failure was one silent line in a console nobody had open.
+///
+/// Restored from the version that had it, with the switch driven the way the kit's switch has
+/// to be driven - it is a styled span rather than a checkbox, so the row owns the state.
+async function hushProfile() {
+  const epoch = viewEpoch;
+  loading();
+  const me = await post('social', { op: 'hushMe' });
+  if (!socialActive('hush', epoch)) return;
+  if (!me || me.error) { body(UI.empty(L('ph.err_' + ((me && me.error) || 'off')), 'hush')); return; }
+  const pf = me.profile || { bio: '', photo: '', active: true };
+
+  body(
+    '<div class="socprof">' +
+      (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
+                : '<span class="socbigav">' + svg('hush') + '</span>') +
+      '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
+    '</div>' +
+    UI.field('hbio', L('ph.hush_bio'), pf.bio || '', 'maxlength="160"') +
+    UI.field('hphoto', L('ph.hush_photo'), pf.photo || '', 'maxlength="300"') +
+    UI.button(L('ph.pick_photo'), 'hpick', 'plain') +
+    UI.group(UI.row({ icon: 'hush', title: L('ph.hush_active'),
+                      toggle: pf.active !== false, data: { t: 'active' } })) +
+    '<div class="groupfoot">' + esc(L('ph.hush_active_hint')) + '</div>' +
+    UI.button(L('ph.save'), 'hsave')
+  );
+
+  let active = pf.active !== false;
+  byId('hpick').addEventListener('click', () => pickPhoto((url) => { byId('hphoto').value = url; }));
+  rows('.row[data-t="active"]', (el) => el.addEventListener('click', () => {
+    active = !active;
+    const knob = el.querySelector('.sw');
+    if (knob) knob.classList.toggle('on', active);
+    ui(active ? 'toggleon' : 'toggleoff');
+  }));
+  byId('hsave').addEventListener('click', async () => {
+    const r = await post('social', { op: 'hushSetup',
+      bio: byId('hbio').value, photo: byId('hphoto').value, active });
+    if (r && r.ok) { ui('success'); toast(L('ph.saved')); }
+    else toast(L('ph.err_' + ((r && r.error) || 'x')));
+  });
+}
+
 function hushOnboard() {
   body(
     UI.field('hbio', L('ph.hush_bio'), '', 'maxlength="160"') +
@@ -14552,8 +14601,17 @@ const TONES = {
 let ringEl = null;      // the <audio> for a custom link, so it can be stopped
 let ringTimer = null;
 
+/// How long a tone plays when it is being previewed rather than ringing.
+const TONE_PREVIEW_MS = 5000;
+
+/// The one-shot file currently playing, and its cap. Separate from the ring, which loops.
+let previewEl = null;
+let previewTimer = null;
+
 function stopTone() {
   if (ringEl) { try { ringEl.pause(); } catch {} ringEl = null; }
+  if (previewEl) { try { previewEl.pause(); } catch {} previewEl = null; }
+  clearTimeout(previewTimer); previewTimer = null;
   clearInterval(ringTimer); ringTimer = null;
 }
 
@@ -14599,7 +14657,35 @@ function playTone(name, url, vol, loop) {
         synth(name, 0.12 * v);
       }, { once: true });
       el.play().catch(() => {});
-      if (loop) ringEl = el;
+
+      if (loop) {
+        ringEl = el;
+      } else {
+        // **A one-shot file is kept too, in a handle of its own.**
+        //
+        // `ringEl` belongs to the ringing loop and was the only handle there was, so a
+        // non-looping play had none: with a player's own MP3 that is a whole song started from
+        // the Settings sheet and nothing anywhere able to stop it - not closing the sheet, not
+        // picking another tone, not answering a call. The synthesised fallback needs no handle
+        // because it lasts a tenth of a second; a link somebody pasted can be four minutes.
+        //
+        // A SECOND handle rather than reusing `ringEl`, because `playRingtone` deliberately
+        // plays a looping tone and a one-shot together - reusing it would have this fix silence
+        // the ring it is standing next to.
+        if (previewEl) { try { previewEl.pause(); } catch { /* already gone */ } }
+        previewEl = el;
+        // And a preview is a preview: a phone plays a few seconds so you can hear which tone it
+        // is. Playing the track to the end is not previewing it. The ring is not capped - it
+        // rings until it is answered or gives up.
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(() => {
+          // Identity-checked: a newer preview may own the handle by the time this fires, and
+          // stopping that one would be the same bug pointed the other way.
+          if (previewEl !== el) return;
+          try { el.pause(); } catch { /* already gone */ }
+          previewEl = null;
+        }, TONE_PREVIEW_MS);
+      }
       return;
     } catch { /* fall through to the built-in */ }
   }

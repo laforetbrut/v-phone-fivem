@@ -4,6 +4,31 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.5.2] - 2026-07-27
+
+### Fixed (English first)
+
+- **The Hush profile tab did nothing.** `socialRender` has always routed the third tab to `hushProfile()` and the definition had been lost, so from 1.4.4 onwards tapping it threw a ReferenceError and the screen stayed where it was. Nothing pointed at it: a missing function is not a syntax error, the other two tabs worked, and the failure was one silent line in a console nobody had open. Restored - the bio, the photo, and the switch that takes you off the deck without losing your matches.
+- **A ringtone from a link could not be stopped.** The one handle the tone player kept was for the ringing LOOP, so a one-shot preview had none - and with a player's own MP3 that is a whole song started from the Settings sheet with nothing anywhere able to stop it: not closing the sheet, not picking another tone, not answering a call. A one-shot file now has a handle of its own, deliberately separate from the ring's, because the ring plays a looping tone and a one-shot together and one shared handle would have this fix silence the ring it stands next to. A preview is also capped at five seconds, which is what previewing a tone means.
+- **Zuber showed food nobody could order.** A line the restaurant had switched off was sent to the phone anyway, greyed and unbuyable, on the reasoning that the dish exists and will be back. Three rows reading "Indisponible" read as a broken app rather than as a kitchen that ran out, so they are no longer sent. `Config.Zuber.showSoldOut = true` puts them back for a server that preferred a menu keeping its shape whatever is in stock.
+- **A giant black arrow over every Hush match**, and **Hush messages with no bubbles** - both shipped in 1.5.1 and repeated here because a server on 1.5.0 has them: the match row emitted a bare `<svg>` where the size and the colour live on a `.rchev` wrapper, and the Hush thread was the one place in the phone drawing `.bubble`, a class that appears nowhere in the stylesheet.
+
+### Changed
+
+- **The nearby-phone ring is configurable, and testable in one command.** `Remote_Ring` in Michael's phone set is what every script that does this reaches for, and GTA meant it for your own ear rather than for a room - so "nobody around me hears my phone" has two very different causes and no way to tell them apart. `Config.RingOut.sound`, `.soundSet` and `.everyMs` are settings now, and `phonedebug ringout` plays whatever is configured on your own ped three times. If you hear nothing, the sound is the problem and not the event, and the config comment lists other pairs worth trying. **The cause of the original report is not confirmed**: the server-to-client chain was read and is correct, and the sound itself cannot be verified outside the game.
+- A sound id is released on its own timer rather than after the caller's wait, so one no longer leaks each time a ringing ped goes out of scope mid-ring.
+
+### Ajouts et correctifs (miroir français)
+
+- **L'onglet profil de Hush ne faisait rien.** `socialRender` a toujours routé le troisième onglet vers `hushProfile()` et la définition avait été perdue : depuis la 1.4.4, y toucher levait une ReferenceError et l'écran ne bougeait pas. Rien ne le signalait - une fonction absente n'est pas une erreur de syntaxe, les deux autres onglets fonctionnaient, et l'échec tenait à une ligne silencieuse dans une console que personne n'avait ouverte. Restauré : la bio, la photo, et l'interrupteur qui vous retire du deck sans perdre vos matchs.
+- **Une sonnerie venant d'un lien ne pouvait plus être coupée.** Le seul handle que gardait le lecteur de tons était celui de la BOUCLE de sonnerie : un aperçu ponctuel n'en avait aucun, et avec le MP3 d'un joueur c'est une chanson entière lancée depuis les Réglages sans que rien ne puisse l'arrêter - ni fermer la feuille, ni choisir un autre ton, ni décrocher. Un fichier ponctuel a désormais son propre handle, volontairement distinct de celui de la sonnerie : celle-ci joue une boucle et un ponctuel en même temps, et un handle partagé aurait fait taire la sonnerie d'à côté. Un aperçu est aussi plafonné à cinq secondes, ce qui est le sens du mot aperçu.
+- **Zuber affichait des plats que personne ne pouvait commander.** Une ligne désactivée par le restaurant était quand même envoyée au téléphone, grisée et non commandable, au motif que le plat existe et reviendra. Trois lignes « Indisponible » ressemblent à une application cassée plutôt qu'à une cuisine en rupture : elles ne sont plus envoyées. `Config.Zuber.showSoldOut = true` les remet pour un serveur qui préférait un menu gardant sa forme quel que soit le stock.
+- **Une flèche noire géante sur chaque match Hush**, et **des messages Hush sans bulles** - livrés en 1.5.1 et répétés ici parce qu'un serveur en 1.5.0 les a : la ligne de match produisait un `<svg>` nu là où la taille et la couleur vivent sur une enveloppe `.rchev`, et le fil Hush était le seul endroit du téléphone à dessiner `.bubble`, une classe qui n'apparaît nulle part dans la feuille de style.
+- **La sonnerie entendue par les autres est configurable et testable en une commande.** `Remote_Ring` dans le set de Michael est ce que tous les scripts utilisent, et GTA l'a prévu pour votre oreille et non pour une pièce - « personne autour de moi n'entend mon téléphone » a donc deux causes très différentes et aucun moyen de les distinguer. `Config.RingOut.sound`, `.soundSet` et `.everyMs` sont désormais des réglages, et `phonedebug ringout` joue ce qui est configuré sur votre propre ped, trois fois. Si vous n'entendez rien, c'est le son et non l'événement, et le commentaire de config liste d'autres paires à essayer. **La cause du signalement d'origine n'est pas confirmée** : la chaîne serveur vers client a été relue et elle est correcte, et le son lui-même n'est pas vérifiable hors du jeu.
+- Un identifiant de son est libéré par sa propre minuterie au lieu d'attendre la boucle appelante : plus de fuite chaque fois qu'un ped qui sonne sort de portée en pleine sonnerie.
+
+---
+
 ## [1.5.1] - 2026-07-27
 
 ### Fixed (English first)

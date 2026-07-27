@@ -2574,6 +2574,13 @@ Config.Alerts = {
 Config.Zuber = {
     enabled = true,
 
+    -- Show menu lines the restaurant has switched off, greyed and unbuyable.
+    --
+    -- Off: they are not sent to the phone at all. A row nobody can order is a row you scroll
+    -- past, and three of them reading "Indisponible" looks like a broken app rather than like a
+    -- kitchen that ran out. Turn it on for a menu that keeps its shape whatever is in stock.
+    showSoldOut = false,
+
     -- 'auto' uses doc-restaurant when it is started and the list below when it is not.
     -- 'doc-restaurant' or 'config' pin it, for a server that wants to be sure which is live.
     provider = 'auto',
@@ -3045,6 +3052,24 @@ Config.RingOut = {
     -- and makes none here either. Silencing a phone that still rings out loud would be worse
     -- than not having the feature.
     respectSilent = true,
+
+    -- The game sound used, and the set it lives in.
+    --
+    -- `Remote_Ring` in Michael's phone set is what every script that does this reaches for, and
+    -- it is QUIET - GTA meant it for your own ear, not for a room. If nobody around a ringing
+    -- phone can hear anything, try another pair here before assuming the feature is broken:
+    -- `phonedebug ringout` plays whatever is set on your own ped so you can hear it immediately,
+    -- without needing a second player and an incoming call to test with.
+    --
+    -- Pairs worth trying: { 'Remote_Ring', 'Phone_SoundSet_Michael' },
+    --                     { 'Remote_Ring', 'Phone_SoundSet_Default' },
+    --                     { 'Menu_Accept', 'Phone_SoundSet_Default' }.
+    sound = 'Remote_Ring',
+    soundSet = 'Phone_SoundSet_Michael',
+
+    -- Repeat interval in milliseconds. The sound is about a second and a half long; a gap much
+    -- longer than that reads as a phone that rang once rather than one that is ringing.
+    everyMs = 1400,
 }
 
 -- ══════════════════════════════════════════════════════════════

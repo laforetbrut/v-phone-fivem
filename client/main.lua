@@ -700,6 +700,47 @@ end)
 -- until it is answered. The loop ends when the server says so, or when the ped goes away.
 local ringingPeds = {}
 
+--- Play the ring on one ped, once.
+---
+--- The sound and the set come from the config rather than being written in here. `Remote_Ring`
+--- in Michael's phone set is what every script that does this reaches for, and GTA meant it for
+--- your own ear rather than for a room - so when somebody reports hearing nothing, the first
+--- thing worth trying is a different pair, and that should not need a code edit.
+local function ringOutSound(ped)
+    local cfg = Config.RingOut or {}
+    local name = tostring(cfg.sound or 'Remote_Ring')
+    local set = tostring(cfg.soundSet or 'Phone_SoundSet_Michael')
+    local id = GetSoundId()
+    PlaySoundFromEntity(id, name, ped, set, false, 0)
+    -- Released on its own timer rather than after a Wait in the caller: the caller's loop paces
+    -- the repeats, and holding the id across that Wait meant one leaked every time the ped went
+    -- out of scope mid-ring.
+    SetTimeout(1500, function()
+        StopSound(id)
+        ReleaseSoundId(id)
+    end)
+end
+
+--- `phonedebug ringout` - does that sound work on this build at all?
+---
+--- Hearing nothing has two very different causes: the event is not arriving, or the sound is
+--- inaudible. Testing it needed a second player and an incoming call, which is why it stayed a
+--- guess. This plays it on your OWN ped, so the answer takes five seconds.
+V.Sub('phonedebug', 'ringout', 'play the nearby-phone ring on yourself', function()
+    local cfg = Config.RingOut or {}
+    print(('[v-phone] ring-out: enabled=%s sound=%s set=%s range=%s')
+        :format(tostring(cfg.enabled ~= false), tostring(cfg.sound or 'Remote_Ring'),
+                tostring(cfg.soundSet or 'Phone_SoundSet_Michael'), tostring(cfg.range or 12.0)))
+    print('[v-phone] playing it three times on your own ped - if you hear nothing, the sound is')
+    print('[v-phone] the problem and not the event. Try another pair in Config.RingOut.')
+    CreateThread(function()
+        for _ = 1, 3 do
+            ringOutSound(PlayerPedId())
+            Wait(1500)
+        end
+    end)
+end)
+
 RegisterNetEvent('v-phone:client:ringOut', function(who, on)
     who = tonumber(who)
     if not who then return end
@@ -721,11 +762,8 @@ RegisterNetEvent('v-phone:client:ringOut', function(who, on)
                 ringingPeds[who] = nil
                 break
             end
-            local id = GetSoundId()
-            PlaySoundFromEntity(id, 'Remote_Ring', ped, 'Phone_SoundSet_Michael', false, 0)
-            Wait(1400)
-            StopSound(id)
-            ReleaseSoundId(id)
+            ringOutSound(ped)
+            Wait(math.max(400, math.floor(tonumber((Config.RingOut or {}).everyMs) or 1400)))
         end
     end)
 end)

@@ -88,9 +88,22 @@ local function menuItem(r, item)
     return nil
 end
 
+--- Should a line the operator switched off still be listed?
+---
+--- It used to always be, on the reasoning that the dish exists and will be back - which is a
+--- defensible way to run a menu and is not the one asked for. A menu with rows nobody can order
+--- is a menu you scroll past, and "Indisponible" three times reads as a broken app rather than
+--- as a kitchen that ran out.
+---
+--- `Config.Zuber.showSoldOut = true` puts them back for a server that preferred it.
+local function showSoldOut()
+    return ((Config.Zuber or {}).showSoldOut) == true
+end
+
 local function menuFor(r)
     local out = {}
     for _, line in ipairs(r.menu or {}) do
+      if line.enabled ~= false or showSoldOut() then
         out[#out + 1] = {
             item = tostring(line.item),
             label = tostring(line.label or line.item),
@@ -100,6 +113,7 @@ local function menuFor(r)
             -- "sold out" rather than as a menu that changes shape.
             enabled = line.enabled ~= false,
         }
+      end
     end
     return out
 end
