@@ -294,6 +294,28 @@ phone:PhoneUsable(src)                       --> boolean
 phone:NumberOf(src)                          --> '555-0182' | nil
 ```
 
+#### Alerts
+
+```lua
+-- What is standing right now: the public alerts the authorities have broadcast and not yet let
+-- expire. For a dispatch board, a news ticker or a sign in the world.
+--
+-- nil on a server running doc-civilalerte: the alerts are ITS rows, and a second function
+-- answering the same question from a different table is how the two start disagreeing.
+phone:GetAlerts()                            --> { { id, category, title, message, job, jobLabel, author, at, until_, active }, ... } | nil
+
+-- Broadcast one from a script rather than from a phone: a weather system, a scripted disaster,
+-- a console command of your own. It reaches every phone in the city, exactly as an officer's
+-- would. `minutes` and `category` are whitelisted against Config.Alerts; `author` and
+-- `authority` are the two lines the card prints underneath the headline.
+--
+-- No job check, on purpose: a resource calling this is already server-side and already trusted.
+phone:RaiseAlert({ category = 'meteo', title = 'Storm warning',
+                   message = 'Heavy rain until dawn.', minutes = 180,
+                   authority = 'Weather Service', author = '' })
+                                             --> alert | nil, reason
+```
+
 #### Lottery
 
 ```lua
@@ -701,6 +723,30 @@ phone:PhoneUsable(src)                       --> boolean
 
 -- Le numero de la personne sur cette source, sans passer par le citizenid.
 phone:NumberOf(src)                          --> '555-0182' | nil
+```
+
+#### Alertes
+
+```lua
+-- Ce qui est en cours : les alertes publiques diffusees par les autorites et pas encore expirees.
+-- Pour un tableau de bord, un bandeau d information ou un panneau dans le monde.
+--
+-- nil sur un serveur qui fait tourner doc-civilalerte : les alertes sont SES lignes, et une
+-- seconde fonction repondant a la meme question depuis une autre table est le debut d un
+-- desaccord entre les deux.
+phone:GetAlerts()                            --> { { id, category, title, message, job, jobLabel, author, at, until_, active }, ... } | nil
+
+-- Diffuser depuis un script plutot que depuis un telephone : un systeme meteo, une catastrophe
+-- scriptee, une commande console a vous. Elle atteint tous les telephones de la ville, comme
+-- celle d un officier. `minutes` et `category` sont verifies contre Config.Alerts ; `author` et
+-- `authority` sont les deux lignes affichees sous le titre.
+--
+-- Aucun controle de metier, volontairement : une ressource qui appelle ceci est deja cote
+-- serveur et deja de confiance.
+phone:RaiseAlert({ category = 'meteo', title = 'Alerte orage',
+                   message = 'Fortes pluies jusqu a l aube.', minutes = 180,
+                   authority = 'Service meteo', author = '' })
+                                             --> alerte | nil, raison
 ```
 
 #### Loterie

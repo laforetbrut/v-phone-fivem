@@ -54,7 +54,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus eight downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge and the Lottery.
+Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus eight downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge and the Lottery.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -73,6 +73,13 @@ Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, **
   a list you write in `Config.BankPro.payees`, with the name to show beside each one, so a server
   with forty jobs does not put forty rows in front of a business owner. Reads qb-banking,
   Renewed-Banking, doc-banking and ESX society accounts through the bridge.
+- **Alerts** (installed by default): what the authorities broadcast, and what every phone
+  receives. Runs on **doc-civilalerte** when present - its alerts, its table, its permissions
+  and its Discord relay, through the same callback and events its own iframe used - and on
+  `Config.Alerts` otherwise, with the phone's own table and its own job whitelist. Standing
+  alerts, a searchable archive, and a composer for whoever may broadcast. It is not optional
+  and it cannot be bought: an alert system only works if everybody already has it when the
+  alert goes out.
 - **Lottery** (a paid download, $250): the weekly draw. Runs on **doc-lottery** when present - its
   session, jackpot, tickets and prize tiers, through its own two callbacks - and on
   `Config.Lottery` otherwise, with its own draw on a schedule you set. Numbers are tapped on a
@@ -187,7 +194,7 @@ bar), `RingOut`, `Booth` (payphones), `Airdrop` (sharing between two phones in t
 `Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
 
 **The paid and the optional**
-`Charging` and `PaidCharging` (public chargers), `Zuber`, `Taxi`, `Lottery`, `Media` (photo and
+`Charging` and `PaidCharging` (public chargers), `Zuber`, `Taxi`, `Lottery`, `Alerts`, `Media` (photo and
 video hosting), `Music`, `Vehicle`, `Police` (the forensics terminal), `Social`, `Store`.
 
 **Staff**
@@ -700,7 +707,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus huit téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge et la Loterie.
+Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus huit téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge et la Loterie.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
@@ -719,6 +726,13 @@ Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, 
   une liste que vous écrivez dans `Config.BankPro.payees`, avec le nom à afficher pour chacune,
   pour qu'un serveur de quarante métiers n'en mette pas quarante devant un patron. Lit qb-banking,
   Renewed-Banking, doc-banking et les comptes de société ESX via le bridge.
+- **Alertes** (installée par défaut) : ce que les autorités diffusent, et ce que tous les
+  téléphones reçoivent. Fonctionne sur **doc-civilalerte** quand il est présent — ses alertes,
+  sa table, ses permissions et son relais Discord, via le callback et les événements que sa
+  propre iframe utilisait — et sur `Config.Alerts` sinon, avec la table du téléphone et sa
+  propre liste de métiers. Alertes en cours, archives consultables, et un formulaire de
+  diffusion pour ceux qui en ont le droit. Ni optionnelle ni payante : un système d'alerte ne
+  sert que si tout le monde l'a déjà quand l'alerte part.
 - **Loterie** (téléchargement payant, 250 $) : le tirage hebdomadaire. Fonctionne sur
   **doc-lottery** quand il est présent — sa session, sa cagnotte, ses tickets et ses rangs de gain,
   via ses deux callbacks — et sur `Config.Lottery` sinon, avec son propre tirage à l'heure que vous
@@ -832,7 +846,7 @@ ouvre l'application).
 `Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
 
 **Payantes et optionnelles**
-`Charging` et `PaidCharging` (bornes publiques), `Zuber`, `Taxi`, `Lottery`, `Media` (hébergement
+`Charging` et `PaidCharging` (bornes publiques), `Zuber`, `Taxi`, `Lottery`, `Alerts`, `Media` (hébergement
 photo et vidéo), `Music`, `Vehicle`, `Police` (terminal scientifique), `Social`, `Store`.
 
 **Staff**

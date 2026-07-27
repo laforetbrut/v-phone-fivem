@@ -8835,6 +8835,368 @@ function lotteryPrize(tier, jackpot) {
 /// history and the player's own lines all arrive together - so moving between three tabs was three
 /// round trips for a decision that needed none. Buying a line, the refresh button and the draw's
 /// own events all leave it out, because those are the moments the server's answer has changed.
+// ══════════════════════════════════════════════════════════════
+// Alerts: what the authorities broadcast, and everybody receives
+// ══════════════════════════════════════════════════════════════
+// One app over two providers - doc-civilalerte when it is running, the phone's own table when it
+// is not - and nothing below knows which answered. client/alerts.lua and server/alerts.lua both
+// hand back the same shape, which is the only reason this file is as short as it is.
+//
+// Three tabs over ONE answer: standing, archive, and the composer for whoever may broadcast.
+// Switching tabs re-renders from the cache and never refetches, because a tab is a filter over a
+// list that is already here - that is the whole anti-refresh rule this resource follows.
+
+let alertsData = null;   // the last answer: alerts, categories, durations, permissions
+let alertsTab = 'now';
+let alertsOpenId = null; // the alert being read, so a live update can redraw the page under it
+let alertsDraft = null;  // what is half-written in the composer, kept across a re-render
+
+/// Is the Alerts app the one on screen? Every await below is followed by this, because a player
+/// who left while a request was in flight should not have their next app painted over.
+function alertsLive() { return !!(openApp && openApp.id === 'alerts'); }
+
+/// A category, by key. An alert whose category nobody configured still draws - a public warning
+/// is not something to hide because a colour is missing - it just arrives grey, wearing its key.
+function alertCat(key) {
+  const list = (alertsData && alertsData.cats) || [];
+  for (let i = 0; i < list.length; i += 1) if (list[i].key === key) return list[i];
+  return { key: key, label: String(key || '?'), color: '#94A3B8', icon: 'alerts' };
+}
+
+/// A colour from the config, checked before it reaches a style attribute.
+///
+/// The config is the operator's and is not hostile, but this value ends up inside `style="..."`
+/// and a hex code is the only thing that has any business being there. Anything else falls back
+/// rather than being escaped and hoped for.
+function alertColor(value) {
+  return /^#[0-9a-fA-F]{3,8}$/.test(String(value || '')) ? String(value) : '#94A3B8';
+}
+
+/// "4 min", "2 h", "3 d" - against the SERVER's clock.
+///
+/// `now` travels with the answer for exactly this reason: a phone whose owner's machine is an hour
+/// out would otherwise show an alert as expired while the city is still under it.
+function alertAgo(at, now) {
+  const secs = Math.max(0, (Number(now) || 0) - (Number(at) || 0));
+  if (secs < 60) return L('ph.now');
+  if (secs < 3600) return Math.round(secs / 60) + ' min';
+  if (secs < 86400) return Math.round(secs / 3600) + ' h';
+  return Math.round(secs / 86400) + ' d';
+}
+
+/// How long an alert still stands. Rounded up, so "1 min" is never shown to somebody who has
+/// fifty seconds - the point of the line is what to do next, not arithmetic.
+function alertLeft(until, now) {
+  const secs = Math.max(0, (Number(until) || 0) - (Number(now) || 0));
+  if (secs <= 0) return '';
+  if (secs < 3600) return L('ph.alert_left').replace('{n}', Math.ceil(secs / 60) + ' min');
+  if (secs < 86400) return L('ph.alert_left').replace('{n}', Math.ceil(secs / 3600) + ' h');
+  return L('ph.alert_left').replace('{n}', Math.ceil(secs / 86400) + ' d');
+}
+
+/// One card. Deliberately not `UI.row`: a row puts everything on one line and an alert's title is
+/// the part that has to survive, so the category, the title and the source get a line each and the
+/// colour is a bar down the edge rather than a dot that disappears at a glance.
+function alertCard(a, now) {
+  const cat = alertCat(a.category);
+  return '<button class="alertcard' + (a.active ? '' : ' past') + '" type="button" ' +
+    'data-alert="' + esc(String(a.id)) + '" ' +
+    'style="--alertc:' + alertColor(cat.color) + '">' +
+    '<span class="alerttop">' +
+      '<span class="alertcat">' + svg(cat.icon || 'alerts') + esc(cat.label) + '</span>' +
+      '<span class="alertwhen">' + esc(alertAgo(a.at, now)) + '</span>' +
+    '</span>' +
+    '<span class="alerttitle">' + esc(a.title) + '</span>' +
+    '<span class="alertfrom">' +
+      esc(a.jobLabel || a.job || L('ph.alert_authority')) +
+      (a.author ? '  ·  ' + esc(a.author) : '') +
+    '</span>' +
+    (a.active
+      ? '<span class="alertleft">' + esc(alertLeft(a.until_, now)) + '</span>'
+      : '<span class="alertleft over">' + esc(L('ph.alert_expired')) + '</span>') +
+  '</button>';
+}
+
+/// May this phone take that alert down? The server decides again when the button is pressed; this
+/// only decides whether to draw one, because a button that always answers "denied" is worse than
+/// no button.
+function alertCanRemove(a) {
+  if (!alertsData) return false;
+  if (alertsData.staff) return true;
+  return !!(a.cid && alertsData.cid && a.cid === alertsData.cid);
+}
+
+RENDER.alerts = async (cached) => {
+  if (!cached || !alertsData) {
+    loading();
+    const base = await post('alertsOpen', {});
+    if (!alertsLive()) return;
+    if (!base || base.error) {
+      body(UI.empty(L('ph.alert_e_' + ((base && base.error) || 'off')), 'alerts'));
+      return;
+    }
+
+    // doc-civilalerte owns the alerts themselves; the phone still answers who may broadcast and
+    // what the categories look like. Two calls in doc mode, one otherwise, and the page below
+    // cannot tell the difference.
+    let rows = { alerts: base.alerts || [], now: base.now, cid: base.cid, staff: base.staff };
+    if (base.doc) {
+      const doc = await post('alertsDoc', { op: 'list' });
+      if (!alertsLive()) return;
+      if (!doc || doc.error) {
+        body(UI.empty(L('ph.alert_e_' + ((doc && doc.error) || 'nodoc')), 'alerts'));
+        return;
+      }
+      rows = doc;
+    }
+
+    alertsData = {
+      doc: base.doc === true,
+      alerts: farr(rows.alerts),
+      cats: farr(base.categories),
+      durations: farr(base.durations),
+      canEmit: base.canEmit === true,
+      staff: rows.staff === true,
+      cid: String(rows.cid || ''),
+      now: Number(rows.now) || Math.floor(Date.now() / 1000),
+      maxTitle: Number(base.maxTitle) || 60,
+      maxMessage: Number(base.maxMessage) || 2000,
+    };
+  }
+
+  const d = alertsData;
+  const standing = d.alerts.filter((a) => a.active);
+  const past = d.alerts.filter((a) => !a.active);
+
+  // The composer is a tab rather than a corner button: it is a whole screen of writing, and a
+  // screen of writing behind a nav icon is a screen people do not find.
+  const tabs = [
+    { id: 'now', icon: 'alerts', label: 'ph.alert_tab_now', badge: standing.length },
+    { id: 'archive', icon: 'clock', label: 'ph.alert_tab_archive' },
+  ];
+  if (d.canEmit) tabs.push({ id: 'send', icon: 'send', label: 'ph.alert_tab_send' });
+  if (alertsTab === 'send' && !d.canEmit) alertsTab = 'now';
+  tabbar(tabs, alertsTab, (tab) => { alertsTab = tab; RENDER.alerts(true); });
+
+  if (alertsTab === 'send') { alertsCompose(); return; }
+
+  const list = alertsTab === 'archive' ? past : standing;
+
+  setNav(L('app.alerts'), null, {
+    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.alerts(),
+  });
+
+  body(
+    (alertsTab === 'now'
+      ? UI.hero({
+          appicon: 'alerts',
+          eyebrow: L('ph.alert_hero_eyebrow'),
+          value: String(standing.length),
+          subtitle: standing.length
+            ? L('ph.alert_hero_some')
+            : L('ph.alert_hero_none'),
+        })
+      : '') +
+    (list.length
+      ? '<div class="alertlist">' + list.map((a) => alertCard(a, d.now)).join('') + '</div>'
+      : UI.empty(L(alertsTab === 'archive' ? 'ph.alert_no_past' : 'ph.alert_no_now'), 'alerts')) +
+    (alertsTab === 'now' && standing.length
+      ? '<div class="groupfoot">' + esc(L('ph.alert_hint')) + '</div>' : '')
+  );
+
+  rows('.alertcard', (b) => b.addEventListener('click', () => {
+    const id = Number(b.dataset.alert);
+    const found = d.alerts.filter((a) => a.id === id)[0];
+    if (found) alertsRead(found);
+  }));
+};
+
+/// One alert, read in full.
+///
+/// A separate screen rather than a sheet: the body can be two thousand characters of civil
+/// defence instructions, and a sheet that tall is a sheet with its own scroll bar inside a page
+/// that already has one.
+function alertsRead(a) {
+  alertsOpenId = a.id;
+  const d = alertsData;
+  const cat = alertCat(a.category);
+
+  setNav(cat.label, L('app.alerts'), null, () => { alertsOpenId = null; RENDER.alerts(true); });
+  foot('');
+
+  body(
+    '<article class="alertfull" style="--alertc:' + alertColor(cat.color) + '">' +
+      '<div class="alertfullcat">' + svg(cat.icon || 'alerts') + esc(cat.label) + '</div>' +
+      '<h1 class="alertfulltitle">' + esc(a.title) + '</h1>' +
+      '<div class="alertfullmeta">' +
+        esc(a.jobLabel || a.job || L('ph.alert_authority')) +
+        (a.author ? '  ·  ' + esc(a.author) : '') +
+      '</div>' +
+      '<div class="alertfullmeta">' +
+        esc(alertAgo(a.at, d.now)) +
+        '  ·  ' + esc(a.active ? alertLeft(a.until_, d.now) : L('ph.alert_expired')) +
+      '</div>' +
+      // The line breaks the author wrote are the layout of a public notice. `esc` first, so the
+      // only markup that survives is the break this line puts back.
+      '<div class="alertbody">' + esc(a.message).replace(/\n/g, '<br>') + '</div>' +
+    '</article>' +
+    (alertCanRemove(a)
+      ? UI.button(L('ph.alert_withdraw'), 'alertdel', 'destructive') +
+        '<div class="groupfoot">' + esc(L('ph.alert_withdraw_hint')) + '</div>'
+      : '')
+  );
+
+  const del = byId('alertdel');
+  if (!del) return;
+  del.addEventListener('click', () => {
+    // Confirmed, because it lands on every phone in the city and cannot be undone.
+    confirmSheet(L('ph.alert_withdraw_ask'), L('ph.alert_withdraw'), async () => {
+      const res = alertsData.doc
+        ? await post('alertsDoc', { op: 'delete', id: a.id })
+        : await post('alertsDelete', { id: a.id });
+      if (!res || res.error) { toast(L('ph.alert_e_' + ((res && res.error) || 'x'))); return; }
+      // doc-civilalerte answers by broadcasting the withdrawal, which arrives as `alertGone` and
+      // takes the card out everywhere. Removing it here as well keeps the screen honest in the
+      // gap, and the two agree because both filter on the same id.
+      alertsData.alerts = alertsData.alerts.filter((x) => x.id !== a.id);
+      alertsOpenId = null;
+      toast(L('ph.alert_withdrawn'));
+      RENDER.alerts(true);
+    });
+  });
+}
+
+/// The composer.
+///
+/// Only reachable by somebody the server would accept, and the server checks again on the way in -
+/// the tab is courtesy, not security. What is typed survives a re-render through `alertsDraft`,
+/// because losing two thousand characters of civil defence instructions to a category tap is the
+/// kind of thing that makes people stop using an app.
+function alertsCompose() {
+  const d = alertsData;
+  const draft = alertsDraft || {
+    category: (d.cats[0] && d.cats[0].key) || '',
+    minutes: (d.durations[0] && d.durations[0].minutes) || 60,
+    title: '',
+    message: '',
+  };
+  alertsDraft = draft;
+
+  setNav(L('ph.alert_tab_send'), null, null);
+
+  body(
+    '<div class="grouphead">' + esc(L('ph.alert_f_category')) + '</div>' +
+    '<div class="alertpick">' + d.cats.map((c) =>
+      '<button class="alertchip' + (c.key === draft.category ? ' on' : '') + '" type="button" ' +
+        'data-cat="' + esc(c.key) + '" style="--alertc:' + alertColor(c.color) + '">' +
+        svg(c.icon || 'alerts') + '<span>' + esc(c.label) + '</span></button>').join('') +
+    '</div>' +
+
+    '<div class="grouphead">' + esc(L('ph.alert_f_title')) + '</div>' +
+    UI.field('alerttitle', L('ph.alert_f_title_ph'), draft.title,
+      'maxlength="' + d.maxTitle + '" autocomplete="off"') +
+
+    '<div class="grouphead">' + esc(L('ph.alert_f_message')) + '</div>' +
+    UI.textarea('alertmsg', L('ph.alert_f_message_ph'), draft.message,
+      'maxlength="' + d.maxMessage + '" rows="7"') +
+
+    '<div class="grouphead">' + esc(L('ph.alert_f_duration')) + '</div>' +
+    '<div class="alertpick">' + d.durations.map((x) =>
+      '<button class="alertchip plain' + (x.minutes === draft.minutes ? ' on' : '') + '" ' +
+        'type="button" data-dur="' + esc(String(x.minutes)) + '">' +
+        '<span>' + esc(x.label) + '</span></button>').join('') +
+    '</div>' +
+
+    UI.button(L('ph.alert_send'), 'alertsend') +
+    '<div class="groupfoot">' + esc(L('ph.alert_send_hint')) + '</div>'
+  );
+
+  // Kept as they are typed rather than only when the form is submitted, so switching a category
+  // or a duration - both of which redraw - does not empty the boxes.
+  const keep = () => {
+    const t = byId('alerttitle');
+    const m = byId('alertmsg');
+    if (t) draft.title = t.value;
+    if (m) draft.message = m.value;
+  };
+  if (byId('alerttitle')) byId('alerttitle').addEventListener('input', keep);
+  if (byId('alertmsg')) byId('alertmsg').addEventListener('input', keep);
+
+  rows('.alertchip[data-cat]', (b) => b.addEventListener('click', () => {
+    keep();
+    draft.category = b.dataset.cat;
+    alertsCompose();
+  }));
+  rows('.alertchip[data-dur]', (b) => b.addEventListener('click', () => {
+    keep();
+    draft.minutes = Number(b.dataset.dur);
+    alertsCompose();
+  }));
+
+  const go = byId('alertsend');
+  if (!go) return;
+  go.addEventListener('click', () => {
+    keep();
+    if (!draft.title.trim() || !draft.message.trim()) { toast(L('ph.alert_e_empty')); return; }
+
+    // Confirmed before it goes. This reaches every phone in the city at once and there is no
+    // taking it back - only a withdrawal, which people have already read by then.
+    confirmSheet(L('ph.alert_send_ask').replace('{n}', alertCat(draft.category).label),
+      L('ph.alert_send'), async () => {
+        go.disabled = true;
+        const payload = {
+          category: draft.category,
+          title: draft.title.trim(),
+          message: draft.message.trim(),
+          minutes: draft.minutes,
+        };
+        const res = alertsData.doc
+          ? await post('alertsDoc', { op: 'emit', emit: payload })
+          : await post('alertsEmit', payload);
+        go.disabled = false;
+        if (!res || res.error) { toast(L('ph.alert_e_' + ((res && res.error) || 'x'))); return; }
+
+        // Under doc-civilalerte the answer only means "asked": it decides, and it says so itself
+        // with its own notification in its own words. Claiming success here would be the phone
+        // announcing a result it does not have.
+        toast(L(alertsData.doc ? 'ph.alert_sent_doc' : 'ph.alert_sent'));
+        ui('sent');
+        alertsDraft = null;
+        alertsTab = 'now';
+        // The phone's own broadcast reaches this client too and inserts the card, so a refetch
+        // here would be asking for something already on its way.
+        if (!alertsData.doc) RENDER.alerts(true);
+        else RENDER.alerts();
+      });
+  });
+}
+
+/// An alert has arrived, on a phone that may or may not be looking at it.
+///
+/// The card is inserted rather than refetched: the whole row travelled with the event, and asking
+/// the server to send back what it just pushed is the reload flash in miniature.
+function alertsArrived(alert) {
+  if (!alert || !alert.id) return;
+  if (alertsData) {
+    alertsData.alerts = [alert].concat(alertsData.alerts.filter((a) => a.id !== alert.id));
+    // The event IS the clock: an alert that has just been broadcast was created now, so this is
+    // the one moment the two clocks are known to agree.
+    alertsData.now = Math.max(alertsData.now, Number(alert.at) || alertsData.now);
+  }
+  if (openApp && openApp.id === 'alerts' && !alertsOpenId) RENDER.alerts(true);
+}
+
+function alertsWithdrawn(id) {
+  id = Number(id);
+  if (!id) return;
+  if (alertsData) alertsData.alerts = alertsData.alerts.filter((a) => a.id !== id);
+  if (!(openApp && openApp.id === 'alerts')) return;
+  // Reading the one that was withdrawn: back to the list, rather than a page about something
+  // that no longer exists.
+  if (alertsOpenId === id) { alertsOpenId = null; toast(L('ph.alert_gone')); }
+  RENDER.alerts(true);
+}
+
 RENDER.lottery = async (cached) => {
   let s = (cached && lotteryData) ? lotteryData : null;
 
@@ -14358,6 +14720,13 @@ window.addEventListener('message', (e) => {
     // The other side unsent it. Reopening the thread is how the screen agrees with the server,
     // and it only happens when this conversation is the one on screen.
     if (openApp && openApp.id === 'messages' && thread) openThread(thread);
+  } else if (d.action === 'alert') {
+    // A public alert, pushed to every phone in the city. The banner is the client's job; this
+    // keeps the app itself current whether or not it happens to be open.
+    alertsArrived(d.alert);
+  } else if (d.action === 'alertGone') {
+    // Withdrawn by its author or by staff, everywhere at once.
+    alertsWithdrawn(d.id);
   } else if (d.action === 'lotteryLive') {
     // The draw moved. client/lottery.lua mirrors both providers into one shape, so this handler
     // does not care which resource is running the draw.

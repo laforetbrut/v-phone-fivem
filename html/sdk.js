@@ -121,6 +121,15 @@
     location: 'M12 21s7-6.2 7-12A7 7 0 1 0 5 9c0 5.8 7 12 7 12ZM12 6.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z',
     copy: 'M8 8h12v12H8zM4 4h12v4M4 4v12h4',
     warning: 'M12 3 2.5 20h19L12 3ZM12 9v5M12 17h.01',
+    // A siren horn with two arcs of sound. The stroke twin of the `alerts` tile, used on the
+    // cards, the tabs and the empty states inside the Alerts app.
+    alerts: 'M4 14V9l9-4v14l-9-4Zm0 0H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1m13-1a3 3 0 0 1 0 6m2-9a7 7 0 0 1 0 12',
+    // A flame, for a fire alert.
+    fire: 'M12 21a5 5 0 0 0 5-5c0-4-5-5-4-10-3 1.5-6 4.5-6 9a5 5 0 0 0 5 6Zm0 0a2.5 2.5 0 0 0 2.5-2.5c0-2-2.5-2.5-2.5-4.5-1.5 1-2.5 2.5-2.5 4.5A2.5 2.5 0 0 0 12 21Z',
+    // A cloud with a bolt, for a weather alert.
+    weather: 'M7 15a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.6 1.5A3.5 3.5 0 0 1 17 15M13 13l-3 4h4l-3 4',
+    // A car from the side, for a road alert.
+    car: 'M5 16v2M19 16v2M3 16v-3l2-5h14l2 5v3H3Zm3-3h.01M18 13h.01M6 8h12',
     images: 'M8 3h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM4 7v12a2 2 0 0 0 2 2h12M10 9a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8ZM20 15l-4-4-6 6',
     airdrop: 'M12 20a1 1 0 0 0 .9-1.5l-.9-1.6-.9 1.6A1 1 0 0 0 12 20ZM7.5 13.5a6.4 6.4 0 0 1 9 0M4.7 10.7a10.3 10.3 0 0 1 14.6 0M12 8.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z',
     share: 'M12 3l4 4M12 3L8 7M12 3v13M6 12H5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1',
@@ -421,6 +430,15 @@
     shield: { bg: 'linear-gradient(180deg,#3C82F6,#0A48C4)', d: G.shield },
     // 911. Red, because every emergency service on every phone is, and because it has to be
     // findable on a crowded home screen by somebody who is not reading.
+    // Public alerts. Amber rather than the red 911 wears: the two apps sit next to each other on
+    // every home screen, and one of them is the one you press when it is YOUR emergency. A siren
+    // horn, which is what a public address system looks like anywhere in the world.
+    alerts: { bg: 'linear-gradient(180deg,#FFC24D,#E07800)', fill: '#1A1A1A',
+      d: 'M4.8 14.9V9.1a1.2 1.2 0 0 1 .78-1.13l7.3-2.74a1.2 1.2 0 0 1 1.62 1.13v11.28a1.2 1.2 0 0 1'
+       + '-1.62 1.13l-7.3-2.74a1.2 1.2 0 0 1-.78-1.13Zm-1.7-4.6h.6v3.4h-.6a1.3 1.3 0 0 1-1.3-1.3v-.8a1.3'
+       + ' 1.3 0 0 1 1.3-1.3Zm3.9 5.5 1.9.72v2.68a1.2 1.2 0 0 1-2.4 0v-3.4Zm10.4-6.2a4.2 4.2 0 0 1 0 4.8'
+       + 'l-1.3-.95a2.6 2.6 0 0 0 0-2.9l1.3-.95Zm2.2-2.6a7.6 7.6 0 0 1 0 10l-1.3-.95a6 6 0 0 0 0-8.1l1.3'
+       + '-.95Z' },
     emergency: { bg: 'linear-gradient(180deg,#FF6B6B,#D70015)',
       d: 'M12 2.6a1.4 1.4 0 0 1 1.22.71l9.1 15.98A1.4 1.4 0 0 1 21.1 21.4H2.9a1.4 1.4 0 0 1'
        + '-1.22-2.1l9.1-15.99A1.4 1.4 0 0 1 12 2.6zm-1.15 5.9v6.05h2.3V8.5h-2.3zm0 7.5v2.2h2.3'

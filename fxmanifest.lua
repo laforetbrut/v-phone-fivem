@@ -75,6 +75,8 @@ client_scripts {
     'client/taxi.lua',
     -- The Lottery app's doc-lottery side, and the draw it broadcasts.
     'client/lottery.lua',
+    -- The Alerts app's doc-civilalerte side, and the broadcast it listens for.
+    'client/alerts.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
@@ -138,6 +140,9 @@ server_scripts {
     -- Lottery: the config provider's sessions, tickets, draw and prizes. doc-lottery's own side
     -- is driven from client/lottery.lua, where its QB server callbacks are reachable.
     'server/lottery.lua',
+    -- Alerts: the config provider's table, permissions and broadcast. doc-civilalerte's own
+    -- side is driven from client/alerts.lua, where its QB server callback is reachable.
+    'server/alerts.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',

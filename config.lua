@@ -232,6 +232,7 @@ Config.Compat = {
         -- 911. Ships in every phone and is in the contact list as well, so switching it off is a
         -- decision worth making deliberately: it is the app a player reaches for once.
         -- emergency = false,
+        -- alerts    = false,  -- the government broadcast, received by everybody
 
         -- ── Money ─────────────────────────────────────────────
         bank     = true,   -- accounts, transfers, statements, the card
@@ -772,6 +773,12 @@ Config.Apps = {
     -- player who deleted it will discover that at the worst possible moment.
     { id = 'emergency', label = 'app.emergency', icon = 'emergency', owner = 'v-phone', slot = 4,
       required = true, category = 'essentials' },
+    -- Public alerts from the authorities. Installed by DEFAULT and not optional: an alert
+    -- system only works if everybody already has it when the alert goes out - an app a player
+    -- has to hear about, find in the store and install first is an app that is not there on
+    -- the day the city floods. See Config.Alerts.
+    { id = 'alerts',   label = 'app.alerts',   icon = 'alerts',   owner = 'v-phone', slot = 4,
+      category = 'essentials' },
     -- Bank shares slot 5 with Mail rather than every later app being renumbered to make room
     -- for the one above. `slot` is a sort key and ties break on the app id, so `bank` still
     -- comes before `mail` - which is the order that was already here.
@@ -874,6 +881,11 @@ Config.AppMetadata = {
     mail = {
         features = { 'Adresse personnalisée', 'Boîte de réception', 'Messages enregistrés', 'Envoi multiple' },
         keywords = { 'email', 'courrier', 'boîte', 'travail' },
+    },
+    alerts = {
+        features = { 'Alertes officielles', 'Notification sur tous les téléphones',
+                     'Archives consultables', 'Diffusion pour les autorités' },
+        keywords = { 'alerte', 'gouvernement', 'police', 'urgence', 'population' },
     },
     maps = {
         features = { 'Lieux de la ville', 'Filtres', 'Itinéraire GPS', 'Repères instantanés' },
@@ -1843,6 +1855,119 @@ Config.BankPro = {
 
     minAmount = 1,
     maxAmount = 0,          -- 0 for no ceiling
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  ALERTS  (what the government broadcasts, and everybody receives)
+-- ══════════════════════════════════════════════════════════════
+-- Installed by default, on every phone, and it cannot be bought or sold: an alert system is
+-- only worth having if it is already there when the alert goes out.
+--
+-- Two providers, one app, and a player never learns which one answered:
+--
+--   * **doc-civilalerte**, when that resource is started. Its alerts, its table, its history,
+--     its permissions and its Discord relay - reached through the same server callback and the
+--     same two net events its own iframe used. **Nothing in doc-civilalerte is edited, wrapped
+--     or replaced.** Update it, and this keeps working.
+--   * **`categories` and `emitters` below** otherwise. That is what makes the app worth having
+--     on an ESX, ox or standalone server, where doc-civilalerte does not exist: the phone's own
+--     table, its own permission check, its own broadcast.
+--
+-- **Nobody chooses to receive these.** A public alert is not a subscription - the point of the
+-- word is that it reaches people who were not looking - so there is no opt-out beyond muting
+-- the app's notifications the way any app can be muted from Settings.
+Config.Alerts = {
+    enabled = true,
+
+    -- 'auto' uses doc-civilalerte when it is started and the settings below when it is not.
+    -- 'doc-civilalerte' or 'config' pin it, for a server that wants to be certain which is
+    -- live rather than depending on a resource's start order.
+    provider = 'auto',
+
+    -- ── Who may broadcast ──────────────────────────────────────
+    -- **The server decides this, every time, from this list.** The composer is only shown to
+    -- somebody who passes it, but that is courtesy: the check runs again when the alert is
+    -- sent, so a player who reaches the event another way is refused there.
+    --
+    --   job      the job name your framework uses
+    --   grade    the minimum grade level
+    --   onDuty   true means they must be clocked on to broadcast
+    --
+    -- **Under doc-civilalerte this list must MIRROR its `Config.Emitters`.** doc-civilalerte
+    -- decides for itself who may send - which is right, it owns the alerts - but it does not
+    -- publish that decision, so the phone cannot ask "may I?" and has to work it out from
+    -- here. Get it wrong and the only symptom is a composer offered to somebody whose alert
+    -- is then refused: annoying, never dangerous.
+    emitters = {
+        { job = 'police',       grade = 11, onDuty = true },
+        { job = 'sheriff',      grade = 11, onDuty = true },
+        { job = 'gouvernement', grade = 5,  onDuty = true },
+        { job = 'incendie',     grade = 8,  onDuty = true },
+        { job = 'ambulance',    grade = 9,  onDuty = true },
+    },
+
+    -- ── The kinds of alert ─────────────────────────────────────
+    -- `key` is what is stored and what the server checks against; everything else is how the
+    -- card looks. **The keys below are doc-civilalerte's own**, so an alert broadcast by it
+    -- arrives already knowing which colour and which name it wears. An unknown key still
+    -- shows - a category nobody configured is not a reason to hide a public warning - it just
+    -- arrives grey, wearing its key.
+    --
+    -- The order written here is the order the composer offers them.
+    categories = {
+        { key = 'population',  label = 'ph.alert_c_population',  color = '#EF4444', icon = 'warning' },
+        { key = 'incendie',    label = 'ph.alert_c_fire',        color = '#F97316', icon = 'fire' },
+        { key = 'catastrophe', label = 'ph.alert_c_disaster',    color = '#DC2626', icon = 'house' },
+        { key = 'recherche',   label = 'ph.alert_c_wanted',      color = '#F59E0B', icon = 'search' },
+        { key = 'route',       label = 'ph.alert_c_road',        color = '#EAB308', icon = 'car' },
+        { key = 'meteo',       label = 'ph.alert_c_weather',     color = '#3B82F6', icon = 'weather' },
+        { key = 'officiel',    label = 'ph.alert_c_official',    color = '#94A3B8', icon = 'shield' },
+    },
+
+    -- ── How long an alert stands ───────────────────────────────
+    -- An expired alert is not deleted: it drops out of the active list into the archive, which
+    -- is where "what did they say last week" is answered. Only these durations are accepted -
+    -- a value that is not on the list falls back to the default rather than being refused,
+    -- because losing a written alert to a rejected dropdown is the worse failure.
+    durations = {
+        { minutes = 30,   label = 'ph.alert_d_30m' },
+        { minutes = 60,   label = 'ph.alert_d_1h' },
+        { minutes = 180,  label = 'ph.alert_d_3h' },
+        { minutes = 720,  label = 'ph.alert_d_12h' },
+        { minutes = 1440, label = 'ph.alert_d_24h' },
+    },
+    defaultDuration = 60,
+
+    -- ── Limits, enforced on the server ─────────────────────────
+    maxTitle = 60,
+    maxMessage = 2000,
+
+    -- Seconds one person must wait between two broadcasts. This is the only thing standing
+    -- between a compromised account and every phone in the city buzzing on a loop.
+    cooldown = 30,
+
+    -- How many alerts the archive holds, and how long the table keeps them. 0 days never
+    -- purges, which is a choice a server can make - it just means the table grows forever.
+    history = 50,
+    purgeAfterDays = 7,
+
+    -- ── The notification ───────────────────────────────────────
+    -- A public alert raises a banner on every phone in the city, whether the app is open or
+    -- not. Muteable per app from Settings like any other, because a player who cannot silence
+    -- a broadcast has no phone, they have an alarm clock.
+    notify = true,
+    -- Buzz as well as show. Off leaves the banner silent.
+    vibrate = true,
+
+    -- ── Deleting ───────────────────────────────────────────────
+    -- Who may take an alert down: whoever wrote it, always, and staff. `staffAce` is the
+    -- permission that counts as staff - the phone's own admin ace by default, so nothing new
+    -- has to be granted.
+    --
+    -- Under doc-civilalerte this is ITS rule, not this one: it checks the citizen id against
+    -- the row and its own admin permission, and it is right to.
+    allowAuthorDelete = true,
+    staffAce = 'vphone.admin',
 }
 
 -- ══════════════════════════════════════════════════════════════

@@ -10870,3 +10870,152 @@ body.inframe.dark .uisearch {
   line-height: 1.5;
   text-align: center;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   ALERTS — what the authorities broadcast
+   ══════════════════════════════════════════════════════════════
+   The category's colour arrives per card as `--alertc`, from the config, so an operator adding a
+   category does not touch this file. Everything else is the phone's own palette: an alert is a
+   serious thing on an ordinary screen, and a card that ignores the theme reads as a banner ad. */
+
+.alertlist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 16px 8px;
+}
+
+/* A bar down the leading edge rather than a coloured dot: at a glance, in a list, an edge is the
+   only thing that survives - a dot is gone before the eye reaches it. */
+.alertcard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 12px 14px 12px 16px;
+  border: 0;
+  border-left: 3px solid var(--alertc, var(--app-accent));
+  border-radius: 12px;
+  background: var(--app-card);
+  color: var(--app-label);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: transform .12s ease, background .12s ease;
+}
+.alertcard:active { transform: scale(.985); background: var(--app-fill); }
+/* An expired alert is history, not news. Dimmed rather than hidden: "what did they say" is the
+   whole reason the archive exists. */
+.alertcard.past { opacity: .58; }
+
+.alerttop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.alertcat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--alertc, var(--app-accent));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  /* The category name is the first thing dropped when the row is tight; the time is four
+     characters and must not be. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alertcat svg { width: 13px; height: 13px; flex: none; }
+.alertwhen { flex: none; color: var(--app-sub); font-size: 11px; }
+
+.alerttitle {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.alertfrom { color: var(--app-sub); font-size: 12px; }
+.alertleft { color: var(--alertc, var(--app-accent)); font-size: 11px; font-weight: 600; }
+.alertleft.over { color: var(--app-label3); font-weight: 500; }
+
+/* ── One alert, read in full ────────────────────────────────── */
+.alertfull {
+  margin: 6px 16px 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--app-card);
+  border-top: 3px solid var(--alertc, var(--app-accent));
+}
+.alertfullcat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--alertc, var(--app-accent));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.alertfullcat svg { width: 14px; height: 14px; }
+.alertfulltitle {
+  margin: 8px 0 6px;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.22;
+}
+.alertfullmeta { color: var(--app-sub); font-size: 12px; line-height: 1.6; }
+/* The paragraphs the author wrote are the layout of a public notice, so the breaks stay and the
+   measure stays readable rather than stretching to the full width of the screen. */
+.alertbody {
+  margin-top: 12px;
+  padding-top: 12px;
+  box-shadow: inset 0 .5px 0 var(--app-sep);
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ── The composer's choices ─────────────────────────────────── */
+/* Chips wrap rather than scroll sideways: seven categories in a hidden horizontal scroller is
+   four categories nobody knows are there. */
+.alertpick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 16px 4px;
+}
+.alertchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--app-sep);
+  border-radius: 999px;
+  background: var(--app-card);
+  color: var(--app-label);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+.alertchip svg { width: 14px; height: 14px; color: var(--alertc, var(--app-accent)); }
+.alertchip:active { background: var(--app-fill); }
+/* The chosen one wears its own category's colour, which is also the answer to "what will this
+   look like when it lands". The ring is a box-shadow rather than a thicker border: a border that
+   grows on selection moves every chip after it, and the row visibly jumps. */
+.alertchip.on {
+  border-color: var(--alertc, var(--app-accent));
+  box-shadow: 0 0 0 1px var(--alertc, var(--app-accent));
+  background: var(--app-fill);
+  font-weight: 600;
+}
+.alertchip.plain.on {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
