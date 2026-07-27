@@ -221,29 +221,21 @@ end)
 -- ══════════════════════════════════════════════════════════════
 -- The crack: a cryptanalysis bench
 -- ══════════════════════════════════════════════════════════════
--- Reading an intercepted Cipher message is WORK. It used to be a twenty second `Wait` and a
--- dice roll, which had two problems worth naming. The obvious one: the outcome had nothing to
--- do with the officer, who watched a spinner and then read either the message or "failed",
--- with no move available in either case. The quiet one: that wait is twice the client's ten
--- second request timeout, so every single crack printed "no answer from the server after 10s"
--- and the real answer arrived to a callback that had already been dropped - the officer never
--- saw the result at all, whichever way the roll went.
+-- Reading an intercepted message is work, not a wait. Three benches, each a different real
+-- technique and each generated per message: a monoalphabetic cipher with a frequency table, a
+-- repeating-key XOR with a known header, and four rotors under modular constraints.
 --
--- Three benches now, each a different real technique, each generated per message:
+-- The server keeps the ANSWERS and nothing else travels: the substitution phrase is a cover
+-- phrase from the config, never the seized content, and the plaintext is fetched only once a
+-- submitted solution has been checked here.
 --
---   substitution - a monoalphabetic cipher and a frequency table. Classical cryptanalysis.
---   xorkey       - a repeating-key XOR whose header is known. Align the key, read the text.
---   rotors       - four rotors and a system of modular constraints to satisfy.
+-- A minigame runs on a client, so a scripted client can solve it instantly - true of every
+-- minigame in this ecosystem, and not pretended otherwise. What is enforced is what a client
+-- cannot fake alone: the clock, the attempt count, the session, the scope, and the fact that a
+-- solution is checked rather than announced.
 --
--- **What the server keeps.** The answers, and only the answers. The puzzle handed over is
--- solvable and contains nothing about the seized message: the substitution phrase is a cover
--- phrase from the config, deliberately never the content, because the content is the prize.
--- The plaintext is fetched at the END, once the submitted solution has been checked HERE.
---
--- A minigame is played on a client, so a scripted client can always solve it instantly. That is
--- true of every minigame in this ecosystem and it is not pretended otherwise; what is enforced
--- is the part a client cannot fake alone - the clock (`minSeconds`), the attempt count, the
--- session, the scope, and the fact that a solution is CHECKED rather than announced.
+-- The old route waited twenty seconds on the server against a ten second client timeout, so
+-- every crack logged a timeout AND its answer reached a callback already dropped.
 
 local Cracks = {}       -- [src] = the live bench
 local CrackTries = {}   -- [src] = { [messageId] = attempts spent }
@@ -578,6 +570,100 @@ V.Callback('v-phone:police:cracksolve', function(src, resolve, data)
 
     log(src, ('crack on cipher #%d SOLVED'):format(id))
     resolve({ ok = true, cracked = true, body = plaintextOf(id) })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- The MDT
+-- ══════════════════════════════════════════════════════════════
+-- **These two callbacks did not exist.**
+--
+-- The app relayed to `v-police:lookup` and `v-police:warrants`, which belong to the author's own
+-- police module - and the compat shim reports `v-police` as started whenever `Config.Compat
+-- .policeJobs` is set, which it is by default. So on an ordinary server the MDT appeared, and
+-- every search waited the full ten second request timeout and then failed. It is the fifth app to
+-- be broken by a v-* name reporting itself as running with nothing behind it; the other four were
+-- fixed by reading the bridge instead, and this is that fix for this one.
+--
+-- What it can honestly answer:
+--
+--   * a LOOKUP, from `vphone_characters` - the phone's own table. A name or a number in, a name,
+--     number and citizen id out. That is a phone directory, which is what an officer at a terminal
+--     is actually reaching for, and it needs no other resource.
+--   * WARRANTS, from whatever the operator points it at. There is no warrant table in this
+--     resource and inventing one would be a second source of truth next to whatever a server
+--     already runs, so this reads `Config.Police.warrants` - a hook, a table name, or nothing -
+--     and says plainly when there is nothing to read.
+--
+-- Both are gated on the police job, checked here on the SERVER, and the lookup is rate limited:
+-- a directory somebody can walk at speed is a directory being copied.
+
+local MdtLast = {}      -- [src] = when their last lookup was allowed
+
+--- Is this player an officer? The MDT is not the forensics terminal - no session, no warrant, it
+--- is the everyday tool - so it asks for the job and nothing more.
+local function isMdtOfficer(src)
+    local p = Core.GetPlayer(src)
+    if not p then return false end
+    return isOfficer(p)
+end
+
+V.Callback('v-phone:mdt:lookup', function(src, resolve, data)
+    if not isMdtOfficer(src) then resolve({ error = 'unauthorised' }) return end
+
+    -- One search a second. Not a security boundary - an officer can search all day - but it stops
+    -- a script from walking the whole directory in one breath.
+    local now = GetGameTimer()
+    if MdtLast[src] and (now - MdtLast[src]) < 1000 then resolve({ error = 'toofast' }) return end
+    MdtLast[src] = now
+
+    local query = tostring((data and data.query) or ''):gsub('^%s+', ''):gsub('%s+$', '')
+    if #query < 2 then resolve({ error = 'short' }) return end
+
+    -- Matched on the name OR the number, because an officer has one or the other and not both.
+    -- Bound as a parameter with the wildcards added here, so a `%` somebody types is data.
+    local like = '%' .. query:gsub('[%%_]', '') .. '%'
+    local rows = MySQL.query.await([[
+        SELECT c.citizenid, c.phone,
+               TRIM(CONCAT(COALESCE(c.firstname, ''), ' ', COALESCE(c.lastname, ''))) AS name
+        FROM vphone_characters c
+        WHERE c.phone LIKE ? OR CONCAT(COALESCE(c.firstname, ''), ' ',
+                                       COALESCE(c.lastname, '')) LIKE ?
+        ORDER BY name LIMIT 15]], { like, like }) or {}
+
+    log(src, ('MDT lookup for "%s": %d result(s)'):format(query, #rows))
+    resolve({ ok = true, rows = rows })
+end)
+
+V.Callback('v-phone:mdt:warrants', function(src, resolve)
+    if not isMdtOfficer(src) then resolve({ error = 'unauthorised' }) return end
+
+    local where = POLICE.warrants
+
+    -- A function the operator wrote. Whatever it returns is passed through: this resource has no
+    -- opinion on what a warrant looks like on their server.
+    if type(where) == 'function' then
+        local ok, rows = pcall(where, src)
+        if ok and type(rows) == 'table' then resolve({ ok = true, rows = rows }) return end
+        resolve({ error = 'x' })
+        return
+    end
+
+    -- A table name. Read defensively: it belongs to another resource, so a column that is not
+    -- there must not take this callback down with it.
+    if type(where) == 'string' and where ~= '' then
+        local ok, rows = pcall(function()
+            return MySQL.query.await(('SELECT * FROM `%s` ORDER BY 1 DESC LIMIT 50')
+                :format(where:gsub('[^%w_]', '')))
+        end)
+        if ok and type(rows) == 'table' then resolve({ ok = true, rows = rows }) return end
+        resolve({ error = 'nosource' })
+        return
+    end
+
+    -- Nothing configured, and that is said rather than shown as an empty list: "no warrants" and
+    -- "no warrant system on this server" are different facts, and an officer trusting the first
+    -- when it is really the second is the sort of thing that gets somebody killed in a roleplay.
+    resolve({ ok = true, rows = {}, nosource = true })
 end)
 
 AddEventHandler('playerDropped', function()

@@ -159,7 +159,7 @@ end)
 --- "The battery charges for ever" is a report with five possible causes and no way for the
 --- person reporting it to tell them apart. This prints the one that fired, on both sides: what
 --- the housing script answered here, and which branch the server took.
-RegisterCommand('phonecharge', function()
+V.Sub('phonedebug', 'charge', 'why the phone believes it is or is not charging', function()
     local housing = housingResource()
     local raw, answer = nil, nil
     if housing == 'qs-housing' then
@@ -185,4 +185,4 @@ RegisterCommand('phonecharge', function()
         :format(tostring(LocalPlayer.state and LocalPlayer.state.phoneAtHome)))
     print(('[v-phone] in a vehicle: %s'):format(tostring(IsPedInAnyVehicle(PlayerPedId(), false))))
     TriggerServerEvent('v-phone:charge:why')
-end, false)
+end)

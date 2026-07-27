@@ -1,15 +1,78 @@
--- v-phone | shared config
--- iFruit. The framework has no player chat commands by design, which makes the phone the
--- surface most of the game is played through.
+-- ╔════════════════════════════════════════════════════════════════════════════╗
+-- ║                                                                            ║
+-- ║    iFruit                                                                  ║
+-- ║    v-phone  ·  the one file you edit                                       ║
+-- ║                                                                            ║
+-- ║    Nothing in here needs anything but this resource restarted:              ║
+-- ║        refresh                                                             ║
+-- ║        restart v-phone                                                     ║
+-- ║                                                                            ║
+-- ╚════════════════════════════════════════════════════════════════════════════╝
 --
--- **The phone is a shell, not a feature.** Every app is a thin view over the module that
--- already owns its data: the bank app calls v-banking, it does not keep a balance. The
--- moment an app holds its own copy of anything there are two sources of truth, and one of
--- them is wrong. Messages and contacts are the only things v-phone owns outright.
+--  READ THIS MUCH AND YOU CAN CONFIGURE THE REST
+--  ─────────────────────────────────────────────
 --
--- **Every table this resource creates begins with `vphone_`,** so it can never collide
--- with a table another script owns. A server upgraded from an older build has its data
--- moved to the new names automatically at boot (see bridge/server/migrate.lua).
+--    ·  Everything that CAN be detected IS, and the setting for it reads `auto`. A stock
+--       qb-core, ESX or ox server needs nothing in this file changed to start.
+--
+--    ·  A setting you do not recognise is a setting you can leave alone. There is no
+--       default below that is wrong for an ordinary server.
+--
+--    ·  `nil` and `false` are different answers. `nil` means "work it out for me";
+--       `false` means "off, and do not work anything out".
+--
+--    ·  Anything that costs money, grants access, or writes to a database is checked
+--       again on the SERVER. Nothing here is enforced by the interface alone, so a
+--       modified client cannot buy, unlock or award itself anything.
+--
+--    ·  Prices are whole dollars. Distances are metres. Times are seconds unless the
+--       comment beside them says otherwise.
+--
+--
+--  TWO THINGS WORTH KNOWING BEFORE YOU CHANGE ANYTHING
+--  ──────────────────────────────────────────────────
+--
+--  **The phone is a shell, not a feature.** Every app is a thin view over whatever already
+--  owns its data: the bank app asks your banking script for a balance, it does not keep
+--  one. The moment an app holds its own copy of something there are two sources of truth
+--  and one of them is wrong. Messages, contacts and the phone's own settings are the only
+--  things it owns outright.
+--
+--  **Every table it creates begins with `vphone_`,** so it can never collide with a table
+--  another resource owns. A server upgraded from an older build has its data moved to
+--  those names at boot - see bridge/server/migrate.lua.
+--
+--
+--  WHAT IS WHERE
+--  ─────────────
+--  Line numbers, so any section is one jump away:
+--
+--    66    COMPATIBILITY                2223  A PHONE HEARD RINGING
+--    319   SETTINGS                     2333  EXTERNAL CHARGING
+--    455   LICENCE NAMES                2355  POLICE FORENSICS
+--    515   HOW A NUMBER IS DISPLAYED    2357  THE HEALTH RECORD
+--    1245  WRITING A POSITION           2397  HOSPITALS
+--    1324  PAID CHARGING                2425  PROPERTY
+--    1414  ADMIN                        2456  GARAGES
+--    1420  LOGGING                      2475  BANK
+--    1669  BANK PRO                     2671  MEDIA
+--    1765  ZUBER                        2748  FACETIME
+--    1959  TAXI                         2778  PAYPHONES
+--    2054  LOTTERY                      2957  MUSIC
+--    2162  THE CLOCK                    3088  VEHICLE REMOTE
+--    2178  THE NETS UNDER THE PHONE     3157  FRUITSTORE
+--
+--
+--  IF SOMETHING DOES NOT BEHAVE
+--  ────────────────────────────
+--  Each of these prints what the phone actually decided, which beats guessing:
+--
+--    /phonecompat   which framework, inventory, banking and voice script were detected
+--    /phonevoice    whether a call can carry audio, and why a weak signal does or does
+--                   not break it up
+--    /phonecharge   why the phone believes it is or is not charging
+--    /phoneapps     what this character has installed, and what the store is offering
+--
 Config = {}
 
 -- ══════════════════════════════════════════════════════════════
@@ -146,20 +209,69 @@ Config.Compat = {
     -- keep the range clear of any radio channels your other scripts use.
     voiceChannels = 256,
 
-    -- ── Apps that need a script you may not run ────────────────
-    -- Set one to false and its app is not offered at all: no home screen, no store, no
-    -- search. This is how you switch off the garage app on a server with no garages,
-    -- rather than leaving players an app that answers nothing.
-    -- Which of these apps to offer at all. All of them read your framework through the
-    -- bridge - qb-core, qbx, ESX, ox, and whatever banking, garage or housing script is
-    -- running - so none of them needs a companion resource. Set one to false to remove it
-    -- from the phone entirely.
+    -- ══════════════════════════════════════════════════════════
+    --  WHICH APPS EXIST ON THIS SERVER
+    -- ══════════════════════════════════════════════════════════
+    -- `false` removes an app completely: no home screen icon, no store listing, no search
+    -- result, and its server callbacks answer "off". That last part is the reason to use this
+    -- rather than editing `Config.Apps` - an app removed here cannot be reached at all, by a
+    -- player, by a script, or by a modified client.
+    --
+    -- **Every one of these defaults to on and every one of them works out of the box.** They
+    -- read your framework through the bridge - qb-core, qbx, ESX, ox, and whatever banking,
+    -- garage, housing or inventory script you run - so none of them needs a companion resource.
+    -- You are switching apps off because your server has no use for them, not to make them work.
+    --
+    -- Commented out means "on". Uncomment the line and set it to false to remove the app.
     apps = {
-        bank     = true,
-        garage   = true,
-        property = true,
-        wallet   = true,
-        jobs     = true,
+        -- ── The four that cannot be removed ────────────────────
+        -- phone, messages, contacts and store are not listed on purpose. A phone with no
+        -- dialler is a brick, and a phone with no store cannot get anything back.
+
+        -- ── Emergency ─────────────────────────────────────────
+        -- 911. Ships in every phone and is in the contact list as well, so switching it off is a
+        -- decision worth making deliberately: it is the app a player reaches for once.
+        -- emergency = false,
+
+        -- ── Money ─────────────────────────────────────────────
+        bank     = true,   -- accounts, transfers, statements, the card
+        bankpro  = true,   -- the business side: payroll, company transfers, movements
+        -- calc  = false,  -- the calculator
+
+        -- ── Getting around ────────────────────────────────────
+        maps     = true,   -- waypoints, saved places, what is nearby
+        garage   = true,   -- your vehicles, and where they are
+        property = true,   -- your houses, and a route to one
+        taxi     = true,   -- hail a ride, or drive one
+
+        -- ── Work and paperwork ────────────────────────────────
+        jobs     = true,   -- open positions, and your own contract
+        wallet   = true,   -- licences and ID
+        health   = true,   -- the medical record
+        mdt      = true,   -- the police terminal, for whoever holds the job
+        -- notes     = false,
+        -- reminders = false,
+
+        -- ── Talking ───────────────────────────────────────────
+        mail     = true,   -- email, attachments, domains
+        cipher   = true,   -- the encrypted messenger
+        -- bleeter = false,  -- the public feed
+        -- snap    = false,  -- photos
+        -- hush    = false,  -- anonymous confessions
+
+        -- ── Camera and media ──────────────────────────────────
+        camera   = true,   -- photos and video
+        gallery  = true,   -- what the camera took
+        music    = true,   -- library, playlists, and the deck it hands off to
+
+        -- ── The paid and the optional ─────────────────────────
+        charging = true,   -- FruitCharge: find and pay a public charger
+        zuber    = true,   -- food delivery
+        lottery  = true,   -- the weekly draw
+
+        -- ── A note on the ones you will not find here ─────────
+        -- The chargers and dead zones (`ch_*`, `dz_*`) are places on the map, not apps. They
+        -- live in Config.Charging and Config.DeadZones.
     },
 
     -- The same switches under their old names. These were the author's own v-* module
@@ -504,8 +616,22 @@ Config.NumberDisplay = {
 --
 -- Available fields: name, number, favourite, photo, email, address, birthday, note.
 Config.RequiredContacts = {
-    -- { name = 'Police', number = '911', favourite = true, note = 'Emergency line' },
-    -- { name = 'Medical services', number = '912', favourite = true },
+    -- **911 is in every phone, and calling it opens the 911 app.**
+    --
+    -- `app = 'emergency'` is what makes the difference: the contact is not a number somebody
+    -- answers, it is the door to the app that raises an alert. Tapping call on it opens 911
+    -- rather than dialling into silence - which is what a real emergency number does, and what
+    -- a player pressing the one number they know by heart expects.
+    --
+    -- `system = true` is implied for everything in this list: a required contact cannot be
+    -- edited or deleted, so it is still there on the night it is needed.
+    { name = '911', number = '911', favourite = true, app = 'emergency',
+      note = 'Police, ambulance, fire - raises an alert with your position.' },
+
+    -- More lines, if your server has numbers people should not have to remember. A plain entry
+    -- with no `app` is an ordinary contact: calling it dials the number.
+    -- { name = 'Taxi dispatch', number = '555-0100' },
+    -- { name = 'Mechanic', number = '555-0200', favourite = false },
 }
 
 -- ── Messages ───────────────────────────────────────────────────
@@ -718,6 +844,11 @@ Config.Apps = {
     -- Taxi: hail a ride, or drive one. A free download. See Config.Taxi.
     { id = 'taxi',     label = 'app.taxi',     icon = 'taxi',     owner = 'v-phone',    slot = 27,
       optional = true, category = 'travel', version = '1.0' },
+    -- Lottery: the weekly draw, from the phone. A DOWNLOAD and a paid one - $250, the price of
+    -- one ticket - so buying the app is the same decision as buying a line, which is the joke.
+    -- See Config.Lottery.
+    { id = 'lottery',  label = 'app.lottery',  icon = 'lottery',  owner = 'v-phone',    slot = 28,
+      optional = true, category = 'entertainment', price = 250, account = 'bank', version = '1.0' },
 }
 
 -- Rich FruitStore catalogue. These are presentation/search hints, not duplicated game
@@ -817,6 +948,12 @@ Config.AppMetadata = {
                      'Paiement des bornes payantes', 'Acceptation automatique',
                      'Plafond de prix' },
         keywords = { 'recharge', 'borne', 'batterie', 'payant', 'electrique' },
+    },
+    lottery = {
+        features = { 'Cagnotte en direct', 'Grille tactile 1-35', 'Flash (grille aléatoire)',
+                     'Paiement banque ou liquide', 'Tirage suivi en direct',
+                     'Historique des tirages', 'Vos gains passés' },
+        keywords = { 'loterie', 'loto', 'tirage', 'cagnotte', 'jackpot', 'grille', 'numeros' },
     },
     store = {
         features = { 'Catalogue complet', 'Recherche avancée', 'Installation', 'Mises à jour', 'Fiches détaillées' },
@@ -1659,9 +1796,17 @@ Config.BankPro = {
     -- on its payroll, and restricting payment to employees was the app deciding how a business
     -- is run.
     --
-    -- Still a list of characters who are CONNECTED, never a typed citizen id: an app that
-    -- accepts one is an app that pays whoever you can guess.
+    -- Still a list of characters, never a typed citizen id: an app that accepts one is an app
+    -- that pays whoever you can guess.
     payAnyone = true,
+
+    -- How close a non-employee has to be standing, in metres, to be offered.
+    --
+    -- This is what keeps the list short and honest. Without it the app showed EVERY connected
+    -- character - a server-wide roster of people the boss has never met, with the one they
+    -- actually wanted buried in it - and paying somebody is a thing you do while looking at
+    -- them. Employees are never distance-filtered: payday should not be a walk round the map.
+    payRadius = 15.0,
 
     -- ── Which companies appear, and what they are called ───────
     -- **This list IS the whitelist.** Only what is written here can be reached by a transfer,
@@ -1931,6 +2076,21 @@ Config.Taxi = {
     -- citizen ids. Set false on a server where that trade is not worth making.
     docCallClient = true,
 
+    -- **May a passenger settle a doc-taxijob fare from the phone?** doc-taxijob mode only.
+    --
+    -- It used to raise an invoice for the fare through doc-billing. With that gone nothing charges
+    -- the passenger, and its only passenger-to-driver money path is its TIP callback - capped at
+    -- its own `Config.MaxTip`, 500 by default, which would take half a long fare in silence and
+    -- then refuse the real tip. So the fare is taken here instead, through this resource's own
+    -- money path, which is also what makes it work on ESX and ox rather than qb-core alone.
+    --
+    -- The honest limit, worth knowing before switching it on: the AMOUNT comes from the passenger's
+    -- own client, because doc-taxijob tells the passenger what the ride cost and tells this server
+    -- nothing. A passenger inflating it only overcharges themselves; one deflating it underpays
+    -- their driver, which is what walking away already does. The pairing, the single settlement and
+    -- the `maxFare` ceiling are all enforced on the server, and every payment is logged.
+    docSettle = true,
+
     -- ── Config-provider settings ───────────────────────────────
     -- Ignored in doc-taxijob mode: fares, ratings and tips are its own there.
     --
@@ -1987,6 +2147,114 @@ Config.Taxi = {
         note = true,          -- the free-text note for the driver
         route = true,         -- "take me there", for a driver picking a fare
     },
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  LOTTERY  (the weekly draw)
+-- ══════════════════════════════════════════════════════════════
+-- Two providers, one app, and the page cannot tell which answered.
+--
+--   * **doc-lottery**, when it is running. Its sessions, its jackpot, its tickets, its draw and
+--     its prize tiers. It publishes exactly what its own phone app used - two QB *server
+--     callbacks* - and a server callback is registered on the framework rather than on the
+--     resource, so any client may call one. That is the whole integration: doc-lottery is not
+--     edited, wrapped or replaced, and nothing here writes to one of its tables.
+--   * **this config** otherwise, with its own sessions, tickets, draw and money path - which is
+--     what makes the app worth installing on an ESX, ox or standalone server.
+--
+-- The numbers below MIRROR doc-lottery's defaults on purpose. A player who moves between two
+-- servers should not have to relearn the game, and an operator comparing the two files should
+-- find the same values in the same shape.
+Config.Lottery = {
+    enabled = true,
+
+    -- 'auto' uses doc-lottery when it is started and the settings below when it is not.
+    -- 'doc-lottery' or 'config' pin it.
+    provider = 'auto',
+
+    -- ── The ticket ──────────────────────────────────────────────
+    -- Config-provider settings. In doc-lottery mode every one of these comes from ITS config
+    -- instead, sent with its own answer - so changing them here would only make this app lie
+    -- about a price somebody else is charging.
+    ticketPrice = 250,
+    numberCount = 5,        -- how many numbers on a line
+    numberMin = 1,
+    numberMax = 35,
+    maxCombinations = 7,    -- lines per player per draw
+
+    -- Which purse pays. Bank only, and deliberately: a ticket is a traceable purchase and the
+    -- prize is paid back into an account, so taking cash for one would be the only step in the
+    -- chain with no record of it. Change it to 'cash' if your server wants the opposite.
+    account = 'bank',
+
+    -- ── The prizes ──────────────────────────────────────────────
+    -- The prize depends on HOW MANY numbers matched, not on an exact line. Real odds for 5
+    -- numbers out of 35, which is why the tiers are shaped like this:
+    --   2/5 -> 1 in 6.9        3/5 -> 1 in 63
+    --   4/5 -> 1 in 1,574      5/5 -> 1 in 324,632   (the jackpot grows until it falls)
+    -- One correct number pays nothing: at 1 ticket in 2.7 it is not a prize, it is a rebate.
+    --
+    --   payer = 'gov'     -> a fixed amount, paid by the society account below
+    --   payer = 'jackpot' -> a percentage of the pot
+    rewards = {
+        [2] = { payer = 'gov',     amount  = 500 },
+        [3] = { payer = 'gov',     amount  = 750 },
+        [4] = { payer = 'jackpot', percent = 10 },
+        [5] = { payer = 'jackpot', percent = 100 },
+    },
+
+    -- The society account that funds the fixed tiers, and takes the state's half of each
+    -- ticket. Nil pays the small tiers out of thin air, which is fine on a server with no
+    -- government account and dishonest on one that has.
+    govAccount = 'gouvernement',
+
+    -- How each ticket is split. The rest goes to the government account.
+    jackpotShare = 50,      -- percent of the ticket price added to the pot
+
+    -- ── The jackpot ─────────────────────────────────────────────
+    jackpotStart = 10000,   -- a fresh session starts here
+    jackpotNoWinner = 1000, -- added when nobody wins, so the pot visibly grows
+
+    -- ── The draw ────────────────────────────────────────────────
+    -- Drawn automatically on these days at this time. Staff can always draw by hand.
+    autoDraw = {
+        enabled = true,
+        days = { 3, 6 },    -- 1 = Sunday ... 3 = Tuesday, 6 = Friday
+        hour = 21,
+        minute = 30,
+    },
+
+    -- The server clock is usually UTC while the time announced to players is local. 2 in
+    -- summer (CEST), 1 in winter (CET), 0 for a server already on the players' time.
+    timezoneOffset = 2,
+
+    -- No catch-up: a draw whose slot passed while the server was down is MISSED and has to be
+    -- run by hand. Minutes after the scheduled time in which the automatic draw may still fire.
+    -- Silently drawing four hours late is worse than not drawing: players stop trusting a time.
+    autoDrawWindow = 5,
+
+    -- ── The show ────────────────────────────────────────────────
+    -- The draw, on the phone, as it happens. doc-lottery already draws its own panel in the
+    -- corner of the screen; this is the SECOND screen - the app follows the balls live if it
+    -- happens to be open, and notifies either way. It never takes focus.
+    live = true,
+    ballSeconds = 3,        -- config provider only: seconds between two balls
+    countdownSeconds = 60,  -- config provider only: warning before the balls start
+
+    -- Notify every player when a draw is about to start, and when it is over.
+    announce = true,
+
+    -- Tell a player what THEIR ticket did, privately, after the draw. The public result stays
+    -- anonymous - counts per tier and no names - exactly as doc-lottery does it.
+    tellWinners = true,
+
+    -- ── Staff ───────────────────────────────────────────────────
+    -- Who may draw by hand, top up the jackpot or open a session from the staff menu. An ace,
+    -- checked on the server. Empty falls back to Config.Admin.ace.
+    ace = nil,
+
+    -- How many past draws the app shows.
+    history = 5,
 }
 
 -- ══════════════════════════════════════════════════════════════
@@ -2069,6 +2337,50 @@ Config.RingOut = {
     respectSilent = true,
 }
 
+-- ══════════════════════════════════════════════════════════════
+--  COMMANDS
+-- ══════════════════════════════════════════════════════════════
+-- **Three words, and everything is under one of them.**
+--
+--   phone            open or close the phone
+--   phone refresh    unstick it: drop the cursor, close everything, reload
+--   phone close      put it away
+--   phone open       take it out
+--
+--   phonedebug       list what can be asked
+--   phonedebug diag      which server files loaded, and which bridge providers answer
+--   phonedebug voice     whether a call can carry audio, and why a weak signal does or
+--                        does not break it up
+--   phonedebug charge    why the phone believes it is or is not charging
+--   phonedebug music     why there is no sound
+--
+--   phoneadmin       list the staff actions
+--   phoneadmin ...   26 of them - type it and the chat suggestions narrow as you go
+--
+-- Typing a group name on its own lists what it can do, so nothing here has to be memorised.
+-- `phonedebug` needs `set phone_debug true` for `diag`; the rest are staff-gated on the server.
+-- ══════════════════════════════════════════════════════════════
+--  THE SDK EXAMPLE APP
+-- ══════════════════════════════════════════════════════════════
+-- `apps/example/` is the worked example for anybody writing an app for this phone: one folder,
+-- one `app.lua` that declares itself, one `index.html` that loads the kit. Reading it is how you
+-- learn the shape.
+--
+-- **Off, because it is documentation and not a feature.** It was appearing in the FruitStore as an
+-- app called "Example" with a placeholder description, and taking the featured card at the top of
+-- the store with it - a developer's file in front of every player.
+--
+-- Set true while you are building against it. Nothing else needs changing: the folder stays where
+-- it is either way.
+Config.SdkExample = false
+
+Config.Commands = {
+    -- The older names - `/vphone`, `/refreshphone`, `/refresh-phone` - still work. They are in
+    -- players' keybinds and in other servers' scripts, so removing them silently would be a
+    -- change nobody asked for. Set false once your players have learned the new ones.
+    legacy = true,
+}
+
 Config.Admin = {
     -- The ACE permission a command or menu action is checked against. `command.PLAYERID`
     -- style aces and qb-core's `qbadmin.menu` / god group are both accepted; this is the
@@ -2078,6 +2390,17 @@ Config.Admin = {
     -- Register the `/phoneadmin` command set. Off leaves only the exports, for a server
     -- that drives everything from its own menu.
     commands = true,
+
+    -- **How long a held phone stays held**, in seconds, without being used.
+    --
+    -- The clock exists to stop a session somebody forgot about lasting all night. It is NOT a
+    -- limit on how long a task may take: every read and every write pushes it back, so a session
+    -- in use never runs out underneath the person using it.
+    --
+    -- When it does run out the staff member's phone is told and the banner goes. The next call
+    -- they make is REFUSED rather than performed as themselves - a silent fall back to their own
+    -- character is how somebody once signed a player up to an app and got the profile.
+    viewSeconds = 600,
 
     -- Print, at boot, the one line an operator needs to add the phone's staff menu to
     -- qb-adminmenu.

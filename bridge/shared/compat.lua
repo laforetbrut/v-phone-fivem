@@ -91,6 +91,17 @@ function PhoneVoiceScript()
     return voiceResource()
 end
 
+--- The UNSHIMMED resource state, for the one question the shim cannot answer.
+---
+--- `GetResourceState` is overridden above so a `v-*` name reports what the shim can stand in for.
+--- That is right almost everywhere and wrong when the question is "is the author's real module
+--- installed": the MDT asked `GetResourceState('v-police')`, got `started` on the strength of a
+--- config list, and relayed to a callback nothing registered - ten seconds of silence per search.
+--- This answers the literal question.
+function PhoneRealResourceState(resource)
+    return realGetResourceState(resource)
+end
+
 --- The channel a call runs on. Spread over a range so two calls in the same minute do
 --- not share one, which would let each side hear the other conversation.
 --- How many channels calls may spread over. Read in one place, because the server's call-id

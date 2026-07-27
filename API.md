@@ -274,6 +274,99 @@ local data = phone:ExportPhone(citizenid)          -- a table you can store as J
 phone:ImportPhone(otherCitizenid, data, true)      -- true replaces existing rows first
 ```
 
+### Apps that ship with the phone
+
+Each of these is here because another resource plausibly wants to read or drive one of the
+phone's own apps. None of them is required for the phone to work.
+
+```lua
+local phone = exports['v-phone']
+
+-- Is an app installed on this character's phone? The store, the paid apps and the
+-- always-required floor all resolve through this, so it is the honest answer rather
+-- than a look at the config.
+phone:PhoneHasApp(src, 'lottery')            --> boolean
+
+-- Can this player use their phone at all: the item, and enough charge.
+phone:PhoneUsable(src)                       --> boolean
+
+-- The number of whoever is on this source, without going through the citizen id.
+phone:NumberOf(src)                          --> '555-0182' | nil
+```
+
+#### Lottery
+
+```lua
+-- The public state: jackpot, next draw, the prize tiers and the last few results. On a server
+-- running doc-lottery this passes ITS own GetLotteryInfo through untouched, so a news script or
+-- a dispatch board reads one shape whichever provider is live.
+phone:GetLotteryState()                      --> { jackpot, status, drawLabel, drawAt, history, tiers, ticketPrice } | nil
+
+-- Draw now, for a console command or a script of your own. Returns nil plus a reason when a
+-- draw is already running or there is no open session.
+phone:RunLotteryDraw('my-script')            --> true | nil, reason
+```
+
+#### Taxi
+
+```lua
+phone:GetTaxiRides()                         --> { { id, name, passengers, destination, x, y, z, state }, ... }
+phone:GetTaxiDrivers()                       --> how many drivers are on duty
+```
+
+#### Zuber
+
+```lua
+phone:GetZuberRestaurants()                  --> the config provider's restaurants
+phone:GetZuberOrders(citizenid)              --> that character's orders
+
+-- Move an order along from your own kitchen script: 'accepted', 'cooking', 'delivering',
+-- 'completed', 'cancelled'. The customer is notified and the app's tracker follows.
+phone:SetZuberStatus(orderId, 'cooking')     --> boolean
+```
+
+#### Music
+
+```lua
+phone:IsPlayingMusic(src)                    --> boolean
+phone:PauseMusic(src)
+phone:StopMusic(src)
+```
+
+#### Social
+
+```lua
+-- The verified tick. Granted and revoked by staff in the phone's own menu; these are here so a
+-- whitelist script can do it as part of something bigger.
+phone:SetVerified('bleeter', handle, true)   --> boolean
+phone:VerifiedHandles('bleeter')             --> { handle, ... }
+```
+
+#### Paid charging
+
+```lua
+phone:GetChargeSession(src)                  --> { point, rate, paid, since } | nil
+phone:SetChargePaid(src, true)               --> boolean
+```
+
+#### Staff: holding another character's phone
+
+```lua
+-- What `/phoneadmin hold` uses. While a staff member holds a phone, every read and every
+-- purchase is made AS the held character - see server/adminview.lua.
+phone:AdminViewOpen(staffSrc, targetCitizenid) --> boolean
+phone:AdminViewTarget(staffSrc)                --> citizenid | nil
+phone:AdminViewClose(staffSrc)
+```
+
+#### qb-phone compatibility
+
+```lua
+-- The mail entry point a stock qb-core server's scripts already call. Kept under its old name
+-- so those scripts work unchanged.
+phone:QbMail({ sender = 'LSPD', subject = '...', message = '...' })
+```
+
 ## Client exports
 
 ```lua
@@ -285,6 +378,17 @@ phone:Close()
 phone:GetNumber()       --> the local player's number
 phone:OnCall()          --> boolean
 ```
+
+**Focus.** `PhoneOwnsFocus()` is a plain global rather than an export, because it has to be
+readable from another resource's own client file without a round trip:
+
+```lua
+-- True while the phone, a payphone panel or the forensics terminal holds the cursor. Read it
+-- before taking NUI focus yourself: two resources both believing they own the cursor is how a
+-- player ends up unable to close either.
+if PhoneOwnsFocus and PhoneOwnsFocus() then return end
+```
+
 
 ## Commands
 
@@ -579,6 +683,99 @@ local data = phone:ExportPhone(citizenid)          -- une table stockable en JSO
 phone:ImportPhone(autreCitizenid, data, true)      -- true remplace les lignes existantes
 ```
 
+### Applications livrees avec le telephone
+
+Chacun de ces exports existe parce qu une autre ressource peut vouloir lire ou piloter une des
+applications du telephone. Aucun n est necessaire au fonctionnement du telephone.
+
+```lua
+local phone = exports['v-phone']
+
+-- L application est-elle installee sur ce telephone ? La boutique, les applications payantes et
+-- le socle des applications obligatoires passent tous par la, donc c est la reponse reelle et
+-- non une lecture du config.
+phone:PhoneHasApp(src, 'lottery')            --> boolean
+
+-- Ce joueur peut-il utiliser son telephone : l item, et assez de batterie.
+phone:PhoneUsable(src)                       --> boolean
+
+-- Le numero de la personne sur cette source, sans passer par le citizenid.
+phone:NumberOf(src)                          --> '555-0182' | nil
+```
+
+#### Loterie
+
+```lua
+-- L etat public : cagnotte, prochain tirage, rangs de gain et derniers resultats. Sur un serveur
+-- qui fait tourner doc-lottery, son propre GetLotteryInfo est transmis tel quel : un script de
+-- presse ou un tableau de bord lit une seule forme quel que soit le fournisseur actif.
+phone:GetLotteryState()                      --> { jackpot, status, drawLabel, drawAt, history, tiers, ticketPrice } | nil
+
+-- Lancer un tirage, pour une commande console ou un script a vous. Renvoie nil et une raison si
+-- un tirage est deja en cours ou si aucune session n est ouverte.
+phone:RunLotteryDraw('mon-script')           --> true | nil, raison
+```
+
+#### Taxi
+
+```lua
+phone:GetTaxiRides()                         --> { { id, name, passengers, destination, x, y, z, state }, ... }
+phone:GetTaxiDrivers()                       --> nombre de chauffeurs en service
+```
+
+#### Zuber
+
+```lua
+phone:GetZuberRestaurants()                  --> les restaurants du fournisseur config
+phone:GetZuberOrders(citizenid)              --> les commandes de ce personnage
+
+-- Faire avancer une commande depuis votre propre script de cuisine : 'accepted', 'cooking',
+-- 'delivering', 'completed', 'cancelled'. Le client est notifie et le suivi de l app suit.
+phone:SetZuberStatus(orderId, 'cooking')     --> boolean
+```
+
+#### Musique
+
+```lua
+phone:IsPlayingMusic(src)                    --> boolean
+phone:PauseMusic(src)
+phone:StopMusic(src)
+```
+
+#### Reseaux sociaux
+
+```lua
+-- Le badge de verification. Accorde et retire par le staff dans le menu du telephone ; ces
+-- exports sont la pour qu un script de liste blanche puisse le faire dans un ensemble plus large.
+phone:SetVerified('bleeter', handle, true)   --> boolean
+phone:VerifiedHandles('bleeter')             --> { handle, ... }
+```
+
+#### Recharge payante
+
+```lua
+phone:GetChargeSession(src)                  --> { point, rate, paid, since } | nil
+phone:SetChargePaid(src, true)               --> boolean
+```
+
+#### Staff : tenir le telephone d un autre personnage
+
+```lua
+-- Ce que `/phoneadmin hold` utilise. Pendant qu un membre du staff tient un telephone, chaque
+-- lecture et chaque achat se font AU NOM du personnage tenu - voir server/adminview.lua.
+phone:AdminViewOpen(staffSrc, targetCitizenid) --> boolean
+phone:AdminViewTarget(staffSrc)                --> citizenid | nil
+phone:AdminViewClose(staffSrc)
+```
+
+#### Compatibilite qb-phone
+
+```lua
+-- Le point d entree courrier que les scripts d un serveur qb-core appellent deja. Conserve sous
+-- son ancien nom pour que ces scripts fonctionnent sans modification.
+phone:QbMail({ sender = 'LSPD', subject = '...', message = '...' })
+```
+
 ## Exports client
 
 ```lua
@@ -590,6 +787,17 @@ phone:Close()
 phone:GetNumber()       --> le numero du joueur local
 phone:OnCall()          --> booleen
 ```
+
+**Le focus.** `PhoneOwnsFocus()` est une globale et non un export, parce qu elle doit etre lisible
+depuis le fichier client d une autre ressource sans aller-retour :
+
+```lua
+-- Vrai tant que le telephone, une cabine ou le terminal scientifique detient le curseur. Lisez-la
+-- avant de prendre le focus NUI vous-meme : deux ressources persuadees de detenir le curseur, et
+-- le joueur ne peut plus fermer ni l une ni l autre.
+if PhoneOwnsFocus and PhoneOwnsFocus() then return end
+```
+
 
 ## Evenements serveur
 

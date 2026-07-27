@@ -135,10 +135,6 @@ function PaidChargeOk(src, charger)
 end
 
 --- Is this charger a paid one at all? For the admin panel and the diagnostics.
-function PaidChargerPrice(charger)
-    return priceOf(charger)
-end
-
 --- Forget everything about a player. Called from main.lua's drop handler.
 function PaidChargeDrop(src)
     Session[src], Offer[src], Refused[src], Prompted[src] = nil, nil, nil, nil

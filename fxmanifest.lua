@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.4.3'
+version '1.4.4'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -73,6 +73,8 @@ client_scripts {
     'client/zuber.lua',
     -- The Taxi app's doc-taxijob side, for the same reason.
     'client/taxi.lua',
+    -- The Lottery app's doc-lottery side, and the draw it broadcasts.
+    'client/lottery.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
@@ -133,6 +135,9 @@ server_scripts {
     -- Taxi: the config provider's ride queue, fares and ratings. doc-taxijob's own side is
     -- driven from client/taxi.lua and is not touched here either.
     'server/taxi.lua',
+    -- Lottery: the config provider's sessions, tickets, draw and prizes. doc-lottery's own side
+    -- is driven from client/lottery.lua, where its QB server callbacks are reachable.
+    'server/lottery.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',

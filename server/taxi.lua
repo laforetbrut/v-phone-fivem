@@ -69,6 +69,10 @@ end
 -- The rides
 -- ══════════════════════════════════════════════════════════════
 
+-- doc-taxijob mode: who is driving whom, so a passenger's phone can pay the right driver.
+-- Declared here with the rest of the state because the drop handler below reads it.
+local DocFares = {}  -- [passengerCid] = { driver = src, driverCid, at, settled }
+
 local Rides = {}     -- [id] = ride
 local Order = {}     -- ids, oldest first
 local nextId = 0
@@ -199,7 +203,9 @@ V.Callback('v-phone:taxi:call', function(src, resolve, data)
         return
     end
 
-    local ped = GetPlayerPed(src)
+    -- Where the passenger is, which under a held phone is the held character and not the staff
+    -- member: a taxi sent to the wrong body is a taxi sent to nobody.
+    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
     if not ped or ped == 0 then resolve({ error = 'x' }) return end
     local c = GetEntityCoords(ped)
 
@@ -277,7 +283,9 @@ V.Callback('v-phone:taxi:act', function(src, resolve, data)
         if not r or r.driver ~= p.citizenid then resolve({ error = 'notyours' }) return end
         r.state = 'riding'
         r.startedAt = os.time()
-        local ped = GetPlayerPed(src)
+        -- Where the passenger is, which under a held phone is the held character and not the staff
+    -- member: a taxi sent to the wrong body is a taxi sent to nobody.
+    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
         if ped and ped ~= 0 then
             local c = GetEntityCoords(ped)
             r.fromX, r.fromY = c.x + 0.0, c.y + 0.0
@@ -293,7 +301,9 @@ V.Callback('v-phone:taxi:act', function(src, resolve, data)
         if r.state ~= 'riding' and r.state ~= 'accepted' then resolve({ error = 'toolate' }) return end
 
         local metres = 0
-        local ped = GetPlayerPed(src)
+        -- Where the passenger is, which under a held phone is the held character and not the staff
+    -- member: a taxi sent to the wrong body is a taxi sent to nobody.
+    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
         if ped and ped ~= 0 and r.fromX then
             local c = GetEntityCoords(ped)
             metres = #(vector3(c.x, c.y, c.z) - vector3(r.fromX, r.fromY, c.z))
@@ -432,8 +442,16 @@ end)
 
 AddEventHandler('playerDropped', function()
     local src = source
+
+    -- The doc-taxijob pairing goes first, and without needing the player object: a driver who
+    -- disconnects must stop being somebody's payee whether or not their character still reads.
+    for cid, ride in pairs(DocFares) do
+        if ride.driver == src then DocFares[cid] = nil end
+    end
+
     local p = Core.GetPlayerReal and Core.GetPlayerReal(src) or Core.GetPlayer(src)
     if not p then return end
+    DocFares[p.citizenid] = nil
     for _, id in ipairs(Order) do
         local r = Rides[id]
         -- A passenger who leaves cancels their waiting ride; a driver who leaves hands theirs
@@ -448,6 +466,99 @@ AddEventHandler('playerDropped', function()
             tellDrivers({ kind = 'incoming', ride = rideFor(r, true) })
         end
     end
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Settling a doc-taxijob ride from the phone
+-- ══════════════════════════════════════════════════════════════
+-- doc-taxijob used to raise an INVOICE for the fare - its driver called `doc-billing`. With that
+-- gone, nothing charges the passenger at all, and its only passenger-to-driver money path is
+-- `SubmitTip`, which is capped at `Config.MaxTip` (500 by default) and marks the ride as tipped.
+-- Paying a 700 dollar fare through it would take 500, say nothing about the difference, and then
+-- refuse the real tip. So the fare is settled here instead, through this resource's own money
+-- path - which is also what makes it work on ESX and ox rather than qb-core alone.
+--
+-- **Who is owed what, and how this server knows.**
+--
+-- doc-taxijob tells the DRIVER who their passenger is, on accept: `CallAccepted` carries
+-- `clientSrc`. The driver's client reports that pairing here. The passenger's own client reads the
+-- amount from `GetRatingState`, which is doc-taxijob's own record of the ride.
+--
+-- The amount therefore arrives from the person PAYING it, and that is worth being plain about:
+-- a passenger who inflates it only overcharges themselves, and a passenger who deflates it
+-- underpays their driver - which is exactly what walking away without paying already does. What
+-- is enforced is everything else: the pairing has to exist, the driver has to be the one who
+-- accepted, a ride settles once, and the amount is clamped to `Config.Taxi.maxFare`.
+
+--- The driver's client, reporting the fare it was just handed.
+V.Callback('v-phone:taxi:docpair', function(src, resolve, data)
+    if not enabled() or not docMode() then resolve({ error = 'notdoc' }) return end
+    local p = Core.GetPlayer(src)
+    if not p or not isDriver(p) then resolve({ error = 'notdriver' }) return end
+
+    local passenger = tonumber(data and data.passenger)
+    local other = passenger and Core.GetPlayer(passenger)
+    if not other then resolve({ error = 'gone' }) return end
+
+    DocFares[other.citizenid] = { driver = src, driverCid = p.citizenid,
+                                  at = os.time(), settled = false }
+    V.Log(('taxi: %s is driving %s'):format(tostring(p.citizenid), tostring(other.citizenid)))
+    resolve({ ok = true })
+end)
+
+--- The passenger, settling up.
+V.Callback('v-phone:taxi:docpay', function(src, resolve, data)
+    if not enabled() or not docMode() then resolve({ error = 'notdoc' }) return end
+    if CFG.docSettle == false then resolve({ error = 'off' }) return end
+
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    local p = Core.GetPlayer(acting)
+    if not p then resolve({ error = 'noplayer' }) return end
+
+    local ride = DocFares[p.citizenid]
+    if not ride then resolve({ error = 'noride' }) return end
+    if ride.settled then resolve({ error = 'alreadypaid' }) return end
+
+    local ceiling = math.max(0, math.floor(num(CFG.maxFare, 0)))
+    local amount = math.max(0, math.floor(num(data and data.amount, 0)))
+    if ceiling > 0 then amount = math.min(amount, ceiling) end
+    if amount <= 0 then resolve({ error = 'args' }) return end
+
+    local account = tostring((data and data.account) or CFG.account or 'cash')
+    if account ~= 'cash' and account ~= 'bank' then account = 'cash' end
+
+    -- Taken first, and it fails closed. Nothing is credited to the driver for money that did
+    -- not move.
+    if not Bridge.RemoveMoney(acting, amount, account, 'v-phone: taxi fare') then
+        resolve({ error = 'nomoney' })
+        return
+    end
+    ride.settled = true
+
+    -- Paid to the driver where they are standing, or to the company if they have gone. A fare
+    -- taken from a passenger and paid to nobody is money deleted from the server.
+    local paid = false
+    local driver = ride.driver and Core.GetPlayer(ride.driver)
+    if driver and driver.source then
+        paid = Bridge.AddMoney(driver.source, amount, account, 'v-phone: taxi fare') and true or false
+    end
+    if not paid and CFG.paySociety ~= false and Bridge.AddSociety then
+        paid = Bridge.AddSociety(jobName(), amount, 'v-phone: taxi fare (driver offline)') and true or false
+    end
+    if not paid then
+        -- Neither the driver nor the company could be credited. The passenger is refunded rather
+        -- than charged for nothing.
+        ride.settled = false
+        Bridge.AddMoney(acting, amount, account, 'v-phone: taxi fare reversed')
+        V.Log(('taxi: %d could not be paid to anybody; refunded to %s')
+            :format(amount, tostring(p.citizenid)))
+        resolve({ error = 'x' })
+        return
+    end
+
+    V.Log(('taxi: %s paid %d to %s'):format(tostring(p.citizenid), amount,
+        tostring(ride.driverCid)))
+    resolve({ ok = true, amount = amount, account = account })
 end)
 
 -- ══════════════════════════════════════════════════════════════

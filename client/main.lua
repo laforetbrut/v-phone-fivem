@@ -536,7 +536,16 @@ end
 
 -- The command stays registered whatever Config.Key says: it is how the phone is opened from
 -- the item, from an admin action, and from a console while testing.
-RegisterCommand('vphone', function() if isOpen then closePhone() else openPhone() end end, false)
+V.Sub('phone', 'open', 'open the phone', function() openPhone() end,
+      -- The bare `phone`: toggle, which is what typing one word is asking for.
+      function() if isOpen then closePhone() else openPhone() end end)
+V.Sub('phone', 'close', 'put the phone away', function() closePhone() end)
+
+-- The old name, kept because a player has it in a keybind and a server has it in a script.
+-- `Config.Commands.legacy = false` retires it.
+if (Config.Commands or {}).legacy ~= false then
+    RegisterCommand('vphone', function() if isOpen then closePhone() else openPhone() end end, false)
+end
 
 -- No fallback if Config.Key is false: that means the operator wants no binding at all, and a
 -- default would quietly hand one back.
@@ -559,7 +568,7 @@ end
 --- Staff only, through the same server check `/phonediag` uses. It exists because "xsound is
 --- installed, no error, no music" gave nobody anything to work with: every one of the answers
 --- below is a thing that silently produces silence, and this prints all of them at once.
-RegisterCommand('phonemusic', function()
+V.Sub('phonedebug', 'music', 'why is there no sound?', function()
     -- The ACE, not the debug flag: this command exists to explain a silence, and refusing it
     -- because tracing is off is refusing the one person trying to diagnose the problem.
     V.Request('v-phone:staff', function(res)
@@ -612,7 +621,7 @@ RegisterCommand('phonemusic', function()
             print('  last track asked for   (nothing yet this session)')
         end
     end)
-end, false)
+end)
 
 -- Somebody nearby has a phone ringing.
 --
@@ -953,8 +962,14 @@ end
 -- Wrapped rather than passed directly: `RegisterCommand` calls its handler with (source,
 -- args, raw), so handing it `forceReset` would put the source into `quiet` - a number, which
 -- is truthy - and silence the one reset that should always speak.
-RegisterCommand('refreshphone', function() forceReset(false) end, false)
-RegisterCommand('refresh-phone', function() forceReset(false) end, false)
+V.Sub('phone', 'refresh', 'unstick the phone: drop the cursor, close everything, reload',
+      function() forceReset(false) end)
+
+-- Both old spellings, because a panicking player types whichever they remember.
+if (Config.Commands or {}).legacy ~= false then
+    RegisterCommand('refreshphone', function() forceReset(false) end, false)
+    RegisterCommand('refresh-phone', function() forceReset(false) end, false)
+end
 
 --- The same reset, reachable from the watchdog and from a key.
 ---
@@ -986,7 +1001,8 @@ RegisterKeyMapping('refreshphone', 'iFruit - unstick the phone', 'keyboard', '')
 --- useless for anybody fixing it. This prints the two facts that actually decide it: whether
 --- each server file loaded and registered its callback, and whether the bridge provider
 --- behind it returns anything on this server.
-RegisterCommand('phonediag', function()
+V.Sub('phonedebug', 'diag', 'which server files loaded, and which providers answer',
+      function()
     V.Request('v-phone:diag', function(r)
         if type(r) ~= 'table' or not r.ok then
             -- The server refuses unless debug is on and the caller is staff, so say which.
@@ -1010,7 +1026,7 @@ RegisterCommand('phonediag', function()
             print(('[v-phone] diag | provider %-12s %s'):format(tostring(pr.name), tostring(pr.state)))
         end
     end)
-end, false)
+end)
 
 -- Assigned in the bad-line section far below, which is where `badLine` and the levels live.
 -- Forward-declared here because `/phonevoice` is written above that point: reading `badLine`
@@ -1024,7 +1040,8 @@ local badLineReport = function() return nil, nil end
 --- "Nobody hears anybody" and "the other end cannot hear the people next to me" are the same
 --- question underneath: which voice script answered, and is it one that has call channels.
 --- Every answer below is something that silently produces silence.
-RegisterCommand('phonevoice', function()
+V.Sub('phonedebug', 'voice', 'can a call carry audio, and why a weak signal does or does not break it',
+      function()
     local voiceRes = nil
     for _, res in ipairs({ 'pma-voice', 'saltychat', 'mumble-voip' }) do
         if GetResourceState(res) == 'started' then voiceRes = res break end
@@ -1081,7 +1098,7 @@ RegisterCommand('phonevoice', function()
     print(('  cutting out right now   %s'):format(tostring(cutting)))
     print(('  far end held at         %s'):format(held and tostring(held) or 'normal volume'))
 
-end, false)
+end)
 
 -- And a server nudge, so an admin can un-stick a player's phone remotely. Quiet: a reset the
 -- player did not ask for should not announce itself, and passing `forceReset` straight to the
@@ -1552,13 +1569,28 @@ end)
 --- The MDT reads v-police directly. `isCop` is re-checked there on every call, so the
 --- app gate in the registry only decides whether the icon is drawn.
 RegisterNUICallback('mdt', function(data, cb)
-    if GetResourceState('v-police') ~= 'started' then cb({ error = 'off' }) return end
     local op = tostring((data and data.op) or '')
+
+    -- The author's own police module first, if it is genuinely running: it has more than a phone
+    -- directory and a server that has it should use it. `realGetResourceState` rather than the
+    -- shimmed one, because the shim reports `v-police` as started on the strength of a config
+    -- list - which is exactly how this app came to ask a question nobody was answering.
+    local realPolice = PhoneRealResourceState and PhoneRealResourceState('v-police') == 'started'
+
     if op == 'lookup' then
-        V.Request('v-police:lookup', function(res) cb(res or { error = 'x' }) end,
-            { query = data.query })
+        if realPolice then
+            V.Request('v-police:lookup', function(res) cb(res or { error = 'x' }) end,
+                { query = data.query })
+        else
+            V.Request('v-phone:mdt:lookup', function(res) cb(res or { error = 'x' }) end,
+                { query = data.query })
+        end
     elseif op == 'warrants' then
-        V.Request('v-police:warrants', function(res) cb(res or { error = 'x' }) end)
+        if realPolice then
+            V.Request('v-police:warrants', function(res) cb(res or { error = 'x' }) end)
+        else
+            V.Request('v-phone:mdt:warrants', function(res) cb(res or { error = 'x' }) end)
+        end
     else
         cb({ error = 'x' })
     end
@@ -1654,6 +1686,9 @@ local SOCIAL_OPS = {
     me = true, setup = true, feed = true, post = true, like = true,
     hushMe = true, hushSetup = true, hushNext = true, hushChoice = true, hushMatches = true,
     hushRewind = true, hushUnmatch = true,
+    -- Hush's own conversation. It does NOT go through the Messages app: a dating app that hands
+    -- over a phone number to say hello is a directory, and a number cannot be taken back.
+    hushChat = true, hushSay = true,
     -- The account system: SMS verification, sign-up, login, logout.
     requestCode = true, verifyCode = true, register = true, login = true, logout = true,
     -- Forgot the password: the same texted code, then a new one.
@@ -1668,7 +1703,7 @@ local SOCIAL_OPS = {
     save = true, saved = true, explore = true, storyViewers = true,
     -- Stories, and the direct messages between two handles.
     stories = true, story = true, storySeen = true,
-    dmList = true, dmThread = true, dmSend = true,
+    dmList = true, dmThread = true, dmSend = true, dmDelete = true,
 }
 
 -- The page owns the keyboard while the phone is open, so it is the only side that sees Alt
@@ -1754,39 +1789,16 @@ end)
 --- megabytes per shot, and the operator's upload target is the whole reason the camera
 --- setting has one.
 -- ══ Camera mode ═══════════════════════════════════════════════
--- This is qb-phone's design, and it is used because it works. Three earlier attempts here
--- tried to keep the handset on screen and make its display see-through so the preview would
--- sit inside it. That leaks: the transparency reveals whatever else the page is drawing, and
--- a half-exited camera showed the home screen through the viewfinder with the shutter still
--- on top of it.
+-- qb-phone's sequence, because it is the one that produces a photograph: SetNuiFocus off,
+-- CreateMobilePhone(1) - GTA's own phone camera, which is what draws the frame - then
+-- CellCamActivate, the HUD hidden per frame, and both destroyed on the way out. The handset is
+-- hidden while it runs so nothing of the page bleeds into the shot. Enter shoots, Backspace
+-- leaves, arrow up flips to the selfie: the keys a QBCore player already knows.
 --
--- What qb-phone does instead, in order:
---
---   SetNuiFocus(false, false)   the page stops owning input
---   CreateMobilePhone(1)        GTA's OWN phone camera - this is what draws the frame, and
---                               leaving it out is why the shot never looked like a photograph
---   CellCamActivate(true, true) the camera view itself
---   ... per frame: HideHudComponentThisFrame for 6,7,8,9,19, HideHudAndRadarThisFrame, and
---       EnableAllControlActions(0) so the mouse can actually aim
---   DestroyMobilePhone() + CellCamActivate(false, false) on the way out
---
--- The handset is HIDDEN while this runs, so nothing of the page can bleed into the picture.
--- Enter takes the photograph, Backspace leaves, arrow up flips to the selfie - the same keys
--- qb-phone binds, so anybody who has used a QBCore server already knows them.
---
--- **`camActive` is NOT redeclared here.** It was, and that one line is why a player could end
--- up in camera mode with no cursor and no way out but reconnecting:
---
---   * the flag lives at the top of this file, deliberately, because the input guard and the
---     camera's own stuck-detector both sit ABOVE this block and read it;
---   * a second `local camActive` here shadowed it for everything below, so the camera wrote
---     one variable and the two guards read another that was always false;
---   * the stuck-detector - "camera flagged on with nothing running it, end it from here" -
---     therefore never fired once, and `camModeOff()` set a flag the camera loop was not
---     looking at, so closing the phone could not stop the camera thread either.
---
--- Two guards, both written for exactly the failure players reported, both disabled by a
--- shadow. There is one `camActive` now.
+-- **`camActive` is not redeclared here.** It lives at the top of this file because the input
+-- guard and the stuck-detector both sit above this block and read it; a `local` here shadowed it
+-- and left the camera writing one variable while both guards read another - which is a player in
+-- camera mode with no cursor and no way out but reconnecting.
 
 -- The selfie toggle has no name in FiveM's native list, so there is no global for it and it
 -- can only be reached by hash - the same wrapper qb-phone declares. pcall'd inside, because the
@@ -2445,17 +2457,13 @@ end
 
 --- Drop the line for a moment, and put it back.
 ---
---- Two routes, and the first is the one that works. The volume override is local and instant, so a
---- 300ms cut is a 300ms cut. The old route - leaving the call channel and rejoining it - is kept
---- for a build without the native, but it was never a good fit: joining a pma-voice call channel
---- goes through pma-voice's SERVER, which then rewires every member of the channel, and asking for
---- that twice a second is both slow and rough on a resource that is not expecting it.
+--- The volume override is local and instant, so a 300ms cut is a 300ms cut. Leaving the call
+--- channel is the fallback for a build without the native, and a poor one: joining a pma-voice
+--- channel goes through its server, which rewires every member - too slow for this, twice a second.
 ---
---- The far end is told, through our server, so the break is mutual. A cut-out only one side can
---- hear is not a bad line - it is one person's phone glitching while the conversation continues.
----
---- The restore is unconditional and on a timer of its own. A cut that failed to undo itself would
---- be a call nobody can hear again, which is far worse than no effect at all.
+--- The far end is told through our server, so the break is mutual: a cut only one side hears is
+--- one person's phone glitching, not a bad line. The restore is unconditional and on its own
+--- timer, because a cut that failed to undo itself is a call nobody can hear again.
 local function cutOut(ms)
     if badLine then return end
     badLine = true
@@ -2620,6 +2628,18 @@ CreateThread(function()
         end
         Wait(1500)
     end
+end)
+
+--- Somebody unsent a message that is on this phone. Told rather than discovered, so an open
+--- thread loses the bubble now instead of the next time it happens to be reopened.
+RegisterNetEvent('v-phone:client:msgGone', function(d)
+    if type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'msgGone', id = tonumber(d.id) })
+end)
+
+--- Delete one message: unsend your own, or remove somebody else's from your copy.
+RegisterNUICallback('msgDelete', function(data, cb)
+    V.Request('v-phone:messages:delete', function(res) cb(res or { error = 'x' }) end, data or {})
 end)
 
 RegisterNUICallback('call', function(data, cb)

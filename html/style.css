@@ -323,6 +323,10 @@ input { font: inherit; }
   scrollbar-width: none;
 }
 .locknotifs::-webkit-scrollbar { display: none; }
+/* Each card keeps its height and the stack scrolls. Without this the children compress - the same
+   thing that sliced the 911 reason list - and on the lock screen it is the first thing a player
+   sees, so it reads as the phone being broken rather than as a full list. */
+.locknotifs > * { flex: 0 0 auto; }
 .lnotif { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px;
   border-radius: 20px; background: var(--mat);
   animation: ph-in .3s var(--spring) backwards;
@@ -623,7 +627,6 @@ input { font: inherit; }
 @keyframes ph-cc { from { opacity: 0; transform: translateY(-26px); } to { opacity: 1; transform: none; } }
 .cctile.w2 { grid-column: span 2; }
 .cctile.h2 { grid-row: span 2; }
-.cctile .ccv { font-size: 15px; font-weight: 600; }
 .ccpill { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center;
   justify-content: center; background: rgba(255,255,255,.16); color: #fff; }
 .ccpill.on { background: var(--v-grad-accent); color: #000; }
@@ -721,7 +724,7 @@ input { font: inherit; }
 /* ══ Segmented control ════════════════════════════════════════ */
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 10px; margin-bottom: 16px;
   background: var(--app-fill); }
-.seg button { flex: 1; padding: 7px 4px; border-radius: 8px; font-size: 13px;
+.seg button { flex: 1; min-width: 0; padding: 7px 4px; border-radius: 8px; font-size: 13px;
   color: var(--app-label); transition: background .18s var(--snap); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 /* Nine categories will not share 320px. When there are more pills than fit, the strip
@@ -931,9 +934,6 @@ input { font: inherit; }
   transition: transform .16s var(--snap), box-shadow .16s ease; }
 .searchpill:active { transform: scale(.94); }
 .searchpill svg { width: 13px; height: 13px; opacity: .85; }
-
-/* ══ Control centre, laid out the way iOS lays it out ═════════ */
-.ccrow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .ccslider { flex: 1; border-radius: 22px; min-height: 132px; position: relative;
   overflow: hidden; background: var(--app-fill); }
 .ccslider i { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; }
@@ -1150,6 +1150,10 @@ input { font: inherit; }
 .stget { padding: 6px 22px; border-radius: 99px; font-size: 15px; font-weight: 700;
   letter-spacing: .02em; background: var(--app-tint); color: #fff; }
 .stget.have { background: var(--app-fill); color: var(--app-tint); }
+/* A paid app's button carries its price, and looks like a price: tabular figures so two prices
+   line up, and slightly tighter padding because a number is wider than "Get". A player finding
+   out an app was paid only once the money had gone was the bug this answers. */
+.stget.paid { padding: 6px 16px; font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
 .stdel { padding: 6px 14px; border-radius: 99px; font-size: 14px; font-weight: 600;
   background: var(--app-fill); color: #FF3B30; }
 .stmeta { display: flex; }
@@ -1629,28 +1633,6 @@ input { font: inherit; }
   /* Resolve the old optional font variable without invalidating the stack. */
   --ios-num: 'SF Pro Display', 'Segoe UI Variable Display',
              var(--v-font-num, 'Segoe UI Variable'), var(--ios-font);
-}
-
-/* Core material recipes. JS resolves --gk into the numeric alpha channels above. */
-.glass-clear {
-  background:
-    radial-gradient(140% 110% at var(--glass-x, 24%) var(--glass-y, -10%),
-      rgba(255, 255, 255, var(--sheen-a, .18)) 0%,
-      rgba(255, 255, 255, .045) 34%,
-      rgba(255, 255, 255, 0) 62%),
-    linear-gradient(145deg,
-      rgba(255, 255, 255, .09),
-      rgba(255, 255, 255, .018) 48%,
-      rgba(0, 0, 0, .10)),
-    linear-gradient(180deg,
-      rgba(32, 33, 40, var(--tint-a, .36)),
-      var(--glass-clear-base));
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, var(--rim-a, .30)),
-    inset 0 1px 0 rgba(255, 255, 255, .24),
-    inset 0 -1px 0 rgba(0, 0, 0, .24),
-    0 0 0 .5px var(--glass-edge-dark),
-    var(--glass-shadow-clear);
 }
 
 .glass,
@@ -6459,7 +6441,9 @@ input { font: inherit; }
 .cipheravatar.large { width: 72px; height: 72px; font-size: 29px; border-radius: 24px; }
 .cipherrowmain { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
 .cipherrowmain > span { display: flex; align-items: center; gap: 8px; }
-.cipherrowmain b { overflow: hidden; flex: 1; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+/* `min-width: 0` is what makes the ellipsis work: a flex item will not shrink below its own
+   content without it, so a long handle pushed the timestamp beside it out of the row instead. */
+.cipherrowmain b { overflow: hidden; flex: 1; min-width: 0; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .cipherrowmain time { color: var(--app-label3); font-family: var(--ios-num); font-size: 10px; }
 .cipherrowmain small {
   display: flex;
@@ -8439,6 +8423,11 @@ body.inframe.dark .uisearch {
 
 .socfollow {
   margin-left: auto;
+  /* Follow / Following / Requested are short in English and not in every language. Without a
+     limit the longest of them pushes the handle beside it out of the row. */
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 6px 13px;
   border-radius: 14px;
   color: #fff;
@@ -8778,6 +8767,11 @@ body.inframe.dark .uisearch {
    point of a super like. */
 .hsuperflag {
   position: absolute;
+  /* Bounded and ellipsised: the label is short in English and this is a badge pinned across the
+     middle of a card, so a longer translation would run off both sides of it. */
+  max-width: 76%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   top: 22px;
   left: 50%;
   display: flex;
@@ -9446,6 +9440,211 @@ body.inframe.dark .uisearch {
   background: rgba(127, 212, 207, .1);
   box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .22);
 }
+
+/* ══ Lottery ═══════════════════════════════════════════════════
+   Every part of this is drawn with the phone's own variables, so the app is tinted by the theme
+   like the rest of the handset rather than carrying a green of its own into a dark screen. The one
+   fixed colour is the gold on the top tier, because the jackpot is the only thing here that is
+   allowed to shout. */
+
+/* The counter: open, or closed while the balls fall. */
+.lotstate {
+  margin: 10px 16px 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  text-align: center;
+  border-radius: 10px;
+}
+.lotstate.open { color: #2FBF71; background: rgba(47, 191, 113, .12); }
+.lotstate.shut { color: #FF9F0A; background: rgba(255, 159, 10, .12); }
+
+/* ── A ball ──────────────────────────────────────────────────
+   One element, five states: chosen, drawn, matched, still to come. Sized in a fixed 26px rather
+   than in text units so a line of five never reflows into two. */
+.lotball {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: var(--app-label);
+  font-family: var(--ios-num);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 50%;
+  background: var(--app-card2, rgba(120, 120, 128, .18));
+  box-shadow: inset 0 0 0 1px var(--app-sep);
+}
+.lotball.chosen { color: #05240f; background: linear-gradient(180deg, #4FD98B, #22A65E); box-shadow: none; }
+.lotball.out { color: #1A1A1A; background: linear-gradient(180deg, #FFE27A, #F0B400); box-shadow: none; }
+/* A number of yours that came up. The one thing a player is looking for on this screen. */
+.lotball.hit {
+  color: #05240f;
+  background: linear-gradient(180deg, #6BF3A5, #22A65E);
+  box-shadow: 0 0 0 2px rgba(107, 243, 165, .35);
+}
+.lotball.pending { color: var(--app-label3); background: transparent; box-shadow: inset 0 0 0 1px var(--app-sep); }
+
+/* ── The picker ──────────────────────────────────────────────── */
+.lotpick { margin: 6px 16px 2px; }
+.lotpickhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.lotpickhead b { color: var(--app-label); font-size: 13px; }
+.lotdip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  color: var(--app-tint);
+  font-size: 12px;
+  border-radius: 8px;
+  background: var(--app-card);
+}
+.lotdip svg { width: 13px; height: 13px; }
+
+/* The line being built. A fixed minimum height, so the grid does not jump the moment the first
+   ball is chosen and the hint is replaced. */
+.lotchosen {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: var(--app-card);
+}
+.lotchosen small { color: var(--app-label2); font-size: 11.5px; line-height: 1.3; }
+
+/* 1 to 35, tapped. `auto-fill` rather than a fixed column count: the range is configurable, so a
+   server running 1-49 gets a denser grid instead of a scrollbar. */
+.lotgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.lotcell {
+  padding: 9px 0;
+  color: var(--app-label);
+  font-family: var(--ios-num);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 9px;
+  background: var(--app-card);
+  transition: transform var(--ph-fast) var(--ph-spring), background var(--ph-fast) ease;
+}
+.lotcell:active { transform: scale(.9); }
+.lotcell.on { color: #05240f; background: linear-gradient(180deg, #4FD98B, #22A65E); }
+
+.lotbuyrow { margin: 10px 0 2px; }
+.lotbuy {
+  width: 100%;
+  padding: 13px 0;
+  color: #05240f;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #4FD98B, #22A65E);
+}
+.lotbuy:disabled { color: var(--app-label3); background: var(--app-card); }
+
+/* The prize table. A rank badge of fixed width and a prize that may wrap under it, rather than a
+   row that makes the two fight over one line - "100% of the pot (~$10,000)" is long enough that
+   the rank was ellipsised to "5...", losing the only part that has to be readable. */
+.lottiers { margin: 4px 16px 2px; overflow: hidden; border-radius: 13px; background: var(--app-card); }
+.lottier {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+}
+.lottier + .lottier { box-shadow: inset 0 .5px 0 var(--app-sep); }
+.lotrank {
+  display: inline-grid;
+  width: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--app-label);
+  font-family: var(--ios-num);
+  font-size: 17px;
+  border-radius: 9px;
+  background: var(--app-fill, rgba(120, 120, 128, .16));
+}
+.lotrank small { color: var(--app-label3); font-size: 10px; }
+.lottier.top .lotrank { color: #1A1A1A; background: linear-gradient(180deg, #FFE27A, #F0B400); }
+.lottier.top .lotrank small { color: rgba(26, 26, 26, .6); }
+/* Wraps rather than truncates: the prize is the reason the row exists. */
+.lotprize { min-width: 0; color: var(--app-label); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+
+/* How the ticket is paid for. A statement, not a control: the server decides. */
+.lotpay {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 2px;
+  padding: 9px 12px;
+  color: var(--app-label2);
+  font-size: 12px;
+  border-radius: 10px;
+  background: var(--app-card);
+}
+.lotpay svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--app-label); }
+
+/* ── The draw, live ──────────────────────────────────────────
+   A strip at the top of the app while a draw is running. It is the reason somebody opens this app
+   twice in one evening. */
+.lotlive {
+  margin: 10px 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 100% at 20% -20%, rgba(255, 226, 122, .16), transparent 60%),
+    var(--app-card);
+  box-shadow: inset 0 0 0 1px var(--app-sep);
+}
+.lotlive.done { box-shadow: inset 0 0 0 1px rgba(79, 217, 139, .45); }
+.lotlivehead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.lotlivehead b { color: var(--app-label); font-size: 13px; }
+.lotlivehead span { color: #FFD84D; font-family: var(--ios-num); font-size: 14px; }
+.lotliveballs { display: flex; flex-wrap: wrap; gap: 6px; }
+.lotlivemine {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--app-sep);
+}
+.lotlivemine small { width: 100%; color: var(--app-label2); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+.lotlivemine b { margin-left: auto; color: var(--app-label); font-family: var(--ios-num); font-size: 12px; }
+.lotlivedetail { margin-top: 8px; color: var(--app-label2); font-size: 12px; line-height: 1.4; white-space: pre-line; }
+
+/* ── Past draws ────────────────────────────────────────────── */
+.lothist {
+  margin: 8px 16px;
+  padding: 11px 13px;
+  border-radius: 13px;
+  background: var(--app-card);
+}
+.lothisthead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.lothisthead span { min-width: 0; overflow: hidden; color: var(--app-label2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.lothisthead b { color: var(--app-label); font-family: var(--ios-num); font-size: 13px; }
+.lothistballs { display: flex; flex-wrap: wrap; gap: 6px; }
+.lothistwin { margin-top: 9px; color: var(--app-label2); font-size: 11.5px; }
+.lothistwin.has { color: #FFD84D; }
+
+/* ── The player's own lines ─────────────────────────────────── */
+.lotticket {
+  margin: 8px 16px;
+  padding: 11px 13px;
+  border-radius: 13px;
+  background: var(--app-card);
+}
+.lotticket.won { box-shadow: inset 0 0 0 1px rgba(79, 217, 139, .5); }
+.lotticketrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.lotticketno { margin-left: auto; color: var(--app-label3); font-family: var(--ios-num); font-size: 11px; }
+.lotticket small { display: block; margin-top: 7px; color: var(--app-label2); font-size: 11px; }
+.lotwon { margin-top: 8px; color: #4FD98B; font-size: 12.5px; font-weight: 600; }
 
 /* ── The cryptanalysis bench ──────────────────────────────────
    A panel over the terminal, not a new screen: the evidence row that opened it is still behind,
@@ -10568,3 +10767,106 @@ body.inframe.dark .uisearch {
 .shotzoomhint { position: absolute; right: 8px; bottom: 8px; padding: 3px 8px;
   border-radius: 10px; background: rgba(0, 0, 0, .5); color: #fff; font-size: 11px;
   font-weight: 600; pointer-events: none; opacity: .9; }
+
+
+/* ══ Tap targets ═══════════════════════════════════════════════
+   Four controls are drawn small on purpose - a dismiss cross on a notification, the clear button
+   in a search field - and small is fine to LOOK at and not fine to hit: 21px is about half what a
+   finger reliably lands on, and a dismiss button that misses is worse than no dismiss button.
+
+   The visual size is untouched. Each grows an invisible target around itself with a pseudo-element,
+   which is the one way to do this that changes no layout: a pseudo-element is out of flow, so
+   nothing beside it moves. `z-index` keeps the target above the card behind it, since these all sit
+   on something that is itself clickable. */
+.ncard .nx,
+.lnotif .lx,
+.spotsearch button,
+.musicsearchbox button {
+  position: relative;
+}
+.ncard .nx::after,
+.lnotif .lx::after,
+.spotsearch button::after,
+.musicsearchbox button::after {
+  content: '';
+  position: absolute;
+  /* -7px on each side takes a 22px control to 36px of reachable area. */
+  inset: -7px;
+  border-radius: 50%;
+  z-index: 1;
+}
+
+/* The cipher bench's letter cells and dial arrows are dense by nature - thirty-five of them across
+   a phone - so they get the same treatment rather than being made bigger and fewer. */
+.bcell, .bdialrow button { position: relative; }
+.bcell::after, .bdialrow button::after {
+  content: '';
+  position: absolute;
+  inset: -3px -2px;
+  z-index: 1;
+}
+
+/* The unfolder cross is drawn 20px because it sits on the corner of a tile, and 20px is not a
+   target. Grown the same way as the other small controls - out of flow, so no tile moves. Safe to
+   overlap the tile beneath: while arranging, a tap on the tile itself is refused anyway. */
+.unfolder { position: absolute; }
+.unfolder::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; z-index: 1; }
+
+
+/* ══ The dialler, sized to fit ═════════════════════════════════
+   The keypad is four rows of 74px keys with 14px between them, plus the dialled number, the name
+   under it, and the call row - about 560px before the tab bar. On a handset drawn shorter than
+   that the whole thing scrolled, which for a keypad means the bottom row is somewhere below the
+   fold and the call button is a surprise. Nobody scrolls a dial pad.
+
+   So the dialler is a column that fills the body and DISTRIBUTES what it has: the keypad takes
+   the space left over and its keys shrink to match, down to a floor where they are still
+   comfortable to hit. On a tall screen nothing changes - 74px is the maximum. */
+.dialview {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 2px;
+}
+.dialview .keypad {
+  /* Rows share what is left, so the key size follows the screen instead of the other way round. */
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  max-width: 286px;          /* 3 x 74 + 2 x 22, the design width */
+  width: 100%;
+  margin: 0 auto;
+  gap: clamp(6px, 1.6vh, 14px) 22px;
+}
+.dialview .key {
+  width: 100%;
+  height: 100%;
+  /* Round at every size, and never wider than it is tall. */
+  max-width: 74px;
+  max-height: 74px;
+  min-height: 52px;
+  margin: 0 auto;
+  aspect-ratio: 1;
+}
+/* The digit follows the key rather than staying 32px on a 52px circle. */
+.dialview .key b { font-size: clamp(21px, 4.4vh, 32px); }
+.dialview .key i { display: block; height: auto; font-size: clamp(8px, 1.3vh, 10px); }
+.dialview .dialrow { flex: 0 0 auto; }
+/* The number and the name keep their reserved height so the keypad does not hop when a digit
+   is typed - the reason those two have fixed heights in the first place. */
+.dialview .dialed, .dialview .dialsub { flex: 0 0 auto; }
+
+/* ══ Hush conversations ════════════════════════════════════════
+   A match talks inside Hush rather than by text message, so the thread needs a home. Deliberately
+   the same bubbles as every other conversation on this phone - the point of the app is who you
+   are talking to, not a second visual language for saying hello. */
+.hushthread { display: flex; flex-direction: column; gap: 8px; padding: 12px 0 4px; }
+.hushthread > * { flex: 0 0 auto; }
+.hushempty {
+  padding: 40px 24px;
+  color: var(--app-label2);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}

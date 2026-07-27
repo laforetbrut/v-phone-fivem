@@ -357,3 +357,82 @@ end
 function V.Command(name, opts, fn)
     RegisterCommand(name, fn, (opts and opts.restricted) or false)
 end
+
+-- ══════════════════════════════════════════════════════════════
+-- Three commands, and everything under one of them
+-- ══════════════════════════════════════════════════════════════
+-- `phone` for players, `phonedebug` for diagnostics, `phoneadmin` for staff. A player who learns
+-- one word can find the rest by typing it, and a server owner reading their console can tell at a
+-- glance which of the three a line came from.
+--
+-- The registry lives here because the subcommands do not: `phone refresh` is in client/main.lua
+-- and `phonedebug charge` is in bridge/client/charging.lua, each next to the code it reports on.
+-- Registering the group command in both places would mean the second one silently replacing the
+-- first, which is how half a command set disappears.
+
+local Groups = {}       -- [group] = { order = { name, ... }, subs = { [name] = { help, fn } } }
+
+local function runGroup(group, src, args)
+    local g = Groups[group]
+    if not g then return end
+    local want = tostring(args and args[1] or ''):lower()
+
+    local function say(text)
+        if IsDuplicityVersion() then
+            print('[v-phone] ' .. text)
+        else
+            print('[v-phone] ' .. text)
+        end
+    end
+
+    if want == '' or want == 'help' then
+        -- No subcommand is not an error. `phone` on its own is the phone, which is what somebody
+        -- typing it wants; every other group lists what it can do.
+        if g.bare then g.bare(src, args) return end
+        say(group .. ': ' .. table.concat(g.order, ' | '))
+        for _, name in ipairs(g.order) do
+            say(('  %-10s %s'):format(name, g.subs[name].help or ''))
+        end
+        return
+    end
+
+    local sub = g.subs[want]
+    if not sub then
+        say(('%s: no such subcommand "%s". Try: %s')
+            :format(group, want, table.concat(g.order, ' | ')))
+        return
+    end
+    -- The subcommand's own arguments start after its name, so a handler never has to know it was
+    -- reached through a group.
+    local rest = {}
+    for i = 2, #args do rest[#rest + 1] = args[i] end
+    sub.fn(src, rest)
+end
+
+--- Add one subcommand to one group, registering the group the first time it is used.
+---
+--- `bare` is what the group does with no subcommand at all. Only `phone` has one.
+function V.Sub(group, name, help, fn, bare)
+    group, name = tostring(group), tostring(name):lower()
+    local g = Groups[group]
+    if not g then
+        g = { order = {}, subs = {} }
+        Groups[group] = g
+        RegisterCommand(group, function(src, args) runGroup(group, src, args) end, false)
+    end
+    if bare then g.bare = bare end
+    if g.subs[name] then return end
+    g.subs[name] = { help = help, fn = fn }
+    g.order[#g.order + 1] = name
+end
+
+--- What a group can do, for a chat suggestion or a help screen.
+function V.SubList(group)
+    local g = Groups[tostring(group)]
+    if not g then return {} end
+    local out = {}
+    for i, name in ipairs(g.order) do
+        out[i] = { name = name, help = g.subs[name].help }
+    end
+    return out
+end

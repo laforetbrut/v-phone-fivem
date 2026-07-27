@@ -53,6 +53,12 @@
     bank: 'M3 10h18L12 4 3 10ZM5 10v8M10 10v8M14 10v8M19 10v8M3 20h18',
     // A taxi roof sign over a windscreen. The stroke twin of the `taxi` tile.
     taxi: 'M5 17V11l2-4h10l2 4v6M5 17h14M7 17v2M17 17v2M8 11h8M9.5 7V5h5v2',
+    // A ticket with a perforated edge, for the tab that lists the player's own lines.
+    ticket: 'M4 9V7h16v2a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4Zm5-2v10',
+    // A clock face, for the results tab: past draws are a timeline.
+    clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3.5 2',
+    // A lottery ball: a circle with a highlight arc. The stroke twin of the `lottery` tile.
+    lottery: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4a5 5 0 0 1 5 5M8.5 8.5h.01',
     // A takeaway bag with a handle. The stroke twin of the `zuber` tile, for the menu rows.
     zuber: 'M6 8h12l-1 12H7L6 8Zm3 0V6a3 3 0 0 1 6 0v2M4 8h16',
     // A battery with a bolt through it. The stroke twin of the `charging` tile, for the rows
@@ -388,6 +394,12 @@
     bankpro: { bg: 'linear-gradient(180deg,#A98BFF,#5E2FD6)', d: G.bank },
     // Taxi. The yellow every taxi on earth is, with a roof sign - recognisable at tile size
     // without reading the name, which is the whole job of an icon.
+    // The lottery. A ball on green baize, which is what every lottery in the world looks like -
+    // and green rather than gold on purpose: gold is what the app promises, not what it is.
+    lottery: { bg: 'linear-gradient(180deg,#2FBF71,#12864A)', fill: '#FFFFFF',
+      d: 'M12 4.4a7.6 7.6 0 1 0 0 15.2 7.6 7.6 0 0 0 0-15.2Zm0 1.7a5.9 5.9 0 1 1 0 11.8 5.9 5.9 0 0 1'
+       + ' 0-11.8Zm-1.6 2.2a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm3.4 1.5a1.2 1.2 0 1 0 0 2.4 1.2'
+       + ' 1.2 0 0 0 0-2.4Zm-2.6 3a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z' },
     taxi: { bg: 'linear-gradient(180deg,#FFD84D,#F0A400)', fill: '#1A1A1A',
       d: 'M6.2 17.4v-5.6l1.9-3.8h7.8l1.9 3.8v5.6H6.2Zm1.6-5.2h8.4l-1.2-2.4H9L7.8 12.2Zm.4 5.9h1.9v1.6H8.2'
        + 'v-1.6Zm5.7 0h1.9v1.6h-1.9v-1.6ZM9.4 4.6h5.2v2.2H9.4V4.6Z' },

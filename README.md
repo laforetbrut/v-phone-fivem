@@ -54,7 +54,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus six downloads: Bleeter, Snapmatic, Hush, Cipher, Bank Pro and FruitCharge.
+Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus eight downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge and the Lottery.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -67,6 +67,17 @@ Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, Ga
 - **Bank Pro** (a download): the company account, for the character who runs the business. Deposit, withdraw, pay an employee, and transfer to a private individual or another company - all between BANK accounts, never cash. The history is the account's own statement, so an ATM deposit and a payroll run by another script are in it too.
 - **Taxi** (a download): hail a ride, or drive one. Runs on **doc-taxijob** when present - its drivers, calls, fares and ratings, through its own callbacks - and on `Config.Taxi` otherwise. A passenger books, follows the ride, settles up and rates the driver; a driver gets the queue with the nearest fare first.
 - **Zuber** (a download): food ordered from the phone. Runs on **doc-restaurant** when that resource is present - its restaurants, menus, promotions, loyalty and reviews, driven through its own callbacks without a line of it being changed - and on `Config.Zuber.restaurants` otherwise, so it works on qb-core, ESX, ox and standalone alike. A live order tracker, a history you can reorder from in one tap, favourites, a search across every menu, and a tip.
+- **Bank Pro**: the business side of the bank, for whoever holds a boss grade. Payroll to an
+  employee, a transfer out of the company to a private individual or another company, and the
+  account's real movements rather than only the ones made from a phone. Which companies appear is
+  a list you write in `Config.BankPro.payees`, with the name to show beside each one, so a server
+  with forty jobs does not put forty rows in front of a business owner. Reads qb-banking,
+  Renewed-Banking, doc-banking and ESX society accounts through the bridge.
+- **Lottery** (a paid download, $250): the weekly draw. Runs on **doc-lottery** when present - its
+  session, jackpot, tickets and prize tiers, through its own two callbacks - and on
+  `Config.Lottery` otherwise, with its own draw on a schedule you set. Numbers are tapped on a
+  grid rather than typed, there is a lucky dip, the draw itself is followed live in the app, and
+  your own past lines and winnings are there - none of which its original app had.
 - **FruitCharge** (a paid download): finds every public charger, routes you to one, and pays a paid charger from the phone - with an optional auto-accept and a price ceiling. Standing at a paid charger without it points you at the store.
 
 ### For developers
@@ -146,6 +157,41 @@ phone speaker is a phone speaker.
 with those the phone opens their own interface and copies the link for you to paste. With no
 player at all the app still works as a library and says so on screen.
 
+
+## What lives in config.lua
+
+`config.lua` is the only file you edit, and it carries its own contents table at the top with the
+line number of every section. What follows is the map, not a second copy of it - the file itself
+explains each setting where the setting is.
+
+**The phone itself**
+`Framework`, `Compat` (which framework, inventory, banking, voice and target script to use - all
+`auto`), `Settings`, `PhoneItem`, `PowerbankItem`, `DeviceSize`, `DeviceSide`, `Watchdog`
+(the nets that stop a stuck cursor), `Log`, `MigrateLegacyTables`.
+
+**Apps**
+`Apps` (the catalogue and the home-screen order), `AppMetadata` (what the store shows),
+`Categories`, `StoreApps` (your own apps, no resource needed), `SdkExample` (the worked example in
+`apps/example/`, off by default), `Compat.apps` (switch any app off entirely).
+
+**Look**
+`Wallpapers`, `DefaultWallpaper`, `WallpaperFit`, `WallpaperHosts` (which hosts a player may paste
+an image from), `DefaultGlass`, `Clock`.
+
+**Talking**
+`Messages`, `Cipher`, `Calls` (including `badSignal`, which is what makes one bar sound like one
+bar), `RingOut`, `Booth` (payphones), `Airdrop` (sharing between two phones in the room),
+`RequiredContacts` (numbers in every phone - 911 is one, and calling it opens the app).
+
+**Money and work**
+`Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
+
+**The paid and the optional**
+`Charging` and `PaidCharging` (public chargers), `Zuber`, `Taxi`, `Lottery`, `Media` (photo and
+video hosting), `Music`, `Vehicle`, `Police` (the forensics terminal), `Social`, `Store`.
+
+**Staff**
+`Admin`, `Commands` (the three command groups), `Outage`.
 
 ## Installation
 
@@ -654,7 +700,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus six téléchargements : Bleeter, Snapmatic, Hush, Cipher, Bank Pro et FruitCharge.
+Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus huit téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge et la Loterie.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
@@ -667,6 +713,18 @@ Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, 
 - **Bank Pro** (téléchargement) : le compte de l'entreprise, pour le personnage qui la dirige. Dépôt, retrait, paie d'un employé, et virement vers un particulier ou une autre entreprise — toujours entre comptes BANCAIRES, jamais d'espèces. L'historique est le relevé du compte lui-même : un dépôt au DAB ou une paie faite par un autre script y figurent aussi.
 - **Taxi** (téléchargement) : commander une course, ou en conduire. Fonctionne sur **doc-taxijob** quand il est présent — ses chauffeurs, appels, tarifs et notes, via ses propres callbacks — et sur `Config.Taxi` sinon. Le passager réserve, suit la course, règle et note ; le chauffeur voit la file, la course la plus proche d'abord.
 - **Zuber** (téléchargement) : commander à manger depuis le téléphone. Fonctionne sur **doc-restaurant** quand la ressource est présente — ses restaurants, cartes, promotions, fidélité et avis, pilotés par ses propres callbacks sans qu'une ligne n'en soit modifiée — et sur `Config.Zuber.restaurants` sinon, donc sur qb-core, ESX, ox et standalone. Suivi de commande en direct, historique avec « recommander » en un appui, favoris, recherche dans toutes les cartes, et pourboire.
+- **Bank Pro** : le volet entreprise de la banque, pour qui détient un grade de patron. Paie d'un
+  employé, virement de l'entreprise vers un particulier ou une autre société, et les mouvements
+  réels du compte plutôt que les seuls faits depuis un téléphone. Les entreprises affichées sont
+  une liste que vous écrivez dans `Config.BankPro.payees`, avec le nom à afficher pour chacune,
+  pour qu'un serveur de quarante métiers n'en mette pas quarante devant un patron. Lit qb-banking,
+  Renewed-Banking, doc-banking et les comptes de société ESX via le bridge.
+- **Loterie** (téléchargement payant, 250 $) : le tirage hebdomadaire. Fonctionne sur
+  **doc-lottery** quand il est présent — sa session, sa cagnotte, ses tickets et ses rangs de gain,
+  via ses deux callbacks — et sur `Config.Lottery` sinon, avec son propre tirage à l'heure que vous
+  fixez. Les numéros se touchent sur une grille au lieu d'être tapés, il y a un flash, le tirage se
+  suit en direct dans l'application, et vos grilles passées et vos gains y sont — ce que son
+  application d'origine n'avait pas.
 - **FruitCharge** (téléchargement payant) : localise toutes les bornes publiques, place l'itinéraire vers l'une d'elles, et paie une borne payante depuis le téléphone — avec acceptation automatique et plafond de prix. Sans l'application, une borne payante renvoie vers le store.
 
 ### Pour les développeurs
@@ -743,6 +801,42 @@ l'extérieur : avec ceux-là le téléphone ouvre leur propre interface et copie
 Sans aucun lecteur, l'app fonctionne toujours comme bibliothèque et le dit à l'écran.
 
 Les applications Banque, Garage, Logement, Portefeuille et Emplois n'ont besoin d'**aucune ressource compagnon** : elles lisent ce que votre framework et vos scripts conservent déjà, via le bridge.
+
+## Ce que contient config.lua
+
+`config.lua` est le seul fichier que vous modifiez, et il porte son propre sommaire en tête avec le
+numéro de ligne de chaque section. Ce qui suit est la carte, pas une seconde copie : le fichier
+explique chaque réglage à l'endroit du réglage.
+
+**Le téléphone lui-même**
+`Framework`, `Compat` (quel framework, inventaire, banque, voix et script de ciblage utiliser — tous
+en `auto`), `Settings`, `PhoneItem`, `PowerbankItem`, `DeviceSize`, `DeviceSide`, `Watchdog`
+(les filets qui empêchent un curseur bloqué), `Log`, `MigrateLegacyTables`.
+
+**Applications**
+`Apps` (le catalogue et l'ordre de l'écran d'accueil), `AppMetadata` (ce que montre la boutique),
+`Categories`, `StoreApps` (vos propres applications, sans ressource), `SdkExample` (l'exemple de
+`apps/example/`, désactivé par défaut), `Compat.apps` (désactiver entièrement une application).
+
+**Apparence**
+`Wallpapers`, `DefaultWallpaper`, `WallpaperFit`, `WallpaperHosts` (les hôtes depuis lesquels un
+joueur peut coller une image), `DefaultGlass`, `Clock`.
+
+**Communication**
+`Messages`, `Cipher`, `Calls` (dont `badSignal`, ce qui fait qu'une barre s'entend comme une barre),
+`RingOut`, `Booth` (cabines), `Airdrop` (partage entre deux téléphones proches),
+`RequiredContacts` (numéros présents dans tous les téléphones — le 911 en est un, et l'appeler
+ouvre l'application).
+
+**Argent et travail**
+`Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
+
+**Payantes et optionnelles**
+`Charging` et `PaidCharging` (bornes publiques), `Zuber`, `Taxi`, `Lottery`, `Media` (hébergement
+photo et vidéo), `Music`, `Vehicle`, `Police` (terminal scientifique), `Social`, `Store`.
+
+**Staff**
+`Admin`, `Commands` (les trois groupes de commandes), `Outage`.
 
 ## Installation
 

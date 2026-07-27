@@ -294,7 +294,9 @@ V.Callback('v-phone:vitals', function(src, resolve)
     if not p then resolve({ error = 'nochar' }) return end
 
     local st = safely('vitals', function()
-        return Bridge.Status and Bridge.Status.Get and Bridge.Status.Get(src)
+        -- The held character's vitals under a staff hold, not the reader's.
+        local who = PhoneActingSource and PhoneActingSource(src) or src
+        return Bridge.Status and Bridge.Status.Get and Bridge.Status.Get(who)
     end)
     if type(st) ~= 'table' then
         -- Nothing readable here. Not an error: on ESX the vitals live on the client and the

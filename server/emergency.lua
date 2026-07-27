@@ -424,7 +424,9 @@ V.Callback('v-phone:911:send', function(src, resolve, data)
         return
     end
 
-    local ped = GetPlayerPed(src)
+    -- The position of the phone's OWNER. Staff holding somebody's phone and raising an alert
+    -- for them must send help to that player, not to the staff member's own body.
+    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
     if not ped or ped == 0 then resolve({ error = 'x' }) return end
     local coords = GetEntityCoords(ped)
 
@@ -631,7 +633,9 @@ exports('CreateAlert', function(o)
     local src = tonumber(o.source)
     if src then
         local p = Core.GetPlayer(src)
-        local ped = GetPlayerPed(src)
+        -- The position of the phone's OWNER. Staff holding somebody's phone and raising an alert
+    -- for them must send help to that player, not to the staff member's own body.
+    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
         if not coords and ped and ped ~= 0 then coords = GetEntityCoords(ped) end
         if p then
             callerCid = p.citizenid

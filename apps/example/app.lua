@@ -2,8 +2,18 @@
 --
 -- The whole Lua side of a phone app. There is no more than this.
 --
--- Copy this folder, rename it, change the id, and you have an app. Nothing outside the
--- folder needs editing: the globs in fxmanifest.lua pick it up.
+-- Copy this folder, rename it, change the id, and you have an app.
+--
+-- ── OFF BY DEFAULT ────────────────────────────────────────────────────────────
+-- It is a worked example, not a feature, so it does not appear on a live server: it was
+-- turning up in the FruitStore - and in the featured card at the top of it - as an app
+-- called "Example" with a placeholder description, which is a developer's file leaking
+-- into a player's phone.
+--
+-- Switch it on with `Config.SdkExample = true` while you are building against it. The file
+-- stays here either way, because reading it is how you learn the shape of an app, and the
+-- declaration below is the whole of that shape.
+if not (Config and Config.SdkExample) then return end
 
 PhoneApp {
     id       = 'example',

@@ -1452,6 +1452,8 @@ function itemsIndexOfTile(tile) {
 }
 
 function paintArrange() {
+  // Every tile may have shifted, so the cached geometry is now a lie.
+  invalidateDragRects();
   const withGap = arr.items.slice();
   withGap.splice(Math.max(0, Math.min(withGap.length, arr.insert)), 0, { t: 'gap' });
   paintPages(withGap);
@@ -1462,6 +1464,45 @@ function clearFolder() {
   if (arr.folderTimer) { clearTimeout(arr.folderTimer); arr.folderTimer = null; }
   arr.folderIdx = null;
   [...byId('pages').querySelectorAll('.tile.folderready')].forEach((t) => t.classList.remove('folderready'));
+}
+
+/// The tiles of the current page, measured.
+///
+/// `getBoundingClientRect` forces the browser to lay the page out before it can answer. The move
+/// handler asked every tile for its rect to find the nearest one, then asked them ALL AGAIN in the
+/// insertion loop, then asked the nearest a third time - three passes over up to forty-two tiles,
+/// on every pointer event. At 120Hz that is five thousand forced layouts a second, which is what
+/// made dragging feel heavy and made a drop land somewhere the finger was not.
+///
+/// The geometry only changes when the layout does, so it is measured once and thrown away by
+/// `invalidateDragRects()` - called from the two places that move a tile: a repaint of the
+/// arrangement, and a page flip.
+let dragRects = null;
+
+function invalidateDragRects() { dragRects = null; }
+
+function measureDragRects(pageEl) {
+  // One probe before trusting the cache. The page track SLIDES on a CSS transition when a drag
+  // crosses to another page, so the same tiles keep moving for the length of that animation and
+  // a cache keyed only on the element would hand back positions from before the slide. Reading
+  // one rect to check is a single forced layout instead of forty-two, and it is self-correcting:
+  // no invalidation call can be forgotten because the geometry itself is the test.
+  if (dragRects && dragRects.page === pageEl && dragRects.tiles.length) {
+    const probe = dragRects.tiles[0].getBoundingClientRect();
+    if (Math.abs(probe.left + probe.width / 2 - dragRects.boxes[0].cx) < 0.5) return dragRects;
+  } else if (dragRects && dragRects.page === pageEl) {
+    return dragRects;
+  }
+  const tiles = [...pageEl.querySelectorAll('.tile:not(.gap)')];
+  dragRects = {
+    page: pageEl,
+    tiles,
+    boxes: tiles.map((t) => {
+      const r = t.getBoundingClientRect();
+      return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, h: r.height };
+    }),
+  };
+  return dragRects;
 }
 
 function onDragMove(e) {
@@ -1505,14 +1546,14 @@ function onDragMove(e) {
   // folder gesture and the grid must HOLD STILL - the reorder gap only opens in the seams
   // between tiles. Chasing the finger into the centre of a tile is exactly what made the
   // old version feel broken, because the target kept fleeing the drop.
-  let near = null, best = 1e9;
-  const tiles = [...cur.querySelectorAll('.tile:not(.gap)')];
-  tiles.forEach((t) => {
-    const r = t.getBoundingClientRect();
-    const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
-    if (d < best) { best = d; near = t; }
+  const measured = measureDragRects(cur);
+  const tiles = measured.tiles;
+  let near = null, nearBox = null, best = 1e9;
+  measured.boxes.forEach((b, i) => {
+    const d = Math.hypot(e.clientX - b.cx, e.clientY - b.cy);
+    if (d < best) { best = d; near = tiles[i]; nearBox = b; }
   });
-  const deep = near && best < near.getBoundingClientRect().width * 0.34;
+  const deep = near && best < nearBox.w * 0.34;
 
   if (deep && arr.item.t === 'app') {
     // Fold zone: leave the layout alone, arm the folder after a short dwell.
@@ -1534,9 +1575,8 @@ function onDragMove(e) {
     ? itemsIndexOfTile(tiles[tiles.length - 1]) + 1
     : base;
   for (let i = 0; i < tiles.length; i++) {
-    const r = tiles[i].getBoundingClientRect();
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    if (e.clientY < cy - 6 || (Math.abs(e.clientY - cy) <= r.height / 2 && e.clientX < cx)) {
+    const b = measured.boxes[i];
+    if (e.clientY < b.cy - 6 || (Math.abs(e.clientY - b.cy) <= b.h / 2 && e.clientX < b.cx)) {
       ins = itemsIndexOfTile(tiles[i]);
       break;
     }
@@ -1624,11 +1664,32 @@ function initArrange() {
     }, 380);
   });
 
+  // Pointer events arrive faster than the screen refreshes - a 120Hz mouse can fire twice per
+  // frame, and a coalesced touch stream more than that. Doing the whole hit test for each one is
+  // work the player never sees, so the moves are folded into the next animation frame: the ghost
+  // still follows the finger every event, but the grid is only asked where to open a gap once per
+  // drawn frame.
+  let pendingMove = null;
+  let moveFrame = 0;
+
   window.addEventListener('pointermove', (e) => {
     if (hold && downXY && Math.hypot(e.clientX - downXY.x, e.clientY - downXY.y) > 10) {
       clearTimeout(hold); hold = null;   // a swipe, not a hold
     }
-    if (arr) { e.preventDefault(); onDragMove(e); }
+    if (!arr) return;
+    e.preventDefault();
+
+    // The ghost is cheap - a transform - and it is what the eye follows, so it is not deferred.
+    moveGhost(e);
+
+    pendingMove = e;
+    if (moveFrame) return;
+    moveFrame = requestAnimationFrame(() => {
+      moveFrame = 0;
+      const last = pendingMove;
+      pendingMove = null;
+      if (arr && last) onDragMove(last);
+    });
   }, { passive: false });
 
   window.addEventListener('pointerup', (e) => {
@@ -1685,22 +1746,57 @@ const WEATHER_ICON = {
 };
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
+/// Which `renderWidgets` call is the current one, and what the last good answer was.
+///
+/// Two bugs lived in the gap between asking for the weather and being told it, and both showed as
+/// "the widgets disappeared, sometimes":
+///
+///   1. A FAILED or missing answer blanked the widgets. `ambient` is a round trip, and a phone
+///      that empties its home screen because one request did not come back is a phone that looks
+///      broken for a reason the player cannot see. What is on screen is better than nothing.
+///   2. A LATE answer from a previous call painted over a newer one. Changing the grid calls
+///      `renderHome()` twice in quick succession - once for the layout and once from Settings -
+///      so two of these were in flight and the slower one finished last.
+///
+/// An epoch fixes the second and the cache fixes the first: the widgets are redrawn from the last
+/// good reading while a new one is on its way, so they never flash empty.
+let widgetEpoch = 0;
+let widgetLast = null;
+
 async function renderWidgets() {
   const host = byId('widgets');
   if (!host) return;
+
+  const mine = ++widgetEpoch;
   const d = await post('ambient');
-  if (!d || !d.ok) { host.innerHTML = ''; return; }
+
+  // Somebody asked again while this was in flight. Their answer is the current one.
+  if (mine !== widgetEpoch) return;
+
+  if (!d || !d.ok) {
+    // Keep whatever is drawn. Only an empty widget area gets the fallback, and only because
+    // an empty area is what it already was.
+    if (!host.innerHTML && widgetLast) { paintWidgets(host, widgetLast); }
+    return;
+  }
+  widgetLast = d;
   gameHour = Number(d.hours);
   applyTheme();
+  paintWidgets(host, d);
+}
+
+/// The widgets themselves, from one reading. Split out so the cached answer above is drawn by
+/// exactly the same code as a fresh one.
+/// The same clock as the status bar, six centimetres above it.
+///
+/// This used to show the GAME's hour on the grounds that a weather tile for Los Santos wants Los
+/// Santos time. That does not survive contact with the screen: the status bar said 19:59 and the
+/// tile under it said 09:10, and a phone showing two different times is wrong about one of them.
+/// The game hour is still read - it drives automatic dark mode, where it belongs, because the sun
+/// in the sky is a game fact.
+function paintWidgets(host, d) {
   const w = String(d.weather || 'CLEAR').toUpperCase();
   const icon = WEATHER_ICON[w] || 'sun';
-  // The same clock as the status bar, six centimetres above it.
-  //
-  // This used to show the GAME's hour on the grounds that a weather tile for Los Santos wants
-  // Los Santos time. That reasoning does not survive contact with the screen: the status bar
-  // said 19:59 and the tile under it said 09:10, and a phone showing two different times at
-  // once is a phone that is wrong about one of them. The game hour is still read - it is what
-  // drives automatic dark mode, where it belongs, because the sun in the sky is a game fact.
   host.innerHTML =
     '<div class="widget weather"><div class="wtop"><span>' + esc(L('ph.los_santos')) + '</span>' +
       '<span class="wicon">' + svg(icon) + '</span></div>' +
@@ -1751,9 +1847,20 @@ function clearAppVisualState() {
   if (camFront) { camFront = false; post('camFacing', { front: false }); }
 }
 
+/// Has the app currently open painted anything yet?
+///
+/// The difference between OPENING an app and navigating inside one. Opening shows a spinner,
+/// because there is nothing on screen yet and the alternative is the previous app's content
+/// sitting there looking like this one. Navigating must not: switching a tab or opening a list
+/// blanked the body to a spinner and then repainted, which is why several apps looked like they
+/// reloaded every time you touched them.
+let appPainted = false;
+
 function enterApp(a, tile) {
   beginView();
   resetTransientUI();
+  // Nothing of this app is on screen yet, so its first render is allowed its spinner.
+  appPainted = false;
   openApp = a; thread = null;
   threadGroup = null;
   navBackAction = null;
@@ -1998,6 +2105,7 @@ byId('navact').addEventListener('click', (event) => {
 }, true);
 
 const body = (html) => {
+  appPainted = true;
   const host = byId('appbody');
   clearTimeout(appFrameTimer);
   appFrameTimer = null;
@@ -2015,7 +2123,13 @@ const body = (html) => {
   host.classList.add('view-enter');
 };
 const foot = (html) => { byId('appfoot').innerHTML = html || ''; };
-const loading = () => body(UI.empty(L('ph.loading')));
+/// The spinner, and only when it is the honest thing to show.
+///
+/// A render that already has content on screen for this app leaves it alone: whatever it fetches
+/// replaces the content when it arrives, so navigation reads as a change of view instead of a
+/// reload. Held to the FIRST paint after the app opened, so re-entering an app never shows a
+/// stale screen from the last time it was open while fresh data is on its way.
+const loading = () => { if (!appPainted) body(UI.empty(L('ph.loading'))); };
 const rows = (sel, fn) => [...byId('appbody').querySelectorAll(sel)].forEach(fn);
 const qrows = (root, sel, fn) => [...byId(root).querySelectorAll(sel)].forEach(fn);
 
@@ -2186,15 +2300,19 @@ RENDER.phone = () => {
   }
 
   const known = (state.contacts || []).find((c) => c.number === dialed);
+  // Wrapped, so the dialler can be laid out as a column that FITS rather than a stack that
+  // overflows. A keypad you have to scroll is a keypad whose bottom row is a surprise.
   body(
-    `<div class="dialed" id="dialed">${esc(dialed)}</div>` +
-    `<div class="dialsub" id="dialsub">${esc(known ? known.name : '')}</div>` +
-    `<div class="keypad">${KEYS.map(([k, l]) =>
-      `<button class="key" data-k="${k}" type="button" aria-label="${k}"><b>${k}</b><i>${l}</i></button>`).join('')}</div>` +
-    `<div class="dialrow">` +
-      `<span class="dialspace"></span>` +
-      `<button class="callbtn" id="dial" type="button" aria-label="${esc(L('ph.call'))}">${svg('answer')}</button>` +
-      `<button class="delbtn ${dialed ? '' : 'hidden'}" id="delkey" type="button" aria-label="${esc(L('ph.delete_digit'))}">${svg('del')}</button>` +
+    `<div class="dialview">` +
+      `<div class="dialed" id="dialed">${esc(dialed)}</div>` +
+      `<div class="dialsub" id="dialsub">${esc(known ? known.name : '')}</div>` +
+      `<div class="keypad">${KEYS.map(([k, l]) =>
+        `<button class="key" data-k="${k}" type="button" aria-label="${k}"><b>${k}</b><i>${l}</i></button>`).join('')}</div>` +
+      `<div class="dialrow">` +
+        `<span class="dialspace"></span>` +
+        `<button class="callbtn" id="dial" type="button" aria-label="${esc(L('ph.call'))}">${svg('answer')}</button>` +
+        `<button class="delbtn ${dialed ? '' : 'hidden'}" id="delkey" type="button" aria-label="${esc(L('ph.delete_digit'))}">${svg('del')}</button>` +
+      `</div>` +
     `</div>`
   );
   const paint = () => {
@@ -2218,7 +2336,7 @@ function healthRecord() {
   beginView();
   setNav(L('app.health'), L('app.health'), null, () => {
     healthTab = 'today';
-    RENDER.health();
+    RENDER.health(true);
   });
   loading();
   post('health', { op: 'get' }).then((d) => {
@@ -2882,8 +3000,20 @@ function messageActions(m) {
       UI.button(L('ph.copy'), 'msgcopy', 'plain') +
       UI.button(L('ph.forward'), 'msgforward', 'tinted') +
     '</div>' +
+    // **Delete.** The long press opened this sheet and it offered no way to remove anything,
+    // which is why deleting a message "did not work" - there was nothing to press.
+    //
+    // The word means two different things and the button says which: a message you SENT is
+    // unsent and leaves both phones; one you RECEIVED is removed from your copy and stays on
+    // the sender's, because deleting their record of what they said is not yours to do.
+    (m && m.id
+      ? UI.button(L(m.mine ? 'ph.msg_unsend' : 'ph.msg_hide'), 'msgdel', 'destructive') +
+        '<div class="groupfoot">' +
+          esc(L(m.mine ? 'ph.msg_unsend_hint' : 'ph.msg_hide_hint')) + '</div>'
+      : '') +
     '<div class="sheethint">' + esc(L('ph.message_actions_hint')) + '</div>',
     () => {
+      const epoch = sheetEpoch;
       byId('msgcopy').addEventListener('click', () => {
         closeSheet();
         if (value) copyText(value);
@@ -2891,6 +3021,15 @@ function messageActions(m) {
       byId('msgforward').addEventListener('click', () => {
         closeSheet();
         requestAnimationFrame(() => forwardSms(m));
+      });
+      if (byId('msgdel')) byId('msgdel').addEventListener('click', async () => {
+        const r = await post('msgDelete', { id: Number(m.id) });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        toast(L(r.both ? 'ph.msg_unsent' : 'ph.msg_hidden'));
+        // Reopened rather than patched in place: the row is gone on the server, and re-reading
+        // the thread is the one way to be sure the screen agrees with it.
+        if (thread) openThread(thread);
       });
     },
     'message-actions');
@@ -3650,6 +3789,21 @@ function txEpochMs(value) {
   return n > 100000000000 ? n : n * 1000;
 }
 
+/// An epoch, in whichever unit it arrived, as a date and time.
+///
+/// The same two `toLocale*` calls were written out in four places before this. Named once because
+/// a phone that formats a date three different ways looks like three different phones - and
+/// because `txEpochMs` is the half that is easy to forget: a DATETIME column comes back from
+/// oxmysql already in milliseconds while `os.time()` is in seconds, and reading one as the other
+/// is how a statement dated today came out as January 1970.
+function fmtDate(ms) {
+  const at = Number(ms);
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const d = new Date(at);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
+    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function txWhen(t) {
   if (t.at) {
     // `String(t.at)` was printing the raw value, which for a DATETIME column oxmysql has
@@ -3760,10 +3914,24 @@ let emergencyService = null;   // the service being called, while choosing a rea
 let emergencyView = null;      // 'call' or 'dispatch'; null until we know whether there is one
 let emergencyTab = null;       // which service's queue, inside Dispatch
 
-RENDER.emergency = async () => {
-  loading();
-  const d = await post('emergency', {});
-  if (!d || d.error) { body(UI.empty(L('ph.911_e_' + ((d && d.error) || 'off')), 'warning')); return; }
+/// `cached` draws from the answer already held instead of asking again.
+///
+/// Passed by the view switch and the service tabs - both are views over one payload, so neither
+/// needed a request. Everything else leaves it out: raising an alert, taking one, and the alert
+/// events arriving from the server all change what the server would say.
+let emergencyData = null;
+
+RENDER.emergency = async (cached) => {
+  let d = (cached && emergencyData) ? emergencyData : null;
+  if (!d) {
+    loading();
+    d = await post('emergency', {});
+    if (!d || d.error) {
+      body(UI.empty(L('ph.911_e_' + ((d && d.error) || 'off')), 'warning'));
+      return;
+    }
+    emergencyData = d;
+  }
 
   const queues = d.queues || [];
   // Somebody who answers for a service opens on Dispatch the first time - it is what they
@@ -3796,7 +3964,8 @@ function emergencyFoot(d, queues) {
   tabbar([
     { id: 'call', icon: 'warning', label: 'ph.911_tab_call' },
     { id: 'dispatch', icon: 'shield', label: 'ph.911_tab_dispatch', badge: waiting },
-  ], emergencyView, (t) => { emergencyView = t; RENDER.emergency(); });
+    // Both views come from one answer, so switching is a repaint.
+  ], emergencyView, (t) => { emergencyView = t; RENDER.emergency(true); });
 }
 
 /// The caller's side: pick a service. Reachable by everybody, including a responder - being on
@@ -4052,7 +4221,7 @@ function emergencyQueue(d, queues, active) {
   );
 
   rows('[data-e911tab]', (b) =>
-    b.addEventListener('click', () => { emergencyTab = b.dataset.e911tab; RENDER.emergency(); }));
+    b.addEventListener('click', () => { emergencyTab = b.dataset.e911tab; RENDER.emergency(true); }));
 
   rows('[data-e911a]', (r) => r.addEventListener('click', () => {
     const id = Number(r.dataset.e911a);
@@ -4692,14 +4861,26 @@ RENDER.wallet = async () => {
 // Read only, and deliberately: signing on happens at a desk.
 let jobsTab = 'me';
 
-RENDER.jobs = async () => {
+/// `cached` draws from the answer already held, for the tab switch: your own contract and the
+/// open positions arrive together.
+let jobsData = null;
+
+RENDER.jobs = async (cached) => {
   tabbar([
     { id: 'me', icon: 'id', label: 'ph.my_job' },
     { id: 'open', icon: 'jobs', label: 'ph.openings' },
-  ], jobsTab, (t) => { jobsTab = t; RENDER.jobs(); });
-  loading();
-  const d = await post('app', { app: 'jobs' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'jobs')); return; }
+  ], jobsTab, (t) => { jobsTab = t; RENDER.jobs(true); });
+
+  let d = (cached && jobsData) ? jobsData : null;
+  if (!d) {
+    loading();
+    d = await post('app', { app: 'jobs' });
+    if (!d || d.error) {
+      body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'jobs'));
+      return;
+    }
+    jobsData = d;
+  }
 
   if (jobsTab === 'open') {
     const list = d.jobs || [];
@@ -6193,14 +6374,26 @@ RENDER.music = async (quiet) => {
 // Which tab of the Property app is showing. Two: what you own, and where to get one.
 let propertyTab = 'mine';
 
-RENDER.property = async () => {
+/// `cached` draws from the answer already held. Only the tab switch passes it: both tabs - what
+/// this character owns, and where property is sold - come from one call.
+let propertyData = null;
+
+RENDER.property = async (cached) => {
   tabbar([
     { id: 'mine', icon: 'house', label: 'ph.my_property' },
     { id: 'buy', icon: 'store', label: 'ph.buy_property' },
-  ], propertyTab, (t) => { propertyTab = t; RENDER.property(); });
-  loading();
-  const d = await post('app', { app: 'property' });
-  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'house')); return; }
+  ], propertyTab, (t) => { propertyTab = t; RENDER.property(true); });
+
+  let d = (cached && propertyData) ? propertyData : null;
+  if (!d) {
+    loading();
+    d = await post('app', { app: 'property' });
+    if (!d || d.error) {
+      body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'house'));
+      return;
+    }
+    propertyData = d;
+  }
 
   const list = d.rows || [];
   const agent = d.agent || {};
@@ -6343,7 +6536,13 @@ function propertySheet(pr) {
 let mdtTab = 'warrants';
 let mdtLookupSeq = 0;
 
-RENDER.mdt = async () => {
+/// `cached` draws the warrant list already held, for the segment switch.
+///
+/// The lookup tab does its own request on a button, so only the warrant list is worth keeping -
+/// and moving between the two segments was re-reading it each time.
+let mdtWarrants = null;
+
+RENDER.mdt = async (cached) => {
   mdtLookupSeq += 1;
   const seg =
     '<div class="seg">' +
@@ -6351,7 +6550,7 @@ RENDER.mdt = async () => {
       '<button class="' + (mdtTab === 'lookup' ? 'on' : '') + '" data-t="lookup">' + esc(L('ph.lookup')) + '</button>' +
     '</div>';
   const wire = () => [...byId('appbody').querySelectorAll('.seg button')].forEach((b) =>
-    b.addEventListener('click', () => { mdtTab = b.dataset.t; RENDER.mdt(); }));
+    b.addEventListener('click', () => { mdtTab = b.dataset.t; RENDER.mdt(true); }));
 
   if (mdtTab === 'lookup') {
     body(seg + UI.field('mq', L('ph.lookup_ph')) + UI.button(L('ph.search'), 'mgo') + '<div id="mres"></div>');
@@ -6375,9 +6574,17 @@ RENDER.mdt = async () => {
     return;
   }
 
-  loading();
-  const d = await post('mdt', { op: 'warrants' });
-  if (!d || d.error) { body(seg + UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'shield')); wire(); return; }
+  let d = (cached && mdtWarrants) ? mdtWarrants : null;
+  if (!d) {
+    loading();
+    d = await post('mdt', { op: 'warrants' });
+    if (!d || d.error) {
+      body(seg + UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'shield'));
+      wire();
+      return;
+    }
+    mdtWarrants = d;
+  }
   const list = d.rows || [];
   body(seg + (list.length
     ? UI.group(list.map((w) => UI.row({
@@ -7096,7 +7303,11 @@ function storeDetail(a) {
                 (a.optional
                   ? '<button class="stdel" id="stdel" type="button">' + esc(L('ph.store_delete')) + '</button>'
                   : '')
-              : '<button class="stget" id="stget" type="button">' + esc(L('ph.store_install')) + '</button>')) +
+              // `storeLabel` already shows a price instead of "Get" - the LIST rows have used it
+              // all along. The detail sheet said "Get" whatever the price was, which is the
+              // screen somebody actually reads before deciding to install.
+              : '<button class="stget' + (a.price && !a.purchased ? ' paid' : '') +
+                '" id="stget" type="button">' + esc(storeLabel(a, false)) + '</button>')) +
       '</div></div></div></div>' +
     '<div class="stmeta">' +
       '<div><div class="mv">' + facts.rating + ' ★</div><div class="mk">' +
@@ -7428,7 +7639,14 @@ function healthHospitalList() {
   }));
 }
 
-RENDER.health = async () => {
+/// `cached` draws from the record already held, for a tab switch.
+///
+/// Today's vitals, the record and the hospital list are three views over one read. The hospital
+/// list was already cached; the record was not, so moving between tabs asked the server for a
+/// medical record it had just sent.
+let healthData = null;
+
+RENDER.health = async (cached) => {
   // Asked once, before the tabs are drawn, so the tab is never offered on a server that
   // listed no hospitals - and never missing on one that did. It costs nothing: the list is
   // the config and the client already holds it, so this never reaches the server.
@@ -7447,7 +7665,7 @@ RENDER.health = async () => {
   // is then correct. It is a shortcut to a screen, not a permission: every read is checked
   // again on the server.
   if (healthReader) tabs.push({ id: 'patients', icon: 'contacts', label: 'ph.patients' });
-  tabbar(tabs, healthTab, (t) => { healthTab = t; RENDER.health(); });
+  tabbar(tabs, healthTab, (t) => { healthTab = t; RENDER.health(true); });
   if (healthTab === 'record') { healthRecord(); return; }
   if (healthTab === 'hospitals') { healthHospitalList(); return; }
   if (healthTab === 'patients') { healthPatients(); return; }
@@ -7462,9 +7680,13 @@ RENDER.health = async () => {
       RENDER.health();
     }
   });
-  loading();
-  const d = await post('health');
-  if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'heart')); return; }
+  let d = (cached && healthData) ? healthData : null;
+  if (!d) {
+    loading();
+    d = await post('health');
+    if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'heart')); return; }
+    healthData = d;
+  }
   const rows = [];
   if (d.bleed > 0) rows.push(UI.row({ icon: 'heart', tint: '#FF3B30', title: L('ph.bleeding'), value: String(d.bleed), tone: 'neg' }));
   if (d.sick > 0) rows.push(UI.row({ icon: 'heart', tint: '#FF3B30', title: L('ph.illness'), value: String(d.sick), tone: 'neg' }));
@@ -7592,9 +7814,9 @@ function clipShareSheet(url) {
 // An operator who switches it off gets `false`, which is caught here. Nothing else is.
 const cameraOn = () => state.camera !== false;
 
-RENDER.camera = async () => {
+RENDER.camera = async (cached) => {
   if (!cameraOn()) { body(UI.empty(L('ph.camera_off'), 'camera')); return; }
-  const d = await post('photos', { op: 'list' });
+  const d = await photosList(cached);
   const shots = (d && d.photos) || [];
   const last = shots[0];
 
@@ -7656,25 +7878,27 @@ RENDER.camera = async () => {
   );
 
   rows('.cammode span[data-mode]', (el) => el.addEventListener('click', () => {
-    camMode = el.dataset.mode; RENDER.camera();
+    // The mode is a local choice: the photo list did not change.
+    camMode = el.dataset.mode; RENDER.camera(true);
   }));
 
   byId('shoot').addEventListener('click', async () => {
     if (camMode === 'video') { cameraRecord(); return; }
     toast(L('ph.shooting'));
     const res = await post('shoot');
+    photosForget();               // a new photo exists; the list held here no longer has it
     if (!res || res.error) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
     RENDER.camera();
   });
   byId('camback').addEventListener('click', () => closeApp());
-  const toggle = () => { setLandscape(!landscape); RENDER.camera(); };
+  const toggle = () => { setLandscape(!landscape); RENDER.camera(true); };
   byId('camland').addEventListener('click', toggle);
   // Flip to the front camera: a game camera in front of the ped, facing back, so a photo
   // or clip is of the player. The client sets it up and tears it down.
   byId('camselfie').addEventListener('click', () => {
     camFront = !camFront;
     post('camFacing', { front: camFront });
-    RENDER.camera();
+    RENDER.camera(true);
   });
   const roll = byId('camroll');
   if (roll) roll.addEventListener('click', () => {
@@ -7687,8 +7911,24 @@ RENDER.camera = async () => {
 // or delete it. Same store as the camera - one shoots, one keeps.
 let galleryAlbum = '';     // '' is everything
 
-RENDER.gallery = async () => {
-  const d = await post('photos', { op: 'list' });
+/// The photo list, shared by Gallery and Camera.
+///
+/// `photosForget()` is called by everything that changes it - taking a shot, deleting one, editing
+/// one - so neither app has to re-read the list to find out whether something happened. Album
+/// filtering and camera modes are local, and those were the interactions asking for it.
+let photosData = null;
+
+function photosForget() { photosData = null; }
+
+async function photosList(cached) {
+  if (cached && photosData) return photosData;
+  const answer = await post('photos', { op: 'list' });
+  if (answer && !answer.error) photosData = answer;
+  return answer;
+}
+
+RENDER.gallery = async (cached) => {
+  const d = await photosList(cached);
   const shots = (d && d.photos) || [];
   const albums = (d && d.albums) || [];
   setNav(L('app.gallery'), null);
@@ -7709,7 +7949,8 @@ RENDER.gallery = async () => {
     : UI.empty(L('ph.album_empty'), 'images')));
 
   qrows('galbums', 'button', (b) => b.addEventListener('click', () => {
-    galleryAlbum = b.dataset.a; RENDER.gallery();
+    // Filtering by album is a local choice over the list already held.
+    galleryAlbum = b.dataset.a; RENDER.gallery(true);
   }));
   rows('.shot', (el) => el.addEventListener('click', () => photoSheet(shots, Number(el.dataset.i), albums)));
 };
@@ -7832,6 +8073,7 @@ function photoSheet(shots, i, albums) {
           [...byId('scrops').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
           paint();
           await post('photos', { op: 'edit', index: i + 1, crop: crop === 'none' ? '' : crop });
+          photosForget();
           toast(L('ph.crop_saved'));
         }));
       const slider = byId('sfocus');
@@ -7840,6 +8082,7 @@ function photoSheet(shots, i, albums) {
         slider.addEventListener('input', () => { focus = focusOf(slider.value); paint(); });
         ['change', 'pointerup'].forEach((ev) => slider.addEventListener(ev, async () => {
           await post('photos', { op: 'edit', index: i + 1, focus });
+          photosForget();
           toast(L('ph.crop_saved'));
         }));
       }
@@ -7849,6 +8092,7 @@ function photoSheet(shots, i, albums) {
           byId('shotbig').style.filter = filterCss(f);
           [...byId('sfilters').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
           await post('photos', { op: 'edit', index: i + 1, filter: f === 'none' ? '' : f });
+          photosForget();
           toast(L('ph.crop_saved'));
         }));
       byId('salbum').addEventListener('click', () => {
@@ -7862,11 +8106,13 @@ function photoSheet(shots, i, albums) {
               const album = byId('albname').value.trim();
               const epoch = sheetEpoch;
               await post('photos', { op: 'edit', index: i + 1, album });
+          photosForget();
               if (closeSheet(false, epoch)) RENDER.gallery();
             });
             [...byId('sheet').querySelectorAll('.row')].forEach((el) => el.addEventListener('click', async () => {
               const epoch = sheetEpoch;
               await post('photos', { op: 'edit', index: i + 1, album: el.dataset.alb });
+          photosForget();
               if (closeSheet(false, epoch)) RENDER.gallery();
             }));
           });
@@ -8014,7 +8260,10 @@ function taxiStep(state, doc) {
   return at < 0 ? 0 : at;
 }
 
-RENDER.taxi = async () => {
+/// `cached` re-uses the answer already held. Only the tab switch passes it: the driver's queue and
+/// the passenger's own ride come from the same call, so moving between them needed no request.
+RENDER.taxi = async (cached) => {
+  if (cached && taxiData) return taxiFrom(taxiData);
   loading();
   // The config provider answers `taxiOpen` and says whether doc-taxijob owns this server; if it
   // does, its own state is asked for instead.
@@ -8037,7 +8286,11 @@ RENDER.taxi = async () => {
     return;
   }
   taxiData = d;
+  return taxiFrom(d);
+};
 
+/// Everything the Taxi app draws, from one answer.
+function taxiFrom(d) {
   const on = (name) => ((d.features || {})[name] !== false);
   const driver = d.isDriver === true && on('driver');
 
@@ -8046,7 +8299,7 @@ RENDER.taxi = async () => {
       { id: 'ride', icon: 'taxi', label: 'ph.taxi_tab_ride' },
       { id: 'drive', icon: 'garage', label: 'ph.taxi_tab_drive',
         badge: (d.queue || []).length },
-    ], taxiTab, (tab) => { taxiTab = tab; RENDER.taxi(); });
+    ], taxiTab, (tab) => { taxiTab = tab; RENDER.taxi(true); });
   } else {
     taxiTab = 'ride';
     foot('');
@@ -8185,12 +8438,47 @@ function taxiBook(d) {
 }
 
 /// Settling up: the fare, and a tip if the server allows one.
-function taxiSettle(d, ride) {
+/// Settling up.
+///
+/// **The two providers do not charge the same way, and pretending they do is what broke this.**
+///
+///   * The config provider bills through this app: the fare is ours, the debit is ours, and the
+///     button takes the money.
+///   * **doc-taxijob does not charge the passenger at all.** Its driver raises an INVOICE - it
+///     calls `doc-billing:server:SendBill` - which the passenger pays wherever their server shows
+///     invoices. The only money this app can move there is the tip, through its own callback.
+///
+/// So in doc mode the sheet said "settle - $0" and the button posted a tip of nothing, which
+/// `SubmitTip` refuses with `Montant invalide`. Tapping it did nothing, which is exactly what was
+/// reported. It now says who is charging, shows what the ride cost, and offers the tip alone -
+/// with the amounts doc-taxijob itself suggests rather than ours.
+async function taxiSettle(d, ride) {
   const on = (name) => ((d.features || {})[name] !== false);
-  const fare = Math.max(0, Number(ride.fare) || 0);
+  const doc = taxiDoc();
+
+  // doc-taxijob holds the ride's amount and its own tip rules. Asked for here rather than
+  // guessed: `Config.Taxi.tip` describes the config provider and says nothing about theirs.
+  let state = null;
+  if (doc) {
+    const r = await post('taxiDoc', { op: 'rating' });
+    if (r && !r.error) state = r;
+  }
+
+  const fare = doc
+    ? Math.max(0, Number(state && state.amount) || 0)
+    : Math.max(0, Number(ride.fare) || 0);
+
   const tipCfg = d.tip || {};
-  const tipOn = on('tip') && tipCfg.on !== false;
-  const tipAmount = Math.min(Math.floor(fare * taxiTip / 100), Number(tipCfg.max) || 500);
+  const tipOn = doc
+    ? (state ? state.enableTip === true && state.tipped !== true : false)
+    : (on('tip') && tipCfg.on !== false);
+  const tipMax = doc
+    ? (Number(state && state.maxTip) || 0)
+    : (Number(tipCfg.max) || 500);
+  const presets = doc
+    ? (Array.isArray(state && state.tipSuggestions) ? state.tipSuggestions : [0, 10, 20])
+    : (tipCfg.presets || [0, 10, 20]);
+  const tipAmount = Math.min(Math.floor(fare * taxiTip / 100), tipMax || 500);
 
   sheet(L('ph.taxi_settle'),
     UI.group([
@@ -8202,13 +8490,22 @@ function taxiSettle(d, ride) {
       UI.row({ icon: 'wallet', title: L('ph.taxi_total'),
                value: money(fare + tipAmount), mono: true }),
     ].filter(Boolean)) +
+    // doc-taxijob no longer raises an invoice for the fare, so this app settles it - through this
+    // resource's own money path rather than through their tip callback, which caps at 500 and
+    // would take half a long fare in silence.
+    (doc
+      ? '<div class="groupfoot">' + esc(L(state && state.tipped
+          ? 'ph.taxi_doc_tipped' : 'ph.taxi_doc_pay')) + '</div>'
+      : '') +
     (tipOn
       ? '<div class="grouphead">' + esc(L('ph.taxi_tip')) + '</div>' +
-        '<div class="seg" id="txtip">' + (tipCfg.presets || [0, 10, 20]).map((pct) =>
+        '<div class="seg" id="txtip">' + presets.map((pct) =>
           '<button class="' + (Number(pct) === taxiTip ? 'on' : '') + '" data-t="' + pct + '">' +
           (Number(pct) === 0 ? esc(L('ph.taxi_tip_none')) : pct + '%') + '</button>').join('') +
         '</div>'
       : '') +
+    // In doc mode with no tip to give there is nothing to press, so the button closes the sheet
+    // instead of posting a request that is guaranteed to be refused.
     UI.button(L('ph.taxi_pay').replace('{n}', money(fare + tipAmount)), 'txpaygo', 'tinted'),
     () => {
       const epoch = sheetEpoch;
@@ -8223,15 +8520,33 @@ function taxiSettle(d, ride) {
       byId('txpaygo').addEventListener('click', async () => {
         const go = byId('txpaygo');
         if (go.disabled) return;
+
         go.disabled = true;
-        // In doc-taxijob mode the fare is its own business - it charges at the end of the ride -
-        // so this only offers the TIP, through its own callback.
-        const r = taxiDoc()
-          ? await post('taxiDoc', { op: 'tip', tip: { amount: tipAmount, method: 'cash' } })
-          : await post('taxiPay', { id: ride.id, tip: tipAmount });
+
+        // **Two payments on doc-taxijob, not one.**
+        //
+        // The fare goes through our own path, because theirs caps at `Config.MaxTip`. The tip goes
+        // through THEIRS, because that is what credits their driver and marks the ride as tipped -
+        // and a tip paid twice, once each way, would be a tip paid twice.
+        let r;
+        if (doc) {
+          r = fare > 0 ? await post('taxiDocPay', { amount: fare }) : { ok: true };
+          if (r && r.ok && tipOn && tipAmount > 0) {
+            const t = await post('taxiDoc',
+              { op: 'tip', tip: { amount: tipAmount, method: 'cash' } });
+            // The fare is settled either way: a tip their window refused must not read as the
+            // whole payment having failed.
+            if (t && !t.ok && !t.success) toast((t && t.reason) || L('ph.taxi_e_tip'));
+          }
+        } else {
+          r = await post('taxiPay', { id: ride.id, tip: tipAmount });
+        }
         if (!r || (!r.ok && !r.success)) {
           go.disabled = false;
-          toast(L('ph.taxi_e_' + ((r && r.error) || 'x')));
+          // doc-taxijob answers `reason` as a finished sentence in the server's own language -
+          // "Fenetre expiree", "Fonds insuffisants", "Chauffeur hors ligne". Shown as written,
+          // because guessing which of six refusals it was gets it wrong most of the time.
+          toast((r && r.reason) || L('ph.taxi_e_' + ((r && r.error) || 'x')));
           return;
         }
         if (!closeSheet(false, epoch)) return;
@@ -8397,6 +8712,491 @@ async function taxiDriver(d) {
   }));
 }
 
+// ── Lottery: the weekly draw ───────────────────────────────────
+// One renderer, two providers. `lotteryShape()` is the only place that knows the difference
+// between doc-lottery's payload and the config provider's, so the app cannot end up looking like
+// two different apps depending on which resource a server runs.
+//
+// Beyond what doc-lottery's own app did: numbers tapped on a grid rather than typed into five
+// inputs (a grid cannot express a duplicate), a lucky dip, the draw followed live, and the
+// player's own past results - which had no answer anywhere before.
+//
+// See server/lottery.lua and client/lottery.lua.
+let lotteryTab = 'play';       // 'play' | 'results' | 'mine'
+let lotteryPick = [];          // the line being built
+let lotteryLive = null;        // the draw, while one is running
+let lotteryMine = null;        // what my ticket did, once the server says
+
+/// Both payloads, reduced to one shape.
+///
+/// doc-lottery nests the buying rules under `config` and the session under `current`, and answers
+/// its jackpot as a string on some MySQL builds. The config provider is flat. Everything below
+/// this function is written against the result, so neither provider's field names leak into the
+/// renderers - which is what stopped Zuber's four wrong field names from being caught by reading.
+function lotteryShape(d) {
+  if (!d) return null;
+  const cfg = d.config || {};
+  const cur = d.current || {};
+  const doc = d.doc === true;
+
+  return {
+    doc,
+    sessionId: d.sessionId,
+    // doc-lottery keeps the pot on `current`; the config provider answers it at the top level.
+    jackpot: Number(doc ? cur.jackpot : d.jackpot) || 0,
+    // Its date is a formatted string it built itself. The config provider sends an epoch as well,
+    // so the phone can count down - a string cannot be counted down from.
+    drawLabel: doc ? (cur.draw_date || '') : (d.drawLabel || ''),
+    drawAt: Number(d.drawAt) || 0,
+    status: String((doc ? cur.status : d.status) || 'pending'),
+    price: Number(cfg.ticketPrice) || 0,
+    count: Number(cfg.numberCount) || 5,
+    min: Number(cfg.numberMin) || 1,
+    max: Number(cfg.numberMax) || 35,
+    maxComb: Number(cfg.maxComb) || 7,
+    // How a ticket is paid for. Shown, not chosen: the server decides and the page says so, so
+    // there is no control here that could disagree with what is about to be charged.
+    account: String(cfg.account || 'bank'),
+    tiers: farr(d.tiers),
+    // Its own lines arrive as `{ numbers: '3/7/12/19/28', created_at: '01/02/2026 à 21h30' }`;
+    // ours as arrays and an epoch. Normalised to arrays here.
+    myTickets: farr(d.myTickets).map((x) => ({
+      numbers: lotteryNums(x.numbers),
+      when: x.created_at || (x.at ? fmtDate(txEpochMs(x.at)) : ''),
+      matches: Number(x.matches) || 0,
+      reward: Number(x.reward) || 0,
+    })),
+    myPast: farr(d.myPast).map((x) => ({
+      session: x.session,
+      numbers: lotteryNums(x.numbers),
+      drawn: lotteryNums(x.drawn),
+      matches: Number(x.matches) || 0,
+      reward: Number(x.reward) || 0,
+      when: x.at ? fmtDate(txEpochMs(x.at)) : '',
+    })),
+    history: farr(d.history).map((h) => ({
+      id: h.id,
+      jackpot: Number(h.jackpot) || 0,
+      numbers: lotteryNums(h.numbers_drawn !== undefined ? h.numbers_drawn : h.numbers),
+      when: h.drawn_at || (h.at ? fmtDate(txEpochMs(h.at)) : ''),
+      winners: Number(h.winners) || 0,
+      // Only the config provider can tell a jackpot apart from any other prize; doc-lottery's
+      // payload counts every winning ticket in one number. Undefined means "not known", which is
+      // why the row below says "winning tickets" rather than claiming the jackpot fell.
+      jackpots: h.jackpots === undefined ? null : (Number(h.jackpots) || 0),
+    })),
+  };
+}
+
+/// Numbers, however they arrived: an array, or doc-lottery's `'3/7/12/19/28'`.
+function lotteryNums(v) {
+  if (Array.isArray(v)) return v.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  return String(v == null ? '' : v).split(/[^0-9]+/)
+    .filter((s) => s !== '').map((s) => Number(s));
+}
+
+/// A ball, drawn once and reused everywhere: the grid, the history, the live draw.
+function lotteryBall(n, cls) {
+  return '<span class="lotball ' + (cls || '') + '">' + esc(String(n)) + '</span>';
+}
+
+function lotteryBalls(list, cls) {
+  return farr(list).map((n) => lotteryBall(n, cls)).join('');
+}
+
+/// How long until the draw, in words. Only the config provider can answer this: doc-lottery sends
+/// a formatted date and no timestamp, so on that provider the date is shown as it wrote it.
+function lotteryCountdown(epoch) {
+  const left = Math.floor(Number(epoch) - Date.now() / 1000);
+  if (!Number.isFinite(left) || left <= 0) return '';
+  const d = Math.floor(left / 86400);
+  const h = Math.floor((left % 86400) / 3600);
+  const m = Math.floor((left % 3600) / 60);
+  if (d > 0) return L('ph.lottery_in_days').replace('{d}', String(d)).replace('{h}', String(h));
+  if (h > 0) return L('ph.lottery_in_hours').replace('{h}', String(h)).replace('{m}', String(m));
+  return L('ph.lottery_in_minutes').replace('{m}', String(Math.max(1, m)));
+}
+
+/// What a tier pays, in money rather than in arithmetic the player has to do.
+function lotteryPrize(tier, jackpot) {
+  if (tier.payer === 'jackpot') {
+    const pct = Number(tier.percent) || 0;
+    const share = Math.floor((Number(jackpot) || 0) * pct / 100);
+    return share > 0
+      ? L('ph.lottery_tier_pot').replace('{p}', String(pct)).replace('{n}', money(share))
+      : L('ph.lottery_tier_pot_only').replace('{p}', String(pct));
+  }
+  return money(Number(tier.amount) || 0);
+}
+
+/// `cached` re-uses the answer already on hand instead of asking again.
+///
+/// Only a tab switch passes it. A tab is a view over data this app already has - the session, the
+/// history and the player's own lines all arrive together - so moving between three tabs was three
+/// round trips for a decision that needed none. Buying a line, the refresh button and the draw's
+/// own events all leave it out, because those are the moments the server's answer has changed.
+RENDER.lottery = async (cached) => {
+  let s = (cached && lotteryData) ? lotteryData : null;
+
+  if (!s) {
+    loading();
+    let d = await post('lotteryOpen', {});
+    if (d && d.doc) {
+      const doc = await post('lotteryDoc', { op: 'data' });
+      if (doc && !doc.error) d = Object.assign({}, doc, { doc: true });
+    }
+    if (!d || d.error) {
+      body(UI.empty(L('ph.lottery_e_' + ((d && d.error) || 'off')), 'lottery'));
+      return;
+    }
+
+    s = lotteryShape(d);
+    if (!s) { body(UI.empty(L('ph.lottery_e_off'), 'lottery')); return; }
+    lotteryData = s;
+
+    // Is a draw running right now? Asked with the rest, because the events that answer it arrive
+    // whether this app is open or not - and asked only on a real fetch, since a tab switch cannot
+    // have changed it.
+    const liveAnswer = s.doc ? await post('lotteryLive', {}) : await post('lotteryLiveOwn', {});
+    if (liveAnswer && liveAnswer.ok) {
+      if (liveAnswer.live) lotteryLive = liveAnswer.state || liveAnswer;
+      else if (!liveAnswer.asked) lotteryLive = null;
+    }
+  }
+
+  tabbar([
+    { id: 'play', icon: 'lottery', label: 'ph.lottery_tab_play' },
+    { id: 'results', icon: 'clock', label: 'ph.lottery_tab_results' },
+    { id: 'mine', icon: 'ticket', label: 'ph.lottery_tab_mine',
+      badge: s.myTickets.length || 0 },
+    // From the cache: three tabs over one answer.
+  ], lotteryTab, (tab) => { lotteryTab = tab; RENDER.lottery(true); });
+
+  if (lotteryTab === 'results') { lotteryResults(s); return; }
+  if (lotteryTab === 'mine') { lotteryMineTab(s); return; }
+
+  setNav(L('app.lottery'), null, {
+    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.lottery(),
+  });
+
+  const drawing = s.status === 'drawing' || (lotteryLive && !lotteryLive.result);
+  const full = s.myTickets.length >= s.maxComb;
+
+  body(
+    lotteryLiveStrip(s) +
+    UI.hero({
+      appicon: 'lottery',
+      eyebrow: L('ph.lottery_jackpot'),
+      value: money(s.jackpot),
+      subtitle: [
+        s.drawLabel ? L('ph.lottery_next').replace('{n}', s.drawLabel) : L('ph.lottery_nodate'),
+        s.drawAt ? lotteryCountdown(s.drawAt) : '',
+      ].filter(Boolean).join('  ·  '),
+    }) +
+    // The state of the counter, said plainly. A closed window with no explanation reads as a bug.
+    '<div class="lotstate ' + (drawing ? 'shut' : 'open') + '">' +
+      esc(drawing ? L('ph.lottery_closed') : L('ph.lottery_openwindow')) + '</div>' +
+    (drawing
+      ? ''
+      : (full
+        ? '<div class="groupfoot">' +
+            esc(L('ph.lottery_full').replace('{n}', String(s.maxComb))) + '</div>'
+        : lotteryPicker(s))) +
+    // Written by hand rather than with `UI.row`, because a row puts the title and the value on
+    // one line and fights over the space: "100% of the pot (~$10,000)" is long enough that the
+    // rank was being ellipsised down to "5..." - the one part of the row that has to be readable.
+    // The rank is a fixed badge, and the prize is allowed to wrap under it.
+    '<div class="grouphead">' + esc(L('ph.lottery_tiers')) + '</div>' +
+    '<div class="lottiers">' + s.tiers.map((tier) => {
+      const top = tier.matches >= s.count;
+      return '<div class="lottier' + (top ? ' top' : '') + '">' +
+        '<span class="lotrank">' + esc(String(tier.matches)) + '<small>/' +
+          esc(String(s.count)) + '</small></span>' +
+        '<span class="lotprize">' + esc(lotteryPrize(tier, s.jackpot)) + '</span></div>';
+    }).join('') + '</div>' +
+    '<div class="groupfoot">' + esc(L('ph.lottery_tiers_hint')) + '</div>' +
+    '<div class="groupfoot">' + esc(L('ph.lottery_odds')) + '</div>'
+  );
+
+  lotteryWirePicker(s);
+};
+
+/// The live draw, at the top of the app while one is running.
+function lotteryLiveStrip(s) {
+  const live = lotteryLive;
+  if (!live) return '';
+
+  const count = Number(live.numberCount) || s.count;
+  const revealed = farr(live.revealed);
+  const mine = farr(live.mine);
+  const hits = mine.filter((n) => revealed.indexOf(n) !== -1);
+
+  // Waiting, drawing, or done - and the three look different on purpose, because "the balls have
+  // not started" and "the balls are falling" are the difference between time to buy and not.
+  let head;
+  if (live.result) head = esc(String(live.result.title || L('ph.lottery_result')));
+  else if (live.started) {
+    head = esc(L('ph.lottery_drawing_now')
+      .replace('{n}', String(revealed.length)).replace('{t}', String(count)));
+  } else if (live.countdown) {
+    head = esc(L('ph.lottery_starts_in').replace('{n}', String(Math.ceil(live.countdown))));
+  } else head = esc(L('ph.lottery_starting'));
+
+  return '<div class="lotlive' + (live.result ? ' done' : '') + '">' +
+    '<div class="lotlivehead"><b>' + head + '</b>' +
+      (live.jackpot ? '<span>' + esc(money(live.jackpot)) + '</span>' : '') + '</div>' +
+    // Slots for every ball, so the panel does not resize as each one lands.
+    '<div class="lotliveballs">' +
+      revealed.map((n) => lotteryBall(n, 'out')).join('') +
+      Array.from({ length: Math.max(0, count - revealed.length) },
+                 () => '<span class="lotball pending">·</span>').join('') +
+    '</div>' +
+    (mine.length
+      ? '<div class="lotlivemine">' +
+          '<small>' + esc(L('ph.lottery_your_line')) + '</small>' +
+          mine.map((n) => lotteryBall(n, revealed.indexOf(n) !== -1 ? 'hit' : '')).join('') +
+          '<b>' + esc(L('ph.lottery_hits')
+            .replace('{n}', String(hits.length)).replace('{t}', String(count))) + '</b>' +
+        '</div>'
+      : '') +
+    (live.result && live.result.detail
+      ? '<div class="lotlivedetail">' + esc(String(live.result.detail)) + '</div>' : '') +
+  '</div>';
+}
+
+/// The number grid, a lucky dip, and the purse.
+///
+/// Tapped rather than typed. Five number inputs is what a desktop form does; on a phone it means
+/// five keyboard trips, and it lets somebody enter the same number twice and only find out when
+/// the server refuses the line. A grid cannot express an invalid line at all.
+function lotteryPicker(s) {
+  const cells = [];
+  for (let n = s.min; n <= s.max; n += 1) {
+    const on = lotteryPick.indexOf(n) !== -1;
+    cells.push('<button class="lotcell' + (on ? ' on' : '') + '" type="button" data-lot="' + n +
+      '">' + n + '</button>');
+  }
+
+  const left = s.count - lotteryPick.length;
+  const ready = lotteryPick.length === s.count;
+
+  return '<div class="lotpick" id="lotpickwrap">' +
+    '<div class="lotpickhead" id="lotpickhead">' +
+      '<b>' + esc(ready
+        ? L('ph.lottery_line_ready')
+        : L('ph.lottery_pick_more').replace('{n}', String(left))) + '</b>' +
+      '<button class="lotdip" id="lotdip" type="button">' +
+        svg('refresh') + esc(L('ph.lottery_lucky')) + '</button>' +
+    '</div>' +
+    '<div class="lotchosen" id="lotchosen">' +
+      (lotteryPick.length
+        ? lotteryBalls(lotteryPick.slice().sort((a, b) => a - b), 'chosen')
+        : '<small>' + esc(L('ph.lottery_pick_hint')
+            .replace('{n}', String(s.count))
+            .replace('{a}', String(s.min))
+            .replace('{b}', String(s.max))) + '</small>') +
+    '</div>' +
+    '<div class="lotgrid">' + cells.join('') + '</div>' +
+    '<div class="lotpay">' + svg('card') + esc(L('ph.lottery_pay_with')
+      .replace('{n}', L('ph.lottery_pay_' + s.account))) + '</div>' +
+    '<div class="lotbuyrow">' +
+      '<button class="lotbuy" id="lotbuy" type="button"' + (ready ? '' : ' disabled') + '>' +
+        esc(L('ph.lottery_buy').replace('{n}', money(s.price))) + '</button>' +
+    '</div>' +
+    '<div class="groupfoot">' + esc(L('ph.lottery_lines_used')
+      .replace('{n}', String(s.myTickets.length)).replace('{m}', String(s.maxComb))) + '</div>' +
+  '</div>';
+}
+
+function lotteryWirePicker(s) {
+  // **Nothing is rebuilt on a tap.**
+  //
+  // The first version replaced the whole picker's `outerHTML` for every number, which rebuilt all
+  // thirty-five cells and every listener on them - and it read exactly as it was: the app appeared
+  // to reload each time a number was touched. Tapping a number is the most frequent action in this
+  // app, so it is the one that has to cost the least.
+  //
+  // Now a tap flips one class on one button and rewrites two small parts: the line being built and
+  // the state of the buy button. The grid itself is never touched again after the first render, so
+  // the scroll position, the focus and the CSS transition on the cell all survive.
+  const refresh = () => {
+    const ready = lotteryPick.length === s.count;
+    const left = s.count - lotteryPick.length;
+
+    const head = byId('lotpickhead');
+    if (head) {
+      const label = head.querySelector('b');
+      if (label) {
+        label.textContent = ready
+          ? L('ph.lottery_line_ready')
+          : L('ph.lottery_pick_more').replace('{n}', String(left));
+      }
+    }
+
+    const chosen = byId('lotchosen');
+    if (chosen) {
+      chosen.innerHTML = lotteryPick.length
+        ? lotteryBalls(lotteryPick.slice().sort((a, b) => a - b), 'chosen')
+        : '<small>' + esc(L('ph.lottery_pick_hint')
+            .replace('{n}', String(s.count))
+            .replace('{a}', String(s.min))
+            .replace('{b}', String(s.max))) + '</small>';
+    }
+
+    const buy = byId('lotbuy');
+    if (buy) buy.disabled = !ready;
+  };
+
+  rows('[data-lot]', (el) => el.addEventListener('click', () => {
+    const n = Number(el.dataset.lot);
+    const at = lotteryPick.indexOf(n);
+    if (at !== -1) {
+      lotteryPick.splice(at, 1);
+      el.classList.remove('on');
+    } else if (lotteryPick.length < s.count) {
+      lotteryPick.push(n);
+      el.classList.add('on');
+    } else {
+      // A full line refuses a sixth rather than silently dropping somebody's first pick: a line
+      // that quietly rewrites itself is a line the player did not choose.
+      toast(L('ph.lottery_line_full').replace('{n}', String(s.count)));
+      return;
+    }
+    refresh();
+  }));
+
+  if (byId('lotdip')) byId('lotdip').addEventListener('click', () => {
+    // A real lucky dip: drawn from the pool without replacement, so it can never produce the
+    // duplicate that would be refused on the server.
+    const pool = [];
+    for (let n = s.min; n <= s.max; n += 1) pool.push(n);
+    lotteryPick = [];
+    for (let i = 0; i < s.count && pool.length; i += 1) {
+      lotteryPick.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    // The grid still is not rebuilt: each cell is told whether it is now part of the line.
+    [...document.querySelectorAll('[data-lot]')].forEach((el) =>
+      el.classList.toggle('on', lotteryPick.indexOf(Number(el.dataset.lot)) !== -1));
+    refresh();
+  });
+
+  if (byId('lotbuy')) byId('lotbuy').addEventListener('click', async () => {
+    if (lotteryPick.length !== s.count) return;
+    const btn = byId('lotbuy');
+    btn.disabled = true;
+    const numbers = lotteryPick.slice().sort((a, b) => a - b);
+
+    const r = s.doc
+      ? await post('lotteryDoc', { op: 'buy',
+          // doc-lottery's callback reads `paymentMethod`; client/lottery.lua renames it there.
+          // The purse is the one the server configured, not a choice made on this screen.
+          buy: { sessionId: s.sessionId, numbers, account: s.account } })
+      : await post('lotteryBuy', { numbers });
+
+    if (!r || !r.ok) {
+      // doc-lottery answers a finished sentence in the server's own language; the config provider
+      // answers a code. Whichever arrived is what the player is told - a code translated into the
+      // wrong sentence is worse than the sentence somebody already wrote.
+      toast(r && r.message ? r.message : L('ph.lottery_e_' + ((r && r.error) || 'x')));
+      btn.disabled = false;
+      return;
+    }
+    ui('success');
+    toast(r.message || L('ph.lottery_bought').replace('{n}', numbers.join(' · ')));
+    lotteryPick = [];
+    RENDER.lottery();
+  });
+}
+
+/// Past draws, public and anonymous.
+function lotteryResults(s) {
+  setNav(L('ph.lottery_tab_results'), L('app.lottery'), {
+    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.lottery(),
+  });
+
+  body(
+    lotteryLiveStrip(s) +
+    (s.history.length
+      ? s.history.map((h) => {
+        // "X winning tickets" and "the jackpot fell" are different facts. doc-lottery's own app
+        // printed "jackpot won" whenever any ticket won anything, and a winning ticket is any
+        // ticket from two matches up - so a draw where two people matched two numbers announced
+        // that the pot had gone. The pot rolling over is the whole drama of a lottery.
+        const won = h.jackpots === null ? null : h.jackpots > 0;
+        const line = won === null
+          ? (h.winners > 0
+            ? L('ph.lottery_h_winners').replace('{n}', String(h.winners))
+            : L('ph.lottery_h_nowinners'))
+          : (won
+            ? L('ph.lottery_h_jackpot').replace('{n}', String(h.jackpots))
+            : (h.winners > 0
+              ? L('ph.lottery_h_rolled').replace('{n}', String(h.winners))
+              : L('ph.lottery_h_nowinners')));
+        return '<div class="lothist">' +
+          '<div class="lothisthead">' +
+            '<span>' + esc(L('ph.lottery_draw_no').replace('{n}', String(h.id))) +
+              (h.when ? ' · ' + esc(h.when) : '') + '</span>' +
+            '<b>' + esc(money(h.jackpot)) + '</b></div>' +
+          '<div class="lothistballs">' + lotteryBalls(h.numbers, 'out') + '</div>' +
+          '<div class="lothistwin' + (won ? ' has' : '') + '">' + esc(line) + '</div>' +
+        '</div>';
+      }).join('')
+      : UI.empty(L('ph.lottery_no_history'), 'lottery')) +
+    '<div class="groupfoot">' + esc(L('ph.lottery_anon')) + '</div>'
+  );
+}
+
+/// This player's lines: the ones in play, and the ones already drawn.
+///
+/// doc-lottery's app had neither of the two halves below in one place - the current lines were on
+/// its home screen and past results did not exist anywhere. "Have I ever won anything" is the
+/// second question anybody asks of a lottery app.
+function lotteryMineTab(s) {
+  setNav(L('ph.lottery_tab_mine'), L('app.lottery'), {
+    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.lottery(),
+  });
+
+  const live = s.myTickets.map((t, i) => '<div class="lotticket">' +
+    '<div class="lotticketrow">' + lotteryBalls(t.numbers, 'chosen') +
+      '<span class="lotticketno">#' + (i + 1) + '</span></div>' +
+    (t.when ? '<small>' + esc(L('ph.lottery_bought_at').replace('{n}', t.when)) + '</small>' : '') +
+  '</div>').join('');
+
+  const past = s.myPast.map((t) => {
+    const hitset = t.drawn || [];
+    return '<div class="lotticket past' + (t.reward > 0 ? ' won' : '') + '">' +
+      '<div class="lotticketrow">' +
+        t.numbers.map((n) => lotteryBall(n, hitset.indexOf(n) !== -1 ? 'hit' : '')).join('') +
+        '<span class="lotticketno">' +
+          esc(L('ph.lottery_matches_short').replace('{n}', String(t.matches))) + '</span></div>' +
+      '<small>' + esc(L('ph.lottery_draw_no').replace('{n}', String(t.session))) +
+        (t.when ? ' · ' + esc(t.when) : '') + '</small>' +
+      (t.reward > 0
+        ? '<div class="lotwon">' + esc(L('ph.lottery_won').replace('{n}', money(t.reward))) + '</div>'
+        : '') +
+    '</div>';
+  }).join('');
+
+  const total = s.myPast.reduce((n, t) => n + (t.reward || 0), 0);
+
+  body(
+    lotteryLiveStrip(s) +
+    UI.hero({
+      appicon: 'lottery',
+      eyebrow: L('ph.lottery_tab_mine'),
+      value: s.myTickets.length
+        ? L('ph.lottery_lines_in').replace('{n}', String(s.myTickets.length))
+        : L('ph.lottery_no_lines'),
+      subtitle: total > 0 ? L('ph.lottery_total_won').replace('{n}', money(total)) : '',
+    }) +
+    (live ? '<div class="grouphead">' + esc(L('ph.lottery_in_play')) + '</div>' + live : '') +
+    (past ? '<div class="grouphead">' + esc(L('ph.lottery_past')) + '</div>' + past : '') +
+    (!live && !past ? UI.empty(L('ph.lottery_no_lines_hint'), 'lottery') : '')
+  );
+}
+
+let lotteryData = null;
+
 // ── Zuber: food, ordered from the phone ────────────────────────
 // Uber Eats' shape, on this phone's components: a dark header with the address, cards with a
 // tint and a rating, a menu by category, a basket, and a tracker at the top once an order is
@@ -8547,11 +9347,21 @@ function zuberStep(status) {
   return at < 0 ? 0 : at;
 }
 
-RENDER.zuber = async () => {
+/// `cached` re-uses the answer already held instead of asking for it again.
+///
+/// Only a tab switch passes it. The restaurant list, the order list and the rating permissions all
+/// arrive in one answer, so moving between the two tabs was three requests for a decision that
+/// needed none. Ordering, refreshing and the kitchen's own status events all leave it out.
+RENDER.zuber = async (cached) => {
+  let d = (cached && zuberData) ? zuberData : null;
+  if (d) {
+    // Straight past the fetch. Everything below reads `d`, so there is nothing else to skip.
+    return zuberFrom(d);
+  }
   loading();
   // The config provider answers `zuberOpen`; doc-restaurant answers through its own relay. Which
   // one is live is the client's to know, so both are asked and the first that answers wins.
-  let d = await post('zuberOpen', {});
+  d = await post('zuberOpen', {});
   if (d && d.doc) {
     const doc = await post('zuberDoc', { op: 'restaurants' });
     if (doc && !doc.error) d = Object.assign(d, doc, { doc: true });
@@ -8570,7 +9380,12 @@ RENDER.zuber = async () => {
     return;
   }
   zuberData = d;
+  return zuberFrom(d);
+};
 
+/// Everything Zuber draws, from one answer. Split out so a tab switch can reach it without a
+/// request; nothing in here changed when it was split.
+function zuberFrom(d) {
   const cards = zuberCards(d);
   const active = d.active || null;
 
@@ -8582,7 +9397,7 @@ RENDER.zuber = async () => {
     tabbar([
       { id: 'browse', icon: 'zuber', label: 'ph.zuber_tab_browse' },
       { id: 'orders', icon: 'note', label: 'ph.zuber_tab_orders', badge: active ? 1 : 0 },
-    ], zuberTab, (tab) => { zuberTab = tab; zuberOpenId = null; RENDER.zuber(); });
+    ], zuberTab, (tab) => { zuberTab = tab; zuberOpenId = null; RENDER.zuber(true); });
   } else {
     zuberTab = 'browse';
     foot('');
@@ -8667,7 +9482,7 @@ RENDER.zuber = async () => {
 
   if (byId('zutrack')) byId('zutrack').addEventListener('click', () => {
     zuberTab = 'orders';
-    RENDER.zuber();
+    RENDER.zuber(true);
   });
   if (on('search')) onSearch((value) => { zuberQuery = value; paint(); });
 };
@@ -9025,7 +9840,7 @@ function zuberCheckout(d, c) {
         zuberTier = 0;
         zuberOpenId = null;
         zuberTab = 'orders';
-        RENDER.zuber();
+        RENDER.zuber(true);
       });
     });
 }
@@ -9120,7 +9935,7 @@ function zuberOrders(d) {
           if (!zuberCartCount()) { toast(L('ph.zuber_again_gone')); return; }
           zuberTab = 'browse';
           zuberOpenId = c.id;
-          RENDER.zuber();
+          RENDER.zuber(true);
         });
         if (byId('zurate')) byId('zurate').addEventListener('click', () => {
           if (!closeSheet(false, epoch)) return;
@@ -10990,6 +11805,39 @@ async function socialDmList(appId) {
   rows('.socdmrow', (b) => b.addEventListener('click', () => socialDmThread(appId, b.dataset.who)));
 }
 
+/// Long-press a message bubble to delete it.
+///
+/// Shared by every thread that is not SMS - Bleeter and Snapmatic direct messages, and Hush -
+/// because "hold a message, delete it" has to mean the same thing everywhere on one phone.
+/// The two meanings are the server's: a line you sent is unsent and leaves both phones, a line
+/// you received comes off your copy only. The sheet says which before it happens.
+///
+/// `bubbles` is the container, each child carrying `data-id`. `reload` redraws the thread.
+function bubbleDelete(container, reload) {
+  const host = byId(container);
+  if (!host) return;
+  host.querySelectorAll('[data-id]').forEach((el) => {
+    let timer = null;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    el.addEventListener('pointerdown', () => {
+      timer = setTimeout(() => {
+        timer = null;
+        const id = Number(el.dataset.id);
+        const mine = el.classList.contains('me');
+        if (!id) return;
+        confirmSheet(L(mine ? 'ph.msg_unsend_hint' : 'ph.msg_hide_hint'),
+          L(mine ? 'ph.msg_unsend' : 'ph.msg_hide'), async () => {
+            const res = await post('social', { op: 'dmDelete', id });
+            if (res && res.ok) reload();
+            else toast(L('ph.err_' + ((res && res.error) || 'x')));
+          });
+      }, 550);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel']
+      .forEach((e) => el.addEventListener(e, cancel));
+  });
+}
+
 async function socialDmThread(appId, handle) {
   const epoch = beginView();
   loading();
@@ -11001,7 +11849,7 @@ async function socialDmThread(appId, handle) {
   // navigation bar should say so.
   setNav('@' + handle, L('app.' + appId), null, () => { SOC.tab[appId] = 'dm'; socialRender(appId); });
   const bubbles = (r.messages || []).map((m) =>
-    '<div class="bub ' + (m.mine ? 'me' : 'them') + '">' +
+    '<div class="bub ' + (m.mine ? 'me' : 'them') + '" data-id="' + esc(String(m.id || '')) + '">' +
       (m.image ? '<img class="bubimg" src="' + esc(m.image) + '" alt="" />' : '') +
       (m.body ? '<span>' + esc(m.body) + '</span>' : '') + '</div>').join('');
   body('<div class="bubs" id="socbubs">' + (bubbles || UI.empty(L('ph.soc_dm_start'))) + '</div>');
@@ -11013,6 +11861,7 @@ async function socialDmThread(appId, handle) {
       '<button id="dmgo" type="button" aria-label="' + esc(L('ph.send')) + '">' + svg('send') + '</button>' +
     '</div>');
   byId('appbody').scrollTop = byId('appbody').scrollHeight;
+  bubbleDelete('socbubs', () => socialDmThread(appId, handle));
 
   const send = async (payload) => {
     const r2 = await post('social', Object.assign({ op: 'dmSend', handle, app: appId }, payload));
@@ -11508,6 +12357,13 @@ function hushOnboard() {
   });
 }
 
+/// The people who liked you back.
+///
+/// **No phone number anywhere.** A match is two people who liked a first name and a photograph;
+/// handing over the number behind it makes a dating app a directory, and a number cannot be taken
+/// back once somebody has it. Tapping a match opens a conversation INSIDE Hush - see
+/// `v-phone:soc:hushChat` - so unmatching actually ends it, which it could not do when the thread
+/// lived in the Messages app.
 async function hushMatches() {
   const epoch = viewEpoch;
   loading();
@@ -11521,127 +12377,95 @@ async function hushMatches() {
                : '<span class="socav">' + esc(String(m.name || '?').slice(0, 1)) + '</span>') +
       '<span class="rmain"><span class="rt">' +
         esc(m.name || '?') + (m.age ? ', ' + m.age : '') + '</span>' +
-      '<span class="rs">' + esc(m.bio || m.number || '') + '</span></span>' +
+      '<span class="rs">' + esc(m.bio || '') + '</span></span>' +
+      (Number(m.unread) > 0
+        ? '<span class="socunread">' + esc(String(m.unread)) + '</span>' : '') +
       svg('chevron') +
     '</button>').join('')) : UI.empty(L('ph.hush_no_matches'), 'hush'));
 
-  // A match is somebody you already swapped numbers with, so the useful thing to do
-  // with one is call or write to them.
   rows('.hushmatch', (b) => b.addEventListener('click', () => {
     const m = list[Number(b.dataset.i)];
-    if (!m || !m.number) { toast(L('ph.hush_no_number')); return; }
-    sheet(m.name || '?',
-      UI.row({ icon: 'phone', title: L('ph.call'), value: m.number, data: { act: 'call' } }) +
-      UI.row({ icon: 'messages', title: L('ph.message'), data: { act: 'sms' } }) +
-      UI.button(L('ph.hush_unmatch'), 'hunmatch', 'neg'),
-      () => {
-        const epoch2 = sheetEpoch;
-        [...byId('sheet').querySelectorAll('[data-act]')].forEach((el) =>
-          el.addEventListener('click', () => {
-            if (!closeSheet(false, epoch2)) return;
-            if (el.dataset.act === 'call') { placeCall(m.number); return; }
-            const messages = (state.apps || []).find((a) => a.id === 'messages');
-            if (!messages) return;
-            enterApp(messages, null);
-            messageTo(m.number);
-          }));
-        // Confirmed, because it lands on both phones: the match is gone for the other person
-        // too, and neither of them can put it back.
-        byId('hunmatch').addEventListener('click', () => {
-          if (!closeSheet(false, epoch2)) return;
-          confirmSheet(L('ph.hush_unmatch_ask'), L('ph.hush_unmatch'), async () => {
-            const r2 = await post('social', { op: 'hushUnmatch', ref: m.ref });
-            if (!r2 || !r2.ok) { toast(L('ph.err_' + ((r2 && r2.error) || 'x'))); return; }
-            ui('toggleoff');
-            hushMatches();
-          });
-        });
-      });
+    if (m) hushChat(m);
   }));
 }
 
-async function hushProfile() {
+/// One conversation with a match.
+///
+/// Deliberately plain: the same bubbles as every other thread on this phone, a field, and a way
+/// out. The only thing it does differently is that it never learns who it is talking to - the
+/// server addresses by the match and sends back a first name and whether each line is yours.
+async function hushChat(match) {
   const epoch = viewEpoch;
+  const ref = match.ref;
   loading();
-  const me = await post('social', { op: 'hushMe' });
+  const r = await post('social', { op: 'hushChat', ref });
   if (!socialActive('hush', epoch)) return;
-  if (!me || me.error) { body(UI.empty(L('ph.err_' + ((me && me.error) || 'off')), 'hush')); return; }
-  const pf = me.profile || { bio: '', photo: '', active: true };
+  if (!r || r.error) { toast(L('ph.err_' + ((r && r.error) || 'x'))); hushMatches(); return; }
 
-  // Who I am, and who I want to see. `seeking` defaults to everybody, because a default that
-  // narrows the deck without being asked to is a bug that looks like an empty app.
-  let gender = (pf.gender === 'm' || pf.gender === 'f') ? pf.gender : '';
-  let seeking = (pf.seeking === 'm' || pf.seeking === 'f') ? pf.seeking : 'all';
+  const title = (r.name || match.name || '?') + (r.age ? ', ' + r.age : '');
+  setNav(title, L('app.hush'), {
+    icon: 'xmark', label: L('ph.hush_unmatch'), onClick: () => hushUnmatch(match),
+  }, () => hushMatches());
 
-  const segRow = (name, value, options) =>
-    '<div class="seg" data-seg="' + name + '">' + options.map((o) =>
-      '<button type="button" data-v="' + o.v + '"' +
-        (o.v === value ? ' class="on"' : '') + '>' + esc(o.t) + '</button>').join('') + '</div>';
+  const draw = (messages) => {
+    body('<div class="thread hushthread" id="hushthread">' +
+      (messages.length
+        ? messages.map((x) =>
+            '<div class="bubble ' + (x.mine ? 'me' : 'them') + '"' +
+              (x.id ? ' data-id="' + esc(String(x.id)) + '"' : '') + '>' +
+              (x.image ? photoImg(x.image, 'mimg') : '') +
+              (x.body ? '<span>' + esc(x.body) + '</span>' : '') +
+            '</div>').join('')
+        : '<div class="hushempty">' + esc(L('ph.hush_say_hi')) + '</div>') +
+    '</div>');
+    foot('<div class="compose">' +
+      UI.field('hushmsg', L('ph.hush_write'), '', 'maxlength="500" autocomplete="off"') +
+      '<button class="sendbtn" id="hushsend" type="button" aria-label="' +
+        esc(L('ph.send')) + '">' + svg('send') + '</button></div>');
+    const host = byId('appbody');
+    if (host) host.scrollTop = host.scrollHeight;
+    bubbleDelete('hushthread', () => hushChat(match));
 
-  body(
-    '<div class="socprof">' +
-      (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
-                : '<span class="socbigav">' + svg('hush') + '</span>') +
-      '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
-    '</div>' +
-    UI.field('hbio', L('ph.hush_bio'), pf.bio || '', 'maxlength="160"') +
-    // Three photographs. The first is the one the card opens on; the others are tapped through.
-    '<div class="stsection">' + esc(L('ph.hush_photos')) + '</div>' +
-    [1, 2, 3].map((n) => {
-      const id = n === 1 ? 'hphoto' : 'hphoto' + n;
-      const value = n === 1 ? (pf.photo || '') : (pf['photo' + n] || '');
-      return UI.field(id, L('ph.hush_photo_n').replace('{n}', String(n)), value,
-                      'maxlength="300"') +
-        UI.button(L('ph.pick_photo'), 'hpick' + n, 'plain');
-    }).join('') +
-    '<div class="stsection">' + esc(L('ph.hush_iam')) + '</div>' +
-    segRow('gender', gender, [{ v: '', t: L('ph.hush_unsaid') },
-                              { v: 'm', t: L('ph.hush_man') },
-                              { v: 'f', t: L('ph.hush_woman') }]) +
-    '<div class="stsection">' + esc(L('ph.hush_seeking')) + '</div>' +
-    segRow('seeking', seeking, [{ v: 'all', t: L('ph.hush_everyone') },
-                                { v: 'm', t: L('ph.hush_men') },
-                                { v: 'f', t: L('ph.hush_women') }]) +
-    '<div class="stsection">' + esc(L('ph.hush_agerange')) + '</div>' +
-    '<div class="hushage">' +
-      UI.field('hmin', L('ph.hush_min_age'), String(pf.minAge || 18),
-               'type="number" min="18" max="99"') +
-      UI.field('hmax', L('ph.hush_max_age'), String(pf.maxAge || 99),
-               'type="number" min="18" max="99"') +
-    '</div>' +
-    UI.group(UI.row({ appicon: 'hush', title: L('ph.hush_active'),
-                      toggle: pf.active !== false, data: { t: 'active' } })) +
-    '<div class="groupfoot">' + esc(L('ph.hush_active_hint')) + '</div>' +
-    UI.button(L('ph.save'), 'hsave')
-  );
+    const send = async () => {
+      const input = byId('hushmsg');
+      const text = input ? input.value.trim() : '';
+      if (!text) return;
+      const btn = byId('hushsend');
+      if (btn) btn.disabled = true;
+      const res = await post('social', { op: 'hushSay', ref, body: text });
+      if (!res || !res.ok) {
+        toast(L('ph.err_' + ((res && res.error) || 'x')));
+        if (btn) btn.disabled = false;
+        return;
+      }
+      // Appended rather than refetched: the answer is known, and a round trip here would be the
+      // thread flashing every time somebody sends a line.
+      messages.push({ mine: true, body: text, image: '' });
+      draw(messages);
+    };
+    if (byId('hushsend')) byId('hushsend').addEventListener('click', send);
+    if (byId('hushmsg')) byId('hushmsg').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); send(); }
+    });
+  };
 
-  let active = pf.active !== false;
-  [1, 2, 3].forEach((n) => byId('hpick' + n).addEventListener('click', () =>
-    pickPhoto((url) => { byId(n === 1 ? 'hphoto' : 'hphoto' + n).value = url; })));
-  rows('.seg[data-seg] button', (b) => b.addEventListener('click', () => {
-    const group = b.closest('.seg');
-    [...group.children].forEach((x) => x.classList.remove('on'));
-    b.classList.add('on');
-    if (group.dataset.seg === 'gender') gender = b.dataset.v; else seeking = b.dataset.v;
-    ui('key');
-  }));
-  // The kit's switch is a styled span, not a checkbox, so the row owns the state.
-  rows('.row[data-t="active"]', (el) => el.addEventListener('click', () => {
-    active = !active;
-    const knob = el.querySelector('.sw');
-    if (knob) knob.classList.toggle('on', active);
-    ui(active ? 'toggleon' : 'toggleoff');
-  }));
-  byId('hsave').addEventListener('click', async () => {
-    const r = await post('social', { op: 'hushSetup',
-      bio: byId('hbio').value, photo: byId('hphoto').value,
-      photo2: byId('hphoto2').value, photo3: byId('hphoto3').value,
-      gender, seeking,
-      minAge: Number(byId('hmin').value) || 18, maxAge: Number(byId('hmax').value) || 99,
-      active });
-    if (r && r.ok) { ui('success'); toast(L('ph.saved')); }
-    else toast(L('ph.err_' + ((r && r.error) || 'x')));
-  });
+  draw(r.messages || []);
+}
+
+/// Unmatching, confirmed: it lands on both phones and neither of them can put it back.
+function hushUnmatch(match) {
+  sheet(match.name || '?',
+    '<div class="groupfoot">' + esc(L('ph.hush_unmatch_hint')) + '</div>' +
+    UI.button(L('ph.hush_unmatch'), 'hunmatch', 'neg'),
+    () => {
+      const epoch2 = sheetEpoch;
+      byId('hunmatch').addEventListener('click', async () => {
+        if (!closeSheet(false, epoch2)) return;
+        const res = await post('social', { op: 'hushUnmatch', ref: match.ref });
+        if (res && res.ok) toast(L('ph.hush_unmatched'));
+        hushMatches();
+      });
+    });
 }
 
 
@@ -11903,7 +12727,31 @@ function ui(name) {
 //
 // A call that fails now sounds like one. The tone comes first and the message second, because
 // the tone is what a player reacts to.
+/// A contact that opens an app instead of dialling.
+///
+/// 911 is the reason this exists. A player who taps call on it wants the emergency app - the one
+/// that takes an alert with their position - and not a ring into a number nobody picks up. The
+/// contact carries the app id from `Config.RequiredContacts`, so a server can do the same for a
+/// taxi rank or a mechanic without any of this knowing about them.
+///
+/// Returns true when it handled the tap, so every call site can keep using `placeCall` and this
+/// stays one check rather than a branch in nine places.
+function contactOpensApp(number) {
+  const c = (state.contacts || []).find((x) => String(x.number) === String(number) && x.app);
+  if (!c) return false;
+  const a = appById(c.app);
+  if (!a) {
+    // The app is named but not installed or not enabled here. Said out loud, because silently
+    // dialling 911 into nothing is the failure this whole function exists to avoid.
+    toast(L('ph.contact_app_missing'));
+    return true;
+  }
+  enterApp(a);
+  return true;
+}
+
 async function placeCall(number, extra) {
+  if (contactOpensApp(number)) return true;
   const payload = extra ? Object.assign({ number }, extra) : { number };
   const r = await post('call', payload);
   // The server answers `{ ok = true, id }`, or `{ error }`, or a bare `false` when it cannot
@@ -13128,8 +13976,7 @@ document.addEventListener('keydown', (e) => {
 
   // And never while typing. Alt in a text field is somebody reaching for a character or a
   // shortcut, not for the camera, and free look drops the keyboard mid-word.
-  const el = document.activeElement;
-  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+  if (isTyping()) return;
 
   e.preventDefault();
   post('freelook', { on: true });
@@ -13192,8 +14039,27 @@ window.addEventListener('message', (e) => {
   }).observe(app, { attributes: true, attributeFilter: ['class'] });
 });
 
+/// Is the player writing something right now?
+///
+/// On a NUI page every `document` listener is global - there is no focus scoping unless the
+/// listener does it itself - so a handler that acts on a key a text field also uses will fire in
+/// the middle of a sentence. This is the one check that stops that, and it is deliberately here
+/// rather than repeated: a new shortcut added below gets it for free by asking.
+function isTyping() {
+  const el = document.activeElement;
+  if (!el) return false;
+  return el.matches && el.matches('input, textarea, [contenteditable="true"]');
+}
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    // Escape while typing gets you out of the FIELD, not out of the phone.
+    //
+    // It used to close the app, which threw away whatever had been written - and Escape is what
+    // everybody presses to dismiss an autocomplete or to stop editing. Pressing it a second time
+    // closes the app, because by then nothing has focus.
+    if (isTyping()) { document.activeElement.blur(); return; }
+
     const hadTransient = anyOverlayOpen() || byId('auth').classList.contains('on') ||
       byId('folderview').classList.contains('on') ||
       byId('emojipanel').classList.contains('on') || editing || !!arr;
@@ -13204,6 +14070,11 @@ document.addEventListener('keydown', (e) => {
     post('close');
     return;
   }
+
+  // Left and right flip the home screen - and a text field uses them to move the caret. Without
+  // this guard, moving the cursor back a character in a message also flipped the page behind the
+  // app, which reads as the phone doing something random while you type.
+  if (isTyping()) return;
   if (e.key === 'ArrowLeft') flipPage(-1);
   if (e.key === 'ArrowRight') flipPage(1);
 });
@@ -13483,6 +14354,29 @@ window.addEventListener('message', (e) => {
       ui(kind === 'done' || kind === 'paid' ? 'success' : 'received');
     }
     if (openApp && openApp.id === 'taxi') RENDER.taxi();
+  } else if (d.action === 'msgGone') {
+    // The other side unsent it. Reopening the thread is how the screen agrees with the server,
+    // and it only happens when this conversation is the one on screen.
+    if (openApp && openApp.id === 'messages' && thread) openThread(thread);
+  } else if (d.action === 'lotteryLive') {
+    // The draw moved. client/lottery.lua mirrors both providers into one shape, so this handler
+    // does not care which resource is running the draw.
+    lotteryLive = d.live || null;
+    if (openApp && openApp.id === 'lottery') RENDER.lottery();
+  } else if (d.action === 'lotteryMine') {
+    // What MY ticket did, sent only to its holder. The public result is anonymous.
+    lotteryMine = d.result || null;
+    const reward = Number(lotteryMine && lotteryMine.reward) || 0;
+    archivePeek('notif', {
+      app: 'lottery', icon: 'lottery',
+      title: L(reward > 0 ? 'ph.lottery_you_won' : 'ph.lottery_you_lost'),
+      body: reward > 0
+        ? L('ph.lottery_won').replace('{n}', money(reward))
+        : L('ph.lottery_matches_short')
+            .replace('{n}', String(Number(lotteryMine && lotteryMine.matches) || 0)),
+    });
+    ui(reward > 0 ? 'success' : 'received');
+    if (openApp && openApp.id === 'lottery') RENDER.lottery();
   } else if (d.action === 'zuberStatus') {
     // An order moved along in the kitchen. The card and the sound are the client's; this keeps
     // the app honest if it happens to be open on the tracker.

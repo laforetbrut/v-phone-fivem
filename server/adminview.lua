@@ -38,15 +38,54 @@ local function viewSeconds()
     return math.max(30, math.floor(tonumber(ADMIN.viewSeconds) or 600))
 end
 
+--- Staff whose session ran out and who have not been told yet.
+---
+--- **An expiry that nobody notices is the worst bug this file can have.** The session simply
+--- stopped answering: `AdminViewTarget` returned nil, `Core.GetPlayer` fell back to the staff
+--- member, the banner stayed on screen and the page went on showing the held character's data -
+--- so the next thing staff did landed on their OWN character. That is exactly how a player was
+--- signed up to Hush and the admin got the profile.
+---
+--- Now an expiry is an event: the phone is told, and until it is, every call FAILS rather than
+--- being performed by the wrong person.
+local Expired = {}
+
 --- The citizen id a staff member is currently holding, or nil.
-function AdminViewTarget(src)
-    local v = Viewing[tonumber(src) or 0]
+---
+--- `touch` marks this as real use. A session that is being used does not run out underneath the
+--- person using it - the clock is there to stop a forgotten session lasting all night, not to
+--- interrupt somebody halfway through typing a profile.
+function AdminViewTarget(src, touch)
+    src = tonumber(src) or 0
+    local v = Viewing[src]
     if not v then return nil end
+
     if os.time() >= v.expires then
-        Viewing[tonumber(src)] = nil
+        Viewing[src] = nil
+        -- Flagged only for a real USE. An informational read - the staff menu asking what is held,
+        -- the banner checking itself - must not consume the refusal, or the next genuine call from
+        -- that staff member is refused for nothing.
+        if touch then Expired[src] = true end
+        V.Log(('admin view: %s ran out while holding %s')
+            :format(GetPlayerName(src) or '?', v.name or v.cid))
+        -- Tell the phone, so the banner goes and the page stops drawing somebody else's data.
+        TriggerClientEvent('v-phone:client:adminView', src, false)
         return nil
     end
+
+    if touch then v.expires = os.time() + viewSeconds() end
     return v.cid, v.name
+end
+
+--- Did this staff member's session END without them being told?
+---
+--- Read by the choke point below. It stays true for one call - long enough for that call to
+--- refuse - and is then cleared, so the staff member's own phone works again straight after.
+local function justExpired(src)
+    src = tonumber(src) or 0
+    if not Expired[src] then return false end
+    Expired[src] = nil
+    return true
 end
 
 --- Close a session, and tell the phone so it stops showing the banner.
@@ -107,7 +146,9 @@ end
 Core.GetPlayerReal = Core.GetPlayer
 
 Core.GetPlayer = function(src)
-    local cid = AdminViewTarget(src)
+    -- `touch` is true here because this IS the use: every read and every write in the phone goes
+    -- through this function, so asking it is what "the session is being used" means.
+    local cid = AdminViewTarget(src, true)
     if cid then
         local held = Core.GetPlayerByCitizenId(cid)
         -- A target who dropped ends the session rather than silently handing back the staff
@@ -115,7 +156,15 @@ Core.GetPlayer = function(src)
         -- account while believing you are on somebody else's.
         if held then return held end
         AdminViewClose(src)
+        return nil
     end
+
+    -- The session ended a moment ago and the page has not caught up. Answering with the staff
+    -- member's own character here is how a write lands on the wrong person, so this call gets
+    -- nothing: the callback resolves an error, the phone says the session is over, and nobody's
+    -- data is touched. One call, then their own phone is theirs again.
+    if justExpired(src) then return nil end
+
     return Core.GetPlayerReal(src)
 end
 
@@ -138,7 +187,7 @@ end
 --- Returns `src` unchanged when no session is open, which is every ordinary call.
 function PhoneActingSource(src)
     src = tonumber(src)
-    local cid = AdminViewTarget(src)
+    local cid = AdminViewTarget(src, true)
     if not cid then return src end
     local held = Core.GetPlayerByCitizenId(cid)
     if held and held.source then return tonumber(held.source) or src end

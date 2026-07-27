@@ -251,6 +251,16 @@ end)
 --- By CHARACTER, not by phone number. Only characters currently online are offered: paying
 --- somebody who is not connected means a framework write behind their back, and every
 --- framework does that differently.
+---
+--- **The people who are not employees have to be STANDING THERE.** Every connected character
+--- used to appear, which made the app a server-wide roster: forty names a boss has never met,
+--- most of them nowhere near the business, and the one they actually wanted buried among them.
+--- Paying somebody is something you do while looking at them, so the list is what is within
+--- `Config.BankPro.payRadius` of the phone - and it is their PHONE's name, the one that shows
+--- when they ring you, not a citizen id.
+---
+--- Employees are NOT filtered by distance: payday is not a thing a boss should have to walk
+--- round the map to do.
 V.Callback('v-phone:bankpro:staff', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -259,6 +269,14 @@ V.Callback('v-phone:bankpro:staff', function(src, resolve)
     if CFG.employees == false then resolve({ ok = true, staff = {} }) return end
 
     local job = jobOf(p)
+
+    -- Where the phone is, which under an admin hold is the held character and not the staff
+    -- member: a nearby list drawn round the wrong body is a list of the wrong people.
+    local hereSrc = PhoneActingSource and PhoneActingSource(src) or src
+    local here = GetEntityCoords(GetPlayerPed(hereSrc))
+    local radius = num(CFG.payRadius, 15.0)
+    if radius <= 0 then radius = 15.0 end
+
     local out, others = {}, {}
     for _, raw in ipairs(GetPlayers()) do
         local other = tonumber(raw)
@@ -271,13 +289,14 @@ V.Callback('v-phone:bankpro:staff', function(src, resolve)
                     name = op.name,
                     grade = ojob.gradeLabel ~= '' and ojob.gradeLabel or tostring(ojob.grade or 0),
                 }
-            elseif CFG.payAnyone ~= false then
-                -- Anybody else connected. A business pays contractors, suppliers and people
-                -- who did it a favour, and none of those are on its payroll - so restricting
-                -- payment to employees was the app deciding how a business is run.
+            elseif CFG.payAnyone ~= false and #(here - GetEntityCoords(GetPlayerPed(other))) <= radius then
+                -- Anybody else standing here. A business pays contractors, suppliers and
+                -- people who did it a favour, and none of those are on its payroll - so
+                -- restricting payment to employees was the app deciding how a business is run.
                 --
-                -- A LIST rather than a text box, and only characters who are online: an app
-                -- that accepts a typed citizen id is an app that pays whoever you can guess.
+                -- A LIST rather than a text box, near rather than everywhere, and named the
+                -- way their phone names them: an app that accepts a typed citizen id is an
+                -- app that pays whoever you can guess.
                 others[#others + 1] = {
                     citizenid = op.citizenid,
                     name = op.name,
@@ -286,7 +305,8 @@ V.Callback('v-phone:bankpro:staff', function(src, resolve)
             end
         end
     end
-    resolve({ ok = true, staff = out, others = others, anyone = CFG.payAnyone ~= false })
+    resolve({ ok = true, staff = out, others = others, anyone = CFG.payAnyone ~= false,
+              radius = math.floor(radius) })
 end)
 
 -- ══════════════════════════════════════════════════════════════

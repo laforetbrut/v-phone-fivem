@@ -684,7 +684,7 @@ CreateThread(function()
         for _, id in ipairs(GetPlayers()) do
             local src = tonumber(id)
             local balances = src and Bridge.Banking and Bridge.Banking.Balances
-                and Bridge.Banking.Balances(src)
+                and Bridge.Banking.Balances(PhoneActingSource and PhoneActingSource(src) or src)
             if type(balances) == 'table' then
                 local now = math.floor(num(balances.bank, 0))
                 local before = lastSeen[src]

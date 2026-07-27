@@ -774,7 +774,10 @@ local function hushDistance(src, targetCid)
     local target = Core.GetPlayerByCitizenId(targetCid)
     if not target or not target.source then return nil end
     local ok, metres = pcall(function()
-        local a = GetEntityCoords(GetPlayerPed(src))
+        -- Hush measures the distance from the phone's OWNER, so a staff member holding one
+        -- does not put the deck around themselves.
+        local a = GetEntityCoords(GetPlayerPed(PhoneActingSource
+            and PhoneActingSource(src) or src))
         local b = GetEntityCoords(GetPlayerPed(target.source))
         return #(a - b)
     end)
@@ -1032,11 +1035,16 @@ V.Callback('v-phone:soc:hushMatches', function(src, resolve)
         ORDER BY mine.at DESC LIMIT 50
     ]], { p.citizenid }) or {}
 
-    local phone = GetResourceState('v-phone') == 'started' and V.Use('v-phone') or nil
     local out = {}
     for _, r in ipairs(rows) do
-        -- A match already exchanged numbers, so the number is theirs to have. Nothing
-        -- else about the citizen behind it travels.
+        -- **No phone number.** A match is two people who liked a first name and a photograph;
+        -- handing over the number behind it makes a dating app a directory, and the number is
+        -- the one thing a player cannot take back once somebody has it. They talk inside Hush,
+        -- and they give out their number themselves if they decide to.
+        --
+        -- `ref` is the citizen id, and it is opaque: the client hands it straight back and it is
+        -- never displayed. Everything shown is the first name, an age from the date of birth,
+        -- and what they wrote about themselves.
         out[#out + 1] = {
             ref = r.cid,
             name = r.firstname or '?',
@@ -1044,10 +1052,149 @@ V.Callback('v-phone:soc:hushMatches', function(src, resolve)
             bio = r.bio or '',
             photo = r.photo or '',
             at = r.at,
-            number = phone and phone.GetNumber(r.cid) or nil,
+            unread = math.floor(num(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_social_dm
+                WHERE app = 'hush' AND from_cid = ? AND to_cid = ? AND seen = 0]],
+                { r.cid, p.citizenid }), 0)),
         }
     end
     resolve({ ok = true, matches = out })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Hush: its own conversations
+-- ══════════════════════════════════════════════════════════════
+-- **Matches talk inside Hush, not by text message.**
+--
+-- Opening a match used to hand over their phone NUMBER and push the player into the Messages app.
+-- Two things wrong with that. A number cannot be taken back: one swipe and a stranger has the way
+-- to reach you everywhere, for ever, whatever you decide about them ten minutes later. And a
+-- conversation that leaves the app leaves its context - unmatching stops nothing, because the
+-- thread is in Messages now.
+--
+-- So Hush carries its own thread. It reuses `vphone_social_dm` - the table Bleeter and Snapmatic
+-- already use - under `app = 'hush'`, because a second messages table would be a second set of
+-- bugs. What differs is ADDRESSING: the other two address by handle, and a Hush profile has no
+-- handle, so these two address by the match itself and check the match on every call.
+--
+-- Unmatching deletes the like rows, so `hushMatched` goes false and the thread becomes
+-- unreachable from both sides at once. That is the point of talking here rather than by SMS.
+
+--- Are these two matched? Both directions, both liked. The gate on every call below.
+local function hushMatched(a, b)
+    if a == '' or b == '' or a == b then return false end
+    return MySQL.scalar.await([[SELECT 1 FROM vphone_hush_likes mine
+        JOIN vphone_hush_likes theirs
+          ON theirs.from_cid = mine.to_cid AND theirs.to_cid = mine.from_cid AND theirs.liked = 1
+        WHERE mine.from_cid = ? AND mine.to_cid = ? AND mine.liked = 1 LIMIT 1]], { a, b }) ~= nil
+end
+
+--- One conversation. Marks what arrived as seen, because opening it is reading it.
+--- Delete one direct message - Bleeter, Snapmatic or Hush.
+---
+--- **The same two meanings behind one word as SMS**, because a phone that deletes differently
+--- depending which app you are in is a phone nobody trusts:
+---
+---   * a message you SENT is unsent, so the row goes and it leaves both phones;
+---   * a message you RECEIVED comes off YOUR copy only, because deleting somebody else's record
+---     of what they said is not yours to do.
+---
+--- One handler for all three apps: they share `vphone_social_dm`, so a second implementation
+--- would only be a second set of bugs. The `app` is read from the row, never from the page -
+--- passing it in would let a Bleeter call reach into a Hush thread.
+V.Callback('v-phone:soc:dmDelete', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    local id = math.floor(num(data and data.id, 0))
+    if id <= 0 then resolve({ error = 'args' }) return end
+
+    local row = MySQL.single.await(
+        'SELECT app, from_cid, to_cid FROM vphone_social_dm WHERE id = ?', { id })
+    if not row then resolve({ error = 'gone' }) return end
+    if row.from_cid ~= p.citizenid and row.to_cid ~= p.citizenid then
+        resolve({ error = 'notyours' })
+        return
+    end
+
+    if row.from_cid == p.citizenid then
+        MySQL.update.await('DELETE FROM vphone_social_dm WHERE id = ?', { id })
+        MySQL.update.await('DELETE FROM vphone_dm_hidden WHERE message_id = ?', { id })
+        resolve({ ok = true, both = true })
+        return
+    end
+
+    MySQL.query.await(
+        'INSERT IGNORE INTO vphone_dm_hidden (message_id, citizenid) VALUES (?,?)',
+        { id, p.citizenid })
+    resolve({ ok = true, both = false })
+end)
+
+V.Callback('v-phone:soc:hushChat', function(src, resolve, data)
+    if not hushOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    local other = tostring((data and data.ref) or '')
+    if not hushMatched(p.citizenid, other) then resolve({ error = 'nomatch' }) return end
+
+    local rows = MySQL.query.await([[SELECT id, from_cid, body, image, at
+        FROM vphone_social_dm
+        WHERE app = 'hush' AND ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
+          AND id NOT IN (SELECT message_id FROM vphone_dm_hidden WHERE citizenid = ?)
+        ORDER BY id ASC LIMIT 200]],
+        { p.citizenid, other, other, p.citizenid, p.citizenid }) or {}
+
+    MySQL.update.await([[UPDATE vphone_social_dm SET seen = 1
+        WHERE app = 'hush' AND from_cid = ? AND to_cid = ?]], { other, p.citizenid })
+
+    local out = {}
+    for i, r in ipairs(rows) do
+        -- `mine` rather than a citizen id: the page needs to know which side a line is on and
+        -- nothing else. No name, no number, no citizen id - the row id travels only because
+        -- deleting a line has to be able to name which one.
+        out[i] = { id = r.id, mine = r.from_cid == p.citizenid,
+                   body = r.body or '', image = r.image or '', at = r.at }
+    end
+
+    -- Who they are, from the profile, so the thread has a face at the top of it.
+    local who = MySQL.single.await([[SELECT c.firstname, c.dob, h.photo
+        FROM vphone_hush_profiles h LEFT JOIN vphone_characters c ON c.citizenid = h.citizenid
+        WHERE h.citizenid = ?]], { other })
+
+    resolve({ ok = true, messages = out, name = who and who.firstname or '?',
+              age = who and ageFrom(who.dob) or nil, photo = who and who.photo or '' })
+end)
+
+--- Say something to a match.
+V.Callback('v-phone:soc:hushSay', function(src, resolve, data)
+    if not hushOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    local other = tostring((data and data.ref) or '')
+    if not hushMatched(p.citizenid, other) then resolve({ error = 'nomatch' }) return end
+
+    local body = tostring((data and data.body) or ''):sub(1, 500)
+    local image = tostring((data and data.image) or ''):sub(1, 300)
+    if image ~= '' and not imageAllowed(image) then resolve({ error = 'badhost' }) return end
+    if body:gsub('%s', '') == '' and image == '' then resolve({ error = 'empty' }) return end
+
+    MySQL.insert.await(
+        'INSERT INTO vphone_social_dm (app, from_cid, to_cid, body, image) VALUES (?,?,?,?,?)',
+        { 'hush', p.citizenid, other, body, image })
+
+    -- The notification carries the FIRST NAME, which is all Hush ever shows of anybody. Not a
+    -- handle - there is none - and certainly not a number.
+    local target = Core.GetPlayerByCitizenId and Core.GetPlayerByCitizenId(other)
+    if target and target.source and GetResourceState('v-phone') == 'started' then
+        local me = MySQL.single.await(
+            'SELECT firstname FROM vphone_characters WHERE citizenid = ?', { p.citizenid })
+        pcall(function()
+            exports['v-phone']:Notify(target.source, 'hush', me and me.firstname or '?',
+                body ~= '' and body or (Locales.fr or {})['soc.dm_photo'] or 'Photo')
+        end)
+    end
+    resolve({ ok = true })
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -1687,8 +1834,9 @@ V.Callback('v-phone:soc:dmThread', function(src, resolve, data)
     local rows = MySQL.query.await([[
         SELECT id, body, image, at, (from_cid = ?) AS mine FROM vphone_social_dm
         WHERE app = ? AND ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
+          AND id NOT IN (SELECT message_id FROM vphone_dm_hidden WHERE citizenid = ?)
         ORDER BY id ASC LIMIT 200
-    ]], { p.citizenid, app, p.citizenid, cid, cid, p.citizenid }) or {}
+    ]], { p.citizenid, app, p.citizenid, cid, cid, p.citizenid, p.citizenid }) or {}
     for _, r in ipairs(rows) do r.mine = truthy(r.mine) end
 
     -- Opening the thread is reading it.
@@ -2029,6 +2177,16 @@ function SocialBoot(core)
         `story_id`  INT UNSIGNED NOT NULL,
         `citizenid` VARCHAR(16) NOT NULL,
         PRIMARY KEY (`story_id`, `citizenid`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- One row per direct message a reader has taken off their own copy. A separate table
+    -- rather than a column, for the same reason SMS uses one: a message has two readers and
+    -- only one row, so "deleted" is not a property of the message.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_dm_hidden` (
+        `message_id` INT UNSIGNED NOT NULL,
+        `citizenid`  VARCHAR(16) NOT NULL,
+        PRIMARY KEY (`message_id`, `citizenid`),
+        KEY `citizenid` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_dm` (

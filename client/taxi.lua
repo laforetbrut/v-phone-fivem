@@ -267,6 +267,12 @@ RegisterNetEvent('doc-taxijob:client:CallAccepted', function(data)
     docFare.src = tonumber(data.clientSrc)
     docFare.number = nil
 
+    -- The pairing, so the passenger's phone can settle the fare with the right driver. doc-taxijob
+    -- tells only the DRIVER who their passenger is, so this is the one moment either side knows.
+    if docFare.src then
+        V.Request('v-phone:taxi:docpair', function() end, { passenger = docFare.src })
+    end
+
     -- The passenger's number, so the driver can ring them. Resolved on the SERVER from the
     -- player id doc-taxijob just handed over, because a client has no business being told
     -- numbers it did not already have - and refused there unless this really is a taxi driver.
@@ -302,6 +308,11 @@ RegisterNetEvent('phone:sendNotificationOld', function(data)
 end)
 
 --- Where the page reads the mirrored state from, since a render can happen long after the event.
+--- Settling a doc-taxijob fare through this resource's own money path.
+RegisterNUICallback('taxiDocPay', function(data, cb)
+    V.Request('v-phone:taxi:docpay', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
 RegisterNUICallback('taxiDocState', function(_, cb)
     cb({ ok = true, state = docRide.state, driver = docRide.driver, fare = docFare })
 end)

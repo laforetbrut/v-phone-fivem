@@ -417,6 +417,12 @@ local ALWAYS_REQUIRED = {
 }
 
 local function appsFor(src, p)
+    -- Read up front: both loops below need to know what this character has already paid for, and
+    -- the catalogue loop is the first of the two.
+    local prefs = prefsOf(p)
+    local ownedApps = {}
+    for _, id in ipairs(prefs.purchased or {}) do ownedApps[id] = true end
+
     local out = {}
     for id, a in pairs(Apps) do
         local w = WorldApps[id]
@@ -442,6 +448,7 @@ local function appsFor(src, p)
         end
 
         if ok then
+            local price = math.max(0, math.floor(num(a.price, 0)))
             out[#out + 1] = {
                 id = id, label = a.label, icon = a.icon, page = a.page, dock = a.dock or nil,
                 slot = (w and num(w.slot, a.slot)) or a.slot,
@@ -453,6 +460,14 @@ local function appsFor(src, p)
                 desc = a.desc, owner = a.owner, version = a.version,
                 developer = a.developer, accent = a.accent,
                 permissions = a.permissions, features = a.features, keywords = a.keywords,
+                -- **The price, which used to stop here.** An operator's own app in
+                -- `Config.StoreApps` sent one and a SHIPPED app did not, so FruitCharge at $200
+                -- and the Lottery at $250 both showed a plain "Get" button - a player found out
+                -- they had paid only once the money was gone. The store cannot ask for a price
+                -- it was never told.
+                price = price > 0 and price or nil,
+                account = (a.account == 'cash') and 'cash' or 'bank',
+                purchased = (price == 0) or ownedApps[id] == true,
             }
         end
     end
@@ -460,9 +475,6 @@ local function appsFor(src, p)
     -- Added straight from the config, so a server can list an app in FruitStore without
     -- writing a resource. They are always `optional`: nothing an operator invents should
     -- appear on a player's home screen uninvited.
-    local prefs = prefsOf(p)
-    local ownedApps = {}
-    for _, id in ipairs(prefs.purchased or {}) do ownedApps[id] = true end
 
     for _, a in ipairs(Config.StoreApps or {}) do
         local id = tostring(a.id or '')
@@ -796,6 +808,11 @@ local function contactsOf(p)
                     address = tostring(raw.address or ''):sub(1, 120),
                     birthday = tostring(raw.birthday or ''):sub(1, 20),
                     note = tostring(raw.note or ''):sub(1, 300),
+                    -- The app this contact opens instead of dialling, if any. Whitelisted to
+                    -- an id shape rather than passed through: this value ends up choosing which
+                    -- app the phone opens, and an operator's typo should fail as "no such app"
+                    -- rather than as something stranger.
+                    app = tostring(raw.app or ''):match('^[%w_-]+$') or nil,
                     system = true,
                     required = true,
                 }
@@ -926,13 +943,64 @@ local function conversations(cid)
     return out
 end
 
+--- Delete one message.
+---
+--- **This did not exist.** A long press offered nothing and there was no server side at all, so
+--- deleting a message was a feature the phone appeared to have and did not.
+---
+--- Two actions behind one word, and the difference is worth keeping:
+---
+---   * A message you SENT is unsent. The row goes, so it leaves both phones - which is what
+---     deleting something you wrote should mean, and the sheet says so before it happens.
+---   * A message you RECEIVED is removed from YOUR copy only. It stays on the sender's phone,
+---     because deleting somebody else's record of what they said is not yours to do.
+V.Callback('v-phone:messages:delete', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    local id = math.floor(num(data and data.id, 0))
+    if id <= 0 then resolve({ error = 'args' }) return end
+
+    -- Read first: deleting has to know whose message it is before it can decide what deleting
+    -- means, and it must refuse one this character was never part of.
+    local row = MySQL.single.await(
+        'SELECT from_cid, to_cid FROM vphone_messages WHERE id = ?', { id })
+    if not row then resolve({ error = 'gone' }) return end
+    if row.from_cid ~= p.citizenid and row.to_cid ~= p.citizenid then
+        resolve({ error = 'notyours' })
+        return
+    end
+
+    if row.from_cid == p.citizenid then
+        MySQL.update.await('DELETE FROM vphone_messages WHERE id = ?', { id })
+        MySQL.update.await('DELETE FROM vphone_message_hidden WHERE message_id = ?', { id })
+        -- The other phone is told, so an open thread loses the bubble now rather than the next
+        -- time that conversation happens to be opened.
+        local other = Core.GetPlayerByCitizenId and Core.GetPlayerByCitizenId(row.to_cid)
+        if other and other.source then
+            TriggerClientEvent('v-phone:client:msgGone', other.source, { id = id })
+        end
+        resolve({ ok = true, both = true })
+        return
+    end
+
+    MySQL.query.await(
+        'INSERT IGNORE INTO vphone_message_hidden (message_id, citizenid) VALUES (?,?)',
+        { id, p.citizenid })
+    resolve({ ok = true, both = false })
+end)
+
 local function conversation(cid, otherCid, limit)
     local rows = MySQL.query.await([[
         SELECT id, from_cid, body, kind, attachment, at, seen FROM vphone_messages
         WHERE ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
           AND group_id IS NULL
+          -- A message this reader deleted from their own copy. It is still on the sender's
+          -- phone, which is the point: removing somebody else's record of what they said is
+          -- not something a recipient gets to do.
+          AND id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)
         ORDER BY at DESC, id DESC LIMIT ?
-    ]], { cid, otherCid, otherCid, cid, limit }) or {}
+    ]], { cid, otherCid, otherCid, cid, cid, limit }) or {}
 
     -- Read back in ascending order: the query takes the newest N, the reader wants them
     -- oldest first.
@@ -3229,21 +3297,41 @@ V.Callback('v-phone:callsDelete', function(src, resolve, data)
     resolve({ ok = true, removed = tonumber(n) or 0 })
 end)
 
+--- Delete a whole conversation, from this phone.
+---
+--- **It deleted nothing.** The page holds a conversation by the other party's NUMBER - that is
+--- what opens the thread - and sent that, while this compared it against `from_cid`, a citizen id.
+--- Nothing ever matched, nought rows went, and it answered `ok` - so the list refreshed unchanged
+--- and the conversation was still there. A delete that reports success without deleting is worse
+--- than one that fails.
+---
+--- The number is resolved here. A citizen id is still accepted, because the group threads and the
+--- staff tools address that way.
+---
+--- **Hidden, not destroyed.** The same rule as deleting one message: your copy goes, theirs stays.
+--- Wiping both sides would let anybody erase what they said from somebody else's phone, which is a
+--- thing roleplay servers have to be able to look back at.
 V.Callback('v-phone:threadDelete', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
+
     local other = tostring((data and data.other) or '')
     if other == '' then resolve({ error = 'args' }) return end
 
-    -- Messages this character RECEIVED from the other party go. Messages they SENT are
-    -- left, because deleting them here would not delete the copy already delivered, and a
-    -- thread that empties on one side only is more confusing than one that does not.
-    local n = MySQL.update.await(
-        'DELETE FROM vphone_messages WHERE to_cid = ? AND from_cid = ? AND group_id IS NULL',
-        { p.citizenid, other }) or 0
-    n = n + (MySQL.update.await(
-        'DELETE FROM vphone_messages WHERE from_cid = ? AND to_cid = ? AND group_id IS NULL',
-        { p.citizenid, other }) or 0)
+    -- A number, or already a citizen id.
+    local cid = Bridge.Numbers and Bridge.Numbers.Owner and Bridge.Numbers.Owner(other) or nil
+    cid = cid or other
+    if cid == p.citizenid then resolve({ error = 'args' }) return end
+
+    local n = MySQL.update.await([[
+        INSERT IGNORE INTO vphone_message_hidden (message_id, citizenid)
+        SELECT id, ? FROM vphone_messages
+        WHERE ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
+          AND group_id IS NULL]],
+        { p.citizenid, p.citizenid, cid, cid, p.citizenid }) or 0
+
+    Core.Log('messages', ('%s cleared their conversation with %s (%d message(s))')
+        :format(p.citizenid, cid, n), nil, p.citizenid)
     resolve({ ok = true, removed = n })
 end)
 
@@ -3313,10 +3401,6 @@ function mailPick(cid, wanted)
         if a == wanted then return a, accounts end
     end
     return accounts[1], accounts
-end
-
-local function mailAddressOf(cid)
-    return (mailAccountsOf(cid))[1]
 end
 
 --- The domains this character has bought.
@@ -4430,6 +4514,15 @@ CreateThread(function()
         PRIMARY KEY (`id`),
         KEY `from_cid` (`from_cid`),
         KEY `to_cid` (`to_cid`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
+    -- One row per message a reader hid from their own copy. A separate table rather than a
+    -- column, because a message has two readers and only one row.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_message_hidden` (
+        `message_id` INT UNSIGNED NOT NULL,
+        `citizenid`  VARCHAR(16) NOT NULL,
+        PRIMARY KEY (`message_id`, `citizenid`),
+        KEY `citizenid` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_app_data` (

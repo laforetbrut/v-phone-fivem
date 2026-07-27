@@ -65,7 +65,8 @@ local function reachableVehicle(src, data)
     if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return nil, 'novehicle' end
     if GetEntityType(vehicle) ~= 2 then return nil, 'novehicle' end
 
-    local ped = GetPlayerPed(src)
+    -- Whose car, and how far from it: the phone's owner.
+    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
     local here = ped and ped ~= 0 and GetEntityCoords(ped)
     local there = GetEntityCoords(vehicle)
     if not here or not there then return nil, 'novehicle' end
@@ -115,7 +116,10 @@ V.Callback('v-phone:vehicle:control', function(src, resolve, data)
     -- A car with somebody at the wheel and the engine running is a car in use.
     if RC.refuseWhileDriven ~= false then
         local driver = GetPedInVehicleSeat(vehicle, -1)
-        if driver and driver ~= 0 and driver ~= GetPlayerPed(src) then
+        -- "Somebody else is driving it" - and the owner of the phone is the somebody who is
+        -- allowed to be. Same source as the distance check above, or a staff member holding a
+        -- phone could not unlock a car its owner is sitting in.
+        if driver and driver ~= 0 and driver ~= ped then
             resolve({ error = 'inuse' }) return
         end
     end
