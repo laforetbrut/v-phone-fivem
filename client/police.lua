@@ -27,6 +27,29 @@ RegisterNUICallback('forensicClose', function(_, cb)
     cb('ok')
 end)
 
+--- Does the terminal want the cursor? Read by the watchdog in bridge/client/safety.lua.
+function ForensicFocusWanted() return terminalOpen end
+
+--- Escape, from Lua.
+---
+--- Closing was the PAGE's job: it hears Escape, calls `forensicClose`, and this releases the
+--- cursor. That works right up until the page cannot - a script error inside it, a render that
+--- threw - and then the terminal is a full-screen panel with a cursor and no way out. The same
+--- key is watched here, where nothing the page does can stop it.
+CreateThread(function()
+    while true do
+        Wait(terminalOpen and 0 or 500)
+        if terminalOpen then
+            -- 322 is ESC, 177 is BACKSPACE. Both, because the page offers both.
+            if IsControlJustReleased(0, 322) or IsControlJustReleased(0, 177) then
+                terminalOpen = false
+                SetNuiFocus(false, false)
+                SendNUIMessage({ action = 'forensic:close' })
+            end
+        end
+    end
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- NUI -> server relays
 -- ══════════════════════════════════════════════════════════════

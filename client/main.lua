@@ -716,6 +716,30 @@ end
 RegisterCommand('refreshphone', forceReset, false)
 RegisterCommand('refresh-phone', forceReset, false)
 
+--- The same reset, reachable from the watchdog and from a key.
+---
+--- A command is only a way out for a player who knows it exists and can still open the chat.
+--- Neither is a safe assumption for somebody who is stuck, which is why there is also a key
+--- binding and a thread that does this without being asked. See client/watchdog.lua.
+PhoneForceReset = forceReset
+
+--- Does the phone believe it should own the cursor right now?
+---
+--- Read by the watchdog. The two camera states are deliberately excluded: both hand the
+--- cursor BACK to the game on purpose so the mouse can frame a shot, and a watchdog that did
+--- not know that would treat the camera as a stuck phone every time.
+function PhoneFocusWanted()
+    if camActive or freeLook then return false end
+    return isOpen or isOpening
+end
+
+--- An unstick key, unbound by default.
+---
+--- No default: a phone that claims a second key on every server is a phone that collides with
+--- something. It appears in Settings -> Key Bindings -> FiveM for a player who wants one, and
+--- the command works for everybody else.
+RegisterKeyMapping('refreshphone', 'iFruit - unstick the phone', 'keyboard', '')
+
 --- `/phonediag` - why an app is not working, printed into F8.
 ---
 --- An app that cannot read its data says one short sentence, which is right for a player and
@@ -1327,7 +1351,20 @@ end)
 -- The handset is HIDDEN while this runs, so nothing of the page can bleed into the picture.
 -- Enter takes the photograph, Backspace leaves, arrow up flips to the selfie - the same keys
 -- qb-phone binds, so anybody who has used a QBCore server already knows them.
-local camActive = false
+--
+-- **`camActive` is NOT redeclared here.** It was, and that one line is why a player could end
+-- up in camera mode with no cursor and no way out but reconnecting:
+--
+--   * the flag lives at the top of this file, deliberately, because the input guard and the
+--     camera's own stuck-detector both sit ABOVE this block and read it;
+--   * a second `local camActive` here shadowed it for everything below, so the camera wrote
+--     one variable and the two guards read another that was always false;
+--   * the stuck-detector - "camera flagged on with nothing running it, end it from here" -
+--     therefore never fired once, and `camModeOff()` set a flag the camera loop was not
+--     looking at, so closing the phone could not stop the camera thread either.
+--
+-- Two guards, both written for exactly the failure players reported, both disabled by a
+-- shadow. There is one `camActive` now.
 
 -- The selfie toggle has no name in FiveM's native list, so there is no global for it and it
 -- can only be reached by hash - the same wrapper qb-phone declares. pcall'd inside, because the

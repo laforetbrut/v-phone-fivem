@@ -1115,6 +1115,27 @@ Config.Clock = {
     timezone = 'Europe/Paris',
 }
 
+-- ══════════════════════════════════════════════════════════════
+--  THE NETS UNDER THE PHONE
+-- ══════════════════════════════════════════════════════════════
+-- Nothing here adds a feature. Every switch is a way of not being stuck with a cursor you
+-- cannot get rid of, which is the one bug a phone must not have: a player who cannot close it
+-- cannot play, and their only remaining move is to reconnect.
+--
+-- Leave these on. They are here as switches only because a server that finds one of them
+-- fighting its own scripts should be able to turn that one off rather than the phone.
+-- See bridge/client/safety.lua.
+Config.Watchdog = {
+    -- Once a second: if the cursor is held and nothing on this phone wants it, let it go.
+    -- Two consecutive checks, so the frame between opening and being open is not mistaken
+    -- for a stuck phone.
+    enabled = true,
+
+    -- Dying with the phone open used to leave it open, over a death screen that cannot be
+    -- clicked through. Off if your server deliberately keeps the phone usable while down.
+    closeOnDeath = true,
+}
+
 Config.Log = {
     -- The boot summary: framework detected, which app groups are on, the bank, the payphones,
     -- the admin command, each app folder loaded. Useful exactly once, when setting a server up.

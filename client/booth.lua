@@ -100,6 +100,9 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- Opening and closing the screen
 -- ══════════════════════════════════════════════════════════════
+--- Does the payphone panel want the cursor? Read by the watchdog in bridge/client/safety.lua.
+function BoothFocusWanted() return isOpen end
+
 local function closeBooth(keepCall)
     if not isOpen then return end
     isOpen = false

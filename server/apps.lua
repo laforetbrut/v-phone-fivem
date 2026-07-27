@@ -84,6 +84,15 @@ local function vehicleRow(v)
     return {
         plate = plate,
         model = model,
+        -- What it is CALLED. `Bridge.Vehicles.Owned` resolves this from the framework's own
+        -- vehicle list, and this function rebuilds the row from scratch - so a field it does
+        -- not name is a field the app never sees. That is exactly what happened: the label was
+        -- added upstream, dropped here, and the Garage went on showing spawn codes.
+        --
+        -- Resolved again when it is missing, because Quasar's export and the operator hook
+        -- both return rows that never went through the labelling upstream.
+        label = (v.label ~= nil and v.label ~= '' ) and tostring(v.label)
+            or (Bridge.VehicleLabel and Bridge.VehicleLabel(model) or nil),
         garage = garage and tostring(garage) or nil,
         live = out,
         -- Shown by the remote sheet when the script bothered to keep them.

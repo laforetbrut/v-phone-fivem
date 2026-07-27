@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.3.4'
+version '1.3.5'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -51,6 +51,10 @@ shared_scripts {
 }
 
 client_scripts {
+    -- The nets under the phone: a NUI callback that always answers, a watchdog for a cursor
+    -- held by nothing, and death/respawn. FIRST, because it wraps `RegisterNUICallback` and a
+    -- file that registered one before this loaded would not be wrapped.
+    'bridge/client/safety.lua',
     -- Works out whether the local player is somewhere the phone charges (a property it
     -- has a key to) and reports it up a state bag, per housing script.
     'bridge/client/charging.lua',

@@ -9132,8 +9132,36 @@ body.inframe.dark .uisearch {
 .ftag.warn { color: #ffcf8a; background: rgba(255, 179, 0, .14); }
 .ft { margin-left: auto; opacity: .74; }
 .fnum { color: #86a0a4; font-family: var(--ios-num, ui-monospace, monospace); }
-.fbody { margin-top: 6px; color: #dbe8ea; font-size: 13px; line-height: 1.45; word-break: break-word; }
+.fbody {
+  margin-top: 6px;
+  color: #dbe8ea;
+  font-size: 13px;
+  line-height: 1.45;
+  /* `break-word` breaks a long WORD; it does not stop a long unbroken run - a URL, a base64
+     blob, a wall of characters with no space in it - from pushing its row wider than the
+     panel. `anywhere` does, and `min-width: 0` is what lets a flex child shrink at all:
+     without it a flex item refuses to go below its content's intrinsic width, which is how
+     text ends up outside the box it is drawn in. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .fbody b { color: #fff; }
+
+/* Evidence is somebody else's text, and somebody else's text is not polite. Every part of a
+   row that holds any of it is told it may shrink and may break. */
+.frow { min-width: 0; overflow: hidden; }
+.fmeta > span { min-width: 0; overflow-wrap: anywhere; }
+.ftargetid { min-width: 0; flex-wrap: wrap; }
+.ftargetid b,
+.ftargetid span { min-width: 0; overflow-wrap: anywhere; }
+/* The exhibit card holds a name and a number, and the button sits over its top right corner:
+   without room reserved for it, a long name runs underneath. */
+.forensictarget { padding-right: 128px; }
+.forensicempty,
+.forensicloading { overflow-wrap: anywhere; }
+.fcracked { overflow-wrap: anywhere; }
+.fcipherbanner span { min-width: 0; overflow-wrap: anywhere; }
 
 /* ── Cipher ────────────────────────────────────────────────────── */
 .fcipherbanner {

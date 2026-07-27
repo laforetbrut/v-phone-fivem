@@ -45,6 +45,18 @@ function isViewRead(name, payload) {
   return false;
 }
 
+// How long each request may take before the page stops waiting on it. Milliseconds.
+const POST_TIMEOUT = {
+  _default: 20000,
+  // The server records for as long as it was asked to, then uploads what it recorded.
+  record: 120000,
+  // Capture, upload to the host, store. The server's own guard is under ten seconds.
+  photo: 45000,
+  camShoot: 45000,
+  // The deck is asked, and a broadcast to every nearby client is waited on.
+  music: 30000,
+};
+
 const post = (n, b) => {
   // The local visual harness can provide deterministic NUI replies. This hook never
   // exists in FiveM, so production traffic still follows the exact same secure path.
@@ -60,7 +72,7 @@ const post = (n, b) => {
   // Only read requests owned by a renderer are cancellable. Mutations, controls and
   // refreshes must finish even when the player navigates while their response is in flight.
   if (viewController && isViewRead(n, b)) options.signal = viewController.signal;
-  return fetch(`https://${RESOURCE_NAME}/${n}`, options)
+  const request = fetch(`https://${RESOURCE_NAME}/${n}`, options)
     .then((r) => r.json())
     .catch((error) => {
       if (error && error.name === 'AbortError') {
@@ -70,6 +82,23 @@ const post = (n, b) => {
       }
       return { error: 'x' };
     });
+
+  // **Nothing waits for ever.**
+  //
+  // A NUI callback that raises before it answers leaves this `fetch` unsettled - and an
+  // `await` that never returns is the loading screen with no end that players report. The
+  // client wraps every callback so a raise still answers (bridge/client/safety.lua), and this
+  // is the other half: even a callback that vanishes for some reason nobody has thought of
+  // ends as an error the caller already knows how to draw, rather than as a spinner.
+  //
+  // The ceiling is generous because some of these are genuinely slow - a photo upload waits on
+  // a CDN, a recording waits for its own duration - and a timeout that fired during normal
+  // work would be a worse bug than the one it prevents.
+  const ceiling = POST_TIMEOUT[n] || POST_TIMEOUT._default;
+  return Promise.race([
+    request,
+    new Promise((resolve) => setTimeout(() => resolve({ error: 'timeout' }), ceiling)),
+  ]);
 };
 
 // Tile backgrounds come from the icon table in sdk.js (UI.appIcon).

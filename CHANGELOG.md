@@ -4,6 +4,32 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.3.5] - 2026-07-26
+
+### Fixed (English first)
+
+- **The camera's own anti-stuck guard had never once run.** `camActive` was declared at the top of `client/main.lua` deliberately - two guard threads above the camera block read it - and then declared **again** inside that block. Everything below the second declaration wrote one variable while both guards read another that stayed false for ever. So the guard whose comment reads "camera flagged on with nothing running it... that state has no exit keys and no cursor, and it is the phone a player had to reconnect to leave" could not fire, and `camModeOff()` set a flag the camera loop was not looking at - meaning closing the phone could not stop the camera either. Two guards written for exactly the failure players report, both disabled by one shadowing line. There is one `camActive` now, and a check parses every file for a file-level local declared twice.
+- **A NUI callback that raised never answered, and the page waited for ever.** That is the loading screen with no end. Every callback is wrapped once now: a raise answers `{ error = 'x' }`, which the page already knows how to draw, and prints the callback's name so the next report arrives with its own diagnosis. The page will not wait for ever either - every request has a ceiling, generous enough that a photo upload or a recording finishes normally.
+- **Text in the forensics terminal ran outside its panel.** `word-break: break-word` breaks a long word; it does not stop an unbroken run - a URL, a base64 blob - from pushing its row wider than the box. Every part of a row that holds somebody else's text may now shrink and break, and the exhibit card reserves room for the button that sits over its corner. Measured at zero overflow with a name, a URL and a wall of characters that previously escaped.
+- **The Garage was still showing spawn codes.** The label resolved in 1.3.3 was dropped by the row normaliser in `server/apps.lua`, which rebuilds each row field by field - so a field it does not name is a field the app never sees. It is carried through now, and resolved there as well for rows that never went through the bridge at all (Quasar's export, the operator hook).
+
+### Added
+
+- **Nets under the phone**, in one file, because "stuck in the phone" is one report with three causes. A watchdog releases the cursor when it is held and nothing on this phone wants it - two consecutive checks, so the frame between opening and being open is not mistaken for a stuck phone. Dying closes it, rather than leaving a handset over a death screen that cannot be clicked through. Respawning resets it, because the ped it was attached to no longer exists. The forensics terminal now watches for Escape in Lua as well as in the page: closing was the page's job, which works right up until the page is what broke.
+- **An unstick key**, unbound by default so it takes nothing from anybody, in Settings › Key Bindings › FiveM. `/refreshphone` still works and is still the thing to tell a player.
+- **`Config.Watchdog`**, with each net switchable for a server that finds one fighting its own scripts.
+
+### Correctifs / Ajouts (miroir francais)
+
+- **Le garde anti-blocage de l'appareil photo n'avait jamais fonctionne.** `camActive` etait declare en haut de `client/main.lua` - deliberement, car deux threads de garde au-dessus du bloc camera le lisent - puis declare **une seconde fois** dans ce bloc. Tout ce qui suit la seconde declaration ecrivait une variable pendant que les deux gardes en lisaient une autre, restee fausse pour toujours. Le garde ecrit pour exactement la panne que les joueurs signalent ne pouvait donc pas se declencher, et `camModeOff()` ne pouvait pas arreter la camera. Il n'y a plus qu'un `camActive`, et une verification analyse chaque fichier a la recherche d'un local declare deux fois.
+- **Une callback NUI qui levait une erreur ne repondait jamais, et la page attendait indefiniment** - c'est l'ecran de chargement sans fin. Chaque callback est desormais enveloppee : une erreur repond `{ error = 'x' }` et affiche le nom de la callback fautive. La page n'attend plus indefiniment non plus.
+- **Le texte du terminal scientifique sortait de son cadre.** Tout element d'une ligne qui contient du texte d'autrui peut desormais retrecir et se couper. Debordement mesure a zero.
+- **Le Garage affichait encore les codes de spawn** : le libelle etait perdu par le normaliseur de lignes, qui reconstruit chaque ligne champ par champ.
+- **Des filets de securite**, dans un seul fichier : un chien de garde libere le curseur quand il est retenu sans rien a l'ecran, mourir ferme le telephone, reapparaitre le reinitialise, et le terminal scientifique surveille Echap depuis Lua aussi.
+- **Une touche de deblocage**, non assignee par defaut, dans Parametres > Raccourcis > FiveM.
+
+---
+
 ## [1.3.4] - 2026-07-26
 
 ### Fixed (English first)
