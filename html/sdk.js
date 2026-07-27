@@ -51,6 +51,8 @@
     messages: 'M12 3c-5 0-9 3.4-9 7.6 0 2.4 1.3 4.5 3.3 5.9l-.9 3.9 4.2-2.2c.8.2 1.6.3 2.4.3 5 0 9-3.4 9-7.9S17 3 12 3Z',
     contacts: 'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 21a8 8 0 0 1 16 0',
     bank: 'M3 10h18L12 4 3 10ZM5 10v8M10 10v8M14 10v8M19 10v8M3 20h18',
+    // A takeaway bag with a handle. The stroke twin of the `zuber` tile, for the menu rows.
+    zuber: 'M6 8h12l-1 12H7L6 8Zm3 0V6a3 3 0 0 1 6 0v2M4 8h16',
     // A battery with a bolt through it. The stroke twin of the `charging` tile, for the rows
     // and the empty states inside FruitCharge.
     charging: 'M4 8h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM19 11v2'
@@ -382,6 +384,11 @@
     // Bank Pro. Purple, so the company account never gets confused for the green personal one
     // at a glance - the same building glyph, a different tint is the whole point.
     bankpro: { bg: 'linear-gradient(180deg,#A98BFF,#5E2FD6)', d: G.bank },
+    // Zuber. Black on black with a white bag, which is what a delivery app looks like: the
+    // brand it is dressed as owns almost nothing else.
+    zuber: { bg: 'linear-gradient(180deg,#2B2B2E,#0A0A0B)',
+      d: 'M6.6 7.8h10.8l-.9 11.4a1.2 1.2 0 0 1-1.2 1.1H8.7a1.2 1.2 0 0 1-1.2-1.1L6.6 7.8Zm2.7 0V6.4'
+       + 'a2.7 2.7 0 0 1 5.4 0v1.4h-1.8V6.4a.9.9 0 0 0-1.8 0v1.4H9.3Z' },
     // FruitCharge. A battery with a bolt, on the electric green of a charging light.
     charging: { bg: 'linear-gradient(180deg,#5EE68A,#0FB94E)',
       d: 'M6 4h9a2 2 0 0 1 2 2v1h1.6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H17v1a2 2 0 0 1-2 2H6a2 2 0 0'
@@ -426,6 +433,14 @@
     if (!t) return open + svg(name) + '</span>';
     return open + '<svg viewBox="0 0 24 24" fill="' + (t.fill || '#fff') + '"><path d="' +
       t.d + '"/></svg></span>';
+  };
+
+  /// Does the phone ship a tile of its own for this name?
+  ///
+  /// Asked by the home screen so an app that this phone knows about draws ITS tile rather than
+  /// whatever an operator's config row happens to name - see `appTile` in app.js.
+  UI.hasTile = function (name) {
+    return Object.prototype.hasOwnProperty.call(TILES, name);
   };
 
   root.PhoneUI = UI;

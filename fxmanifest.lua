@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.4.0'
+version '1.4.1'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -68,6 +68,9 @@ client_scripts {
     -- The staff menu. qb-adminmenu cannot be extended from outside, so the phone brings its
     -- own - see the comment at the top of the file.
     'client/admin.lua',
+    -- Zuber's doc-restaurant side. A QB server callback is reachable from any client and from
+    -- no server, so the integration lives here rather than in server/zuber.lua.
+    'client/zuber.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
@@ -122,6 +125,9 @@ server_scripts {
     -- 911: alerting the emergency services. After main.lua, whose `PhoneUsable`, `HasSignal`
     -- and `GetBattery` exports it asks before letting an alert through.
     'server/emergency.lua',
+    -- Zuber: the config provider's menu, orders and money. doc-restaurant's own side is driven
+    -- from client/zuber.lua; nothing here touches it.
+    'server/zuber.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',

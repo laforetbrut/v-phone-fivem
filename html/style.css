@@ -2189,6 +2189,18 @@ input { font: inherit; }
   --app-accent-soft: rgba(48, 209, 88, .14);
 }
 
+/* Zuber wears near-black, the way the app it is dressed as does. Its own accent is the green of
+   an order on its way, so the one tinted thing on screen is the thing that is happening. */
+.app[data-app="zuber"] {
+  --app-tint: #111114;
+  --app-accent: #00a15a;
+  --app-accent-soft: rgba(0, 161, 90, .14);
+}
+.screen.dark .app[data-app="zuber"] {
+  /* Near-black on black is invisible, so the tint lifts rather than the accent changing. */
+  --app-tint: #f2f2f7;
+}
+
 .app[data-app="wallet"],
 .app[data-app="jobs"],
 .app[data-app="mdt"],
@@ -10157,6 +10169,101 @@ body.inframe.dark .uisearch {
 .soctrendrow small { opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; }
 /* Bank Pro's two primary actions, side by side under the balance. Deposit and Pay are what a
    business does most; withdrawing to your own account sits further down on purpose. */
+/* ══ Zuber ════════════════════════════════════════════════════
+   A delivery app's shape: a card per restaurant with a colour band, a status line, and a
+   tracker that only exists while something is on its way. Built out of the same tokens as the
+   rest of the phone, so it reads as an app on this handset rather than a website inside it. */
+.zulist { display: flex; flex-direction: column; gap: 12px; padding-bottom: 6px; }
+
+.zucard {
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  text-align: left;
+  border-radius: 16px;
+  background: var(--app-card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
+  transition: transform var(--ph-fast) var(--ph-spring);
+}
+.zucard:active { transform: scale(.985); }
+/* A shut restaurant is legible and obviously shut, rather than hidden: knowing it exists and
+   opens later is worth more than a shorter list. */
+.zucard.shut { opacity: .55; }
+.zutint { flex: 0 0 auto; width: 6px; }
+.zubody { flex: 1; min-width: 0; padding: 12px 14px; }
+.zutop { display: flex; align-items: center; gap: 6px; }
+.zutop b { font-size: 16px; letter-spacing: -.01em; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.zufav { flex: 0 0 auto; width: 13px; height: 13px; color: #ffb700; }
+.zufav svg { width: 13px; height: 13px; }
+
+.zumeta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px;
+  font-size: 12.5px; color: var(--app-label2); }
+.zumeta svg { width: 11px; height: 11px; vertical-align: -1px; }
+.zumeta span { display: inline-flex; align-items: center; gap: 3px; }
+.zuopen { color: var(--app-accent); font-weight: 600; }
+.zushut { color: #ff453a; font-weight: 600; }
+.zupromo { padding: 1px 6px; border-radius: 99px; background: var(--app-accent-soft);
+  color: var(--app-accent); font-weight: 600; }
+.zutags { margin-top: 3px; font-size: 12px; color: var(--app-label3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The tracker. At the top of the list while an order is out, and the reason most people open
+   the app at all - so it is the first thing, not a row buried under the restaurants. */
+.zutrack {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 13px 15px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(135deg, #1c1c20, #050507);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+}
+.zutrack.big { margin-bottom: 18px; padding-bottom: 15px; }
+.zutrackrow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.zutrackrow b { font-size: 15.5px; }
+.zutrackrow span { font-size: 12.5px; opacity: .7; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.zubar { height: 4px; margin-top: 10px; border-radius: 99px;
+  background: rgba(255, 255, 255, .16); overflow: hidden; }
+.zubar i { display: block; height: 100%; border-radius: 99px; background: #00d16a;
+  transition: width .5s ease; }
+.zusteps { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px;
+  font-size: 10.5px; color: rgba(255, 255, 255, .45); }
+.zusteps span.on { color: #00d16a; }
+
+/* The basket bar, pinned under the menu. It is a button, and it says what it will cost before
+   it is pressed. */
+.zubasket {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  margin: 4px 0 10px;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--app-tint);
+  font-size: 16px;
+  transition: transform var(--ph-fast) var(--ph-spring);
+}
+.screen.dark .zubasket { color: #111114; }
+.zubasket:active { transform: scale(.98); }
+
+/* The row that was just added to the basket. A brief tint where the finger landed, because a
+   number changing at the bottom of the screen is not an acknowledgement of a tap at the top. */
+.row.zuadded { background: var(--app-accent-soft); }
+.row.zuadded .rval { color: var(--app-accent); }
+
+/* Rating. Big enough to hit with a thumb, which a 14px star is not. */
+.zustars { display: flex; justify-content: center; gap: 8px; padding: 6px 0 14px; }
+.zustars .zustar { width: 40px; height: 40px; color: var(--app-label3); }
+.zustars .zustar svg { width: 34px; height: 34px; }
+.zustars .zustar.on { color: #ffb700; }
+
 /* ══ 911 ══════════════════════════════════════════════════════
    Red where the phone is normally its app's own colour, and only at the top: this is the one
    app whose first screen should be recognisable to somebody who is not reading it. */

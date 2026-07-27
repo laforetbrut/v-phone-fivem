@@ -402,6 +402,20 @@ end
 --- What this specific player may see. Three gates, and they are not interchangeable:
 --- the operator's enable switch, the owning module actually running, and the job/gang the
 --- operator set on that row.
+-- Apps the phone refuses to be without, whatever the config says. See the comment inside
+-- `appsFrom` below: the config is the file an operator keeps across an update, so anything that
+-- MUST be present has to be stated here instead.
+--
+-- Deliberately short. An app on this list cannot be removed by a player or by an operator, and
+-- that is a strong claim to make about somebody else's phone - it is for the one app whose
+-- absence is discovered at the worst possible moment.
+local ALWAYS_REQUIRED = {
+    phone = true,       -- a phone with no Phone app is a brick
+    settings = true,
+    store = true,       -- and with no store, nothing can ever be got back
+    emergency = true,   -- 911
+}
+
 local function appsFor(src, p)
     local out = {}
     for id, a in pairs(Apps) do
@@ -431,8 +445,11 @@ local function appsFor(src, p)
             out[#out + 1] = {
                 id = id, label = a.label, icon = a.icon, page = a.page, dock = a.dock or nil,
                 slot = (w and num(w.slot, a.slot)) or a.slot,
-                required = a.required or nil,
-                optional = a.optional or nil, category = a.category,
+                required = (ALWAYS_REQUIRED[id] or a.required) or nil,
+                -- An always-required app is never a download either, whatever a stale config
+                -- row says: `optional` is what puts a Get button on it in the store.
+                optional = (not ALWAYS_REQUIRED[id]) and a.optional or nil,
+                category = a.category,
                 desc = a.desc, owner = a.owner, version = a.version,
                 developer = a.developer, accent = a.accent,
                 permissions = a.permissions, features = a.features, keywords = a.keywords,
@@ -813,7 +830,17 @@ local function appsFrom(src, p)
     local installed = {}
     for _, a in ipairs(available) do
         local on
-        if a.required then on = true                 -- never leaves
+        -- **Some apps are required in CODE, not in the config.**
+        --
+        -- `config.lua` is the one file an update does not replace, and that is right - it is the
+        -- operator's. But it means a change shipped there never reaches a server that already
+        -- had the resource: 911 was added to `Config.Home.required` and `installed`, and every
+        -- server that updated rather than reinstalled kept a phone with no 911 on it.
+        --
+        -- An app that must not be missing cannot depend on somebody merging a config diff. This
+        -- list is the floor; the config can add to it and can never take one off it.
+        if ALWAYS_REQUIRED[a.id] then on = true
+        elseif a.required then on = true              -- never leaves
         elseif a.optional then on = added[a.id]       -- absent until downloaded
         else on = not removed[a.id] end               -- there unless removed
         if on then installed[#installed + 1] = a end

@@ -769,6 +769,31 @@ RegisterNetEvent('v-phone:client:911blip', function(d)
     drawAlertBlip(d.id, d.pin, d.route)
 end)
 
+-- ══════════════════════════════════════════════════════════════
+-- Zuber
+-- ══════════════════════════════════════════════════════════════
+--- An order moved along in the kitchen.
+---
+--- Config-provider only. On a doc-restaurant server that script tells its own customers through
+--- its own notifications, and a second announcement for one order would be the phone talking
+--- over it - so nothing sends this event in that mode.
+RegisterNetEvent('v-phone:client:zuber', function(d)
+    if type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'zuberStatus', update = d, strings = strings() })
+
+    local b = {
+        app = 'zuber', icon = 'zuber',
+        title = tostring(d.restaurant ~= '' and d.restaurant or L('app.zuber')),
+        body = L('ph.zuber_st_' .. tostring(d.status or 'pending')),
+        hasItem = true,
+    }
+    if isOpen then
+        if not notificationMuted('banner', b) then buzz(false) end
+    else
+        peek('banner', b)
+    end
+end)
+
 --- The caller's side: somebody picked up their alert, or closed it. This is the answer to the
 --- silence - without it there is no way to tell "on their way" from "nobody is coming", and
 --- the reasonable thing to do about silence is to send the alert again.

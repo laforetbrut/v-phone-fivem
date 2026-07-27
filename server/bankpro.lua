@@ -125,10 +125,15 @@ local function history(account)
                 local amt = math.abs(math.floor(num(r.amount, 0)))
                 local outward = tostring(r.statement_type) == 'withdraw'
                     or (num(r.amount, 0) < 0)   -- a bank that already signs it
+                -- The same seconds-or-milliseconds question as the personal statement: this
+                -- reads the same `date` column, and both qb-banking and doc-banking store it as
+                -- `os.time() * 1000`. See server/bank.lua for why 1e11 is the dividing line.
+                local at = r.at
+                if type(at) == 'number' and at > 100000000000 then at = math.floor(at / 1000) end
                 out[#out + 1] = {
                     label = tostring(r.label or r.reason or ''),
                     amount = outward and -amt or amt,
-                    at = r.at,
+                    at = at,
                 }
             end
             return out
@@ -195,10 +200,45 @@ V.Callback('v-phone:bankpro:open', function(src, resolve)
         -- rather than a text box. It is not the authority - `pay` checks the same list again
         -- - but an app that offers a destination it will then refuse is a worse app.
         payees = (function()
+            -- **Named, not printed raw.** An account is a key - `mechanic`, `mechanic2`,
+            -- `realestate` - and a list of keys is what a database looks like, not what a
+            -- business owner picking a company to pay should read.
+            --
+            -- Three sources, best first: what the operator wrote in `Config.BankPro.payeeLabels`,
+            -- then the job's own label from the framework, then the key with its separators
+            -- tidied by the page. Nothing is invented: an account nobody has named still shows,
+            -- because a missing name is not a reason to hide a payee.
+            local labels = type(CFG.payeeLabels) == 'table' and CFG.payeeLabels or {}
+            local jobs = nil
+            if Bridge.Jobs and Bridge.Jobs.All then
+                local ok, all = pcall(Bridge.Jobs.All)
+                jobs = ok and type(all) == 'table' and all or nil
+            end
+
+            local prefix = tostring(CFG.accountPrefix or '')
             local out = {}
-            for _, name in ipairs(CFG.payees or {}) do
-                local value = tostring(name)
-                if value ~= '' and value:lower() ~= account:lower() then out[#out + 1] = value end
+            for _, entry in ipairs(CFG.payees or {}) do
+                -- Either `'mechanic'` or `{ account = 'mechanic', label = 'Los Santos Customs' }`.
+                -- One list, so choosing a company and naming it is one decision in one place.
+                local value = tostring(type(entry) == 'table' and (entry.account or entry.id or '')
+                                       or entry)
+                local own = type(entry) == 'table' and entry.label or nil
+                if value ~= '' and value:lower() ~= account:lower() then
+                    -- The job behind the account, so `society_mechanic` finds `mechanic`.
+                    local jobName = value
+                    if prefix ~= '' and value:sub(1, #prefix) == prefix then
+                        jobName = value:sub(#prefix + 1)
+                    end
+                    local job = jobs and (jobs[jobName] or jobs[value]) or nil
+                    out[#out + 1] = {
+                        account = value,
+                        -- The entry's own label first: it is the most specific thing anybody
+                        -- wrote about this account.
+                        label = tostring(own or labels[value] or labels[jobName]
+                                         or (type(job) == 'table' and job.label)
+                                         or jobName),
+                    }
+                end
             end
             return out
         end)(),
@@ -415,9 +455,13 @@ V.Callback('v-phone:bankpro:pay', function(src, resolve, data)
     if kind == 'account' then
         -- Only an account the operator listed. A free-text destination is a way to move a
         -- company's money into a name nobody has ever heard of.
+        -- The same list, read the same two ways. This is the authority - the payload above is
+        -- only what was offered - so a destination the page invented is refused here.
         local allowed = false
-        for _, name in ipairs(CFG.payees or {}) do
-            if tostring(name):lower() == who:lower() then allowed = true break end
+        for _, entry in ipairs(CFG.payees or {}) do
+            local value = tostring(type(entry) == 'table' and (entry.account or entry.id or '')
+                                   or entry)
+            if value:lower() == who:lower() then allowed = true break end
         end
         if not allowed then resolve({ error = 'nopayee' }) return end
         if who:lower() == account:lower() then resolve({ error = 'self' }) return end

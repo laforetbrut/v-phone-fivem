@@ -436,7 +436,14 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- Money: the bank app
 -- ══════════════════════════════════════════════════════════════
-local BANKS = { 'Renewed-Banking', 'qb-banking', 'okokBanking', 'qs-banking', 'esx_banking' }
+-- doc-banking is FIRST because a server running it is running it deliberately, and its
+-- export set is qb-banking's exactly - `AddMoney(account, amount)`,
+-- `RemoveMoney(account, amount)`, `GetAccountBalance(account)` and
+-- `CreateBankStatement(src, account, amount, reason, type, accountType)` - with the same
+-- `bank_accounts` / `bank_statements` tables. So every branch that already handled qb-banking
+-- handles it too, and the ones below say so by name rather than by accident.
+local BANKS = { 'doc-banking', 'Renewed-Banking', 'qb-banking', 'okokBanking', 'qs-banking',
+                'esx_banking' }
 
 Bridge.Banking = {}
 
@@ -466,7 +473,8 @@ function Bridge.SocietyBalance(account)
 
     local bank = choose('banking', BANKS)
 
-    if bank == 'qb-banking' then
+    -- doc-banking's signature is qb-banking's: `GetAccountBalance(accountName)`.
+    if bank == 'qb-banking' or bank == 'doc-banking' then
         local value = callExport(bank, 'GetAccountBalance', account)
         if tonumber(value) then return math.floor(tonumber(value)) end
         return nil
@@ -527,7 +535,9 @@ function Bridge.RemoveSociety(account, amount, reason)
 
     local bank = choose('banking', BANKS)
 
-    if bank == 'qb-banking' then
+    -- `RemoveMoney(accountName, amount)` on both, and both answer false for an account that
+    -- does not exist - which is what fails closed here.
+    if bank == 'qb-banking' or bank == 'doc-banking' then
         return callExport(bank, 'RemoveMoney', account, amount, reason) and true or false
     end
 
@@ -591,7 +601,7 @@ function Bridge.AddSociety(account, amount, reason)
 
     local bank = choose('banking', BANKS)
 
-    if bank == 'qb-banking' then
+    if bank == 'qb-banking' or bank == 'doc-banking' then
         -- Answers false for an account that does not exist, which is the answer wanted: a
         -- typo in a config is not a reason to invent a balance.
         return callExport(bank, 'AddMoney', account, amount, reason) and true or false
@@ -701,7 +711,8 @@ end
 ---
 --- Anything not in this list means the phone keeps its own lines. Add a script here only when
 --- `Transactions` genuinely returns its rows.
-local READABLE_HISTORY = { ['Renewed-Banking'] = true, ['qs-banking'] = true, ['qb-banking'] = true }
+local READABLE_HISTORY = { ['Renewed-Banking'] = true, ['qs-banking'] = true,
+                           ['qb-banking'] = true, ['doc-banking'] = true }
 
 --- Can the running banking script's own statement be read?
 function Bridge.Banking.HistoryReadable()
@@ -734,7 +745,7 @@ function Bridge.Banking.Transactions(src, citizenid, limit)
         end)
         if ok and type(rows) == 'table' then return rows end
     end
-    if bank == 'qb-banking' then
+    if bank == 'qb-banking' or bank == 'doc-banking' then
         -- **The same table the bank's own UI reads.**
         --
         -- Anything else is two half-histories: a transfer made on the phone missing from the
@@ -785,7 +796,7 @@ function Bridge.Banking.SocietyTransactions(account, limit)
     end
 
     local bank = choose('banking', BANKS)
-    if bank == 'qb-banking' or bank == 'qs-banking' then
+    if bank == 'qb-banking' or bank == 'qs-banking' or bank == 'doc-banking' then
         local ok, rows = pcall(function()
             return MySQL.query.await([[SELECT reason AS label, amount, statement_type, date AS at
                 FROM bank_statements WHERE account_name = ? ORDER BY id DESC LIMIT ?]],
@@ -823,7 +834,7 @@ function Bridge.Banking.WriteStatement(src, account, amount, reason, kind, share
     end
 
     local bank = choose('banking', BANKS)
-    if bank == 'qb-banking' then
+    if bank == 'qb-banking' or bank == 'doc-banking' then
         return callExport(bank, 'CreateBankStatement', src, tostring(account or 'checking'),
             amount, tostring(reason or 'v-phone'), kind, shared and 'shared' or 'player')
             and true or false

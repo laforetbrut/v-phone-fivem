@@ -110,13 +110,25 @@ local function frameworkHistory(src, citizenid)
             local amount = math.floor(num(r.amount or r.value or 0, 0))
             local label = tostring(r.label or r.reason or r.message or r.type or '')
             local at = r.at or r.date or r.time
+            -- **Seconds or milliseconds?** Both arrive here and they cannot be told apart by
+            -- type: qb-banking and doc-banking both store `date` as `os.time() * 1000`, while a
+            -- DATETIME column read through oxmysql is also a millisecond epoch, and a script
+            -- that stores plain `os.time()` is in seconds. `ts` is a SECONDS field - the page
+            -- multiplies it by 1000 - so a millisecond value passed through unchanged became a
+            -- date tens of thousands of years out. That is what put "Jan 21" and "Nov 15" on one
+            -- statement in the wrong order.
+            --
+            -- Anything past the year 5138 in seconds is a millisecond value: 1e11 seconds is
+            -- year 5138, and 1e11 milliseconds is 1973. No real statement sits between them.
+            local ts = type(at) == 'number' and math.floor(at) or nil
+            if ts and ts > 100000000000 then ts = math.floor(ts / 1000) end
             out[#out + 1] = {
                 amount = amount,
                 label = label:sub(1, 60),
                 kind = 'account',
                 with = tostring(r.receiver or r.name or ''):sub(1, 64),
                 at = type(at) == 'string' and at:sub(1, 30) or nil,
-                ts = type(at) == 'number' and math.floor(at) or nil,
+                ts = ts,
             }
         end
     end

@@ -915,7 +915,7 @@ function tileHTML(a, i) {
     : (a.badge || 0);
   return `<button class="tile" type="button" data-app="${esc(a.id)}" style="--i:${i}" ` +
     `aria-label="${esc(L(a.label))}">` +
-    `<span class="wrap">${UI.appIcon(a.icon)}` +
+    `<span class="wrap">${appTile(a)}` +
     (badge > 0 ? `<span class="badge">${badge > 99 ? '99+' : badge}</span>` : '') +
     `</span><span class="nm">${esc(L(a.label))}</span></button>`;
 }
@@ -1118,7 +1118,7 @@ function appById(id) { return (state.apps || []).find((a) => a.id === id); }
 function folderTile(it, i) {
   const four = it.apps.slice(0, 4).map((id) => {
     const a = appById(id);
-    return '<span>' + (a ? UI.appIcon(a.icon) : '') + '</span>';
+    return '<span>' + (a ? appTile(a) : '') + '</span>';
   }).join('');
   return '<button class="tile isfolder" type="button" data-folder="1" style="--i:' + i + '">' +
     '<span class="wrap"><span class="folder glass">' + four + '</span></span>' +
@@ -2018,6 +2018,21 @@ const foot = (html) => { byId('appfoot').innerHTML = html || ''; };
 const loading = () => body(UI.empty(L('ph.loading')));
 const rows = (sel, fn) => [...byId('appbody').querySelectorAll(sel)].forEach(fn);
 const qrows = (root, sel, fn) => [...byId(root).querySelectorAll(sel)].forEach(fn);
+
+/// The tile for an app, by the app itself rather than by whatever its config row says.
+///
+/// **An operator's `config.lua` is the one file an update does not replace**, and that is
+/// correct - it is theirs. But it means a change of identity shipped in the config never
+/// reaches a server that already had the app: Bank Pro kept the green `bank` tile on every
+/// server that updated, because their row still said `icon = 'bank'`.
+///
+/// So when this phone ships a tile named after the app id, that tile wins. An app the phone
+/// knows about looks like itself; anything else falls back to the row's icon, which is what an
+/// operator's own store app relies on.
+function appTile(a, cls) {
+  if (!a) return UI.appIcon('dot', cls);
+  return UI.appIcon(UI.hasTile && UI.hasTile(a.id) ? a.id : (a.icon || 'dot'), cls);
+}
 
 // The iOS push: new content slides in from the right. A swap with no motion reads as a
 // refresh rather than a step deeper.
@@ -3618,20 +3633,41 @@ function wireMailto() {
 // A statement line's date. The phone's own lines carry a unix timestamp; a banking script
 // that hands back a preformatted string keeps its string, because reformatting something
 // whose format is unknown is how dates end up wrong.
+/// A statement timestamp, whatever unit it arrived in.
+///
+/// The units cannot be told apart by type - a banking script stores `os.time() * 1000`, another
+/// stores `os.time()`, and oxmysql turns a DATETIME into a millisecond epoch - so they are told
+/// apart by MAGNITUDE. 1e11 is the dividing line: 1e11 seconds is the year 5138 and 1e11
+/// milliseconds is 1973, and no statement on a live server sits between them.
+///
+/// Both directions have now been seen on real servers. A seconds value read as milliseconds put
+/// "Jan 21" and "Nov 15" on one statement - both in 1970, which is why they were out of order
+/// and why the year was not shown. The server normalises what it can; this is what makes the
+/// page right for a provider it has never met.
+function txEpochMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return NaN;
+  return n > 100000000000 ? n : n * 1000;
+}
+
 function txWhen(t) {
   if (t.at) {
     // `String(t.at)` was printing the raw value, which for a DATETIME column oxmysql has
     // already turned into a millisecond epoch is thirteen digits on a statement. A value that
     // parses as a time is formatted; anything else is a banking script's own wording and is
     // passed through untouched, which is the point of this branch.
-    const ms = whenMs(t.at);
+    // A number here is an epoch in one unit or the other; a string is either a date a banking
+    // script formatted itself or one oxmysql handed over.
+    const ms = typeof t.at === 'number' ? txEpochMs(t.at) : whenMs(t.at);
     if (!Number.isFinite(ms)) return String(t.at);
     const d = new Date(ms);
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
       d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
   if (!t.ts) return '';
-  const d = new Date(t.ts * 1000);
+  const ms2 = txEpochMs(t.ts);
+  if (!Number.isFinite(ms2)) return '';
+  const d = new Date(ms2);
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
     d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -4224,10 +4260,18 @@ async function bankproPickSheet(d, after, o) {
       // Company accounts, on the Transfer side only: paying a business is a transfer, not
       // payroll.
       (o.companies && payees.length && !q
-        ? UI.group(payees.map((a) => UI.row({
-            icon: 'bank', tint: '#5E5CE6', title: a, chevron: true,
-            data: { bpto: 'account:' + a, bpname: a },
-          })), { header: L('ph.bankpro_companies') })
+        ? UI.group(payees.map((a) => {
+            // Either shape: a plain account name from an older payload, or the named pair the
+            // server sends now. A raw list of keys is what this used to draw.
+            const account = typeof a === 'string' ? a : a.account;
+            const label = typeof a === 'string' ? placeName(a) : (a.label || placeName(account));
+            return UI.row({
+              icon: 'bank', tint: '#5E5CE6', title: label,
+              // The key, under the name, so a boss can still tell two similar companies apart.
+              subtitle: label.toLowerCase() === String(account).toLowerCase() ? '' : account,
+              chevron: true, data: { bpto: 'account:' + account, bpname: label },
+            });
+          }), { header: L('ph.bankpro_companies') })
         : '');
   };
 
@@ -4828,7 +4872,7 @@ RENDER.settings = () => {
     '</div>' +
     '<div class="groupfoot">' + esc(L('ph.glass_hint')) + '</div>' +
     UI.group((state.apps || []).map((a) => UI.row({
-      appicon: a.icon, title: L(a.label),
+      appicon: (UI.hasTile && UI.hasTile(a.id)) ? a.id : a.icon, title: L(a.label),
       value: p.actionApp === a.id ? L('ph.on') : '', data: { act: a.id },
     })), { header: L('ph.action_button'), footer: L('ph.action_hint') }) +
     // About, where a phone puts it: the last thing in Settings.
@@ -6663,7 +6707,7 @@ function openSwitcher() {
     '<div class="card glass" data-app="' + esc(a.id) + '">' +
       '<div class="chead"><span class="ic">' + svg(a.icon) + '</span>' +
       '<b>' + esc(L(a.label)) + '</b></div><div class="cbody">' +
-      '<div class="cpreview">' + UI.appIcon(a.icon, 'previewicon') +
+      '<div class="cpreview">' + appTile(a, 'previewicon') +
       '<b class="previewname">' + esc(L(a.label)) + '</b></div></div></div>').join('') +
     '<div class="switchhint">' + esc(L('ph.switch_hint')) + '</div>';
   byId('switcher').classList.add('on');
@@ -6813,7 +6857,7 @@ function renderShade() {
   list.innerHTML = order.map((appId) => {
     const a = appOf(appId);
     const muted = appMuted(appId);
-    const head = '<div class="ngrouphead">' + UI.appIcon(a.icon) +
+    const head = '<div class="ngrouphead">' + appTile(a) +
       '<span class="gname">' + esc(L(a.label) || a.id) + '</span>' +
       (shadeManage ? '<button class="gmute ' + (muted ? 'on' : '') + '" data-mute="' + esc(appId) + '">' +
         esc(muted ? L('ph.notif_muted') : L('ph.notif_mute_app')) + '</button>' : '') + '</div>';
@@ -7017,7 +7061,7 @@ function storePreview(a, index) {
   const variant = ['feed', 'cards', 'dashboard'][index % 3];
   return '<div class="stshot ' + variant + '">' +
     '<div class="stshotbar"><span>9:41</span><i></i><i></i></div>' +
-    '<div class="stshotapp">' + UI.appIcon(a.icon) + '<b>' + name + '</b></div>' +
+    '<div class="stshotapp">' + appTile(a) + '<b>' + name + '</b></div>' +
     '<div class="stmockhero"><span></span><strong>' + name + '</strong><small>' +
       esc(L('ph.store_preview_' + (index + 1))) + '</small></div>' +
     '<div class="stmockrows"><i></i><i></i><i></i></div>' +
@@ -7037,7 +7081,7 @@ function storeDetail(a) {
   const permissions = (a.permissions || []).slice(0, 10);
   const detailStyle = a.accent ? ' style="--app-tint:' + esc(a.accent) + '"' : '';
   body(
-    '<div class="stdetail"' + detailStyle + '><div class="stdetailhero"><div class="storb"></div><div class="sthead">' + UI.appIcon(a.icon) +
+    '<div class="stdetail"' + detailStyle + '><div class="stdetailhero"><div class="storb"></div><div class="sthead">' + appTile(a) +
       '<div class="stinfo"><div class="stbig">' + esc(L(a.label)) + '</div>' +
       '<div class="stcat">' + esc(a.developer || (a.owner === 'v-phone' ? 'iFruit Studio' : (a.owner || 'iFruit'))) + '</div>' +
       '<div class="stact">' +
@@ -7180,7 +7224,7 @@ function storeLabel(a, has) {
 function storeRow(a) {
   const has = isInstalled(a.id);
   const label = storeLabel(a, has);
-  return '<div class="strowitem" data-app="' + esc(a.id) + '">' + UI.appIcon(a.icon) +
+  return '<div class="strowitem" data-app="' + esc(a.id) + '">' + appTile(a) +
     '<div class="stmid"><div class="stt">' + esc(L(a.label)) + '</div>' +
     '<div class="stc">' + esc(L('ph.cat_' + (a.category || 'utilities'))) + '</div></div>' +
     '<button class="stget ' + (has || a.required ? 'have' : '') + '" data-act="' +
@@ -7916,6 +7960,650 @@ function chargeOfferSheet(o) {
 // to one, and is where a paid charge is accepted - with an auto-accept for a regular who does
 // not want to be asked. Everything money and position is the server's; this draws and asks.
 // See server/charging.lua.
+// ── Zuber: food, ordered from the phone ────────────────────────
+// Uber Eats' shape, on this phone's components: a dark header with the address, cards with a
+// tint and a rating, a menu by category, a basket, and a tracker at the top once an order is
+// out. Nothing about it is a copy of the original app's markup - it is the same job done with
+// `UI.row`, `UI.hero` and `sheet`, so it looks like the rest of the phone rather than a website
+// inside it.
+//
+// Two providers answer, and the page is written for both. doc-restaurant's payload keeps its own
+// field names - `state.open`, `products`, `promotions`, `rating` - and the config provider's is
+// flatter. `zuberCards()` is the one place that knows the difference; everything below reads
+// what it returns. See server/zuber.lua and client/zuber.lua.
+let zuberTab = 'browse';       // 'browse' | 'orders'
+let zuberOpenId = null;        // the restaurant whose menu is showing
+let zuberCart = {};            // { [item]: { label, price, qty } }
+let zuberKind = 'delivery';
+let zuberTip = 0;              // a percentage, chosen from the presets
+let zuberNote = '';
+let zuberQuery = '';
+let zuberData = null;          // the last payload, so a repaint needs no round trip
+
+const ZUBER_CATS = ['formulas', 'drinks', 'softs', 'alcohols', 'starters', 'mains', 'desserts'];
+
+/// Both payloads, reduced to one shape the rest of this app reads.
+///
+/// doc-restaurant hands back a MAP keyed by job with its own field names; the config provider
+/// hands back a list. Normalised here and only here - the alternative was every function below
+/// asking which provider it was looking at.
+function zuberCards(d) {
+  if (!d) return [];
+  if (!d.doc) return (d.restaurants || []).slice();
+
+  const out = [];
+  const restaurants = d.restaurants || {};
+  Object.keys(restaurants).forEach((job) => {
+    const r = restaurants[job] || {};
+    const state = r.state || {};
+    // Its menu arrives as { category: [ { item, label, image, enabled } ] } with the price in a
+    // separate `prices` map, because doc-restaurant lets a restaurant reprice a dish without
+    // touching the catalogue.
+    const menu = [];
+    const products = r.products || {};
+    Object.keys(products).forEach((category) => {
+      (products[category] || []).forEach((prod) => {
+        const priced = (r.prices || {})[prod.item];
+        const promo = (r.promotions || {})[prod.item];
+        const base = Number(priced && priced.price !== undefined ? priced.price : priced) || 0;
+        menu.push({
+          item: prod.item,
+          label: prod.label || prod.item,
+          price: promo ? Math.round(base * (1 - (Number(promo.discount) || 0) / 100)) : base,
+          was: promo ? base : null,
+          promo: promo ? Number(promo.discount) || 0 : 0,
+          category,
+          enabled: prod.enabled !== false,
+        });
+      });
+    });
+    out.push({
+      id: job, job,
+      label: r.name || job,
+      tint: r.color || r.colorRGB || null,
+      open: state.open === true,
+      delivery: state.delivery !== false,
+      takeaway: state.takeaway !== false,
+      drive: r.hasDrive === true,
+      rating: r.rating || null,
+      x: r.coords && (r.coords.x !== undefined ? r.coords.x : r.coords[1]),
+      y: r.coords && (r.coords.y !== undefined ? r.coords.y : r.coords[2]),
+      discount: Number((d.clientDiscounts || {})[job]) || 0,
+      menu,
+      tags: [],
+    });
+  });
+  // Open first, then by name: a shut restaurant is not what somebody opened this app for.
+  out.sort((a, b) => (b.open ? 1 : 0) - (a.open ? 1 : 0) || String(a.label).localeCompare(b.label));
+  return out;
+}
+
+const zuberPost = (op, body) => (zuberData && zuberData.doc)
+  ? post('zuberDoc', Object.assign({ op }, body || {}))
+  : post(op === 'restaurants' ? 'zuberOpen' : ('zuber' + op[0].toUpperCase() + op.slice(1)), body || {});
+
+function zuberCartCount() {
+  return Object.keys(zuberCart).reduce((n, k) => n + (Number(zuberCart[k].qty) || 0), 0);
+}
+
+function zuberCartTotal() {
+  return Object.keys(zuberCart).reduce((n, k) =>
+    n + (Number(zuberCart[k].price) || 0) * (Number(zuberCart[k].qty) || 0), 0);
+}
+
+/// The status of an order, as a step out of four, so the tracker can draw a bar rather than a
+/// word nobody reads twice.
+function zuberStep(status) {
+  const order = ['pending', 'accepted', 'preparing', 'ready', 'delivering', 'completed'];
+  const at = order.indexOf(String(status || 'pending'));
+  return at < 0 ? 0 : at;
+}
+
+RENDER.zuber = async () => {
+  loading();
+  // The config provider answers `zuberOpen`; doc-restaurant answers through its own relay. Which
+  // one is live is the client's to know, so both are asked and the first that answers wins.
+  let d = await post('zuberOpen', {});
+  if (d && d.doc) {
+    const doc = await post('zuberDoc', { op: 'restaurants' });
+    if (doc && !doc.error) d = Object.assign(d, doc, { doc: true });
+    // Who this player is allowed to rate, and what they have already said. doc-restaurant
+    // unlocks a rating after a delivered order and keeps that decision to itself, so this is
+    // asked rather than worked out here - the app must not invite somebody to rate a place the
+    // server will then refuse.
+    const mine = await post('zuberDoc', { op: 'ratings' });
+    if (mine && !mine.error) {
+      d.myRatings = mine.mine || {};
+      d.canRate = mine.eligible || {};
+    }
+  }
+  if (!d || d.error) {
+    body(UI.empty(L('ph.zuber_e_' + ((d && d.error) || 'off')), 'zuber'));
+    return;
+  }
+  zuberData = d;
+
+  const cards = zuberCards(d);
+  const active = d.active || null;
+
+  // Whatever the operator left on. A switched-off feature is absent, not a button that
+  // apologises: `features` is sent by the server, so the page never reads the config itself.
+  const on = (name) => ((d.features || {})[name] !== false);
+
+  if (on('history')) {
+    tabbar([
+      { id: 'browse', icon: 'zuber', label: 'ph.zuber_tab_browse' },
+      { id: 'orders', icon: 'note', label: 'ph.zuber_tab_orders', badge: active ? 1 : 0 },
+    ], zuberTab, (tab) => { zuberTab = tab; zuberOpenId = null; RENDER.zuber(); });
+  } else {
+    zuberTab = 'browse';
+    foot('');
+  }
+
+  if (zuberTab === 'orders') { zuberOrders(d); return; }
+  if (zuberOpenId) { zuberMenu(d, cards.find((c) => c.id === zuberOpenId)); return; }
+
+  setNav(L('app.zuber'), null, null);
+
+  // ── The tracker ──
+  // Only when something is on its way. An order is the thing somebody opens this app to check.
+  const tracker = (active && on('tracker')) ? (() => {
+    const step = zuberStep(active.status);
+    return '<button class="zutrack" id="zutrack" type="button">' +
+      '<div class="zutrackrow"><b>' + esc(L('ph.zuber_st_' + String(active.status || 'pending'))) +
+        '</b><span>' + esc(active.label || active.restaurant || '') + '</span></div>' +
+      '<div class="zubar"><i style="width:' + Math.round((step / 5) * 100) + '%"></i></div>' +
+    '</button>';
+  })() : '';
+
+  // A search across every menu, not just the names: somebody looking for a burger does not know
+  // which restaurant sells one, which is the whole reason to search from the front page.
+  const q = zuberQuery.trim().toLowerCase();
+  const favs = d.favourites || [];
+  const isFav = (c) => favs.indexOf('r:' + c.id) !== -1;
+
+  const card = (c) => {
+    const dish = q && !String(c.label).toLowerCase().includes(q)
+      ? (c.menu || []).find((m) => String(m.label).toLowerCase().includes(q))
+      : null;
+    return '<button class="zucard' + (c.open ? '' : ' shut') + '" data-zr="' + esc(c.id) + '" type="button">' +
+      '<div class="zutint" style="background:' + esc(c.tint || '#111') + '"></div>' +
+      '<div class="zubody">' +
+        '<div class="zutop"><b>' + esc(c.label) + '</b>' +
+          (on('favourites') && isFav(c) ? '<i class="zufav">' + svg('star') + '</i>' : '') + '</div>' +
+        '<div class="zumeta">' +
+          (c.open ? '<span class="zuopen">' + esc(L('ph.zuber_open')) + '</span>'
+                  : '<span class="zushut">' + esc(L('ph.zuber_shut')) + '</span>') +
+          (c.rating && Number(c.rating.nb_votes) > 0
+            ? '<span>' + svg('star') + ' ' + (Number(c.rating.moyenne) || 0).toFixed(1) + '</span>' : '') +
+          (c.eta ? '<span>' + esc(String(c.eta)) + ' min</span>' : '') +
+          (c.drive ? '<span>' + esc(L('ph.zuber_drive')) + '</span>' : '') +
+          (Number(c.discount) > 0
+            ? '<span class="zupromo">-' + Math.round(Number(c.discount)) + '%</span>' : '') +
+        '</div>' +
+        ((c.tags || []).length ? '<div class="zutags">' + c.tags.map(esc).join(' · ') + '</div>' : '') +
+        (dish ? '<div class="zutags">' + esc(dish.label) + ' · ' + esc(money(dish.price)) + '</div>' : '') +
+      '</div></button>';
+  };
+
+  // The list lives in its own container and the search repaints only that. Repainting the whole
+  // view on each keystroke would destroy the input and take the focus - and the caret - with it,
+  // so the second letter would go nowhere.
+  const paint = () => {
+    const host = byId('zulist');
+    if (!host) return;
+    const query = zuberQuery.trim().toLowerCase();
+    const hits = cards.filter((c) => {
+      if (!query) return true;
+      if (String(c.label).toLowerCase().includes(query)) return true;
+      return (c.menu || []).some((m) => String(m.label).toLowerCase().includes(query));
+    });
+    host.innerHTML = hits.length
+      ? hits.map(card).join('')
+      : UI.empty(L(cards.length ? 'ph.zuber_nomatch' : 'ph.zuber_none'), 'zuber');
+    qrows('zulist', '[data-zr]', (el) => el.addEventListener('click', () => {
+      zuberOpenId = el.dataset.zr;
+      zuberCart = {};
+      RENDER.zuber();
+    }));
+  };
+
+  body(tracker + (on('search') ? searchHtml(L('ph.zuber_search')) : '') +
+       '<div id="zulist" class="zulist"></div>');
+  paint();
+
+  if (byId('zutrack')) byId('zutrack').addEventListener('click', () => {
+    zuberTab = 'orders';
+    RENDER.zuber();
+  });
+  if (on('search')) onSearch((value) => { zuberQuery = value; paint(); });
+};
+
+/// One restaurant: its menu by category, and the basket.
+function zuberMenu(d, c) {
+  if (!c) { zuberOpenId = null; RENDER.zuber(); return; }
+  setNav(c.label, L('app.zuber'), {
+    icon: 'star',
+    onClick: async () => {
+      const r = await post('zuberFavourite', { key: 'r:' + c.id });
+      if (r && r.ok) {
+        zuberData.favourites = r.favourites || [];
+        toast(L(r.on ? 'ph.zuber_faved' : 'ph.zuber_unfaved'));
+      }
+    },
+  }, () => { zuberOpenId = null; RENDER.zuber(); });
+
+  const byCat = {};
+  (c.menu || []).forEach((m) => {
+    if (!byCat[m.category]) byCat[m.category] = [];
+    byCat[m.category].push(m);
+  });
+  // The config's own categories first, in a sensible eating order, then anything a server
+  // invented that this list does not know about - dropped categories would be dropped food.
+  const cats = ZUBER_CATS.filter((k) => byCat[k])
+    .concat(Object.keys(byCat).filter((k) => ZUBER_CATS.indexOf(k) === -1));
+
+  const line = (m) => UI.row({
+    icon: 'zuber', tint: m.enabled === false ? '#8E8E93' : (c.tint || '#111'),
+    title: m.label,
+    subtitle: m.enabled === false ? L('ph.zuber_soldout')
+      : (m.promo ? L('ph.zuber_promo').replace('{n}', String(m.promo)) : ''),
+    value: money(m.price),
+    mono: true,
+    chevron: m.enabled !== false,
+    data: m.enabled === false ? {} : { zi: m.item },
+  });
+
+  const count = zuberCartCount();
+  body(
+    UI.hero({
+      appicon: 'zuber',
+      eyebrow: c.open ? L('ph.zuber_open') : L('ph.zuber_shut'),
+      title: c.label,
+      subtitle: [
+        c.eta ? (c.eta + ' min') : null,
+        c.delivery ? L('ph.zuber_delivery') : null,
+        c.takeaway ? L('ph.zuber_takeaway') : null,
+      ].filter(Boolean).join('  ·  '),
+    }) +
+    (c.x && c.y ? UI.button(L('ph.zuber_route'), 'zuroute', 'plain') : '') +
+    // In doc-restaurant mode the reviews are always reachable, even at nought votes: "nobody has
+    // said anything yet" is an answer, and hiding the button made a new restaurant look broken.
+    ((zuberData && zuberData.doc) ? UI.button(L('ph.zuber_reviews'), 'zurev', 'plain') : '') +
+    // Rating is offered only when doc-restaurant says this player has earned it - it unlocks
+    // after a delivered order. `mine` is what they already said, so the button says so.
+    (zuberCanRate(d, c)
+      ? UI.button(L(zuberMyRating(d, c) ? 'ph.zuber_rate_again' : 'ph.zuber_rate'),
+                  'zuratebtn', 'plain')
+      : '') +
+    cats.map((cat) =>
+      UI.group(byCat[cat].map(line), { header: L('ph.zuber_cat_' + cat) })).join('') +
+    (count
+      ? '<div class="zubasket" id="zubasket">' +
+          '<b>' + esc(L('ph.zuber_basket').replace('{n}', String(count))) + '</b>' +
+          '<span>' + esc(money(zuberCartTotal())) + '</span></div>'
+      : '<div class="groupfoot">' + esc(L('ph.zuber_basket_empty')) + '</div>')
+  );
+
+  if (byId('zuroute')) byId('zuroute').addEventListener('click', async () => {
+    // doc-restaurant sends the coordinates with its payload; the config provider keeps them on
+    // the server and answers with them. Either way the waypoint is set on the client.
+    const r = (zuberData && zuberData.doc)
+      ? await post('zuberRoute', { x: c.x, y: c.y })
+      : await post('zuberLocate', { restaurant: c.id });
+    if (r && r.ok) { ui('waypoint'); toast(L('ph.zuber_routed').replace('{n}', c.label)); }
+    else toast(L('ph.err_x'));
+  });
+
+  if (byId('zurev')) byId('zurev').addEventListener('click', () => zuberReviews(c));
+  if (byId('zuratebtn')) byId('zuratebtn').addEventListener('click', () =>
+    zuberRate(c, zuberMyRating(d, c)));
+
+  // Adding a dish updates the BASKET BAR and nothing else.
+  //
+  // It used to call `zuberMenu` again, which rebuilds the hero, every category, every row and
+  // every listener - so a tap read as the whole page flashing, and the scroll position jumped
+  // back to the top on the second dish. The only thing a tap changes is the count and the total,
+  // so that is the only thing that is redrawn.
+  const paintBasket = () => {
+    const host = byId('zubasket');
+    const count = zuberCartCount();
+    if (!host) {
+      // The bar is not on screen yet - this is the first dish - so the view does need building
+      // once. Every tap after this one lands on the branch above.
+      if (count) zuberMenu(d, c);
+      return;
+    }
+    if (!count) { zuberMenu(d, c); return; }   // the last one was removed
+    host.innerHTML = '<b>' + esc(L('ph.zuber_basket').replace('{n}', String(count))) + '</b>' +
+      '<span>' + esc(money(zuberCartTotal())) + '</span>';
+  };
+
+  rows('[data-zi]', (el) => el.addEventListener('click', () => {
+    const m = (c.menu || []).find((x) => x.item === el.dataset.zi);
+    if (!m || m.enabled === false) return;
+    if (!c.open) { toast(L('ph.zuber_e_closed')); return; }
+    const entry = zuberCart[m.item] || { label: m.label, price: m.price, qty: 0 };
+    entry.qty += 1;
+    zuberCart[m.item] = entry;
+    ui('sent');
+    // A short pulse on the row that was tapped, so the tap is acknowledged where it happened
+    // rather than only at the bottom of the screen.
+    el.classList.add('zuadded');
+    setTimeout(() => el.classList.remove('zuadded'), 260);
+    paintBasket();
+  }));
+
+  if (byId('zubasket')) byId('zubasket').addEventListener('click', () => zuberCheckout(d, c));
+}
+
+/// The basket, the tip and the order. Every number here is recomputed on the server before a
+/// penny moves - this only shows what it will be.
+function zuberCheckout(d, c) {
+  const items = Object.keys(zuberCart);
+  if (!items.length) return;
+
+  const food = zuberCartTotal();
+  const fee = zuberKind === 'delivery' ? (Number(d.fee) || 0) : 0;
+  const tax = Math.floor(food * (Number(d.tax) || 0) / 100);
+  const tipCfg = d.tip || {};
+  const tipAmount = Math.min(Math.floor(food * zuberTip / 100), Number(tipCfg.max) || 500);
+  const total = food + fee + tax + tipAmount;
+
+  const rows_ = items.map((key) => {
+    const e = zuberCart[key];
+    return UI.row({
+      icon: 'zuber', tint: c.tint || '#111',
+      title: e.label,
+      subtitle: '× ' + e.qty,
+      value: money(e.price * e.qty), mono: true,
+      data: { zdel: key },
+    });
+  });
+
+  sheet(L('ph.zuber_checkout'),
+    UI.group(rows_, { header: L('ph.zuber_basket_head'), footer: L('ph.zuber_tap_remove') }) +
+    // Delivery or collection. A restaurant that only does one gets no choice to make.
+    ((c.delivery && c.takeaway)
+      ? '<div class="seg" id="zukind">' +
+          '<button class="' + (zuberKind === 'delivery' ? 'on' : '') + '" data-k="delivery">' +
+            esc(L('ph.zuber_delivery')) + '</button>' +
+          '<button class="' + (zuberKind === 'takeaway' ? 'on' : '') + '" data-k="takeaway">' +
+            esc(L('ph.zuber_takeaway')) + '</button>' +
+        '</div>'
+      : '') +
+    (tipCfg.on === false ? '' :
+      '<div class="grouphead">' + esc(L('ph.zuber_tip')) + '</div>' +
+      '<div class="seg" id="zutip">' + (tipCfg.presets || [0, 5, 10, 15]).map((pct) =>
+        '<button class="' + (Number(pct) === zuberTip ? 'on' : '') + '" data-t="' + pct + '">' +
+        (Number(pct) === 0 ? esc(L('ph.zuber_tip_none')) : pct + '%') + '</button>').join('') +
+      '</div>') +
+    UI.field('zunote', L('ph.zuber_note'), zuberNote, 'maxlength="200"') +
+    UI.group([
+      UI.row({ icon: 'zuber', title: L('ph.zuber_food'), value: money(food), mono: true }),
+      fee ? UI.row({ icon: 'garage', title: L('ph.zuber_fee'), value: money(fee), mono: true }) : '',
+      tax ? UI.row({ icon: 'bank', title: L('ph.zuber_tax'), value: money(tax), mono: true }) : '',
+      tipAmount ? UI.row({ icon: 'heart', title: L('ph.zuber_tip'), value: money(tipAmount), mono: true }) : '',
+      UI.row({ icon: 'wallet', title: L('ph.zuber_total'), value: money(total), mono: true }),
+    ].filter(Boolean)) +
+    UI.button(L('ph.zuber_order').replace('{n}', money(total)), 'zugo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      const kind = byId('zukind');
+      if (kind) [...kind.querySelectorAll('button')].forEach((b) =>
+        b.addEventListener('click', () => {
+          zuberKind = b.dataset.k;
+          if (!closeSheet(false, epoch)) return;
+          zuberCheckout(d, c);
+        }));
+      const tip = byId('zutip');
+      if (tip) [...tip.querySelectorAll('button')].forEach((b) =>
+        b.addEventListener('click', () => {
+          zuberTip = Number(b.dataset.t) || 0;
+          zuberNote = byId('zunote') ? byId('zunote').value : zuberNote;
+          if (!closeSheet(false, epoch)) return;
+          zuberCheckout(d, c);
+        }));
+      [...byId('sheet').querySelectorAll('[data-zdel]')].forEach((row) =>
+        row.addEventListener('click', () => {
+          const key = row.dataset.zdel;
+          if (!zuberCart[key]) return;
+          zuberCart[key].qty -= 1;
+          if (zuberCart[key].qty <= 0) delete zuberCart[key];
+          zuberNote = byId('zunote') ? byId('zunote').value : zuberNote;
+          if (!closeSheet(false, epoch)) return;
+          if (zuberCartCount()) zuberCheckout(d, c); else zuberMenu(d, c);
+        }));
+
+      byId('zugo').addEventListener('click', async () => {
+        const go = byId('zugo');
+        if (go.disabled) return;         // double-tapping order must not order twice
+        go.disabled = true;
+        zuberNote = byId('zunote') ? byId('zunote').value.trim() : '';
+
+        const basket = items.map((key) => ({
+          item: key, qty: zuberCart[key].qty,
+          // Sent because doc-restaurant's own order shape carries them. Both servers price the
+          // line themselves; nothing here is trusted.
+          label: zuberCart[key].label, price: zuberCart[key].price,
+        }));
+
+        const r = (zuberData && zuberData.doc)
+          // **doc-restaurant's own field names.** It reads `job`, `items` and `orderComment`,
+          // and it overwrites `citizenid`, `customerName` and `customerPhone` with the real
+          // player itself - deliberately, so a client cannot order as somebody else. Sending
+          // them would be sending values it throws away. `type` is passed for a build that
+          // wants it and ignored by this one.
+          ? await post('zuberDoc', { op: 'order', order: {
+              job: c.job || c.id,
+              items: basket,
+              orderComment: zuberNote,
+              type: zuberKind,
+            } })
+          : await post('zuberOrder', { restaurant: c.id, kind: zuberKind, items: basket,
+                                       note: zuberNote, tip: tipAmount });
+
+        if (!r || (!r.ok && !r.success)) {
+          go.disabled = false;
+          toast(L('ph.zuber_e_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        ui('money');
+        toast(L('ph.zuber_sent'));
+        zuberCart = {};
+        zuberOpenId = null;
+        zuberTab = 'orders';
+        RENDER.zuber();
+      });
+    });
+}
+
+/// Past orders, and the one tap that repeats one.
+function zuberOrders(d) {
+  setNav(L('ph.zuber_tab_orders'), null, null);
+  const list = d.history || [];
+  const active = d.active || null;
+  const cards = zuberCards(d);
+
+  const itemsOf = (o) => {
+    try {
+      const parsed = typeof o.items === 'string' ? JSON.parse(o.items) : (o.items || []);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  };
+
+  const row = (o) => {
+    const items = itemsOf(o);
+    const n = items.reduce((a, i) => a + (Number(i.qty) || 0), 0);
+    return UI.row({
+      icon: 'zuber',
+      tint: zuberStep(o.status) >= 5 ? '#8E8E93' : '#111',
+      title: o.label || o.restaurant || '',
+      subtitle: [L('ph.zuber_st_' + String(o.status || 'pending')),
+                 n ? (n + ' × ') : '', shortWhen((Number(o.ts) || 0) * 1000)]
+        .filter(Boolean).join('  '),
+      value: money(Number(o.total) || 0), mono: true,
+      chevron: true, data: { zo: String(o.id) },
+    });
+  };
+
+  body(
+    (active
+      ? (() => {
+          const step = zuberStep(active.status);
+          return '<div class="zutrack big">' +
+            '<div class="zutrackrow"><b>' + esc(L('ph.zuber_st_' + String(active.status || 'pending'))) +
+              '</b><span>' + esc(active.label || active.restaurant || '') + '</span></div>' +
+            '<div class="zubar"><i style="width:' + Math.round((step / 5) * 100) + '%"></i></div>' +
+            '<div class="zusteps">' +
+              ['accepted', 'preparing', 'delivering', 'completed'].map((s, i) =>
+                '<span class="' + (step > i ? 'on' : '') + '">' +
+                esc(L('ph.zuber_st_' + s)) + '</span>').join('') +
+            '</div></div>';
+        })()
+      : '') +
+    (list.length
+      ? UI.group(list.map(row), { header: L('ph.zuber_history'),
+          footer: L(d.historyFromDoc ? 'ph.zuber_history_doc' : 'ph.zuber_history_hint') })
+      : UI.empty(L('ph.zuber_nohistory'), 'note'))
+  );
+
+  rows('[data-zo]', (el) => el.addEventListener('click', () => {
+    const o = list.find((x) => String(x.id) === el.dataset.zo);
+    if (!o) return;
+    const items = itemsOf(o);
+    const c = cards.find((x) => x.id === (o.restaurant || o.job));
+
+    sheet(o.label || o.restaurant || '',
+      UI.group(items.map((i) => UI.row({
+        icon: 'zuber', title: i.label || i.item, subtitle: '× ' + (i.qty || 1),
+        value: money((Number(i.price) || 0) * (Number(i.qty) || 1)), mono: true,
+      })).concat([
+        UI.row({ icon: 'wallet', title: L('ph.zuber_total'),
+                 value: money(Number(o.total) || 0), mono: true }),
+        UI.row({ icon: 'check', title: L('ph.zuber_st_' + String(o.status || 'pending')) }),
+      ])) +
+      (o.note ? '<div class="groupfoot">' + esc(o.note) + '</div>' : '') +
+      // Only when the restaurant is still there and still open: a button that cannot work is
+      // worse than no button.
+      (c && c.open && items.length
+        ? UI.button(L('ph.zuber_again'), 'zuagain', 'tinted') : '') +
+      (zuberCanRate(zuberData, c)
+        ? UI.button(L(zuberMyRating(zuberData, c) ? 'ph.zuber_rate_again' : 'ph.zuber_rate'),
+                    'zurate', 'plain') : ''),
+      () => {
+        const epoch = sheetEpoch;
+        if (byId('zuagain')) byId('zuagain').addEventListener('click', () => {
+          // The basket is rebuilt from the CURRENT menu, not from the old prices: a dish that
+          // went up has gone up, and re-ordering at last week's price would be a bug that
+          // looks like a feature.
+          zuberCart = {};
+          items.forEach((i) => {
+            const m = (c.menu || []).find((x) => x.item === i.item);
+            if (m && m.enabled !== false) {
+              zuberCart[m.item] = { label: m.label, price: m.price, qty: Number(i.qty) || 1 };
+            }
+          });
+          if (!closeSheet(false, epoch)) return;
+          if (!zuberCartCount()) { toast(L('ph.zuber_again_gone')); return; }
+          zuberTab = 'browse';
+          zuberOpenId = c.id;
+          RENDER.zuber();
+        });
+        if (byId('zurate')) byId('zurate').addEventListener('click', () => {
+          if (!closeSheet(false, epoch)) return;
+          zuberRate(c || { id: o.restaurant, job: o.restaurant, label: o.label },
+                    zuberMyRating(zuberData, c));
+        });
+      });
+  }));
+}
+
+/// May this player rate this restaurant? doc-restaurant's answer, never a guess.
+///
+/// Its `eligible` arrives as either a map keyed by job or a list of them, depending on the
+/// build, so both are read - a shape that changed would otherwise silently hide the button.
+function zuberCanRate(d, c) {
+  if (!d || !d.doc || !c) return false;
+  const e = d.canRate;
+  if (!e) return false;
+  const key = c.job || c.id;
+  if (Array.isArray(e)) return e.indexOf(key) !== -1;
+  return e[key] === true || e[key] === 1 || (e[key] !== undefined && e[key] !== false);
+}
+
+/// What this player already said about it, if anything.
+function zuberMyRating(d, c) {
+  if (!d || !d.myRatings || !c) return null;
+  const mine = d.myRatings[c.job || c.id];
+  if (!mine) return null;
+  // `getMyRatings` answers `mine[job] = { etoiles, commentaire }`. Normalised to one shape here
+  // so the sheet and the button do not each have to know doc-restaurant's spelling.
+  if (typeof mine !== 'object') return { note: Number(mine) || 0 };
+  return {
+    note: Number(mine.etoiles !== undefined ? mine.etoiles : (mine.note || mine.stars)) || 0,
+    comment: mine.commentaire !== undefined ? mine.commentaire : (mine.comment || ''),
+  };
+}
+
+/// Rating a restaurant. doc-restaurant owns the stars and decides whether this player has
+/// earned the right to leave one, so this only asks.
+function zuberRate(c, existing) {
+  let stars = Math.max(1, Math.min(5, Number(existing && (existing.note || existing.stars)) || 5));
+  const draw = () => [1, 2, 3, 4, 5].map((n) =>
+    '<button class="zustar' + (n <= stars ? ' on' : '') + '" data-s="' + n + '" type="button">' +
+    svg('star') + '</button>').join('');
+
+  sheet(L('ph.zuber_rate') + ' - ' + (c.label || ''),
+    '<div class="zustars" id="zustars">' + draw() + '</div>' +
+    UI.field('zucomment', L('ph.zuber_comment'),
+             (existing && existing.comment) || '', 'maxlength="200"') +
+    UI.button(L('ph.zuber_rate_send'), 'zuratego', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      const wire = () => [...byId('zustars').querySelectorAll('[data-s]')].forEach((b) =>
+        b.addEventListener('click', () => {
+          stars = Number(b.dataset.s) || 5;
+          byId('zustars').innerHTML = draw();
+          wire();
+        }));
+      wire();
+      byId('zuratego').addEventListener('click', async () => {
+        // doc-restaurant's `rateRestaurant` reads `data.etoiles` and `data.commentaire`.
+        // The English names it does not read were silently rating everything at nought.
+        const r = await post('zuberDoc', { op: 'rate', rating: {
+          job: c.job || c.id,
+          etoiles: stars,
+          commentaire: byId('zucomment') ? byId('zucomment').value.trim() : '',
+        } });
+        if (!r || r.error) { toast(L('ph.zuber_e_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        toast(L('ph.zuber_rated'));
+        RENDER.zuber();
+      });
+    });
+}
+
+/// What other customers said. doc-restaurant only.
+async function zuberReviews(c) {
+  const r = await post('zuberDoc', { op: 'reviews', job: c.job || c.id });
+  const list = (r && r.reviews) || [];
+  sheet(L('ph.zuber_reviews'),
+    list.length
+      // doc-restaurant returns { etoiles, commentaire, author, updated_at }. The English
+      // names are kept as fallbacks so a fork that renamed them still renders.
+      ? UI.group(list.map((rev) => UI.row({
+          avatar: rev.author || rev.name || '?',
+          title: (rev.author || rev.name || L('ph.zuber_anon')),
+          subtitle: rev.commentaire || rev.comment || '',
+          value: '★ ' + (Number(rev.etoiles !== undefined ? rev.etoiles
+                                : (rev.note || rev.stars)) || 0),
+        })))
+      : UI.empty(L('ph.zuber_noreviews'), 'star'));
+}
+
 RENDER.charging = async () => {
   loading();
   const d = await post('chargingApp', {});
@@ -11715,11 +12403,11 @@ byId('spill').addEventListener('click', () => {
         byId('spotsuggest').innerHTML = q || !recentApps.length ? '' :
           '<div class="spotlabel">' + esc(L('ph.recent')) + '</div><div class="spoticons">' +
             recentApps.map((a) => '<button data-app="' + esc(a.id) + '" type="button">' +
-              UI.appIcon(a.icon) + '<span>' + esc(L(a.label)) + '</span></button>').join('') + '</div>';
+              appTile(a) + '<span>' + esc(L(a.label)) + '</span></button>').join('') + '</div>';
         byId('appres').innerHTML = list.length
           ? '<div class="spotlabel">' + esc(q ? L('ph.results') : L('ph.all_apps')) + '</div>' +
             UI.group(list.map((a) => UI.row({
-              appicon: a.icon, title: L(a.label),
+              appicon: (UI.hasTile && UI.hasTile(a.id)) ? a.id : a.icon, title: L(a.label),
               subtitle: L('ph.cat_' + (a.category || 'utilities')),
               chevron: true, data: { app: a.id },
             })))
@@ -12110,6 +12798,18 @@ window.addEventListener('message', (e) => {
     // A short burst of noise. Synthesised rather than a file: it is a hiss, and shipping a
     // wav of a hiss is a download for something six lines of oscillator does better.
     if (d.on === true && d.static !== false) callStatic();
+  } else if (d.action === 'zuberStatus') {
+    // An order moved along in the kitchen. The card and the sound are the client's; this keeps
+    // the app honest if it happens to be open on the tracker.
+    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    const u = d.update || {};
+    archivePeek('notif', {
+      app: 'zuber', icon: 'zuber',
+      title: u.restaurant || L('app.zuber'),
+      body: L('ph.zuber_st_' + String(u.status || 'pending')),
+    });
+    if (u.sound !== false) ui(String(u.status) === 'completed' ? 'success' : 'received');
+    if (openApp && openApp.id === 'zuber') RENDER.zuber();
   } else if (d.action === 'chargeRefresh') {
     // Auto-accept paid for a stop. Nothing to ask, but FruitCharge is now showing a stale
     // "not charging" if it happens to be open.

@@ -65,6 +65,7 @@ Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, Ga
 - **Hush** (Tinder): a card you throw with your finger, matches kept in their own tab, an editable profile.
 - **Cipher**: an encrypted messenger. The server routes sealed envelopes and keeps neither the clear text nor a private key.
 - **Bank Pro** (a download): the company account, for the character who runs the business. Deposit, withdraw, pay an employee, and transfer to a private individual or another company - all between BANK accounts, never cash. The history is the account's own statement, so an ATM deposit and a payroll run by another script are in it too.
+- **Zuber** (a download): food ordered from the phone. Runs on **doc-restaurant** when that resource is present - its restaurants, menus, promotions, loyalty and reviews, driven through its own callbacks without a line of it being changed - and on `Config.Zuber.restaurants` otherwise, so it works on qb-core, ESX, ox and standalone alike. A live order tracker, a history you can reorder from in one tap, favourites, a search across every menu, and a tip.
 - **FruitCharge** (a paid download): finds every public charger, routes you to one, and pays a paid charger from the phone - with an optional auto-accept and a price ceiling. Standing at a paid charger without it points you at the store.
 
 ### For developers
@@ -663,6 +664,7 @@ Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, 
 - **Hush** (Tinder) : une carte qu'on lance au doigt, les matchs conservés dans leur onglet, un profil modifiable.
 - **Cipher** : messagerie chiffrée. Le serveur route des enveloppes scellées et ne conserve ni le texte clair ni la clé privée.
 - **Bank Pro** (téléchargement) : le compte de l'entreprise, pour le personnage qui la dirige. Dépôt, retrait, paie d'un employé, et virement vers un particulier ou une autre entreprise — toujours entre comptes BANCAIRES, jamais d'espèces. L'historique est le relevé du compte lui-même : un dépôt au DAB ou une paie faite par un autre script y figurent aussi.
+- **Zuber** (téléchargement) : commander à manger depuis le téléphone. Fonctionne sur **doc-restaurant** quand la ressource est présente — ses restaurants, cartes, promotions, fidélité et avis, pilotés par ses propres callbacks sans qu'une ligne n'en soit modifiée — et sur `Config.Zuber.restaurants` sinon, donc sur qb-core, ESX, ox et standalone. Suivi de commande en direct, historique avec « recommander » en un appui, favoris, recherche dans toutes les cartes, et pourboire.
 - **FruitCharge** (téléchargement payant) : localise toutes les bornes publiques, place l'itinéraire vers l'une d'elles, et paie une borne payante depuis le téléphone — avec acceptation automatique et plafond de prix. Sans l'application, une borne payante renvoie vers le store.
 
 ### Pour les développeurs

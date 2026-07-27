@@ -665,6 +665,10 @@ Config.Apps = {
     -- Config.PaidCharging.requireApp.
     { id = 'charging', label = 'app.charging', icon = 'charging', owner = 'v-phone',    slot = 25,
       optional = true, category = 'utilities', price = 200, account = 'bank', version = '1.0' },
+    -- Zuber: food, ordered from the phone. A free download, because a delivery app nobody
+    -- installs is a delivery app no restaurant gets orders from. See Config.Zuber.
+    { id = 'zuber',    label = 'app.zuber',    icon = 'zuber',    owner = 'v-phone',    slot = 26,
+      optional = true, category = 'utilities', version = '1.0' },
 }
 
 -- Rich FruitStore catalogue. These are presentation/search hints, not duplicated game
@@ -1610,12 +1614,34 @@ Config.BankPro = {
     -- accepts one is an app that pays whoever you can guess.
     payAnyone = true,
 
-    -- Company-to-company transfers, and the only accounts they may reach. A free-text
-    -- destination is a way to move a business's money into a name nobody has heard of, so
-    -- there is no free-text destination: an account is either on this list or unreachable.
+    -- ── Which companies appear, and what they are called ───────
+    -- **This list IS the whitelist.** Only what is written here can be reached by a transfer,
+    -- and only what is written here is shown - so a server with forty jobs does not put forty
+    -- rows of `mechanic2`, `bobcat`, `farming` in front of a business owner. Empty means no
+    -- company-to-company transfers at all, which is a valid way to run it.
     --
-    --     payees = { 'mechanic', 'ambulance', 'police' },
+    -- A free-text destination is deliberately impossible: it would be a way to move a
+    -- business's money into a name nobody has ever heard of.
+    --
+    -- Two ways to write an entry, and they can be mixed:
+    --
+    --     payees = {
+    --         -- just the account, named from your framework's job label
+    --         'ambulance',
+    --         -- or the account AND the name to show, which is the one that always wins
+    --         { account = 'mechanic',   label = 'Los Santos Customs' },
+    --         { account = 'mechanic2',  label = "Benny's Original Motorworks" },
+    --         { account = 'realestate', label = 'Dynasty 8' },
+    --     }
+    --
+    -- The order you write them in is the order they appear.
     payees = {},
+
+    -- The same names, written apart from the list, for a server that would rather keep the two
+    -- separate. `payees` entries that carry their own `label` win over this.
+    --
+    --     payeeLabels = { mechanic = 'Los Santos Customs', realestate = 'Dynasty 8' },
+    payeeLabels = {},
 
     -- How many movements the history shows. Capped at 50, because that is what fits and what a
     -- boss actually reads - the bank's own statement is the place for a full audit.
@@ -1623,6 +1649,174 @@ Config.BankPro = {
 
     minAmount = 1,
     maxAmount = 0,          -- 0 for no ceiling
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  ZUBER  (food, ordered from the phone)
+-- ══════════════════════════════════════════════════════════════
+-- A download, free, and it works two ways without the player ever being told which:
+--
+--   * **doc-restaurant**, when that resource is running. Its restaurants, its menus, its
+--     prices, its promotions, its loyalty scheme, its reviews and its orders - reached through
+--     the same server callbacks its own phone app used, from client/zuber.lua. **Nothing in
+--     doc-restaurant is edited, wrapped or replaced.** Update it, and this keeps working.
+--   * **`restaurants` below** otherwise. That is what makes the app worth having on an ESX, ox
+--     or standalone server, where doc-restaurant does not exist: its own menu, its own orders
+--     table, its own money path.
+--
+-- There is no courier side, on purpose. doc-restaurant already delivers with its own staff,
+-- statuses and commission, and a second thing moving those statuses is how two systems start
+-- disagreeing about who is bringing the food.
+Config.Zuber = {
+    enabled = true,
+
+    -- 'auto' uses doc-restaurant when it is started and the list below when it is not.
+    -- 'doc-restaurant' or 'config' pin it, for a server that wants to be sure which is live.
+    provider = 'auto',
+
+    -- ── Config-provider settings ───────────────────────────────
+    -- Ignored in doc-restaurant mode: prices, fees and taxes are its own there.
+    --
+    -- Which purse pays: 'bank' or 'cash'. A delivery app is a card, so 'bank'.
+    account = 'bank',
+    -- Added to a DELIVERY order, never to a collection. 0 for none.
+    deliveryFee = 25,
+    -- On the food, as a percentage. Your government tax, if you run one.
+    taxPercent = 0,
+    minOrder = 1,
+    maxOrder = 5000,          -- 0 for no ceiling
+    maxPerLine = 20,          -- the most of one dish in a single order
+
+    -- Pay the restaurant's society account for the food. The `account` on a restaurant below
+    -- wins, then its `job`. Off means the money leaves the customer and nobody is credited.
+    paySociety = true,
+
+    -- Tell the restaurant's on-duty staff that an order came in. A notification, not a queue:
+    -- this app has no kitchen screen, and half-building one next to whatever the server already
+    -- runs is worse than a notification that says "two items, go and look".
+    notifyStaff = true,
+
+    -- How long an order takes, in minutes, when a restaurant does not say. Also the span the
+    -- automatic status steps are spread across.
+    etaMinutes = 12,
+
+    -- Walk an order through accepted -> preparing -> delivering -> completed on a timer.
+    --
+    -- On by default because a server with no restaurant script has no kitchen staff, and an
+    -- order that stays "pending" for ever is worse than one that cooks itself. A server that
+    -- DOES have staff drives it with `exports['v-phone']:SetZuberStatus(id, status)` instead,
+    -- and taking over cancels the timer - so an order is never moved twice.
+    autoStatus = true,
+
+    -- A sound and a notification on the customer's phone at each step.
+    sound = true,
+
+    -- ── The customer's side ────────────────────────────────────
+    -- A tip, added to the order. Bounded here as well as by the app: a page asking to tip a
+    -- million is a page asking to empty an account by accident.
+    tip = {
+        enabled = true,
+        presets = { 0, 5, 10, 15 },   -- as a percentage of the food, offered as buttons
+        max = 500,                    -- and never more than this, whatever the percentage
+    },
+
+    -- How many past orders the history shows, and how many favourites are kept.
+    history = 20,
+    favourites = 20,
+
+    -- ── What the app offers ────────────────────────────────────
+    -- Each of these removes a piece of the app rather than hiding a button that still works.
+    -- All on by default; a server that wants a plain menu-and-basket turns the rest off.
+    features = {
+        search = true,        -- the search across every restaurant's menu
+        favourites = true,    -- the star on a restaurant
+        history = true,       -- the Orders tab
+        reorder = true,       -- and the one tap that repeats a past order
+        tracker = true,       -- the live status bar at the top
+        reviews = true,       -- reading reviews (doc-restaurant only)
+        ratings = true,       -- and leaving one (doc-restaurant only)
+        route = true,         -- "take me there"
+        note = true,          -- the free-text instructions on an order
+    },
+
+    -- Only these restaurants may be ordered from, by id. Empty means all of them. Use it to run
+    -- a soft launch, or to keep a place on the map that is not open for delivery yet.
+    only = {},
+
+    -- Sort the list by distance from the player instead of open-then-name. Off by default: the
+    -- nearest restaurant is rarely the one somebody wants, and a list that reorders itself as
+    -- you walk is a list you cannot learn.
+    sortByDistance = false,
+
+    -- Show a restaurant that is closed, greyed out and unbuyable. Off hides it entirely -
+    -- shorter, but somebody looking for a place that opens at six is told it does not exist.
+    showClosed = true,
+
+    -- Keep the basket when the app is closed and reopened. Off empties it, which is what a
+    -- server that treats a basket as a session wants.
+    keepBasket = false,
+
+    -- ── The restaurants (config provider only) ─────────────────
+    -- Two examples, both real GTA places. Delete them and write your own; leave the list empty
+    -- and the app says there is nowhere to order from, which is honest.
+    --
+    -- Per restaurant:
+    --   id         your own key, used in the order and never shown
+    --   label      what the customer reads
+    --   job        the job whose staff are notified, and whose society account is paid
+    --   account    a society account name, when it is not the job name
+    --   coords     for the "take me there" button. `vector3(...)` or `{ x =, y = }`
+    --   tint       the colour of its card
+    --   tags       short words under the name: cuisine, price, whatever you like
+    --   open       true, false, or `{ from = 11, to = 2 }` in server hours (crossing midnight
+    --              is fine, which is the normal case for a late-night place)
+    --   eta        minutes, when this place is faster or slower than the default
+    --   delivery / takeaway   which it offers
+    --   menu       every line: item, label, price, category, and `enabled = false` to show a
+    --              dish as unavailable rather than removing it
+    restaurants = {
+        {
+            id = 'burgershot',
+            label = 'Burger Shot',
+            job = 'burgershot',
+            coords = vector3(-1183.9, -890.6, 13.9),
+            tint = '#E4572E',
+            tags = { 'Burgers', 'Fast food' },
+            open = { from = 10, to = 4 },
+            eta = 10,
+            delivery = true,
+            takeaway = true,
+            menu = {
+                { item = 'burger_bleeder',  label = 'Bleeder',            price = 14, category = 'mains' },
+                { item = 'burger_torpedo',  label = 'Torpedo',            price = 16, category = 'mains' },
+                { item = 'burger_moneyshot',label = 'Money Shot',         price = 19, category = 'mains' },
+                { item = 'fries',           label = 'Fries',              price = 6,  category = 'starters' },
+                { item = 'onion_rings',     label = 'Onion rings',        price = 7,  category = 'starters' },
+                { item = 'milkshake',       label = 'Milkshake',          price = 8,  category = 'desserts' },
+                { item = 'ecola',           label = 'eCola',              price = 4,  category = 'drinks' },
+            },
+        },
+        {
+            id = 'uwu',
+            label = 'UwU Cafe',
+            job = 'uwu',
+            coords = vector3(-583.5, -1062.4, 22.3),
+            tint = '#D46BAE',
+            tags = { 'Coffee', 'Pastries' },
+            open = { from = 7, to = 20 },
+            eta = 8,
+            delivery = true,
+            takeaway = true,
+            menu = {
+                { item = 'coffee',          label = 'Filter coffee',      price = 5,  category = 'drinks' },
+                { item = 'latte',           label = 'Latte',              price = 7,  category = 'drinks' },
+                { item = 'matcha',          label = 'Matcha',             price = 8,  category = 'drinks' },
+                { item = 'croissant',       label = 'Croissant',          price = 5,  category = 'starters' },
+                { item = 'pancakes',        label = 'Pancakes',           price = 12, category = 'mains' },
+                { item = 'cheesecake',      label = 'Cheesecake',         price = 9,  category = 'desserts' },
+            },
+        },
+    },
 }
 
 -- ══════════════════════════════════════════════════════════════
