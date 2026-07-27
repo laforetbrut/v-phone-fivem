@@ -4,6 +4,45 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.3.6] - 2026-07-27
+
+### Added (English first)
+
+- **Bank Pro: the company account, on the phone.** The Bank app is a person's money; this is a business's, for the character who runs it. Deposit takings, withdraw to your own account, pay an employee, pay **anybody else who is connected** - a contractor, a supplier, somebody owed a favour - or move money to another company. **There are no phone numbers in it**: a company is paid by account and a person by who they are, because a business transfer addressed by number is one that can go to a stranger with a SIM. In the store rather than on the home screen, since most characters do not run a business. Behind `Config.BankPro`: which jobs, boss only or a minimum grade, what may be withdrawn, who may be paid, per-movement limits. The account name is always **derived from the job the framework says the character holds** - the page never names one - and every movement fails closed: a credit that fails after a confirmed debit is put back, because the one outcome that is not acceptable is money that stopped existing.
+- **The phone's bank history and the bank's own are one history.** The phone now reads qb-banking's `bank_statements` - the same table its UI reads - and **writes into it** for every movement it makes. A transfer made on the phone shows at the ATM, and everything done at the ATM shows on the phone. Amounts there are unsigned with the direction in a separate column, so the sign is put back rather than showing a withdrawal as money arriving.
+- **`/phonecharge` and `/phonevoice`.** "The battery charges for ever" and "nobody can hear anybody" are each one report with five possible causes and no way for the person reporting it to tell them apart. Each command prints the one that fired.
+
+### Fixed
+
+- **The battery charged for ever after leaving a house.** `house ~= nil and house ~= false` was the test for "am I home", and in Lua an empty table is truthy - so are `0`, `''` and `'none'`. Whatever Quasar's `getCurrentHouse()` answers with when you are outside, it is not one of the two things that test looked for, so the phone believed the player was at home until they reconnected. The answer has to be **specific** now - a name, an id, a table that names something - and the flag is re-asserted every minute rather than only when it changes, because "write only on change" makes one missed write permanent.
+- **A charging claim from another script no longer outlives the script.** `SetCharging(src, true)` had no expiry and is the first thing the battery tick reads, so a script that crashed or forgot its own unplug path charged a phone for the rest of the session. It takes a two-minute lease now, renewed by each call - which is nothing to a script that runs a loop, and everything to one that has gone away.
+- **The phone announced "reset" during character selection.** A regression from 1.3.5: `playerSpawned` fires several times while a character loads, and the automatic reset printed a line each time. Automatic resets are silent, and they no longer run at all when there is nothing to reset. `/refreshphone` still answers, because that one was asked for.
+- **The watchdog fired on other resources' menus.** Also from 1.3.5, and worse than noise: `IsNuiFocused()` answers for the whole game, so every shop, inventory and menu on the server looked like a stuck phone. It printed a line every two seconds and ran a full reset, which clears the ped's secondary task - somebody else's animation. `SetNuiFocus` is per-resource, so the phone now tracks what it took and ignores everything else.
+- **Pausing the music appeared to reload the app, because it did.** The button called a re-render that begins by replacing the whole body with "Loading", then re-reads the library, the playlists and the deck. For one glyph. Pause repaints the two play buttons and the status line; the volume rocker moves the slider and nothing else; ten other repaints no longer blank a screen that is already drawn. A change of screen still shows the loader, because there it is telling the truth.
+- **Text in the Music app was unreadable.** Labels at 8px, 8.5px and 9px on a phone that draws at 372 real pixels wide. Nothing carrying information is under 11px now, titles are 14.5px, and no text fades below 62%.
+- **The player's lower half.** Three transport controls laid out as `1fr 72px 1fr` across 78% of the screen: the skips were pushed to the edges and the play button floated alone in the middle. They are an evenly spaced row now. The status line is a pill rather than a caption pinned to a rule, the three actions are one surface split by hairlines rather than three cards with three shadows, and stopping is a line of text rather than a fourth slab competing with them.
+- **The control centre's toggles were ovals.** `aspect-ratio: auto` with `height: 100%` stretches a pill to fill a cell wider than it is tall, and `border-radius: 50%` on a rectangle is an ellipse. They are circles. The close button was pinned to the corner above the text beside it and is now centred on its row with room around it, the cards are rounder, and the sliders' radius is exactly half their width - a stadium rather than a nearly.
+- **Text in the forensics terminal ran outside its panel** - a long URL or an unbroken run has nothing to break on, and a flex child will not shrink below its content unless told. Measured at zero overflow.
+- **Two ways a bystander's voice channel could be taken.** Somebody already on their own call was joined to a stranger's channel, which dropped their conversation; and switching a speaker off anywhere nearby reset the voice channel of everybody in earshot, whether or not they had ever joined it - so a stranger across the street could hang up on you. Neither can happen now. **A speaker is two-way** and always was: on pma-voice, joining a call channel wires every member to every other one in both directions, so the far end hears the people around you. The comment claiming otherwise was wrong and is gone.
+
+### Ajouts / Correctifs (miroir francais)
+
+- **Bank Pro : le compte d'entreprise, sur le telephone.** L'application Banque, c'est l'argent d'une personne ; celle-ci, celui d'une entreprise, pour le personnage qui la dirige. Deposer la recette, retirer sur son compte, payer un employe, payer **n'importe qui d'autre en ligne**, ou virer vers une autre entreprise. **Aucun numero de telephone dedans** : une entreprise se paie par compte et une personne par qui elle est. Dans le store, pas sur l'ecran d'accueil. Le nom du compte est toujours **derive du metier que le framework attribue au personnage** - la page n'en nomme jamais un - et chaque mouvement echoue fermé : un credit qui echoue apres un debit confirme est remis.
+- **L'historique du telephone et celui de la banque n'en font qu'un.** Le telephone lit desormais `bank_statements` de qb-banking - la table que lit son interface - et **y ecrit** a chaque mouvement.
+- **`/phonecharge` et `/phonevoice`** : chacun affiche laquelle des cinq causes possibles s'est declenchee.
+- **La batterie chargeait indefiniment apres etre sorti d'un logement.** Le test etait `house ~= nil and house ~= false` - or en Lua une table vide est vraie, `0` aussi, `''` aussi. La reponse doit desormais etre **specifique**, et le drapeau est reecrit chaque minute et pas seulement quand il change.
+- **Une charge posee par un autre script n'y survit plus** : elle prend un bail de deux minutes, renouvele a chaque appel.
+- **Le telephone annoncait « reinitialise » pendant la selection de personnage** - regression de la 1.3.5. Les reinitialisations automatiques sont muettes.
+- **Le chien de garde se declenchait sur les menus des autres ressources** - `IsNuiFocused()` repond pour tout le jeu. Le telephone ne suit plus que ce qu'il a pris lui-meme.
+- **Mettre la musique en pause semblait recharger l'application** : c'etait le cas. La pause ne repeint plus que les deux boutons et la ligne d'etat ; le volume ne bouge que le curseur.
+- **Le texte de l'application Musique etait illisible** (8 px). Plus rien d'informatif sous 11 px, titres a 14,5 px.
+- **Le bas du lecteur** : commandes en rangee reguliere, ligne d'etat en pastille, trois actions sur une seule surface, arret en simple ligne de texte.
+- **Les bascules du centre de controle etaient des ovales.** Ce sont des cercles. Bouton fermer centre sur sa rangee, cartes plus rondes.
+- **Le texte du terminal scientifique sortait de son cadre** - debordement mesure a zero.
+- **Deux facons de confisquer le canal vocal d'un tiers**, toutes deux corrigees. **Le haut-parleur est bidirectionnel** et l'a toujours ete : sur pma-voice, rejoindre un canal d'appel relie chaque membre a tous les autres dans les deux sens.
+
+---
+
 ## [1.3.5] - 2026-07-26
 
 ### Fixed (English first)

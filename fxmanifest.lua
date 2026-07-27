@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.3.5'
+version '1.3.6'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -116,6 +116,9 @@ server_scripts {
     -- Garage, Property, Wallet and Jobs: read-only views over the bridge's providers,
     -- which is what those apps needed instead of a companion resource nobody has.
     'server/apps.lua',
+    -- Bank Pro: the company account. After bank.lua, which owns the personal one, and after
+    -- api.lua for the notification a paid employee receives.
+    'server/bankpro.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',

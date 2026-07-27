@@ -28,6 +28,37 @@ local function housingResource()
     return nil
 end
 
+--- Is this answer from a housing script actually "yes, in a house"?
+---
+--- **`house ~= nil and house ~= false` was not enough, and it is why a phone could charge for
+--- ever.** In Lua an empty table is truthy. So is `0`, so is `''`, so is `'none'`. A housing
+--- script that answers "not in a house" with any of those - and they all do, somewhere - was
+--- being read as a yes, and the phone charged from then until the player reconnected.
+---
+--- The answer has to be SPECIFIC to count: a non-empty string, a number above zero, or a table
+--- that names something. Anything else is outside, which is also the safe direction: the cost
+--- of a false no is a phone that does not charge at home, and the player can see why.
+local function reallyInside(value)
+    if value == nil or value == false then return false end
+
+    local kind = type(value)
+    if kind == 'boolean' then return value end
+    if kind == 'number' then return value > 0 end
+    if kind == 'string' then
+        local v = value:lower()
+        return v ~= '' and v ~= '0' and v ~= 'none' and v ~= 'false' and v ~= 'nil'
+    end
+    if kind == 'table' then
+        -- A named property. `next` alone would accept `{}` from a script that returns an empty
+        -- table for "nowhere", which is the same mistake one level down.
+        for _, key in ipairs({ 'id', 'house', 'houseId', 'property', 'propertyId', 'name', 'label' }) do
+            if reallyInside(value[key]) then return true end
+        end
+        return false
+    end
+    return false
+end
+
 --- True when the player is inside a property. "Inside" is enough: you had to have a key
 --- to get in, so a phone charging there is a phone charging at home.
 local function insideProperty()
@@ -41,16 +72,22 @@ local function insideProperty()
     local housing = housingResource()
     if not housing then return false end
 
-    -- Quasar keeps the current house on a client export; nil means outside.
+    -- Quasar keeps the current house on a client export.
+    --
+    -- This is the one that was reported: spawn inside, walk out, and the battery charges for
+    -- ever. Whatever that export answers with when you are outside, it is not `nil` and not
+    -- `false` - the two things the old test looked for - so the phone believed the player was
+    -- still at home for the rest of the session.
     if housing == 'qs-housing' then
         local ok, house = pcall(function() return exports['qs-housing']:getCurrentHouse() end)
-        return ok and house ~= nil and house ~= false
+        return ok and reallyInside(house)
     end
 
     -- ps-housing publishes the current property on the player's own state bag.
     if housing == 'ps-housing' then
         local state = LocalPlayer.state
-        return state ~= nil and (state.currentApartment ~= nil or state.property ~= nil)
+        if not state then return false end
+        return reallyInside(state.currentApartment) or reallyInside(state.property)
     end
 
     -- qb-houses fires enter/exit events; it also sets a well-known state bag on newer
@@ -61,7 +98,7 @@ local function insideProperty()
 
     -- ox_property marks the player with the property they are in.
     if housing == 'ox_property' then
-        return LocalPlayer.state and LocalPlayer.state.inProperty ~= nil
+        return LocalPlayer.state and reallyInside(LocalPlayer.state.inProperty)
     end
 
     -- loaf_housing and esx_property both use a routing bucket the client cannot read,
@@ -78,6 +115,7 @@ end
 -- every few seconds is far more often than it needs to be.
 CreateThread(function()
     local last = nil
+    local reasserted = 0
     while true do
         Wait(4000)
         local atHome = false
@@ -86,9 +124,51 @@ CreateThread(function()
             local ok, inside = pcall(insideProperty)
             atHome = ok and inside or false
         end
-        if atHome ~= last then
+
+        -- Written when it CHANGES, and again every minute regardless.
+        --
+        -- A state bag is a value that persists until something overwrites it, and "write only
+        -- on change" means one missed write is permanent. That is the difference between a
+        -- phone that charges for a minute too long and one that charges until the player
+        -- reconnects - and the second is what gets reported.
+        reasserted = reasserted + 1
+        if atHome ~= last or reasserted >= 15 then
             last = atHome
+            reasserted = 0
             LocalPlayer.state:set('phoneAtHome', atHome, true)   -- replicated to the server
         end
     end
 end)
+
+--- `/phonecharge` - why does the phone think it is charging?
+---
+--- "The battery charges for ever" is a report with five possible causes and no way for the
+--- person reporting it to tell them apart. This prints the one that fired, on both sides: what
+--- the housing script answered here, and which branch the server took.
+RegisterCommand('phonecharge', function()
+    local housing = housingResource()
+    local raw, answer = nil, nil
+    if housing == 'qs-housing' then
+        local ok, house = pcall(function() return exports['qs-housing']:getCurrentHouse() end)
+        raw = ok and house or '<the export raised>'
+    elseif housing == 'ps-housing' then
+        raw = LocalPlayer.state and (LocalPlayer.state.currentApartment or LocalPlayer.state.property)
+    elseif housing == 'qb-houses' then
+        raw = LocalPlayer.state and LocalPlayer.state.inside
+    elseif housing == 'ox_property' then
+        raw = LocalPlayer.state and LocalPlayer.state.inProperty
+    elseif housing == 'loaf_housing' then
+        raw = LocalPlayer.state and LocalPlayer.state.inHouse
+    end
+    local okInside, inside = pcall(insideProperty)
+    answer = okInside and inside or false
+
+    print(('[v-phone] housing script: %s'):format(tostring(housing or 'none detected')))
+    print(('[v-phone] it answered: %s (%s)'):format(
+        type(raw) == 'table' and json.encode(raw) or tostring(raw), type(raw)))
+    print(('[v-phone] the phone reads that as: %s'):format(tostring(answer)))
+    print(('[v-phone] phoneAtHome on the state bag: %s')
+        :format(tostring(LocalPlayer.state and LocalPlayer.state.phoneAtHome)))
+    print(('[v-phone] in a vehicle: %s'):format(tostring(IsPedInAnyVehicle(PlayerPedId(), false))))
+    TriggerServerEvent('v-phone:charge:why')
+end, false)

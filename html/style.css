@@ -1172,7 +1172,10 @@ input { font: inherit; }
 .cc.on { display: block; animation: cc-in .34s var(--spring); }
 @keyframes cc-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 .cc .cctop { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.cc .ccmod { border-radius: 28px; padding: 13px; min-height: 152px; position: relative;
+/* Rounder. 28px on a 152px-tall card reads as a rounded rectangle; the rest of this phone -
+   the handset itself, the app tiles, the sheets - is drawn with a much softer corner, and the
+   control centre was the one surface that looked like it came from somewhere else. */
+.cc .ccmod { border-radius: 34px; padding: 15px; min-height: 152px; position: relative;
   background: rgba(120,120,128,.28);
   box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14), inset 0 1px 0 rgba(255,255,255,.16),
     0 8px 24px rgba(0,0,0,.34); }
@@ -1211,18 +1214,26 @@ input { font: inherit; }
 .cc .ccbot { display: grid; grid-template-columns: 62px 62px 1fr; gap: 12px; }
 
 /* Vertical sliders: a white fill you drag, icon pinned to the bottom. */
-.ccslab { border-radius: 32px; position: relative; overflow: hidden; min-height: 152px;
+/* The two sliders, as round-ended as the pills beside them: a 62px-wide column with a 32px
+   radius is a stadium already, and 31px is exactly that - so it matches rather than nearly. */
+.ccslab { border-radius: 31px; position: relative; overflow: hidden; min-height: 152px;
   background: rgba(120,120,128,.4); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12);
   cursor: pointer; touch-action: none; }
 .ccslab .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #fff;
-  border-radius: 32px; transition: height .12s ease; }
+  /* Matches the slab it sits inside. A fill rounder than its container leaves a sliver
+     of the track showing at the bottom corners. */
+  border-radius: 31px; transition: height .12s ease; }
 .ccslab .gl { position: absolute; left: 0; right: 0; bottom: 16px; text-align: center;
   z-index: 2; color: #1c1c1e; pointer-events: none; }
 .ccslab .gl svg { width: 22px; height: 22px; }
 
-/* Bottom-right cluster: four round toggles. */
-.cctoggles { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; }
-.cctoggles .ccpill { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 50%;
+/* Bottom-right cluster: four round toggles.
+   **Round, not oval.** `aspect-ratio: auto` with `height: 100%` stretches each pill to fill a
+   grid cell that is wider than it is tall, and `border-radius: 50%` on a rectangle is an
+   ellipse - which is what was on screen. A circle has to be told to stay square. */
+.cctoggles { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px;
+  place-items: center; }
+.cctoggles .ccpill { width: auto; height: 100%; aspect-ratio: 1; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; color: #fff;
   background: rgba(120,120,128,.55); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12);
   transition: background .2s ease, transform .12s; }
@@ -3879,13 +3890,16 @@ input { font: inherit; }
   min-height: 34px;
 }
 
+/* The close button. Centred on the row rather than pinned to its top-left corner of the
+   corner: `top: 0` put it above the text it sits beside, and hard against the panel edge. */
 .panelclose {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 50%;
+  right: 2px;
   display: flex;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
+  transform: translateY(-50%);
   align-items: center;
   justify-content: center;
   border-radius: 50%;
@@ -3897,8 +3911,11 @@ input { font: inherit; }
   transition: transform var(--ph-fast) var(--ph-spring), background var(--ph-fast) ease;
 }
 
+/* The centring transform has to be repeated: a `transform` on :active REPLACES it, and a
+   button that jumps down half its own height when pressed is worse than one that does not
+   shrink at all. */
 .panelclose:active {
-  transform: scale(.88);
+  transform: translateY(-50%) scale(.88);
   background: rgba(118, 118, 128, .44);
 }
 
@@ -3990,12 +4007,17 @@ input { font: inherit; }
   overflow: hidden;
 }
 
+/* The header row, and room for the close button.
+   It reserved 38px on the right for a 32px button with no margin, so the × sat hard against
+   the corner and against whatever the row held - and the first card below started immediately
+   under it. A little more room on the right, and a little more air underneath. */
 .ccstatus {
   display: flex;
-  min-height: 42px;
+  min-height: 46px;
   align-items: center;
   gap: 7px;
-  padding: 0 38px 0 4px;
+  margin-bottom: 6px;
+  padding: 0 46px 0 6px;
 }
 
 .ccclock {
@@ -7075,23 +7097,80 @@ input { font: inherit; }
 .musicplayercopy > span { color: var(--music-red); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .musicplayercopy h1 { margin: 4px 0 1px; overflow: hidden; font-size: 22px; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
 .musicplayercopy p { margin: 0; overflow: hidden; color: var(--app-label2); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.musicactivity { display: flex; width: 100%; align-items: center; justify-content: space-between; margin: 15px 0 9px; padding-top: 9px; border-top: .5px solid var(--app-sep); }
-.musicactivity > span { display: flex; height: 15px; align-items: center; gap: 2px; }
+/* The status line under the artwork: a waveform and what the deck is doing.
+   It was an 8px grey capital line pinned to the far right of a rule, which reads as a stray
+   caption rather than as a status. Both halves sit together in a pill now. */
+.musicactivity {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 0 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--app-fill);
+}
+.musicactivity > span { display: flex; height: 14px; align-items: center; gap: 2px; }
 .musicactivity i { width: 2px; height: 8px; border-radius: 3px; background: var(--music-red); animation: music-wave .65s ease-in-out infinite alternate; }
 .musicactivity i:nth-child(2n) { height: 14px; animation-delay: -.3s; }
 .musicactivity i:nth-child(3) { height: 5px; animation-delay: -.5s; }
-.musicactivity em { color: var(--app-label3); font-size: 8px; font-style: normal; letter-spacing: .05em; text-transform: uppercase; }
-.musiccontrols { display: grid; width: 78%; grid-template-columns: 1fr 72px 1fr; align-items: center; margin: 4px 0 11px; }
-.musiccontrols button { display: grid; width: 52px; height: 52px; place-items: center; justify-self: center; color: var(--app-label); border-radius: 50%; }
+/* Paused: the waveform stops moving, because a bar still dancing next to the word "paused"
+   is the screen contradicting itself. */
+.musicactivity.ispaused i { animation-play-state: paused; opacity: .45; }
+.musicactivity em {
+  color: var(--app-label2);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* The transport.
+   `1fr 72px 1fr` across 78% of the screen pushed the two skip buttons out to the edges and
+   left the play button alone in the middle with a hand-span of empty either side - three
+   controls that did not read as one control. They are a row now, evenly spaced, with the
+   play button larger because it is the one that matters and not because it is unrelated. */
+.musiccontrols {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  width: 100%;
+  margin: 10px 0 14px;
+}
+.musiccontrols button {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  color: var(--app-label);
+  border-radius: 50%;
+  transition: transform var(--ph-fast) var(--ph-spring), background var(--ph-fast) ease;
+}
 .musiccontrols button:active { background: var(--app-fill); transform: scale(.9); }
 .musiccontrols button > svg,
-.musicprevicon svg { width: 27px; height: 27px; fill: currentColor; stroke-width: 0; }
-.musiccontrols .musicplaymain { width: 66px; height: 66px; color: #fff; background: linear-gradient(145deg,#ff577a,#db174d); box-shadow: inset 0 1px rgba(255,255,255,.35), 0 12px 25px rgba(219,23,77,.23); }
-.musiccontrols .musicplaymain svg { width: 29px; height: 29px; }
+.musicprevicon svg { width: 30px; height: 30px; fill: currentColor; stroke-width: 0; }
+.musiccontrols .musicplaymain {
+  width: 72px;
+  height: 72px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, .35), transparent 55%),
+    linear-gradient(145deg, #ff577a, #db174d);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .4),
+    0 10px 22px rgba(219, 23, 77, .28);
+}
+.musiccontrols .musicplaymain:active { background: linear-gradient(145deg, #ef4269, #c31043); }
+.musiccontrols .musicplaymain svg { width: 32px; height: 32px; }
 .musicprevicon { display: grid; transform: rotate(180deg); }
-.musicvolume { display: grid; width: 100%; grid-template-columns: 16px 1fr 18px; align-items: center; gap: 9px; color: var(--app-label3); }
-.musicvolume > svg:first-child { width: 12px; opacity: .65; }
-.musicvolume > svg:last-child { width: 17px; }
+/* Quiet and loud, the same weight either side of the track: they were 12px and 17px, which
+   reads as two different icons rather than as one scale. */
+.musicvolume { display: grid; width: 100%; grid-template-columns: 18px 1fr 18px; align-items: center; gap: 11px; color: var(--app-label2); }
+.musicvolume > svg:first-child { width: 14px; height: 14px; opacity: .55; }
+.musicvolume > svg:last-child { width: 18px; height: 18px; }
 /* A 4px track is a 4px target. The visible line stays thin, but the input itself is tall
    enough to put a finger on - which is the difference between a slider that works and one
    that looks like it should. */
@@ -7103,10 +7182,53 @@ input { font: inherit; }
 .musicvolume input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
   width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
   background: var(--music-red); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
-.musicplayeractions { display: grid; width: 100%; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 18px; }
-.musicplayeractions button { display: flex; min-height: 50px; align-items: center; flex-direction: column; justify-content: center; gap: 4px; color: var(--music-red); border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: var(--music-glass); box-shadow: inset 0 1px rgba(255,255,255,.28), 0 7px 16px rgba(36,18,30,.07); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
-.musicplayeractions button svg { width: 18px; height: 18px; }
-.musicplayeractions button span { color: var(--app-label2); font-size: 8px; }
+/* Favourite, output, queue. One surface split into three rather than three cards with three
+   shadows: the player already has an artwork, a glow and a play button competing for the eye,
+   and a fourth raised object under them was the screen looking busy. */
+.musicplayeractions {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  margin-top: 20px;
+  border-radius: 16px;
+  background: var(--app-fill);
+}
+.musicplayeractions button {
+  display: flex;
+  position: relative;
+  min-height: 58px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  color: var(--music-red);
+}
+/* Hairlines between, drawn by the buttons themselves so the container needs no children. */
+.musicplayeractions button + button::before {
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  left: 0;
+  width: .5px;
+  content: "";
+  background: var(--app-sep);
+}
+.musicplayeractions button:active { background: var(--app-fill); }
+.musicplayeractions button svg { width: 19px; height: 19px; }
+.musicplayeractions button span { color: var(--app-label2); font-size: 11px; font-weight: 500; }
+
+/* Stopping is not one of the three. It ends what the other three are about, so it is a plain
+   line of text under them rather than a fourth slab competing with them. */
+.musicplayer .uibtn {
+  margin-top: 22px;
+  color: var(--app-label2);
+  font-size: 14px;
+  font-weight: 500;
+  background: none;
+  box-shadow: none;
+}
+.musicplayer .uibtn:active { color: var(--music-red); background: none; }
 
 @media (max-height: 760px) {
   .musicart.playerart { width: 218px; height: 218px; }
@@ -7934,6 +8056,68 @@ body.inframe.dark .uisearch {
     animation: none !important;
   }
 }
+
+/* ══ Music: legibility ════════════════════════════════════════
+   A floor under every piece of text in the app, applied here rather than by editing thirty
+   rules in place - the editorial layout above is doing something specific with each of them,
+   and the problem is not the layout, it is the size.
+
+   The app had text at 8px, 8.5px and 9px, and secondary labels at 34-55% opacity. This phone
+   draws at 372 pixels wide and every one of those is a real screen pixel: an 8px label is not
+   a small label, it is one nobody reads. A player who cannot read a track name cannot pick a
+   track, which is the whole app.
+
+   The floor is 11px for anything that carries information and 10px for the uppercase eyebrows,
+   which are decorative and carry letter-spacing that makes them read larger than they measure.
+   Opacity for text goes no lower than 62%. */
+.musictabs button span { font-size: 10px; }
+.musicfeature > span,
+.musichero.emptyhero > span,
+.musicherocopy > span,
+.musicmix > div > span,
+.musicplayercopy > span,
+.musiclivepill,
+.musictrackmain em { font-size: 10px; }
+
+.musicmix small,
+.musictrackmain small,
+.musicminiopen small,
+.musicairglass span,
+.musicstationcards small,
+.musiclibrarytiles small,
+.musicedithead small,
+.musicqueue small,
+.musicherocopy p,
+.musicquickactions button span { font-size: 11.5px; }
+
+/* Titles carry the weight of a list: a track name is what a player is scanning for. */
+.musictrackmain b,
+.musicstationcards b,
+.musiclibrarytiles b,
+.musicqueue b { font-size: 14.5px; }
+
+/* Nothing that is text fades below this. The glows and the artwork keep their own opacity -
+   they are decoration and losing them is losing nothing. */
+.musictrackmain small,
+.musicmix small,
+.musicqueue small,
+.musicminiopen small,
+.musicairglass span,
+.musicstationcards small,
+.musiclibrarytiles small { opacity: 1; }
+
+/* Touch. A transport control is pressed while walking, driving, and being shot at. */
+.musicfoot button,
+.musicquickactions button { min-height: 46px; }
+.musicminiplay,
+.musicmininext,
+.musiministop { min-width: 34px; min-height: 34px; }
+.musiministop { opacity: .8; }
+.musiministop svg { width: 15px; height: 15px; }
+
+/* The now-playing bar is the app's most-read row and was its faintest. */
+.musicminiopen b { font-size: 14px; }
+.musicminiopen small { color: var(--app-label2); }
 
 /* ══ The social layer ═════════════════════════════════════════
    Three apps over one set of parts. A post, a profile, a tab bar and a card deck are
@@ -9915,6 +10099,11 @@ body.inframe.dark .uisearch {
 /* The trending row: a tag with its post count tucked under it. */
 .soctrendrow button { display: inline-flex; align-items: baseline; gap: 5px; }
 .soctrendrow small { opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Bank Pro's two primary actions, side by side under the balance. Deposit and Pay are what a
+   business does most; withdrawing to your own account sits further down on purpose. */
+.bankproacts { display: flex; gap: 8px; }
+.bankproacts .uibtn { flex: 1; min-width: 0; margin-bottom: 12px; }
+
 .bankcalc { padding: 2px 4px 10px; font-size: 13px; font-weight: 600; opacity: .75;
   font-variant-numeric: tabular-nums; min-height: 18px; }
 .focusrow { display: flex; align-items: center; gap: 10px; padding: 4px 2px 10px;

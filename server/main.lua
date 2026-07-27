@@ -1310,6 +1310,8 @@ local Charging = {}      -- [source] = true while in reach of something that cha
 -- car, a solar pack, a wall socket prop. Global so server/api.lua can write it. Read by
 -- chargeRateAt below, cleared when the player drops.
 ExternalCharge = {}
+--- [source] = when that claim runs out. A resource that stops renewing stops charging.
+ExternalChargeUntil = {}
 
 batteryOf = function(src)
     return math.max(0, math.min(100, math.floor(Battery[src] or 100)))
@@ -1389,22 +1391,42 @@ end
 --- Anywhere that charges: a public charger, any vehicle, or a property this character
 --- holds a key to. The last two follow the player rather than a coordinate, which is
 --- why they are code and not rows.
+--- Why the phone thinks it is charging, in one word. Read by `/phonecharge` so a report can
+--- say which branch fired instead of "it charges for ever".
+ChargeReason = {}
+
 local function chargeRateAt(src, ped, coords)
     -- Another resource driving the charge wins over everything: an electric car it put
-    -- you in, a socket you plugged into. It named the rate; trust it, within the ceiling.
+    -- you in, a socket you plugged into. It named the rate; trust it, within the ceiling -
+    -- but only while its lease holds. See `SetCharging` in server/api.lua: a claim that is
+    -- never renewed used to charge the phone for the rest of the session.
     local ext = ExternalCharge[src]
-    if ext and ext > 0 then return ext end
+    if ext and ext > 0 then
+        local until_ = ExternalChargeUntil[src]
+        if until_ and os.time() >= until_ then
+            ExternalCharge[src], ExternalChargeUntil[src] = nil, nil
+        else
+            ChargeReason[src] = 'external'
+            return ext
+        end
+    end
 
     -- A car is a charger unless the operator says otherwise, which is the other half of
     -- `chargeAtProperty`: a server that wants a long drive to cost battery turns this off and
     -- leaves properties and the public chargers as the only ways to fill up.
-    if Config.Compat.chargeInVehicle ~= false and IsPedInAnyVehicle(ped) then return 1.0 end
+    if Config.Compat.chargeInVehicle ~= false and IsPedInAnyVehicle(ped) then
+        ChargeReason[src] = 'vehicle'
+        return 1.0
+    end
 
     -- Inside a property is decided on the CLIENT, because only the housing script knows,
     -- and reported up a replicated state bag. See bridge/client/charging.lua, which knows
     -- how to ask qs-housing, ps-housing, qb-houses and the rest.
     local state = Player(src) and Player(src).state
-    if state and state.phoneAtHome == true then return 1.0 end
+    if state and state.phoneAtHome == true then
+        ChargeReason[src] = 'property'
+        return 1.0
+    end
 
     -- Public chargers, from Config.Chargers.
     for _, c in ipairs(Config.Chargers or {}) do
@@ -1414,11 +1436,16 @@ local function chargeRateAt(src, ped, coords)
                 -- answers true without anything being stored, so a server that never sets a
                 -- price behaves exactly as it did before paid charging existed.
                 -- See server/charging.lua.
-                if PaidChargeOk and not PaidChargeOk(src, c) then return 0.0 end
+                if PaidChargeOk and not PaidChargeOk(src, c) then
+                    ChargeReason[src] = 'unpaid:' .. tostring(c.id or '?')
+                    return 0.0
+                end
+                ChargeReason[src] = 'charger:' .. tostring(c.id or '?')
                 return math.max(0.1, (tonumber(c.rate) or 20) / 20.0)
             end
         end
     end
+    ChargeReason[src] = nil
     return 0.0
 end
 
@@ -4135,6 +4162,8 @@ AddEventHandler('playerDropped', function()
     BatterySaved[src] = nil
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
     ExternalCharge[src] = nil
+    ExternalChargeUntil[src] = nil
+    ChargeReason[src] = nil
     if PaidChargeDrop then PaidChargeDrop(src) end
     FrameLast[src] = nil
     MessageLastSend[src], MessageBusy[src] = nil, nil

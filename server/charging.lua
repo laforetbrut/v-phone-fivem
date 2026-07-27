@@ -278,6 +278,25 @@ exports('SetChargePaid', function(src, on, chargerId)
     return true
 end)
 
+--- The server half of `/phonecharge`. Printed into the player's own console, next to what the
+--- client just printed, so the two halves of "why is it charging" are read together.
+RegisterNetEvent('v-phone:charge:why', function()
+    local src = source
+    local reason = ChargeReason and ChargeReason[src] or nil
+    local lease = ExternalChargeUntil and ExternalChargeUntil[src]
+    TriggerClientEvent('chat:addMessage', src, { args = { 'iFruit', ('charging because: %s')
+        :format(tostring(reason or 'nothing - it is not charging')) } })
+    if lease then
+        TriggerClientEvent('chat:addMessage', src, { args = { 'iFruit',
+            ('an external script claimed it; that claim expires in %ds'):format(
+                math.max(0, lease - os.time())) } })
+    end
+    if Session[src] then
+        TriggerClientEvent('chat:addMessage', src, { args = { 'iFruit',
+            ('paid stop open at %s'):format(tostring(Session[src])) } })
+    end
+end)
+
 --- What the phone knows about this player's stop. For /phoneadmin and the diagnostics.
 exports('GetChargeSession', function(src)
     src = tonumber(src)

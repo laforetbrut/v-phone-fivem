@@ -216,9 +216,17 @@ STUBS['v-voice'] = {
             TriggerEvent('SaltyChat_SetRadioChannel', '', true)
         end
     end,
-    --- Speaker mode: the people around you hear the call. A listener simply joins the same
-    --- call channel. Only pma-voice exposes this; elsewhere the call stays private, which
-    --- is the safe failure.
+    --- Speaker mode: the people around you are ON the call.
+    ---
+    --- They hear it and the far end hears them, which is what a speakerphone is. That is not a
+    --- choice this makes - it is what pma-voice does with a call channel. `addPlayerToCall`
+    --- wires each arrival to every member already there and sends the new member the whole
+    --- list, so voice flows both ways between all of them. There is no listen-only channel to
+    --- ask for.
+    ---
+    --- Only pma-voice exposes calls this way. On saltychat and on a server with no voice
+    --- script the call stays private, which is the safe failure: a feature that does nothing
+    --- is better than one that leaks a conversation somewhere nobody expected.
     SpeakerListen = function(_, callId, on)
         if isServer or voiceResource() ~= 'pma-voice' then return end
         exports['pma-voice']:setCallChannel(on and callChannel(callId) or 0)

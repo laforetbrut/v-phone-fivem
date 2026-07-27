@@ -413,16 +413,26 @@ end)
 --     exports['v-phone']:SetCharging(src, true, 1.5)
 --     -- on leave, or when the car runs flat:
 --     exports['v-phone']:SetCharging(src, false)
+--- **It expires.** A resource that switches charging ON and never switches it off - because
+--- it crashed, was stopped, or simply forgot a code path - used to leave the phone charging
+--- for the rest of the session. It is the first branch `chargeRateAt` reads, so nothing else
+--- can correct it, and the player sees a battery that fills for ever with no charger in sight.
+---
+--- Every call renews the lease. A script that means it is plugged in says so again well inside
+--- `Config.ExternalCharging.leaseSeconds`, which is what a charging script does anyway: it
+--- runs a loop. One that has gone away stops renewing, and the phone unplugs itself.
 exports('SetCharging', function(src, on, rate)
     src = tonumber(src)
     if not src then return false, 'args' end
     if not on then
         ExternalCharge[src] = nil
+        ExternalChargeUntil[src] = nil
         return true
     end
     local cfg = Config.ExternalCharging or {}
     local wanted = tonumber(rate) or cfg.defaultRate or 1.0
     ExternalCharge[src] = math.max(0.1, math.min(tonumber(cfg.maxRate) or 4.0, wanted))
+    ExternalChargeUntil[src] = os.time() + math.max(10, math.floor(tonumber(cfg.leaseSeconds) or 120))
     return true
 end)
 

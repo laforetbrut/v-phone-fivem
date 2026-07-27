@@ -3695,6 +3695,192 @@ RENDER.bank = async () => {
   rows('[data-addfav]', (el) => el.addEventListener('click', () => addFavouriteSheet()));
 };
 
+// ── Bank Pro: the company account ──────────────────────────────
+// The Bank app is a person's money; this is a business's, for the character who runs it.
+//
+// **No phone numbers anywhere in it.** A company is paid by account and an employee by who
+// they are, and that is a deliberate difference from the Bank app rather than an omission: a
+// business transfer addressed by number is one that can go to a stranger with a SIM.
+//
+// Everything is decided on the server - which account this is, whether this character may
+// reach it, whether the money moved. See server/bankpro.lua.
+RENDER.bankpro = async () => {
+  loading();
+  const d = await post('app', { app: 'bankpro' });
+  if (!d || d.error) {
+    // Named refusals, because "you cannot use this" tells a business owner nothing about
+    // whether they are in the wrong job, the wrong grade, or looking at a switched-off app.
+    body(UI.empty(L('ph.bankpro_e_' + ((d && d.error) || 'off')), 'bank'));
+    return;
+  }
+
+  const limits = d.limits || {};
+  const job = d.job || {};
+  const history = d.history || [];
+
+  body(
+    UI.hero({
+      appicon: 'bank',
+      eyebrow: job.label || job.name || '',
+      // A balance that cannot be read says so instead of showing zero. Telling somebody
+      // their company has nothing, when the truth is that the banking script does not
+      // expose it, is worse than saying nothing.
+      value: d.readable ? money(d.balance) : L('ph.bankpro_unreadable'),
+      subtitle: d.readable
+        ? (L('ph.bankpro_account') + ' ' + (d.account || ''))
+        : L('ph.bankpro_unreadable_hint'),
+    }) +
+    '<div class="bankproacts">' +
+      UI.button(L('ph.bankpro_deposit'), 'bpdep', 'tinted') +
+      (d.readable === false ? '' : UI.button(L('ph.bankpro_pay'), 'bppay', 'plain')) +
+    '</div>' +
+    UI.group([
+      UI.row({ icon: 'wallet', title: L('ph.balance'),
+               value: money((d.mine || {}).bank), mono: true }),
+      UI.row({ icon: 'bank', title: L('ph.cash'), value: money((d.mine || {}).cash), mono: true }),
+      UI.row({ icon: 'jobs', title: L('ph.bankpro_grade'),
+               value: job.gradeLabel || String(job.grade || 0) }),
+    ], { header: L('ph.bankpro_you') }) +
+    (d.withdraw === false ? '' : UI.button(L('ph.bankpro_withdraw'), 'bpwd', 'plain')) +
+    (history.length
+      ? UI.group(history.map((h) => UI.row({
+          title: L('ph.bankpro_k_' + h.kind) + ' - ' + (h.target || ''),
+          subtitle: (h.name || '') + '  ' + shortWhen(h.at) + (h.note ? '  ' + h.note : ''),
+          value: money(h.kind === 'deposit' ? h.amount : -Math.abs(Number(h.amount) || 0)),
+          mono: true,
+          tone: h.kind === 'deposit' ? 'pos' : 'neg',
+        })), { header: L('ph.bankpro_history'), footer: L('ph.bankpro_history_hint') })
+      : UI.empty(L('ph.bankpro_no_history')))
+  );
+
+  const again = () => RENDER.bankpro();
+
+  if (byId('bpdep')) byId('bpdep').addEventListener('click', () => bankproAmountSheet({
+    title: L('ph.bankpro_deposit'), limits, action: 'bankproDeposit',
+    purse: true, mine: d.mine || {}, after: again,
+  }));
+  if (byId('bpwd')) byId('bpwd').addEventListener('click', () => bankproAmountSheet({
+    title: L('ph.bankpro_withdraw'), limits, action: 'bankproWithdraw', after: again,
+  }));
+  if (byId('bppay')) byId('bppay').addEventListener('click', () => bankproPaySheet(d, again));
+};
+
+/// One amount sheet for deposit and withdrawal. `purse` adds the cash/bank choice, which
+/// only a deposit has: money can leave a pocket, it can only arrive in an account.
+function bankproAmountSheet(o) {
+  let from = 'bank';
+  sheet(o.title,
+    UI.field('bpamount', L('ph.bank_amount'), '', 'type="number" inputmode="numeric" min="' +
+      (o.limits.min || 1) + '"' + (o.limits.max > 0 ? ' max="' + o.limits.max + '"' : '')) +
+    (o.purse
+      ? '<div class="seg" id="bppurse">' +
+          '<button class="on" data-p="bank">' + esc(L('ph.balance')) + ' ' + esc(money(o.mine.bank)) + '</button>' +
+          '<button data-p="cash">' + esc(L('ph.cash')) + ' ' + esc(money(o.mine.cash)) + '</button>' +
+        '</div>'
+      : '') +
+    UI.field('bpnote', L('ph.bank_note'), '', 'maxlength="40"') +
+    UI.button(L('ph.confirm'), 'bpgo', 'tinted'),
+    () => {
+      if (o.purse) {
+        [...byId('bppurse').querySelectorAll('button')].forEach((b) =>
+          b.addEventListener('click', () => {
+            [...byId('bppurse').children].forEach((x) => x.classList.remove('on'));
+            b.classList.add('on');
+            from = b.dataset.p;
+          }));
+      }
+      byId('bpgo').addEventListener('click', async () => {
+        const go = byId('bpgo');
+        if (go.disabled) return;      // double-tapping send must not send twice
+        go.disabled = true;
+        const epoch = sheetEpoch;
+        const r = await post(o.action, {
+          amount: Math.floor(Number(byId('bpamount').value) || 0),
+          note: byId('bpnote').value.trim(),
+          from,
+          // Only a payment has one. The server re-checks it either way: an employee must
+          // hold the job, and an account must be one the operator listed.
+          to: o.to,
+        });
+        if (!r || !r.ok) {
+          go.disabled = false;
+          toast(L('ph.bankpro_e_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        ui('money');
+        toast(L('ph.bankpro_done') + ' ' + money(r.amount));
+        o.after();
+      });
+    });
+}
+
+/// Paying: an employee, or another company. Both lists come from the server, and a
+/// destination that is not in one of them does not exist as far as this app is concerned.
+async function bankproPaySheet(d, after) {
+  const r = await post('bankproStaff', {});
+  const staff = (r && r.staff) || [];
+  const others = (r && r.others) || [];
+  const payees = d.payees || [];
+
+  const personRow = (s, kind) => UI.row({
+    avatar: s.name, title: s.name, subtitle: s.grade || '', chevron: true,
+    data: { bpto: kind + ':' + s.citizenid, bpname: s.name },
+  });
+
+  const draw = (query) => {
+    const q = String(query || '').trim().toLowerCase();
+    const match = (s) => !q || String(s.name || '').toLowerCase().includes(q);
+    return (staff.filter(match).length
+        ? UI.group(staff.filter(match).map((s) => personRow(s, 'staff')),
+                   { header: L('ph.bankpro_staff') })
+        : (q ? '' : '<div class="groupfoot">' + esc(L('ph.bankpro_no_staff')) + '</div>')) +
+      // Anybody else connected: a contractor, a supplier, somebody owed a favour. A list,
+      // never a typed id.
+      (others.filter(match).length
+        ? UI.group(others.filter(match).map((s) => personRow(s, 'person')),
+                   { header: L('ph.bankpro_anyone') })
+        : '') +
+      (payees.length && !q
+        ? UI.group(payees.map((a) => UI.row({
+            icon: 'bank', tint: '#0A84FF', title: a, chevron: true,
+            data: { bpto: 'account:' + a, bpname: a },
+          })), { header: L('ph.bankpro_companies') })
+        : '');
+  };
+
+  const wire = (epoch) => {
+    [...byId('sheet').querySelectorAll('[data-bpto]')].forEach((row) =>
+      row.addEventListener('click', () => {
+        const to = row.dataset.bpto;
+        const name = row.dataset.bpname;
+        if (!closeSheet(false, epoch)) return;
+        bankproAmountSheet({
+          title: L('ph.bankpro_pay') + ' - ' + name,
+          limits: d.limits || {},
+          action: 'bankproPay',
+          after,
+          to,
+        });
+      }));
+  };
+
+  sheet(L('ph.bankpro_pay'),
+    // A search, because "anybody connected" on a busy server is a list nobody scrolls.
+    ((staff.length + others.length) > 6
+      ? UI.field('bpfind', L('ph.search'), '', 'autocomplete="off"') : '') +
+    '<div id="bplist">' + draw('') + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      wire(epoch);
+      const find = byId('bpfind');
+      if (find) find.addEventListener('input', () => {
+        byId('bplist').innerHTML = draw(find.value);
+        wire(epoch);
+      });
+    });
+}
+
 // ── Sending money ──────────────────────────────────────────────
 // Everything below only draws and asks. The amount, the limits, the fee and who the number
 // belongs to are all decided on the server, so a player editing this page changes nothing
@@ -4988,7 +5174,7 @@ async function musicPlay(track, queue, output) {
   ccNow = musicNow;
   await musicRemember(track);
   toast(kind === 'headphones' ? L('ph.playing_ear') : L('ph.playing'));
-  if (openApp && openApp.id === 'music') RENDER.music();
+  if (openApp && openApp.id === 'music') RENDER.music(true);
 }
 
 // Stop, and forget what was playing.
@@ -5004,7 +5190,31 @@ async function musicStop() {
   musicQueue = [];
   musicQueueIndex = 0;
   musicPlayerOpen = false;
-  if (openApp && openApp.id === 'music') RENDER.music();
+  if (openApp && openApp.id === 'music') RENDER.music(true);
+}
+
+/// Repaint only what pausing changes: the two play buttons and the status line.
+///
+/// Pausing used to call `RENDER.music()`, which begins with `loading()` - so the whole app
+/// blanked to "Loading..." and rebuilt itself, fetching the library, the playlists and the
+/// deck again, every single time somebody pressed pause. It looked like the app reloading
+/// because it was. Nothing about the library changed; one glyph did.
+function musicPaintPlaying() {
+  const paused = !!(musicNow && musicNow.paused);
+  const icon = paused ? 'play' : 'pause';
+  const label = L(paused ? 'ph.resume' : 'ph.pause');
+
+  for (const id of ['musicminiplay', 'mplaymain']) {
+    const button = byId(id);
+    if (!button) continue;
+    button.innerHTML = svg(icon);
+    button.setAttribute('aria-label', label);
+  }
+  // The full player also says what the deck is doing, in words.
+  const status = byId('appbody').querySelector('.musicactivity em');
+  if (status) status.textContent = paused ? L('ph.paused') : L('ph.music_synced');
+  const wave = byId('appbody').querySelector('.musicactivity');
+  if (wave) wave.classList.toggle('ispaused', paused);
 }
 
 async function musicToggle(track) {
@@ -5019,8 +5229,11 @@ async function musicToggle(track) {
   const result = await post('music', { action });
   if (!result || result.error) { toast(L('ph.err_' + ((result && result.error) || 'x'))); return; }
   musicNow.paused = action === 'pause';
+  // `current` may be the model's copy rather than `musicNow`, and the buttons are drawn from
+  // whichever the view is holding. Both, or the icon flips back on the next repaint.
+  current.paused = musicNow.paused;
   ccNow = musicNow;
-  if (openApp && openApp.id === 'music') RENDER.music();
+  if (openApp && openApp.id === 'music') musicPaintPlaying();
 }
 
 async function musicStep(direction) {
@@ -5040,7 +5253,7 @@ async function musicFavourite(track) {
   }
   await musicSaveLibrary(library);
   toast(L(index < 0 || library[index].favorite ? 'ph.music_favorited' : 'ph.music_unfavorited'));
-  RENDER.music();
+  RENDER.music(true);
 }
 
 function musicAdd(existing, index) {
@@ -5071,7 +5284,7 @@ function musicAdd(existing, index) {
       if (index != null && library[index]) library[index] = next; else library.unshift(next);
       const result = await musicSaveLibrary(library);
       if (!result || result.error) { toast(L('ph.err_' + ((result && result.error) || 'x'))); return; }
-      if (closeSheet(false, epoch)) RENDER.music();
+      if (closeSheet(false, epoch)) RENDER.music(true);
     }), 'music-edit');
 }
 
@@ -5119,7 +5332,7 @@ function musicTrackSheet(track, index) {
           closeSheet(false, epoch);
           return;
         }
-        if (closeSheet(false, epoch)) RENDER.music();
+        if (closeSheet(false, epoch)) RENDER.music(true);
       });
     }, 'music-actions');
 }
@@ -5355,7 +5568,7 @@ async function musicNewPlaylist(model) {
         await musicSavePlaylists(
           mine.concat([{ id: musicPlaylistId(), name, icon: 'music', tint: null, tracks: [] }]),
           model.limits);
-        if (closeSheet(false, epoch)) RENDER.music();
+        if (closeSheet(false, epoch)) RENDER.music(true);
       });
     });
 }
@@ -5377,15 +5590,21 @@ async function musicAddToPlaylist(model, playlist) {
           const target = mine.find((p) => p.id === playlist.id);
           if (target) target.tracks = target.tracks.concat([track]);
           await musicSavePlaylists(mine, model.limits);
-          if (closeSheet(false, epoch)) RENDER.music();
+          if (closeSheet(false, epoch)) RENDER.music(true);
         }));
     });
 }
 
-RENDER.music = async () => {
+/// `quiet` repaints without blanking the screen first.
+///
+/// `loading()` replaces the whole body with one word, which is right when the app is being
+/// entered and there is nothing on screen yet - and wrong for every repaint after that. A
+/// favourite, a deleted track, a queue change: the view is already drawn, the data takes a few
+/// round trips to re-read, and blanking it in between is the app appearing to reload.
+RENDER.music = async (quiet) => {
   setNav(L('app.music'), null, musicTab === 'library'
     ? { icon: 'add', label: L('ph.track_add'), onClick: () => musicAdd() } : null);
-  loading();
+  if (!quiet) loading();
   const model = await musicModel();
   if (!model.enabled) { foot(''); body(UI.empty(L('ph.err_off'), 'music')); return; }
   if (musicPlayerOpen) { musicRenderPlayer(model); return; }
@@ -6258,15 +6477,31 @@ let volume = 0.5;
 // empty - so it showed "nothing playing" while a track was audibly playing, and the post it
 // then never reached carried an `id` that nothing has ever sent. Same root cause as the
 // control centre's dead media tile: the phone knows what it started, so it reads that.
+/// Move the volume slider that is on screen, if one is.
+///
+/// The side buttons used to re-render the whole Music app for this. Even without the blanking
+/// that is a rebuild of every card and row in the view - the scroll jumps, the artwork
+/// animations restart - and a volume rocker is pressed five times in a row. One number
+/// changed; one slider needs to know.
+function musicPaintVolume(value) {
+  const slider = byId('mvolume');
+  if (!slider) return;
+  const percent = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  slider.value = percent;
+  // The filled part of the track is drawn from this, not from `value` - without it the
+  // handle moves and the colour behind it does not.
+  slider.style.setProperty('--volume', percent + '%');
+}
+
 async function nudgeVolume(delta) {
   if (!musicNow) { hud('speaker', L('ph.nothing_playing')); return; }
   volume = Math.max(0, Math.min(1, (musicNow.volume ?? volume) + delta));
   musicNow.volume = volume;
+  if (ccNow) ccNow.volume = volume;
   hud('speaker', musicNow.title || L('ph.untitled'), volume);
+  musicPaintVolume(volume);
   const r = await post('music', { action: 'volume', volume });
   if (r && r.error) toast(L('ph.err_' + r.error));
-  // The player screen and the control centre both draw this number.
-  if (openApp && openApp.id === 'music') RENDER.music();
 }
 
 function wireSideButtons() {
@@ -7278,7 +7513,7 @@ function airdropOffer(o) {
             await musicSaveLibrary(library);
           }
           toast(L('ph.airdrop_track_saved'));
-          if (openApp && openApp.id === 'music') RENDER.music();
+          if (openApp && openApp.id === 'music') RENDER.music(true);
           return;
         }
         await refresh();
@@ -10319,7 +10554,9 @@ function renderCC() {
     m.paused = !m.paused;
     if (musicNow) musicNow.paused = m.paused;
     renderCC();
-    if (openApp && openApp.id === 'music') RENDER.music();
+    // The same repaint the Music app's own pause button does. Rebuilding the whole app
+    // behind an open control centre is work nobody can even see happening.
+    if (openApp && openApp.id === 'music') musicPaintPlaying();
   });
 
   const bright = Math.max(0.35, Math.min(1, p.brightness ?? 1));

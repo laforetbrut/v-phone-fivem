@@ -229,6 +229,11 @@ Config.Compat = {
         -- qb-banking, Renewed-Banking, okokBanking and esx_addonaccount are handled; fill
         -- this only if your banking script is none of them. Return true only if it landed.
         society = nil,        -- (account, amount, reason) -> boolean
+        -- Read a job or society balance, and take money out of one. Bank Pro needs both.
+        -- Return nil from the balance hook for "cannot be read" - zero is a real answer and
+        -- the app says something different for each.
+        societyBalance = nil, -- (account) -> number or nil
+        societyRemove = nil,  -- (account, amount, reason) -> boolean
     },
 
     -- Print what the phone decided at boot, and log every social/phone write. Useful
@@ -484,6 +489,13 @@ Config.Calls = {
     maxMinutes  = 30,       -- hard ceiling on one call, so a forgotten call is not for ever
     -- On speaker, how far the call carries to the people around you. Short: it is a
     -- phone in a hand, not a PA system.
+    --
+    -- **Two-way.** Somebody within this range hears the call AND is heard by the far end -
+    -- which is what a speakerphone is, and is not a choice the phone makes: on pma-voice they
+    -- join the call channel, and a call channel wires every member to every other one in both
+    -- directions. `/phonevoice` says whether that can work on this server at all.
+    --
+    -- Somebody who is on their OWN call is never pulled in.
     speakerRange = 8.0,
 }
 
@@ -552,6 +564,11 @@ Config.Apps = {
       -- Job apps get their own aisle: it is only in the store at all for the people
       -- who hold the job, so it has no business sitting under Work next to Jobs.
       job = 'police', category = 'duty' },
+    -- The company account. In the store rather than on the home screen: most characters do
+    -- not run a business, and an app that answers "you are not a boss" to almost everybody
+    -- does not belong installed by default. See Config.BankPro.
+    { id = 'bankpro',  label = 'app.bankpro',  icon = 'bank',     owner = 'v-phone', slot = 18,
+      optional = true, category = 'finance' },
     { id = 'bleeter',  label = 'app.bleeter',  icon = 'bleet',    owner = 'v-phone', slot = 19,
       optional = true, category = 'social' },
     { id = 'snap',     label = 'app.snap',     icon = 'snap',     owner = 'v-phone', slot = 20,
@@ -1100,6 +1117,67 @@ Config.DeadZones = {
 -- not running, a table that could not be read, a callback with no handler. These switches
 -- only govern the lines that are merely true.
 -- ══════════════════════════════════════════════════════════════
+--  BANK PRO
+-- ══════════════════════════════════════════════════════════════
+-- The company account, on the phone, for the character who runs the business.
+--
+-- The Bank app is a person's money; this is a business's. **There are no phone numbers in it**
+-- - a company is paid by ACCOUNT and an employee by who they are, never by whichever number
+-- somebody happens to be carrying.
+--
+-- Not installed by default: it is in the store, and a business owner installs it. Nothing here
+-- decides who may open it beyond what is set below, and the account is always derived from the
+-- job the framework says the character holds - the page never names one.
+Config.BankPro = {
+    enabled = true,
+
+    -- Which jobs get a company account. Empty means every job does, which is the only sane
+    -- default for a resource that cannot know what jobs a server has.
+    --
+    --     jobs = { 'mechanic', 'realestate', 'taxi' },
+    jobs = {},
+
+    -- Only the boss. `isboss` is what qb marks a boss grade with, and it is the right test:
+    -- an employee should not be able to empty the till from their phone.
+    --
+    -- A server that does not use the flag sets `requireBoss = false` and a `minGrade` instead.
+    requireBoss = true,
+    minGrade = -1,          -- -1 disables the grade route entirely
+
+    -- The society account name is this plus the job name: `mechanic` by default, or
+    -- `society_mechanic` on a server whose banking script prefixes them.
+    accountPrefix = '',
+
+    -- Taking company money out to a personal account. Off leaves deposits and payments only,
+    -- which is what some servers want: money leaves a business by paying somebody, not by
+    -- the boss helping themselves.
+    allowWithdraw = true,
+
+    -- Paying an employee from the company account. They must actually hold the job, and be
+    -- online - paying somebody who is not connected means writing behind their back, and every
+    -- framework does that differently.
+    employees = true,
+
+    -- Paying somebody who does NOT work here: a contractor, a supplier, anybody the business
+    -- owes. A business pays people who are not on its payroll, and restricting payment to
+    -- employees was the app deciding how a business is run.
+    --
+    -- Still a list of characters who are connected, never a typed citizen id: an app that
+    -- accepts one is an app that pays whoever you can guess.
+    payAnyone = true,
+
+    -- Company-to-company transfers, and the only accounts they may reach. A free-text
+    -- destination is a way to move a business's money into a name nobody has heard of, so
+    -- there is no free-text destination: an account is either on this list or unreachable.
+    --
+    --     payees = { 'mechanic', 'ambulance', 'police' },
+    payees = {},
+
+    minAmount = 1,
+    maxAmount = 0,          -- 0 for no ceiling
+}
+
+-- ══════════════════════════════════════════════════════════════
 --  THE CLOCK
 -- ══════════════════════════════════════════════════════════════
 -- What the status bar, the lock screen and the control centre show.
@@ -1275,6 +1353,14 @@ Config.ExternalCharging = {
     -- The default rate an external charger applies when it does not name one. 1.0 is the
     -- same speed as a wall charger; 2.0 is twice as fast.
     defaultRate = 1.0,
+    -- How long one `SetCharging(src, true)` is believed for, in seconds.
+    --
+    -- A charging script runs a loop and says so again every few seconds, so this costs it
+    -- nothing. What it buys is that a script which crashes, is stopped, or misses its own
+    -- "unplug" path cannot leave a phone charging for the rest of the session - which is
+    -- exactly what "the phone charges for ever" looks like from the player's side.
+    leaseSeconds = 120,
+
     -- A ceiling, so a misbehaving script cannot charge a phone in one tick.
     maxRate = 4.0,
 }

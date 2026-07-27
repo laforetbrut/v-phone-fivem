@@ -420,6 +420,19 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
         -- the wording from `counterparty` and the sign instead.
         record(targetCid, amount, note, 'transfer', myName)
 
+        -- And a line in the BANK's own statement, both ends.
+        --
+        -- Without it the two histories are halves of one story: a transfer made on the phone
+        -- is missing from the ATM, and the player is left wondering which of the two screens
+        -- is lying. The money has already moved by this point, so a statement that cannot be
+        -- written is a cosmetic loss and is deliberately not checked.
+        if Bridge.Banking and Bridge.Banking.WriteStatement then
+            local label = note ~= '' and note or ('v-phone: %s'):format(theirName)
+            Bridge.Banking.WriteStatement(src, 'checking', total, label, 'withdraw', false)
+            Bridge.Banking.WriteStatement(target.source, 'checking', amount,
+                note ~= '' and note or ('v-phone: %s'):format(myName), 'deposit', false)
+        end
+
         -- One notification, on the bank, the way a banking app does it. This used to be a
         -- framework toast AND a text message, which is two alerts for one payment.
         local body = ('+%d - %s'):format(amount, myName)

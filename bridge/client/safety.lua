@@ -56,6 +56,28 @@ end
 -- forensics terminal each answer for themselves; a surface that has not loaded yet answers
 -- no, which is the safe direction.
 
+--- **Does THIS resource hold the cursor?**
+---
+--- `IsNuiFocused()` answers for the whole game, not for us. Every other resource's menu, shop
+--- and inventory sets it, and the first version of this watchdog read it - so opening anybody
+--- else's UI looked exactly like a stuck phone. It fired every two seconds, printed a line,
+--- and ran a full phone reset that clears the ped's secondary task, which is somebody else's
+--- animation. A guard that misfires into other resources is worse than the bug it guards.
+---
+--- `SetNuiFocus` is per-resource, so wrapping our own calls is the whole answer: what we set
+--- is what we own. Wrapped here for the same reason as `RegisterNUICallback` - this file loads
+--- first, so every call in the resource goes through it.
+local weHoldFocus = false
+local realSetNuiFocus = SetNuiFocus
+
+function SetNuiFocus(on, cursor)
+    weHoldFocus = (on == true)
+    return realSetNuiFocus(on, cursor)
+end
+
+--- For anything that needs to know. Read by the respawn guard below.
+function PhoneOwnsFocus() return weHoldFocus end
+
 local function wants()
     local ok, v = pcall(function()
         return (PhoneFocusWanted and PhoneFocusWanted())
@@ -75,10 +97,9 @@ CreateThread(function()
     while true do
         Wait(1000)
         if watchdogOn() then
-            -- `IsNuiFocused` is true for any resource's focus, not only ours. Releasing what
-            -- we do not own is not possible - `SetNuiFocus` is per-resource - so the worst
-            -- this can do while another resource holds it is call a native that does nothing.
-            if IsNuiFocused() and not wants() then
+            -- Only focus WE took. Another resource's menu is not this phone's business, and
+            -- treating it as one is how this printed ten lines a minute into somebody's F8.
+            if weHoldFocus and not wants() then
                 -- Two seconds, not one. Opening and closing both pass through a frame where
                 -- focus is set and the flag is not, and a watchdog that fired on that would
                 -- close the phone as it opened.
@@ -124,8 +145,15 @@ end)
 
 --- A respawn replaces the ped. Anything attached to the old one is gone, and anything the
 --- phone thought it was doing to it is now about a ped that does not exist.
+---
+--- **Only when there is something to reset.** `playerSpawned` fires several times during
+--- character selection and loading, and a reset that runs then tears down nothing, tells the
+--- server the screen closed, and - until this guard - printed a line each time. A phone
+--- talking to somebody who has not chosen a character yet is pure noise.
 AddEventHandler('playerSpawned', function()
-    if PhoneForceReset then pcall(PhoneForceReset) end
+    if not PhoneForceReset then return end
+    local busy = (PhoneFocusWanted and PhoneFocusWanted()) or weHoldFocus
+    if busy then pcall(PhoneForceReset) end
 end)
 
 -- baseevents, when a server runs it. Its death event fires earlier than the poll above.

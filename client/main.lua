@@ -664,7 +664,14 @@ RegisterNetEvent('v-phone:client:close', function() if isOpen then closePhone() 
 -- ped's tasks mid-open, or a script error leaves the state half-set. This tears every
 -- phone-related thing down unconditionally - prop, animation, NUI focus, control guard -
 -- so the player can move again, whatever state the phone thinks it is in.
-local function forceReset()
+--- `quiet` suppresses the "phone reset" line.
+---
+--- The player typing `/refreshphone` asked and should be told. Everything else that calls this
+--- - the watchdog, dying, respawning - did not, and a reset the player did not ask for that
+--- announces itself is noise. During character selection `playerSpawned` fires more than once
+--- and every one of them printed a line, which is a phone shouting at somebody who has not
+--- even chosen a character yet.
+local function forceReset(quiet)
     isOpen = false
     isOpening = false
     openRequest = openRequest + 1
@@ -709,19 +716,23 @@ local function forceReset()
 
     TriggerServerEvent('v-phone:server:screen', false)
     SendNUIMessage({ action = 'close' })
-    V.Notify(L('ph.phone_reset') or 'Phone reset', 'success')
+    if not quiet then V.Notify(L('ph.phone_reset') or 'Phone reset', 'success') end
 end
 
 -- Both spellings, because a panicking player types whichever they remember.
-RegisterCommand('refreshphone', forceReset, false)
-RegisterCommand('refresh-phone', forceReset, false)
+--
+-- Wrapped rather than passed directly: `RegisterCommand` calls its handler with (source,
+-- args, raw), so handing it `forceReset` would put the source into `quiet` - a number, which
+-- is truthy - and silence the one reset that should always speak.
+RegisterCommand('refreshphone', function() forceReset(false) end, false)
+RegisterCommand('refresh-phone', function() forceReset(false) end, false)
 
 --- The same reset, reachable from the watchdog and from a key.
 ---
 --- A command is only a way out for a player who knows it exists and can still open the chat.
 --- Neither is a safe assumption for somebody who is stuck, which is why there is also a key
 --- binding and a thread that does this without being asked. See client/watchdog.lua.
-PhoneForceReset = forceReset
+PhoneForceReset = function() forceReset(true) end
 
 --- Does the phone believe it should own the cursor right now?
 ---
@@ -772,6 +783,32 @@ RegisterCommand('phonediag', function()
     end)
 end, false)
 
+--- `/phonevoice` - can this server carry a call at all, and can a speaker be heard?
+---
+--- "Nobody hears anybody" and "the other end cannot hear the people next to me" are the same
+--- question underneath: which voice script answered, and is it one that has call channels.
+--- Every answer below is something that silently produces silence.
+RegisterCommand('phonevoice', function()
+    local voiceRes = nil
+    for _, res in ipairs({ 'pma-voice', 'saltychat', 'mumble-voip' }) do
+        if GetResourceState(res) == 'started' then voiceRes = res break end
+    end
+    print('[v-phone] voice ─────────────────────────────────────')
+    print(('  Config.Compat.voice     %s'):format(tostring((Config.Compat or {}).voice or 'auto')))
+    print(('  running voice script    %s'):format(tostring(voiceRes or 'none found')))
+    print(('  calls enabled           %s (voice_enableCalls)')
+        :format(tostring(GetConvarInt('voice_enableCalls', 1) == 1)))
+    print(('  speaker range           %s m'):format(tostring((Config.Calls or {}).speakerRange or 8.0)))
+    if voiceRes == 'pma-voice' then
+        print('  speaker is TWO-WAY: people near you join the call channel, so the far end')
+        print('  hears them and they hear the far end. That is what a call channel is.')
+    else
+        print('  speaker cannot work: only pma-voice exposes call channels. On anything else')
+        print('  the call stays between the two handsets.')
+    end
+    print(('  you are on a call now   %s'):format(tostring(call ~= nil and call.state or 'no')))
+end, false)
+
 -- And a server nudge, so an admin can un-stick a player's phone remotely.
 RegisterNetEvent('v-phone:client:forceReset', forceReset)
 
@@ -818,6 +855,7 @@ end
 -- One name each, no prediction, nothing to get wrong.
 local APP_SOURCE = {
     bank     = 'v-phone:bank:data',
+    bankpro  = 'v-phone:bankpro:open',
     garage   = 'v-phone:garage:data',
     wallet   = 'v-phone:wallet:data',
     jobs     = 'v-phone:jobs:data',
@@ -902,6 +940,14 @@ end
 RegisterNUICallback('bankTransfer', relay('v-phone:bank:transfer'))
 RegisterNUICallback('bankFavourite', relay('v-phone:bank:favourite'))
 
+-- Bank Pro. Relays, like the bank's: the account, who may reach it and whether the money
+-- moved are all decided on the server, so there is nothing here to check and nothing this
+-- side could usefully lie about. See server/bankpro.lua.
+RegisterNUICallback('bankproStaff',    relay('v-phone:bankpro:staff'))
+RegisterNUICallback('bankproWithdraw', relay('v-phone:bankpro:withdraw'))
+RegisterNUICallback('bankproDeposit',  relay('v-phone:bankpro:deposit'))
+RegisterNUICallback('bankproPay',      relay('v-phone:bankpro:pay'))
+
 RegisterNUICallback('conversation',  relay('v-phone:conversation'))
 RegisterNUICallback('send',          relay('v-phone:send'))
 RegisterNUICallback('contactSave',   relay('v-phone:contactSave'))
@@ -935,15 +981,34 @@ RegisterNUICallback('notes',         relay('v-phone:notes'))
 RegisterNUICallback('cipher',        relay('v-phone:cipher'))
 RegisterNUICallback('speaker',       relay('v-phone:speaker'))
 
---- Somebody near you put their phone on speaker, so you hear their call. Listening only:
---- the export never lets you transmit into a conversation you are not part of.
+--- Somebody near you put their phone on speaker.
+---
+--- **You hear their call, and the far end hears you.** That is what a speakerphone is, and it
+--- is what pma-voice does: joining a call channel makes every member of it a mutual voice
+--- target - `addPlayerToCall` wires the new arrival to everybody already there, both ways.
+--- (The comment here used to claim this was listening only. It never was.)
+---
+--- Two guards, both about not touching a voice channel that is not ours to touch:
 RegisterNetEvent('v-phone:client:speaker', function(d)
     local id = tonumber(d and d.id)
     if not id then return end
     local on = d and d.on == true
+
+    -- One: somebody on their OWN call is left alone. Joining them to a stranger's channel
+    -- would drop them out of their conversation, and turning the speaker off again would set
+    -- their channel to zero - hanging up on them from across the street.
+    if call and call.state == 'active' then
+        speakerListens[id] = nil
+        return
+    end
+
     if on then
         speakerListens[id] = true
     else
+        -- Two: only leave a channel we actually joined. Without this, any speaker being
+        -- switched off anywhere near you resets your voice channel whether or not you were
+        -- ever on it.
+        if not speakerListens[id] then return end
         speakerListens[id] = nil
     end
     if voice() then exports['v-voice']:SpeakerListen(id, on) end

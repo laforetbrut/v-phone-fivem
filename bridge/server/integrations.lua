@@ -447,6 +447,117 @@ Bridge.Banking = {}
 --- one would show every salary twice.
 function Bridge.Banking.Script() return choose('banking', BANKS) end
 
+--- What a JOB or SOCIETY account holds, or nil when it cannot be read.
+---
+--- `nil` and `0` are different answers and the difference matters: zero is an account with no
+--- money in it, nil is an account this server cannot see. Bank Pro shows the first as a
+--- balance and the second as "your banking script does not expose this", because telling a
+--- business owner their company has nothing when the truth is "we could not ask" is worse
+--- than saying nothing.
+function Bridge.SocietyBalance(account)
+    account = tostring(account or ''):gsub('%s', '')
+    if account == '' then return nil end
+
+    local custom = Config.Compat.hooks.societyBalance
+    if custom then
+        local ok, value = pcall(custom, account)
+        if ok and tonumber(value) then return math.floor(tonumber(value)) end
+    end
+
+    local bank = choose('banking', BANKS)
+
+    if bank == 'qb-banking' then
+        local value = callExport(bank, 'GetAccountBalance', account)
+        if tonumber(value) then return math.floor(tonumber(value)) end
+        return nil
+    end
+
+    if bank == 'Renewed-Banking' then
+        -- Answers `false` for an account it does not know, which is not a balance of zero.
+        local value = callExport(bank, 'getAccountMoney', account)
+        if value == false or value == nil then return nil end
+        if tonumber(value) then return math.floor(tonumber(value)) end
+        return nil
+    end
+
+    if bank == 'okokBanking' or bank == 'qs-banking' then
+        local value = callExport(bank, 'GetAccountBalance', account)
+            or callExport(bank, 'GetAccountMoney', account)
+        if tonumber(value) then return math.floor(tonumber(value)) end
+        return nil
+    end
+
+    if started('esx_addonaccount') then
+        local balance = nil
+        pcall(function()
+            TriggerEvent('esx_addonaccount:getSharedAccount', account, function(shared)
+                if shared and shared.money then balance = tonumber(shared.money) end
+            end)
+        end)
+        if balance then return math.floor(balance) end
+    end
+
+    return nil
+end
+
+--- Take money OUT of a job or society account. **Fails closed.**
+---
+--- The mirror of `Bridge.AddSociety`, and the dangerous direction: this is the call that turns
+--- a company's money into a person's. It answers true only when the debit is confirmed, so a
+--- caller that credits a player afterwards never credits one for money that did not move.
+---
+--- It refuses to overdraw wherever the balance can be read. A banking script that allows a
+--- negative company balance can still be driven through `Config.Compat.hooks.societyRemove`.
+function Bridge.RemoveSociety(account, amount, reason)
+    account = tostring(account or ''):gsub('%s', '')
+    amount = math.floor(tonumber(amount) or 0)
+    reason = tostring(reason or 'v-phone')
+    if account == '' or amount <= 0 then return false end
+
+    local custom = Config.Compat.hooks.societyRemove
+    if custom then
+        local ok, done = pcall(custom, account, amount, reason)
+        return ok and done == true
+    end
+
+    -- Checked here rather than trusted to the banking script: some of them will happily go
+    -- negative, and a company overdrawn by a phone app is a support ticket.
+    local balance = Bridge.SocietyBalance(account)
+    if balance ~= nil and balance < amount then return false end
+
+    local bank = choose('banking', BANKS)
+
+    if bank == 'qb-banking' then
+        return callExport(bank, 'RemoveMoney', account, amount, reason) and true or false
+    end
+
+    if bank == 'Renewed-Banking' then
+        if callExport(bank, 'removeAccountMoney', account, amount) ~= true then return false end
+        callExport(bank, 'handleTransaction', account, 'v-phone', amount, reason,
+                   account, 'v-phone', 'withdraw')
+        return true
+    end
+
+    if bank == 'okokBanking' or bank == 'qs-banking' then
+        return callExport(bank, 'RemoveMoney', account, amount) and true or false
+    end
+
+    if started('esx_addonaccount') then
+        local done = false
+        pcall(function()
+            TriggerEvent('esx_addonaccount:getSharedAccount', account, function(shared)
+                if shared and shared.money and shared.money >= amount and shared.removeMoney then
+                    shared.removeMoney(amount)
+                    done = true
+                end
+            end)
+        end)
+        if done then return true end
+    end
+
+    return false
+end
+
 --- Put money into a JOB or SOCIETY account, and say whether it landed.
 ---
 --- What a paid charger takes has to go somewhere, and "somewhere" on a roleplay server is a
@@ -590,7 +701,7 @@ end
 ---
 --- Anything not in this list means the phone keeps its own lines. Add a script here only when
 --- `Transactions` genuinely returns its rows.
-local READABLE_HISTORY = { ['Renewed-Banking'] = true, ['qs-banking'] = true }
+local READABLE_HISTORY = { ['Renewed-Banking'] = true, ['qs-banking'] = true, ['qb-banking'] = true }
 
 --- Can the running banking script's own statement be read?
 function Bridge.Banking.HistoryReadable()
@@ -622,7 +733,62 @@ function Bridge.Banking.Transactions(src, citizenid)
         end)
         if ok and type(rows) == 'table' then return rows end
     end
+    if bank == 'qb-banking' then
+        -- **The same table the bank's own UI reads.**
+        --
+        -- Anything else is two half-histories: a transfer made on the phone missing from the
+        -- bank, and everything done at an ATM missing from the phone. qb-banking writes every
+        -- movement to `bank_statements` - `statement_type` is 'deposit' or 'withdraw', and the
+        -- amount it stores is unsigned - so the sign is put back here rather than showing a
+        -- withdrawal as money arriving.
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT reason AS label, amount, statement_type, date AS at
+                FROM bank_statements
+                WHERE citizenid = ? AND (account_name = 'checking' OR account_name IS NULL)
+                ORDER BY id DESC LIMIT 25]], { citizenid })
+        end)
+        if ok and type(rows) == 'table' then
+            for _, r in ipairs(rows) do
+                if tostring(r.statement_type) == 'withdraw' then
+                    r.amount = -math.abs(tonumber(r.amount) or 0)
+                end
+                r.statement_type = nil
+            end
+            return rows
+        end
+    end
     return nil
+end
+
+--- Write one line into the banking script's OWN statement.
+---
+--- So a transfer made on the phone appears at the ATM, and the two are one history rather than
+--- two halves. Returns false when there is nowhere to write it, which is not a failure of the
+--- transfer - the money has already moved - and is why every caller ignores the answer.
+---
+---   * qb-banking `CreateBankStatement(playerId, account, amount, reason, type, accountType)`
+---     with accountType 'player' for a character and 'shared' for a company
+---   * Renewed-Banking has `handleTransaction`, already written by AddSociety/RemoveSociety
+---
+--- `kind` is 'deposit' or 'withdraw', from the point of view of the account named.
+function Bridge.Banking.WriteStatement(src, account, amount, reason, kind, shared)
+    amount = math.abs(math.floor(tonumber(amount) or 0))
+    if amount <= 0 then return false end
+    kind = (kind == 'withdraw') and 'withdraw' or 'deposit'
+
+    local custom = Config.Compat.hooks.statement
+    if custom then
+        local ok, done = pcall(custom, src, account, amount, reason, kind, shared == true)
+        if ok and done then return true end
+    end
+
+    local bank = choose('banking', BANKS)
+    if bank == 'qb-banking' then
+        return callExport(bank, 'CreateBankStatement', src, tostring(account or 'checking'),
+            amount, tostring(reason or 'v-phone'), kind, shared and 'shared' or 'player')
+            and true or false
+    end
+    return false
 end
 
 -- ══════════════════════════════════════════════════════════════
