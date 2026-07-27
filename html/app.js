@@ -8360,7 +8360,6 @@ let zuberTab = 'browse';       // 'browse' | 'orders'
 let zuberOpenId = null;        // the restaurant whose menu is showing
 let zuberCart = {};            // { [item]: { label, price, qty } }
 let zuberKind = 'delivery';
-let zuberTip = 0;
 let zuberTier = 0;          // the loyalty tier being redeemed, 0 for none              // a percentage, chosen from the presets
 let zuberNote = '';
 let zuberQuery = '';
@@ -8382,6 +8381,18 @@ function zuberImage(name) {
   if (!base) return '';
   return base.replace(/\/+$/, '') + '/' + file.replace(/^\/+/, '');
 }
+
+/// **Is doc-restaurant the one taking the money for this order?**
+///
+/// It decides whether this app may show a total at all. doc-restaurant's total IS the sum of the
+/// item prices: the government tax is taken OUT of that - it splits TTC into HT plus tax and pays
+/// each side - and it has no delivery charge of any kind. So anything this app adds on top is a
+/// number nobody will ever be charged.
+///
+/// That is exactly what went wrong: `Config.Zuber.deliveryFee` and a tip were being added to a
+/// doc-restaurant order, and the screen said 174 for an order that correctly cost 130. A wrong
+/// total is the worst kind of bug in a shop - it is a number the player believes.
+function zuberChargesUs(d) { return !(d && d.doc); }
 
 /// Both payloads, reduced to one shape the rest of this app reads.
 ///
@@ -8745,11 +8756,25 @@ function zuberCheckout(d, c) {
   // is the authority - this is a preview of its arithmetic, never a substitute for it.
   const loyaltyOff = (chosen && points >= chosen.points)
     ? Math.floor(food * chosen.discount / 100) : 0;
-  const fee = zuberKind === 'delivery' ? (Number(d.fee) || 0) : 0;
-  const tax = Math.floor(food * (Number(d.tax) || 0) / 100);
-  const tipCfg = d.tip || {};
-  const tipAmount = Math.min(Math.floor(food * zuberTip / 100), Number(tipCfg.max) || 500);
-  const total = Math.max(0, food - loyaltyOff) + fee + tax + tipAmount;
+  // The fee and the tax belong to the CONFIG provider, where this app does the charging itself.
+  // In doc-restaurant mode both are zero, because it charges neither.
+  const ours = zuberChargesUs(d);
+  const fee = (ours && zuberKind === 'delivery') ? (Number(d.fee) || 0) : 0;
+  // The config provider ADDS its tax on top of the food, because it is the one charging.
+  const tax = ours ? Math.floor(food * (Number(d.tax) || 0) / 100) : 0;
+  const total = Math.max(0, food - loyaltyOff) + fee + tax;
+
+  // **doc-restaurant's tax is already INSIDE the price**, so it is shown as a breakdown of the
+  // total rather than added to it. Its own formula, exactly: HT = TTC / (1 + rate), and the tax
+  // is what is left over - the restaurant is paid the HT and the government the difference.
+  //
+  // Adding it instead would repeat the mistake this whole screen was just fixed for: a total the
+  // player is never charged. The rate comes from `Config.Zuber.docTaxRate`, which has to match
+  // doc-restaurant's own `Config.TaxRate` - its config is in its own resource and cannot be read
+  // from here.
+  const docRate = ours ? 0 : Math.max(0, Number(d.docTaxRate) || 0);
+  const ttc = Math.max(0, food - loyaltyOff);
+  const includedTax = docRate > 0 ? (ttc - Math.floor(ttc / (1 + docRate / 100))) : 0;
 
   // ── the loyalty card ──
   // Only when the restaurant runs a scheme AND this customer holds an active card: an empty
@@ -8825,12 +8850,6 @@ function zuberCheckout(d, c) {
             '</div>'
           : '<div class="groupfoot">' + esc(L('ph.zuber_no_tiers')) + '</div>')
       : '') +
-    (tipCfg.on === false ? '' :
-      '<div class="grouphead">' + esc(L('ph.zuber_tip')) + '</div>' +
-      '<div class="seg" id="zutip">' + (tipCfg.presets || [0, 5, 10, 15]).map((pct) =>
-        '<button class="' + (Number(pct) === zuberTip ? 'on' : '') + '" data-t="' + pct + '">' +
-        (Number(pct) === 0 ? esc(L('ph.zuber_tip_none')) : pct + '%') + '</button>').join('') +
-      '</div>') +
     UI.field('zunote', L('ph.zuber_note'), zuberNote, 'maxlength="200"') +
     UI.group([
       UI.row({ icon: 'zuber', title: L('ph.zuber_food'), value: money(food), mono: true }),
@@ -8839,9 +8858,17 @@ function zuberCheckout(d, c) {
                               .replace('{n}', String(chosen.discount)),
                             value: '-' + money(loyaltyOff), mono: true, tone: 'pos' }) : '',
       tax ? UI.row({ icon: 'bank', title: L('ph.zuber_tax'), value: money(tax), mono: true }) : '',
-      tipAmount ? UI.row({ icon: 'heart', title: L('ph.zuber_tip'), value: money(tipAmount), mono: true }) : '',
+      // Included, not added - the label says so, and the value carries no plus sign.
+      includedTax ? UI.row({ icon: 'bank',
+                             title: L('ph.zuber_tax_incl').replace('{n}', String(docRate)),
+                             value: money(includedTax), mono: true }) : '',
       UI.row({ icon: 'wallet', title: L('ph.zuber_total'), value: money(total), mono: true }),
     ].filter(Boolean)) +
+    // In doc-restaurant mode the restaurant is the authority on the price. The total shown is
+    // the sum of its own line prices, which is what it will charge - and the footnote says so,
+    // because a customer who is told nothing assumes the app decided.
+    '<div class="groupfoot">' + esc(L(ours ? 'ph.zuber_total_hint'
+                                           : 'ph.zuber_total_resto')) + '</div>' +
     UI.button(L('ph.zuber_order').replace('{n}', money(total)), 'zugo', 'tinted'),
     () => {
       const epoch = sheetEpoch;
@@ -8863,14 +8890,6 @@ function zuberCheckout(d, c) {
           zuberCheckout(d, c);
         }));
 
-      const tip = byId('zutip');
-      if (tip) [...tip.querySelectorAll('button')].forEach((b) =>
-        b.addEventListener('click', () => {
-          zuberTip = Number(b.dataset.t) || 0;
-          zuberNote = byId('zunote') ? byId('zunote').value : zuberNote;
-          if (!closeSheet(false, epoch)) return;
-          zuberCheckout(d, c);
-        }));
       [...byId('sheet').querySelectorAll('[data-zdel]')].forEach((row) =>
         row.addEventListener('click', () => {
           const key = row.dataset.zdel;
@@ -8914,7 +8933,7 @@ function zuberCheckout(d, c) {
               fidelityTierApplied: zuberTier,
             } })
           : await post('zuberOrder', { restaurant: c.id, kind: zuberKind, items: basket,
-                                       note: zuberNote, tip: tipAmount });
+                                       note: zuberNote });
 
         if (!r || (!r.ok && !r.success)) {
           go.disabled = false;

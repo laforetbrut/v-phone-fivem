@@ -1141,9 +1141,12 @@ local T = {
     ['ph.zuber_food'] = 'Repas',
     ['ph.zuber_fee'] = 'Frais de livraison',
     ['ph.zuber_tax'] = 'Taxe',
+    ['ph.zuber_tax_incl'] = 'Dont taxe ({n} %)',
     ['ph.zuber_tip'] = 'Pourboire',
     ['ph.zuber_tip_none'] = 'Aucun',
     ['ph.zuber_total'] = 'Total',
+    ['ph.zuber_total_hint'] = 'Total preleve a la commande.',
+    ['ph.zuber_total_resto'] = 'Prix du restaurant. Aucun frais n est ajoute par le telephone.',
     ['ph.zuber_order'] = 'Commander - {n}',
     ['ph.zuber_sent'] = 'Commande envoyee au restaurant',
     -- L historique.

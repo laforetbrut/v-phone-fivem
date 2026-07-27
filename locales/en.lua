@@ -1139,9 +1139,12 @@ local T = {
     ['ph.zuber_food'] = 'Food',
     ['ph.zuber_fee'] = 'Delivery fee',
     ['ph.zuber_tax'] = 'Tax',
+    ['ph.zuber_tax_incl'] = 'Of which tax ({n}%)',
     ['ph.zuber_tip'] = 'Tip',
     ['ph.zuber_tip_none'] = 'None',
     ['ph.zuber_total'] = 'Total',
+    ['ph.zuber_total_hint'] = 'Charged when you order.',
+    ['ph.zuber_total_resto'] = "The restaurant's own price. The phone adds nothing to it.",
     ['ph.zuber_order'] = 'Order - {n}',
     ['ph.zuber_sent'] = 'Order sent to the restaurant',
     -- The history.

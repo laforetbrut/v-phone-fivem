@@ -1697,12 +1697,24 @@ Config.Zuber = {
     provider = 'auto',
 
     -- ── Config-provider settings ───────────────────────────────
-    -- Ignored in doc-restaurant mode: prices, fees and taxes are its own there.
+    -- **Ignored entirely in doc-restaurant mode, and that is load-bearing.** doc-restaurant's
+    -- total IS the sum of its item prices: the government tax is taken OUT of that - it splits
+    -- TTC into HT plus tax and pays each side - and it charges no delivery fee of any kind. So
+    -- neither of these is added there, and the app shows its sum unaltered.
     --
     -- Which purse pays: 'bank' or 'cash'. A delivery app is a card, so 'bank'.
     account = 'bank',
     -- Added to a DELIVERY order, never to a collection. 0 for none.
     deliveryFee = 25,
+
+    -- **doc-restaurant mode only.** Its government tax is INSIDE the price it charges: it splits
+    -- the total into HT plus tax and pays the restaurant and the government separately. The app
+    -- shows that split as a breakdown line - "of which tax" - and never adds it to the total,
+    -- because the customer has already paid it.
+    --
+    -- Set this to the same number as doc-restaurant's own `Config.TaxRate`, which lives in its
+    -- resource and cannot be read from here. 0 hides the line.
+    docTaxRate = 5,
     -- On the food, as a percentage. Your government tax, if you run one.
     taxPercent = 0,
     minOrder = 1,
@@ -1750,13 +1762,10 @@ Config.Zuber = {
     imageBase = 'nui://qb-inventory/html/images',
 
     -- ── The customer's side ────────────────────────────────────
-    -- A tip, added to the order. Bounded here as well as by the app: a page asking to tip a
-    -- million is a page asking to empty an account by accident.
-    tip = {
-        enabled = true,
-        presets = { 0, 5, 10, 15 },   -- as a percentage of the food, offered as buttons
-        max = 500,                    -- and never more than this, whatever the percentage
-    },
+    -- **There is no tip.** It could not be honest on both providers: doc-restaurant's own order
+    -- callback does not read one, so a tip offered there was shown, added to the total on screen,
+    -- and charged to nobody. A tip that works on one provider and lies on the other is worse than
+    -- no tip, so it was removed rather than hidden behind a switch.
 
     -- How many past orders the history shows, and how many favourites are kept.
     history = 20,

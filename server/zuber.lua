@@ -292,11 +292,9 @@ V.Callback('v-phone:zuber:open', function(src, resolve)
         active = activeOf(p.citizenid),
         fee = math.max(0, math.floor(num(CFG.deliveryFee, 0))),
         tax = math.max(0, num(CFG.taxPercent, 0)),
-        tip = {
-            on = (CFG.tip or {}).enabled ~= false,
-            presets = (CFG.tip or {}).presets or { 0, 5, 10, 15 },
-            max = math.max(0, math.floor(num((CFG.tip or {}).max, 500))),
-        },
+        -- doc-restaurant's rate, for the "of which tax" breakdown. Its own config is not
+        -- readable from here, so the operator states it once - see Config.Zuber.docTaxRate.
+        docTaxRate = math.max(0, num(CFG.docTaxRate, 5)),
         min = math.max(1, math.floor(num(CFG.minOrder, 1))),
         max = math.max(0, math.floor(num(CFG.maxOrder, 0))),
         money = tostring(CFG.account or 'bank'),
@@ -362,15 +360,11 @@ V.Callback('v-phone:zuber:order', function(src, resolve, data)
     local fee = (kind == 'delivery') and math.max(0, math.floor(num(CFG.deliveryFee, 0))) or 0
     local tax = math.floor(total * math.max(0, num(CFG.taxPercent, 0)) / 100)
 
-    -- The tip is the customer's, and bounded: a page asking to tip a million is a page asking
-    -- to empty an account by accident.
-    local tip = 0
-    if (CFG.tip or {}).enabled ~= false then
-        tip = math.max(0, math.floor(num(data and data.tip, 0)))
-        tip = math.min(tip, math.max(0, math.floor(num((CFG.tip or {}).max, 500))))
-    end
-
-    local charge = total + fee + tax + tip
+    -- **No tip.** It was removed because it could not be honest: doc-restaurant's `submitOrder`
+    -- does not read one, so a tip offered on a doc-restaurant server was displayed, added to the
+    -- total on screen, and never charged to anybody. Rather than a tip that works on one provider
+    -- and lies on the other, there is none.
+    local charge = total + fee + tax
     if charge < math.max(1, math.floor(num(CFG.minOrder, 1))) then resolve({ error = 'toosmall' }) return end
     local ceiling = math.max(0, math.floor(num(CFG.maxOrder, 0)))
     if ceiling > 0 and charge > ceiling then resolve({ error = 'toobig' }) return end
@@ -400,7 +394,7 @@ V.Callback('v-phone:zuber:order', function(src, resolve, data)
         (citizenid, restaurant, label, kind, items, total, fee, tip, note, status)
         VALUES (?,?,?,?,?,?,?,?,?,'pending')]], {
         p.citizenid, tostring(r.id), tostring(r.label or r.id), kind,
-        json.encode(lines), total + tax, fee, tip,
+        json.encode(lines), total + tax, fee, 0,
         tostring((data and data.note) or ''):gsub('[%c]', ''):sub(1, 200),
     })
     if not id then
@@ -433,7 +427,7 @@ V.Callback('v-phone:zuber:order', function(src, resolve, data)
     Core.Log('zuber', ('%s ordered %d item(s) from %s for %d')
         :format(p.name or p.citizenid, count, tostring(r.id), charge), nil, p.citizenid)
 
-    resolve({ ok = true, id = id, total = total + tax, fee = fee, tip = tip, charge = charge,
+    resolve({ ok = true, id = id, total = total + tax, fee = fee, charge = charge,
               eta = math.max(1, math.floor(num(r.eta, num(CFG.etaMinutes, 12)))) })
 end)
 
