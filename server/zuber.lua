@@ -372,7 +372,7 @@ V.Callback('v-phone:zuber:order', function(src, resolve, data)
     -- The customer pays first, and it fails closed.
     local purse = tostring(CFG.account or 'bank')
     local acting = PhoneActingSource and PhoneActingSource(src) or src
-    if not Bridge.RemoveMoney(acting, charge, purse) then
+    if not Bridge.RemoveMoney(acting, charge, purse, 'v-phone: Zuber order') then
         resolve({ error = 'nomoney', price = charge })
         return
     end

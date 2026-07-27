@@ -310,16 +310,28 @@ end
 --- nothing, because the alternative is handing out paid apps for free.
 ---
 --- `account` is 'bank' or 'cash'. Returns true only when the framework confirmed the debit.
-function Bridge.RemoveMoney(src, amount, account)
+--- Take money, and say what for.
+---
+--- **`reason` used to not exist here.** Every withdrawal the phone made was logged as
+--- `v-phone: app store` - a taxi fare, a lottery ticket, a plate of food, all of them - and four
+--- call sites were already passing a reason as a fourth argument that this function silently
+--- dropped. On qb-core the reason is what the bank statement prints, so a player's statement was
+--- a column of the same wrong sentence.
+---
+--- The default matters as much as the parameter. qb-core writes `reason or 'unknown'`, so a
+--- money movement made without one shows the literal word "unknown" on the statement and in the
+--- notification - which is what was reported. Nothing here can be left to that default.
+function Bridge.RemoveMoney(src, amount, account, reason)
     src = tonumber(src)
     amount = math.floor(tonumber(amount) or 0)
     account = (account == 'cash') and 'cash' or 'bank'
+    reason = tostring(reason or 'v-phone')
     if not src or amount <= 0 then return false end
 
     -- The operator's own wiring wins, for a server whose money lives somewhere bespoke.
     local custom = Config.Compat.hooks.removeMoney
     if custom then
-        local ok, done = pcall(custom, src, amount, account)
+        local ok, done = pcall(custom, src, amount, account, reason)
         if ok then return done == true end
         return false
     end
@@ -329,7 +341,7 @@ function Bridge.RemoveMoney(src, amount, account)
         local remove = qbp and qbp.Functions and qbp.Functions.RemoveMoney
         -- qb returns false when the balance would go under its own floor, which is exactly
         -- the answer wanted here.
-        if remove then return remove(account, amount, 'v-phone: app store') == true end
+        if remove then return remove(account, amount, reason) == true end
         return false
 
     elseif Bridge.framework == 'esx' then
@@ -339,12 +351,12 @@ function Bridge.RemoveMoney(src, amount, account)
         if not xPlayer then return false end
         if account == 'cash' then
             if (tonumber(xPlayer.getMoney and xPlayer.getMoney()) or 0) < amount then return false end
-            xPlayer.removeMoney(amount)
+            xPlayer.removeMoney(amount, reason)
             return true
         end
         local acc = xPlayer.getAccount and xPlayer.getAccount('bank')
         if not acc or (tonumber(acc.money) or 0) < amount then return false end
-        xPlayer.removeAccountMoney('bank', amount)
+        xPlayer.removeAccountMoney('bank', amount, reason)
         return true
 
     elseif Bridge.framework == 'ox' then

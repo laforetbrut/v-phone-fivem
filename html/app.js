@@ -1958,6 +1958,10 @@ function closeApp(instant) {
   byId('screen').classList.remove('app-open');
   navBackAction = null;
   foot('');
+  // An app that polls must stop polling when it is left. An interval outlives the screen that
+  // set it, so a tracker left running would keep asking the server every few seconds for an app
+  // nobody is looking at - and would still be doing it after five more apps were opened.
+  repairStopPoll();
   if (!wasOpen || instant) {
     app.classList.remove('on', 'closing');
     delete app.dataset.app;
@@ -2111,6 +2115,10 @@ const body = (html) => {
   appFrameTimer = null;
   host.classList.remove('frame-loading');
   host.classList.remove('view-enter');
+  // A view that must FIT rather than scroll opts in after painting, and every other render
+  // clears it here. Self-cleaning on purpose: a class the leaving view has to remember to take
+  // off is a class that gets left on, and a screen stuck at overflow:hidden loses content.
+  host.classList.remove('fitbody');
   host.innerHTML = html;
   // Chromium may scroll an overflow-hidden ancestor when a focused control near the
   // bottom disappears during navigation. Pinning the screen prevents the mysterious
@@ -2315,6 +2323,11 @@ RENDER.phone = () => {
       `</div>` +
     `</div>`
   );
+  // **Nobody scrolls a dial pad.** The column below sizes itself to what it is given, so this
+  // says the quiet part out loud: this screen does not scroll, at any handset height. Without
+  // it the body's own 34px bottom padding was enough to make it scrollable on its own - a
+  // keypad that fits perfectly and still drags is the version that got reported twice.
+  byId('appbody').classList.add('fitbody');
   const paint = () => {
     byId('dialed').textContent = dialed;
     const c = (state.contacts || []).find((x) => x.number === dialed);
@@ -7353,7 +7366,9 @@ function storeDetail(a) {
     if (app) enterApp(app, null);
   });
   const sg = byId('stget');
-  if (sg) sg.addEventListener('click', async () => { if (await storeInstall(a.id, true)) storeDetail(a); });
+  if (sg) sg.addEventListener('click', () => storeAskPrice(a.id, async () => {
+    if (await storeInstall(a.id, true)) storeDetail(a);
+  }));
   const sd = byId('stdel');
   // Confirmed, because it takes the icon off the home screen and any data the app kept goes
   // with it on some apps. Reinstalling is free - what was paid for is remembered against the
@@ -7388,7 +7403,31 @@ function storeCats(all) {
   return CAT_ORDER.filter((c) => present.has(c));
 }
 
+/// Buying a paid app: asked before the money moves.
+///
+/// **A price on a button is not consent.** The store drew the amount and then took it on the
+/// first tap, which is fine for a free download and wrong for anything that empties an account -
+/// there is no undo, and reinstalling later is free precisely because the charge is one-off and
+/// permanent.
+///
+/// Deliberately NOT written as a promise around `confirmSheet`. That sheet has no cancel
+/// callback - dismissing it is silence - so a promise waiting on an answer that never comes
+/// would leave the caller awaiting forever and the store frozen. A callback the sheet either
+/// calls or does not is the shape the sheet actually has.
+///
+/// `after` runs only if the purchase is agreed to. Free apps and apps already bought run it
+/// straight away: there is nothing to agree to.
+function storeAskPrice(id, after) {
+  const a = (available || []).find((x) => x.id === id);
+  if (!a || !a.price || a.purchased) { after(); return; }
+  confirmSheet(
+    L('ph.store_buy_ask').replace('{app}', L(a.label)).replace('{price}', money(a.price)),
+    L('ph.store_buy_do').replace('{price}', money(a.price)),
+    after);
+}
+
 async function storeInstall(id, install) {
+
   // The arrangement you already have is yours. Without this the new app landed wherever
   // its slot said, shoving every icon after it along and spilling the last one onto a new
   // page - which is not what installing one app should do to a home screen.
@@ -7482,7 +7521,11 @@ RENDER.store = () => {
         if (app) enterApp(app, null);
         return;
       }
-      if (await storeInstall(id, true)) paint(byId('q') ? byId('q').value.trim().toLowerCase() : '');
+      storeAskPrice(id, async () => {
+        if (await storeInstall(id, true)) {
+          paint(byId('q') ? byId('q').value.trim().toLowerCase() : '');
+        }
+      });
     }));
   };
 
@@ -8600,9 +8643,7 @@ function taxiRate(d, ride) {
 
 /// The driver's side: the queue, nearest first, and what to do with a fare.
 async function taxiDriver(d) {
-  setNav(L('ph.taxi_tab_drive'), null, {
-    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.taxi(),
-  });
+  setNav(L('ph.taxi_tab_drive'), null, null);
 
   // In doc-taxijob mode the queue comes from it, with the distance worked out on the client.
   let calls = d.queue || [];
@@ -8982,9 +9023,7 @@ RENDER.alerts = async (cached) => {
 
   const list = alertsTab === 'archive' ? past : standing;
 
-  setNav(L('app.alerts'), null, {
-    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.alerts(),
-  });
+  setNav(L('app.alerts'), null, null);
 
   body(
     (alertsTab === 'now'
@@ -9197,6 +9236,498 @@ function alertsWithdrawn(id) {
   RENDER.alerts(true);
 }
 
+// ══════════════════════════════════════════════════════════════
+// Repair: reaching a mechanic, and the queue on the other side
+// ══════════════════════════════════════════════════════════════
+// One app over two providers - doc-mechanicmdt when it is running, the phone's own tables when
+// it is not - and nothing below knows which answered. client/repair.lua and server/repair.lua
+// both hand back the same shape, which is the only reason this file is as short as it is.
+//
+// Two audiences in one app, and that is deliberate rather than two apps: the driver who has
+// broken down, and the mechanic who is going to come out. The staff tab only exists for
+// somebody the server says is staff, and the server checks again on every call it takes.
+
+let repairData = null;    // the last answer: garages, permissions, the prefill
+let repairQueue = null;   // the staff queue, kept apart because it refreshes on its own clock
+let repairTab = 'garages';
+let repairOpenJob = null; // the garage being read, so a live update can redraw under it
+let repairTimer = null;   // the poll, which must not outlive the app
+let repairDraft = {};     // what is half-written per garage, kept across a re-render
+
+function repairLive() { return !!(openApp && openApp.id === 'repair'); }
+
+/// Stop polling. Called when the app closes and before every new poll is set, because two
+/// timers on one screen is a screen that refetches twice as fast every time you open it.
+function repairStopPoll() {
+  if (repairTimer) { clearInterval(repairTimer); repairTimer = null; }
+}
+
+/// Poll, at the interval the operator set. 0 turns it off and leaves the refresh button, which
+/// is the honest setting for a server that would rather not have a screen asking every few
+/// seconds.
+function repairPoll(fn) {
+  repairStopPoll();
+  const every = Number(repairData && repairData.refresh) || 0;
+  if (every <= 0) return;
+  repairTimer = setInterval(() => {
+    if (!repairLive()) { repairStopPoll(); return; }
+    fn();
+  }, Math.max(5, every) * 1000);
+}
+
+/// Stars, as a row of five. Read-only here; the editable version is in the review sheet.
+function repairStars(value, votes) {
+  const n = Math.round(Number(value) || 0);
+  let out = '<span class="rstars" aria-label="' + esc(String(n) + '/5') + '">';
+  for (let i = 1; i <= 5; i += 1) {
+    out += '<i class="' + (i <= n ? 'on' : '') + '">' + svg('star') + '</i>';
+  }
+  if (votes !== undefined) {
+    out += '<b>' + esc(Number(votes) > 0 ? (Number(value).toFixed(1) + ' (' + votes + ')')
+                                         : L('ph.repair_no_votes')) + '</b>';
+  }
+  return out + '</span>';
+}
+
+/// What a callout is doing, in a word the customer understands.
+function repairStatusLabel(status) {
+  return L('ph.repair_s_' + String(status || 'pending'));
+}
+
+/// The garages, freshly. Both providers answer the same shape; only where it comes from differs.
+async function repairFetch() {
+  const base = await post('repairOpen', {});
+  if (!repairLive()) return null;
+  if (!base || base.error) return base || { error: 'x' };
+
+  if (base.doc) {
+    const doc = await post('repairDoc', { op: 'garages' });
+    if (!repairLive()) return null;
+    if (!doc || doc.error) return doc || { error: 'nodoc' };
+    base.garages = doc.garages || [];
+
+    // Its `getMyCall` is keyed on the job and has no "all of mine" answer, so the tracker is
+    // assembled one garage at a time. Only for garages that are open: a shut one cannot be
+    // holding a callout, and asking anyway would be five round trips for a certain nil.
+    const live = base.garages.filter((g) => g.open);
+    for (let i = 0; i < live.length; i += 1) {
+      const r = await post('repairDoc', { op: 'mycall', job: live[i].job });
+      if (!repairLive()) return null;
+      if (r && r.ok && r.call && r.call.id) live[i].call = r.call;
+    }
+  }
+  return base;
+}
+
+RENDER.repair = async (cached) => {
+  if (!cached || !repairData) {
+    loading();
+    const d = await repairFetch();
+    if (!d) return;                       // the app closed while this was in flight
+    if (d.error) {
+      body(UI.empty(L('ph.repair_e_' + d.error), 'repair'));
+      return;
+    }
+    repairData = d;
+  }
+
+  const d = repairData;
+  const garages = farr(d.garages);
+  const open = garages.filter((g) => g.call);
+
+  const tabs = [
+    { id: 'garages', icon: 'repair', label: 'ph.repair_tab_garages' },
+    { id: 'mine', icon: 'clock', label: 'ph.repair_tab_mine', badge: open.length },
+  ];
+  // The staff tab exists only for staff, and "staff" is the server's word, not the page's.
+  if (d.staff) tabs.push({ id: 'queue', icon: 'jobs', label: 'ph.repair_tab_queue' });
+  if (repairTab === 'queue' && !d.staff) repairTab = 'garages';
+  tabbar(tabs, repairTab, (tab) => {
+    repairTab = tab;
+    repairOpenJob = null;
+    RENDER.repair(true);
+  });
+
+  if (repairTab === 'queue') { repairQueueTab(); return; }
+  if (repairTab === 'mine') { repairMineTab(); return; }
+
+  repairStopPoll();
+  setNav(L('app.repair'), null, null);
+
+  body(
+    (garages.length
+      ? UI.group(garages.map((g) => UI.row({
+          icon: 'repair',
+          tint: g.open ? '#30d158' : '#8E8E93',
+          title: g.label,
+          subtitle: [
+            g.open ? L('ph.repair_open') : L('ph.repair_shut'),
+            g.distance != null ? (g.distance + ' m') : null,
+            Number(g.votes) > 0 ? (Number(g.average).toFixed(1) + ' ★') : null,
+          ].filter(Boolean).join('  ·  '),
+          badge: g.call ? repairStatusLabel(g.call.status) : undefined,
+          chevron: true,
+          data: { rgarage: g.job },
+        })), { header: L('ph.repair_garages'), footer: L('ph.repair_garages_hint') })
+      : UI.empty(L('ph.repair_none'), 'repair'))
+  );
+
+  rows('[data-rgarage]', (el) => el.addEventListener('click', () => {
+    const g = garages.filter((x) => x.job === el.dataset.rgarage)[0];
+    if (g) repairGarage(g);
+  }));
+};
+
+/// One garage: what it is, how to get there, how to reach it, and what people said about it.
+async function repairGarage(g) {
+  repairOpenJob = g.job;
+  repairStopPoll();
+  const d = repairData;
+
+  setNav(g.label, L('app.repair'), null, () => {
+    repairOpenJob = null;
+    RENDER.repair(true);
+  });
+  foot('');
+
+  // Written reviews are the one thing on this screen that is long and per-garage, so they are
+  // fetched here rather than loaded for every garage to draw a list.
+  let reviews = [];
+  if (!d.doc) {
+    const r = await post('repairReviews', { job: g.job });
+    if (repairOpenJob !== g.job) return;      // they went back while it was in flight
+    if (r && r.ok) reviews = farr(r.reviews);
+  }
+
+  const call = g.call;
+
+  body(
+    UI.hero({
+      appicon: 'repair',
+      eyebrow: g.open ? L('ph.repair_open') : L('ph.repair_shut'),
+      title: g.label,
+      subtitle: [
+        g.distance != null ? (g.distance + ' m') : null,
+        g.staffOn != null ? L('ph.repair_on_duty').replace('{n}', String(g.staffOn)) : null,
+      ].filter(Boolean).join('  ·  '),
+    }) +
+    '<div class="rrating">' + repairStars(g.average, g.votes) + '</div>' +
+
+    // The callout, or the way to ask for one. Whichever applies - never both, because a person
+    // who already has a mechanic coming does not need a second form.
+    (call
+      ? '<div class="rtrack">' +
+          '<div class="rtrackhead">' + esc(repairStatusLabel(call.status)) + '</div>' +
+          (call.by ? '<div class="rtrackby">' +
+            esc(L('ph.repair_handled_by').replace('{n}', call.by)) + '</div>' : '') +
+          (call.message ? '<div class="rtrackmsg">' + esc(call.message) + '</div>' : '') +
+        '</div>' +
+        UI.button(L('ph.repair_cancel'), 'rcancel', 'destructive')
+      : (g.open
+        ? UI.button(L('ph.repair_ask'), 'rask')
+        : '<div class="groupfoot">' + esc(L('ph.repair_shut_hint')) + '</div>')) +
+
+    UI.group([
+      (d.callGarage
+        ? UI.row({ icon: 'phone', tint: '#30d158', title: L('ph.repair_ring'),
+                   subtitle: L('ph.repair_ring_hint'), chevron: true, data: { rring: '1' } })
+        : ''),
+      (g.x != null
+        ? UI.row({ icon: 'map', tint: '#0A84FF', title: L('ph.repair_route'),
+                   chevron: true, data: { rroute: '1' } })
+        : ''),
+      (d.ratings !== false && g.canReview
+        ? UI.row({ icon: 'star', tint: '#FF9F0A',
+                   title: L(g.myReview ? 'ph.repair_edit_review' : 'ph.repair_review'),
+                   value: g.myReview ? (String(g.myReview.stars) + ' ★') : undefined,
+                   chevron: true, data: { rreview: '1' } })
+        : ''),
+    ].filter(Boolean)) +
+
+    // Why the review row is missing, rather than an absent row somebody reads as a bug.
+    (d.ratings !== false && !g.canReview
+      ? '<div class="groupfoot">' + esc(L('ph.repair_review_locked')) + '</div>' : '') +
+
+    (reviews.length
+      ? '<div class="grouphead">' + esc(L('ph.repair_reviews')) + '</div>' +
+        '<div class="rreviews">' + reviews.map((r) =>
+          '<div class="rreview">' +
+            '<div class="rrtop">' + repairStars(r.stars) +
+              '<span class="rrwho">' + esc(r.name || '') + '</span></div>' +
+            '<div class="rrtext">' + esc(r.comment) + '</div>' +
+          '</div>').join('') + '</div>'
+      : '')
+  );
+
+  const on = (id, fn) => { const el = byId(id); if (el) el.addEventListener('click', fn); };
+
+  on('rask', () => repairAskSheet(g));
+  on('rcancel', () => {
+    confirmSheet(L('ph.repair_cancel_ask'), L('ph.repair_cancel'), async () => {
+      const res = d.doc
+        ? await post('repairDoc', { op: 'cancel', job: g.job })
+        : await post('repairCancel', { job: g.job });
+      if (!res || res.error) { toast(L('ph.repair_e_' + ((res && res.error) || 'x'))); return; }
+      toast(L('ph.repair_cancelled'));
+      repairOpenJob = null;
+      RENDER.repair();
+    });
+  });
+
+  rows('[data-rring]', (el) => el.addEventListener('click', async () => {
+    const r = await post('repairNumber', { of: 'garage', job: g.job });
+    if (!r || !r.ok) { toast(L('ph.repair_e_' + ((r && r.error) || 'x'))); return; }
+    // The phone's own dialler, so signal, voicemail, do not disturb and the call log all
+    // behave exactly as they do for any other call.
+    placeCall(r.number);
+  }));
+
+  rows('[data-rroute]', (el) => el.addEventListener('click', async () => {
+    const r = await post('repairRoute', { x: g.x, y: g.y });
+    if (!r || !r.ok) { toast(L('ph.repair_e_nowhere')); return; }
+    ui('waypoint');
+    toast(L('ph.repair_routed').replace('{n}', g.label));
+  }));
+
+  rows('[data-rreview]', (el) => el.addEventListener('click', () => repairReviewSheet(g)));
+}
+
+/// Asking for a callout.
+///
+/// The name and the number are filled in and editable. The number matters more than it looks:
+/// it is what the garage rings back on, and somebody roleplaying a burner will want to change
+/// it - so it is a field, not a fact.
+function repairAskSheet(g) {
+  const d = repairData;
+  const draft = repairDraft[g.job] || {
+    name: (d.me && d.me.name) || '',
+    number: (d.me && d.me.number) || '',
+    message: '',
+  };
+  repairDraft[g.job] = draft;
+
+  sheet(L('ph.repair_ask_title').replace('{n}', g.label),
+    '<div class="groupfoot">' + esc(L('ph.repair_ask_hint')) + '</div>' +
+    UI.field('raskname', L('ph.repair_f_name'), draft.name, 'maxlength="60" autocomplete="off"') +
+    UI.field('rasknum', L('ph.repair_f_number'), draft.number,
+      'maxlength="24" autocomplete="off"') +
+    UI.textarea('raskmsg', L('ph.repair_f_message'), draft.message,
+      'maxlength="' + (Number(d.maxMessage) || 300) + '" rows="4"') +
+    '<div class="groupfoot">' + esc(L('ph.repair_ask_where')) + '</div>' +
+    UI.button(L('ph.repair_send'), 'rasksend'),
+    () => {
+      const epoch = sheetEpoch;
+      const keep = () => {
+        draft.name = (byId('raskname') || {}).value || '';
+        draft.number = (byId('rasknum') || {}).value || '';
+        draft.message = (byId('raskmsg') || {}).value || '';
+      };
+      ['raskname', 'rasknum', 'raskmsg'].forEach((id) => {
+        const el = byId(id);
+        if (el) el.addEventListener('input', keep);
+      });
+      byId('rasksend').addEventListener('click', async () => {
+        keep();
+        const payload = {
+          job: g.job, name: draft.name.trim(),
+          number: draft.number.trim(), message: draft.message.trim(),
+        };
+        const res = d.doc
+          ? await post('repairDoc', { op: 'create', call: payload })
+          : await post('repairCall', payload);
+        if (!res || res.error) {
+          toast(L('ph.repair_e_' + ((res && res.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        repairDraft[g.job] = null;
+        ui('sent');
+        toast(L('ph.repair_sent'));
+        repairOpenJob = null;
+        RENDER.repair();
+      });
+    });
+}
+
+/// Leaving a review, or changing the one already left.
+function repairReviewSheet(g) {
+  const d = repairData;
+  let stars = (g.myReview && g.myReview.stars) || 5;
+  const comment = (g.myReview && g.myReview.comment) || '';
+
+  const draw = () => {
+    let picker = '<div class="rstarpick">';
+    for (let i = 1; i <= 5; i += 1) {
+      picker += '<button class="' + (i <= stars ? 'on' : '') + '" type="button" data-star="' +
+        i + '" aria-label="' + i + '/5">' + svg('star') + '</button>';
+    }
+    return picker + '</div>';
+  };
+
+  sheet(g.label,
+    draw() +
+    UI.textarea('rrevtext', L('ph.repair_f_review'), comment,
+      'maxlength="' + (Number(d.maxReview) || 300) + '" rows="4"') +
+    '<div class="groupfoot">' + esc(L('ph.repair_review_hint')) + '</div>' +
+    UI.button(L('ph.repair_review_send'), 'rrevsend'),
+    () => {
+      const epoch = sheetEpoch;
+      const wire = () => {
+        [...document.querySelectorAll('[data-star]')].forEach((b) =>
+          b.addEventListener('click', () => {
+            stars = Number(b.dataset.star);
+            // Only the stars are repainted. Redrawing the sheet would take the written comment
+            // with it, and losing what somebody typed to a tap on a star is how a review goes
+            // unwritten.
+            [...document.querySelectorAll('[data-star]')].forEach((x) =>
+              x.classList.toggle('on', Number(x.dataset.star) <= stars));
+          }));
+      };
+      wire();
+      byId('rrevsend').addEventListener('click', async () => {
+        const text = (byId('rrevtext') || {}).value || '';
+        const payload = { job: g.job, stars, comment: text.trim() };
+        const res = d.doc
+          ? await post('repairDoc', { op: 'rate', review: payload })
+          : await post('repairReview', payload);
+        if (!res || res.error) {
+          toast(L('ph.repair_e_' + ((res && res.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        toast(L('ph.repair_reviewed'));
+        repairOpenJob = null;
+        RENDER.repair();
+      });
+    });
+}
+
+/// What I have asked for, across every garage.
+function repairMineTab() {
+  const d = repairData;
+  const mine = farr(d.garages).filter((g) => g.call);
+
+  setNav(L('ph.repair_tab_mine'), null, null);
+
+  body(mine.length
+    ? UI.group(mine.map((g) => UI.row({
+        icon: 'repair', tint: '#0A84FF',
+        title: g.label,
+        subtitle: [repairStatusLabel(g.call.status),
+                   g.call.by ? g.call.by : null].filter(Boolean).join('  ·  '),
+        chevron: true, data: { rgarage: g.job },
+      })), { header: L('ph.repair_mine'), footer: L('ph.repair_mine_hint') })
+    : UI.empty(L('ph.repair_no_mine'), 'repair'));
+
+  rows('[data-rgarage]', (el) => el.addEventListener('click', () => {
+    const g = farr(d.garages).filter((x) => x.job === el.dataset.rgarage)[0];
+    if (g) repairGarage(g);
+  }));
+
+  // The tracker is the one screen where waiting is the whole activity, so it refreshes itself.
+  repairPoll(() => repairRefreshQuiet());
+}
+
+/// A refresh that does not flash.
+///
+/// The tracker and the queue both poll, and a poll that calls `RENDER.repair()` would paint the
+/// loading state every few seconds - the exact reload effect an audit was spent removing. This
+/// refetches and redraws from the cache instead.
+async function repairRefreshQuiet() {
+  const d = await repairFetch();
+  if (!d || d.error || !repairLive()) return;
+  repairData = d;
+  if (repairTab === 'mine' && !repairOpenJob) repairMineTab();
+}
+
+/// The mechanic's side: the callouts waiting, and what to do about each.
+async function repairQueueTab() {
+  setNav(L('ph.repair_tab_queue'), null, null);
+
+  const d = repairData;
+  const r = d.doc
+    ? await post('repairDoc', { op: 'queue' })
+    : await post('repairQueue', {});
+  if (!repairLive() || repairTab !== 'queue') return;
+  if (!r || r.error) {
+    body(UI.empty(L('ph.repair_e_' + ((r && r.error) || 'notstaff')), 'repair'));
+    return;
+  }
+  repairQueue = farr(r.calls);
+
+  body(repairQueue.length
+    ? '<div class="rqueue">' + repairQueue.map((c) =>
+        '<div class="rcall ' + esc(c.status) + '" data-call="' + esc(String(c.id)) + '">' +
+          '<div class="rctop">' +
+            '<span class="rcname">' + esc(c.name || '?') + '</span>' +
+            '<span class="rcstatus">' + esc(repairStatusLabel(c.status)) + '</span>' +
+          '</div>' +
+          (c.message ? '<div class="rcmsg">' + esc(c.message) + '</div>' : '') +
+          (c.by ? '<div class="rcby">' + esc(L('ph.repair_handled_by').replace('{n}', c.by)) +
+            '</div>' : '') +
+          '<div class="rcacts">' +
+            (c.status === 'pending'
+              ? '<button type="button" data-act="accepted">' + esc(L('ph.repair_take')) + '</button>'
+              : '<button type="button" data-act="ongoing">' + esc(L('ph.repair_ongoing')) + '</button>') +
+            '<button type="button" data-act="onhold">' + esc(L('ph.repair_hold')) + '</button>' +
+            ((c.x || c.y)
+              ? '<button type="button" data-act="route">' + esc(L('ph.repair_go')) + '</button>' : '') +
+            (d.callClient
+              ? '<button type="button" data-act="ring">' + esc(L('ph.repair_ring_client')) + '</button>'
+              : '') +
+            '<button type="button" data-act="done" class="good">' + esc(L('ph.repair_done')) + '</button>' +
+            '<button type="button" data-act="refused" class="bad">' + esc(L('ph.repair_refuse')) + '</button>' +
+          '</div>' +
+        '</div>').join('') + '</div>'
+    : UI.empty(L('ph.repair_queue_empty'), 'repair'));
+
+  rows('.rcall', (card) => {
+    const id = Number(card.dataset.call);
+    const c = repairQueue.filter((x) => x.id === id)[0];
+    if (!c) return;
+    [...card.querySelectorAll('[data-act]')].forEach((b) =>
+      b.addEventListener('click', async () => {
+        const act = b.dataset.act;
+
+        if (act === 'route') {
+          const res = await post('repairRoute', { x: c.x, y: c.y });
+          if (!res || !res.ok) { toast(L('ph.repair_e_nowhere')); return; }
+          ui('waypoint');
+          toast(L('ph.repair_routed').replace('{n}', c.name || '?'));
+          return;
+        }
+
+        if (act === 'ring') {
+          // The number is asked for by CALLOUT id, so the server can prove this mechanic is
+          // staff at the garage that callout was raised with before handing anything over.
+          const res = await post('repairNumber', { of: 'client', id: c.id });
+          if (!res || !res.ok) { toast(L('ph.repair_e_' + ((res && res.error) || 'x'))); return; }
+          placeCall(res.number);
+          return;
+        }
+
+        // Ending a job cannot be undone and the customer is told, so it is asked about.
+        const finish = act === 'done' || act === 'refused';
+        const go = async () => {
+          const res = d.doc
+            ? await post('repairDoc', { op: 'handle', id: c.id, action: act })
+            : await post('repairHandle', { id: c.id, action: act });
+          if (!res || res.error) { toast(L('ph.repair_e_' + ((res && res.error) || 'x'))); return; }
+          ui(act === 'refused' ? 'toggleoff' : 'success');
+          repairQueueTab();
+        };
+        if (finish) {
+          confirmSheet(L('ph.repair_' + act + '_ask').replace('{n}', c.name || '?'),
+            L('ph.repair_' + act), go);
+        } else {
+          go();
+        }
+      }));
+  });
+
+  repairPoll(() => { if (repairTab === 'queue') repairQueueTab(); });
+}
+
 RENDER.lottery = async (cached) => {
   let s = (cached && lotteryData) ? lotteryData : null;
 
@@ -9237,9 +9768,7 @@ RENDER.lottery = async (cached) => {
   if (lotteryTab === 'results') { lotteryResults(s); return; }
   if (lotteryTab === 'mine') { lotteryMineTab(s); return; }
 
-  setNav(L('app.lottery'), null, {
-    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.lottery(),
-  });
+  setNav(L('app.lottery'), null, null);
 
   const drawing = s.status === 'drawing' || (lotteryLive && !lotteryLive.result);
   const full = s.myTickets.length >= s.maxComb;
@@ -9472,9 +10001,7 @@ function lotteryWirePicker(s) {
 
 /// Past draws, public and anonymous.
 function lotteryResults(s) {
-  setNav(L('ph.lottery_tab_results'), L('app.lottery'), {
-    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.lottery(),
-  });
+  setNav(L('ph.lottery_tab_results'), L('app.lottery'), null);
 
   body(
     lotteryLiveStrip(s) +
@@ -9514,9 +10041,7 @@ function lotteryResults(s) {
 /// its home screen and past results did not exist anywhere. "Have I ever won anything" is the
 /// second question anybody asks of a lottery app.
 function lotteryMineTab(s) {
-  setNav(L('ph.lottery_tab_mine'), L('app.lottery'), {
-    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.lottery(),
-  });
+  setNav(L('ph.lottery_tab_mine'), L('app.lottery'), null);
 
   const live = s.myTickets.map((t, i) => '<div class="lotticket">' +
     '<div class="lotticketrow">' + lotteryBalls(t.numbers, 'chosen') +
@@ -10460,11 +10985,43 @@ RENDER.charging = async () => {
       ? UI.hero({ appicon: 'charging', eyebrow: d.atCharger.label,
                   value: money(d.atCharger.price), subtitle: L('ph.charge_here_pay') })
       : UI.hero({ appicon: 'charging', eyebrow: L('app.charging'),
-                  value: L('ph.charge_idle'), subtitle: L('ph.charge_idle_hint') }));
+                  value: (d.plug && d.plug.on) ? L('ph.charge_active') : L('ph.charge_idle'),
+                  subtitle: (d.plug && d.plug.on)
+                    ? L('ph.charge_src_' + (d.plug.source || 'charger'))
+                    : ((d.plug && d.plug.source && d.plug.needs)
+                      ? L('ph.charge_unplugged_hint')
+                      : L('ph.charge_idle_hint')) }));
 
   const payBtn = (atPaid && !paying)
     ? UI.button(L('ph.charge_pay').replace('{price}', String(d.atCharger.price)), 'chgpay', 'tinted')
     : '';
+
+  // ── The switch ───────────────────────────────────────────────
+  // Only drawn when the operator turned plugging in on. Three states, and they are three
+  // because "in a car with the phone unplugged" and "nowhere near a socket" are different
+  // situations and a player who cannot tell them apart will press a button that does nothing:
+  //
+  //   plugged in            -> the way to stop
+  //   somewhere with a cable -> the way to start, naming what it is
+  //   nowhere                -> no button, and a line saying why
+  const plug = d.plug;
+  const plugBlock = (() => {
+    if (!plug) return '';
+    if (plug.on) {
+      return UI.button(L('ph.charge_unplug'), 'chgplug', 'destructive') +
+        '<div class="groupfoot">' + esc(L('ph.charge_plugged_hint')) + '</div>';
+    }
+    if (plug.source && plug.needs) {
+      return UI.button(L('ph.charge_plug'), 'chgplug') +
+        '<div class="groupfoot">' +
+          esc(L('ph.charge_plug_here').replace('{n}', L('ph.charge_src_' + plug.source))) +
+        '</div>';
+    }
+    // A source that does not need the switch is charging already, and saying so is better than
+    // an absent button people read as the app having failed.
+    return '<div class="groupfoot">' +
+      esc(plug.source ? L('ph.charge_auto_here') : L('ph.charge_nowhere')) + '</div>';
+  })();
 
   const list = chargers.length
     ? UI.group(chargers.map((c) => UI.row({
@@ -10493,9 +11050,17 @@ RENDER.charging = async () => {
         : []), { header: L('ph.charge_options') })
     : '';
 
-  body(header + payBtn + list + auto);
+  body(header + payBtn + plugBlock + list + auto);
 
   const again = () => RENDER.charging();
+
+  if (byId('chgplug')) byId('chgplug').addEventListener('click', async () => {
+    const r = await post('chargingPlug', { on: !plug.on });
+    if (!r || r.error) { toast(L('ph.charge_e_' + (r.error || 'x'))); return; }
+    ui(plug.on ? 'toggleoff' : 'success');
+    toast(L(plug.on ? 'ph.charge_unplugged' : 'ph.charge_plugged'));
+    again();
+  });
 
   if (byId('chgpay')) byId('chgpay').addEventListener('click', async () => {
     const r = await post('chargePay', {});
@@ -14720,6 +15285,21 @@ window.addEventListener('message', (e) => {
     // The other side unsent it. Reopening the thread is how the screen agrees with the server,
     // and it only happens when this conversation is the one on screen.
     if (openApp && openApp.id === 'messages' && thread) openThread(thread);
+  } else if (d.action === 'repairStatus') {
+    // My callout moved. The card is updated where it is rather than the app being refetched:
+    // asking the server to resend what it just pushed is the reload flash in miniature.
+    const u = d.update || {};
+    if (repairData) {
+      farr(repairData.garages).forEach((g) => {
+        if (g.job !== u.job) return;
+        if (u.status === 'done' || u.status === 'refused') g.call = null;
+        else if (g.call) { g.call.status = u.status; g.call.by = u.by || g.call.by; }
+      });
+    }
+    if (openApp && openApp.id === 'repair' && !repairOpenJob) RENDER.repair(true);
+  } else if (d.action === 'repairQueue') {
+    // A callout came in while a mechanic had the queue open.
+    if (openApp && openApp.id === 'repair' && repairTab === 'queue') repairQueueTab();
   } else if (d.action === 'alert') {
     // A public alert, pushed to every phone in the city. The banner is the client's job; this
     // keeps the app itself current whether or not it happens to be open.

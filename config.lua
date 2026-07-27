@@ -244,6 +244,7 @@ Config.Compat = {
         garage   = true,   -- your vehicles, and where they are
         property = true,   -- your houses, and a route to one
         taxi     = true,   -- hail a ride, or drive one
+        repair   = true,   -- reach a mechanic, and the callout queue on the other side
 
         -- ── Work and paperwork ────────────────────────────────
         jobs     = true,   -- open positions, and your own contract
@@ -851,6 +852,12 @@ Config.Apps = {
     -- Taxi: hail a ride, or drive one. A free download. See Config.Taxi.
     { id = 'taxi',     label = 'app.taxi',     icon = 'taxi',     owner = 'v-phone',    slot = 27,
       optional = true, category = 'travel', version = '1.0' },
+    -- Repair: reaching a mechanic. A FREE download, because a player who has broken down needs
+    -- it at the moment they break down, and an app that costs money is one they do not have
+    -- installed yet. Not on the home screen by default: most characters never call one out.
+    -- See Config.Repair.
+    { id = 'repair',   label = 'app.repair',   icon = 'repair',   owner = 'v-phone',    slot = 29,
+      optional = true, category = 'travel', version = '1.0' },
     -- Lottery: the weekly draw, from the phone. A DOWNLOAD and a paid one - $250, the price of
     -- one ticket - so buying the app is the same decision as buying a line, which is the joke.
     -- See Config.Lottery.
@@ -886,6 +893,11 @@ Config.AppMetadata = {
         features = { 'Alertes officielles', 'Notification sur tous les téléphones',
                      'Archives consultables', 'Diffusion pour les autorités' },
         keywords = { 'alerte', 'gouvernement', 'police', 'urgence', 'population' },
+    },
+    repair = {
+        features = { 'Garages ouverts et notes', 'Demande de dépannage géolocalisée',
+                     'Suivi en direct', 'Appeler le garage', 'Avis clients' },
+        keywords = { 'mécano', 'garage', 'dépannage', 'panne', 'remorquage', 'réparation' },
     },
     maps = {
         features = { 'Lieux de la ville', 'Filtres', 'Itinéraire GPS', 'Repères instantanés' },
@@ -1407,6 +1419,165 @@ Config.Chargers = {
       coords = vector3(-1223.0, -1493.0, 4.4), radius = 6.0 },
 }
 normalisePlaces(Config.Chargers)
+
+-- ══════════════════════════════════════════════════════════════
+--  REPAIR  (reaching a mechanic, from the side of the road)
+-- ══════════════════════════════════════════════════════════════
+-- A free download. Free on purpose: somebody who has broken down needs this at the moment they
+-- break down, and an app that costs money is one they have not installed yet.
+--
+-- Two providers, one app, and a player never learns which one answered:
+--
+--   * **doc-mechanicmdt**, when that resource is started. Its garages, its opening states, its
+--     ratings, its callout queue and its invoice rule - reached through the same six server
+--     callbacks its own phone app used. **Nothing in doc-mechanicmdt is edited, wrapped or
+--     replaced.** Update it, and this keeps working.
+--   * **`garages` below** otherwise, which is what makes the app worth having on an ESX, ox or
+--     standalone server: the phone's own garages, its own callout table, its own reviews.
+--
+-- **Both sides of the call are here.** A driver asks for a callout and follows it; a mechanic
+-- holding the job gets the queue, takes a job, and can ring the person who asked. That second
+-- half is what doc-mechanicmdt's own phone app did not have - it had a tablet for it, which is
+-- no use to a mechanic who is out on a job.
+Config.Repair = {
+    enabled = true,
+
+    -- 'auto' uses doc-mechanicmdt when it is started and the list below when it is not.
+    -- 'doc-mechanicmdt' or 'config' pin it, for a server that wants to be sure which is live.
+    provider = 'auto',
+
+    -- ── The garages (config provider only) ─────────────────────
+    -- Ignored entirely under doc-mechanicmdt, which has its own list, its own names and its own
+    -- open/closed switch that the staff throw from their tablet.
+    --
+    --   job      the job name your framework uses. This is what makes somebody staff here.
+    --   label    what the customer reads
+    --   coords   where it is: the route button, and the distance in the list
+    --   open     false for a garage that exists but is not taking callouts yet
+    garages = {
+        { job = 'mechanic',  label = 'Los Santos Customs',
+          coords = vector3(-359.96, -125.28, 38.7), open = true },
+        { job = 'mechanic2', label = "Casey's Garage",
+          coords = vector3(563.54, 2737.71, 42.06), open = true },
+        { job = 'mechanic3', label = "Benny's Original Motorworks",
+          coords = vector3(-237.06, -1326.69, 31.3), open = true },
+    },
+
+    -- ── Who is staff ───────────────────────────────────────────
+    -- The mechanic side of the app: the callout queue, taking a job, ringing the client.
+    --
+    -- **Under doc-mechanicmdt this list must MIRROR its `Config.AuthorizedJobs`.** It decides
+    -- for itself who may see its queue - which is right, they are its callouts - but it does
+    -- not publish that decision, so the phone cannot ask "am I staff?" and works it out from
+    -- here. Get it wrong and the tab appears for somebody whose queue then comes back empty:
+    -- annoying, never dangerous, because the refusal is doc-mechanicmdt's and it is final.
+    jobs = { 'mechanic', 'mechanic2', 'mechanic3', 'mechanic4', 'mechanic5', 'mechanic6' },
+
+    -- Minimum grade to work the queue, and whether being clocked on is required. Mirror
+    -- doc-mechanicmdt's `Config.CallsMinGrade` when it is the provider.
+    minGrade = 0,
+    requireDuty = true,
+
+    -- ── Calling ────────────────────────────────────────────────
+    -- Ringing a garage rings a mechanic who is actually on duty there - the phone picks one,
+    -- because a garage is not a person and a number nobody answers is worse than no button.
+    -- Off removes the call button and leaves the callout form.
+    callGarage = true,
+
+    -- A mechanic can ring the person who asked for the callout, from the job itself.
+    --
+    -- **This is the "they can call you back" half**, and it is safe here in a way the taxi one
+    -- is not: the callout row names the client's citizen id, so the phone can PROVE the pairing
+    -- before it hands over a number rather than trusting that the caller was really assigned.
+    -- Still gated on the job, still logged.
+    callClient = true,
+
+    -- What the callout form fills in for you. The player can edit both before sending - the
+    -- number especially, since it is how the garage rings back, and somebody roleplaying a
+    -- burner will want to change it.
+    prefillName = true,
+    prefillNumber = true,
+
+    -- ── The callout ────────────────────────────────────────────
+    -- Your position travels with the request. This is the whole point of asking from a phone
+    -- rather than over the radio, and it is why there is no "where are you?" field.
+    shareLocation = true,
+
+    maxMessage = 300,
+
+    -- Seconds between two callouts from one person. One active callout per garage is enforced
+    -- anyway; this stops somebody cycling through every garage in the city in ten seconds.
+    cooldown = 60,
+
+    -- How often the tracker and the queue refresh themselves while open, in seconds. 0 stops
+    -- the polling entirely and leaves the refresh button - which is the honest setting for a
+    -- server that would rather not have a screen asking every few seconds.
+    refreshSeconds = 15,
+
+    -- ── Reviews ────────────────────────────────────────────────
+    ratings = true,
+
+    -- Only somebody who has actually been a customer may leave a review. Under
+    -- doc-mechanicmdt this is ITS rule and it is not negotiable there: it requires an invoice
+    -- from that garage. In config mode it means a completed callout.
+    requireCustomer = true,
+
+    maxReview = 300,
+
+    -- How many reviews a garage's page shows. The average and the vote count are always shown;
+    -- this is only how many written ones are read.
+    reviewsShown = 20,
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  PLUGGING IN  (charging on purpose, rather than by accident)
+-- ══════════════════════════════════════════════════════════════
+-- **Being somewhere that charges is not the same as charging.**
+--
+-- By default the phone fills up the moment a player sits in any car or walks into a house they
+-- hold a key to. That is convenient and it is not what a phone does: a car and a house are
+-- places with a cable in them, and somebody has to pick the cable up.
+--
+-- Turn this on and a charging place instead offers a switch in FruitCharge - "Put on charge" -
+-- and the battery only moves once it is thrown. Walk away and it lets go, so the switch is
+-- thrown once per stop rather than once per session.
+--
+-- **On.** Set `enabled = false` for the old behaviour, where sitting down charges the phone.
+Config.PlugIn = {
+    enabled = true,
+
+    -- Which places need the switch. Anything left false charges the old way, so an operator can
+    -- have exactly the mix they want rather than all of it or none.
+    --
+    --   vehicle    sitting in any car. The one most worth switching on: a long drive topping
+    --              the phone up by itself is why batteries never run out on most servers.
+    --   property   inside a home you hold a key to.
+    --   charger    a public charger from Config.Chargers. Left false because walking to one is
+    --              already a deliberate act - and a PAID one has asked for money by then, so a
+    --              second tap on top mostly reads as the app not having understood the first.
+    --   external   another resource calling `SetCharging` - an electric car, a scripted socket.
+    --              Left false because that resource has already decided; second-guessing it
+    --              breaks the one promise that export makes.
+    sources = {
+        vehicle  = true,
+        property = true,
+        charger  = false,
+        external = false,
+    },
+
+    -- Getting out of the car, or leaving the property, unplugs the phone - and getting back in
+    -- means opening FruitCharge and plugging in again.
+    --
+    -- **This is the safety, not a convenience.** Off, the switch stays thrown until the player
+    -- turns it off themselves, so walking back to the same car resumes charging without touching
+    -- anything - which is the automatic behaviour again, wearing a button. Leave it on unless you
+    -- specifically want that.
+    unplugOnLeave = true,
+
+    -- Tell them. A phone that quietly stopped charging is a phone that is flat later for no
+    -- reason the player can point at, and they were not in the app when it happened.
+    notifyOnUnplug = true,
+}
 
 -- ══════════════════════════════════════════════════════════════
 --  PAID CHARGING

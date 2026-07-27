@@ -1469,6 +1469,32 @@ RegisterNUICallback('chargingApp', function(_, cb)
     V.Request('v-phone:charging:app', function(res) cb(res or { error = 'x' }) end, {})
 end)
 
+--- The cable came out.
+---
+--- Raised by the server the moment the player leaves the place they plugged in - out of the car,
+--- out of the property. A banner rather than nothing, because it happens with the phone in a
+--- pocket: without it the only symptom is a flat battery an hour later and no idea why.
+---
+--- Goes through `PhoneNotify` like everything else, so muting the app or turning on Do Not
+--- Disturb silences it the same way.
+RegisterNetEvent('v-phone:client:unplugged', function()
+    if not PhoneNotify then return end
+    PhoneNotify({
+        app = 'charging', icon = 'charging',
+        title = (PhoneString and PhoneString('app.charging')) or 'FruitCharge',
+        body = (PhoneString and PhoneString('ph.charge_unplugged_left')) or '',
+        hasItem = true,
+    })
+end)
+
+--- The switch: put the phone on charge, or take it off.
+---
+--- Nothing is decided here. The server knows where the ped actually is, which is the only place
+--- "there is something to plug into" can honestly be answered.
+RegisterNUICallback('chargingPlug', function(data, cb)
+    V.Request('v-phone:charge:plug', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
 RegisterNUICallback('chargingPrefs', function(data, cb)
     V.Request('v-phone:charging:prefs', function(res) cb(res or { error = 'x' }) end, data or {})
 end)

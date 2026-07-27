@@ -10822,11 +10822,52 @@ body.inframe.dark .uisearch {
    So the dialler is a column that fills the body and DISTRIBUTES what it has: the keypad takes
    the space left over and its keys shrink to match, down to a floor where they are still
    comfortable to hit. On a tall screen nothing changes - 74px is the maximum. */
+/* **The screen that does not scroll.** Set by the dialler render and cleared by every other
+   one. The body's own 34px bottom padding was on its own enough to make a keypad that otherwise
+   fitted perfectly draggable - the column filled 100% of the content box and the padding sat
+   under it - so "it still scrolls" survived a fix that made the keypad itself fit. Saying
+   overflow: hidden here is the only version of this that cannot come back. */
+.appbody.fitbody { overflow: hidden; padding-bottom: 10px; }
+
 .dialview {
   display: flex;
-  min-height: 100%;
+  /* `height`, not `min-height`: a minimum can be exceeded, and being exceeded is the bug. */
+  height: 100%;
+  min-height: 0;
   flex-direction: column;
   gap: 2px;
+}
+/* Everything with a reserved height gives some of it back on a short handset. These heights
+   exist so the keypad does not HOP when a digit is typed, which is a real problem - but the fix
+   for that was fixed pixels, and fixed pixels are what stopped the column fitting. A clamp keeps
+   both: constant at any one screen height, smaller on a screen that needs it. */
+.dialview .dialed {
+  height: clamp(34px, 7.2vh, 54px);
+  min-height: 0;
+  font-size: clamp(24px, 4.6vh, 34px);
+  padding: 2px 0;
+}
+.dialview .dialsub { height: clamp(14px, 2.4vh, 18px); min-height: 0; }
+.dialview .dialrow {
+  padding: clamp(4px, 1.2vh, 10px) 0 clamp(6px, 2vh, 18px);
+  grid-template-columns: repeat(3, clamp(56px, 10.5vh, 74px));
+}
+/* The call and delete buttons follow the same clamp as the columns they sit in, so the row
+   never has a 74px circle in a 56px column - or the reverse, which is a circle with a gap
+   round it.
+   `aspect-ratio` as well as the two lengths: it is what keeps them ROUND if a future rule
+   touches one side and not the other. An earlier version of this block also set `height: auto`
+   on `.dialview .dialrow .callbtn` - three classes to two - so it won on specificity and the
+   green circle collapsed to the height of the icon inside it. A squashed oval, from a rule
+   that was doing nothing else. */
+.dialview .callbtn, .dialview .delbtn {
+  width: clamp(56px, 10.5vh, 74px);
+  height: clamp(56px, 10.5vh, 74px);
+  aspect-ratio: 1;
+}
+.dialview .callbtn svg, .dialview .delbtn svg {
+  width: clamp(24px, 4.4vh, 30px);
+  height: clamp(24px, 4.4vh, 30px);
 }
 .dialview .keypad {
   /* Rows share what is left, so the key size follows the screen instead of the other way round. */
@@ -10845,7 +10886,10 @@ body.inframe.dark .uisearch {
   /* Round at every size, and never wider than it is tall. */
   max-width: 74px;
   max-height: 74px;
-  min-height: 52px;
+  /* 44px is the smallest a target may honestly be, and it is the floor rather than 52 because
+     52 was what pushed the column past the screen on a short handset - which is how a keypad
+     that "fits" ends up scrolling. */
+  min-height: 44px;
   margin: 0 auto;
   aspect-ratio: 1;
 }
@@ -11019,3 +11063,104 @@ body.inframe.dark .uisearch {
   background: var(--app-accent-soft);
   color: var(--app-accent);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   REPAIR — reaching a mechanic, and the queue on the other side
+   ══════════════════════════════════════════════════════════════
+   Two audiences on one screen and they are drawn differently on purpose: a customer reads a
+   card, a mechanic works a list of jobs and needs the actions under their thumb. */
+
+/* ── Stars ─────────────────────────────────────────────────────
+   One element, used read-only in a list and editable in the review sheet. The empty half is an
+   outline rather than a lighter fill, so a 2/5 is visibly two stars and not a dim five. */
+.rstars { display: inline-flex; align-items: center; gap: 2px; }
+.rstars i { display: block; width: 15px; height: 15px; color: var(--app-label3); }
+.rstars i svg { width: 15px; height: 15px; }
+.rstars i.on { color: #FF9F0A; }
+.rstars i.on svg { fill: #FF9F0A; }
+.rstars b { margin-left: 6px; color: var(--app-sub); font-size: 12px; font-weight: 500; }
+.rrating { padding: 2px 16px 12px; }
+
+/* The editable row: 44px targets, because picking a star is a tap and a 15px one is a miss. */
+.rstarpick { display: flex; justify-content: center; gap: 6px; padding: 6px 0 14px; }
+.rstarpick button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--app-label3);
+  cursor: pointer;
+  transition: transform .1s ease, color .1s ease;
+}
+.rstarpick button svg { width: 28px; height: 28px; }
+.rstarpick button:active { transform: scale(.9); }
+.rstarpick button.on { color: #FF9F0A; }
+.rstarpick button.on svg { fill: #FF9F0A; }
+
+/* ── The tracker ───────────────────────────────────────────────
+   What is happening, said in one line and given room. This is the screen somebody stares at
+   while they wait at the roadside, so the status is the biggest thing on it. */
+.rtrack {
+  margin: 2px 16px 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--app-card);
+  border-left: 3px solid var(--app-accent);
+}
+.rtrackhead { font-size: 16px; font-weight: 600; }
+.rtrackby { margin-top: 3px; color: var(--app-sub); font-size: 12px; }
+.rtrackmsg { margin-top: 8px; color: var(--app-label2); font-size: 13px; line-height: 1.45; }
+
+/* ── Written reviews ───────────────────────────────────────────*/
+.rreviews { display: flex; flex-direction: column; gap: 8px; padding: 0 16px 12px; }
+.rreview { padding: 12px 14px; border-radius: 12px; background: var(--app-card); }
+.rrtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* min-width: 0 so a long name ellipsises instead of pushing the stars off the row. */
+.rrwho { min-width: 0; overflow: hidden; color: var(--app-sub); font-size: 12px;
+  text-overflow: ellipsis; white-space: nowrap; }
+.rrtext { margin-top: 6px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+
+/* ── The queue, on a mechanic's phone ──────────────────────────
+   A card per callout with its actions on it, rather than a row that opens a sheet: a mechanic
+   taking a job is doing it one-handed at the roadside, and every extra tap is one they take
+   with a spanner in the other hand. */
+.rqueue { display: flex; flex-direction: column; gap: 10px; padding: 4px 16px 8px; }
+.rcall {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--app-card);
+  border-left: 3px solid var(--app-label3);
+}
+/* The status is the border colour: a queue is scanned, not read. */
+.rcall.pending  { border-left-color: #FF9F0A; }
+.rcall.accepted { border-left-color: #0A84FF; }
+.rcall.ongoing  { border-left-color: #30d158; }
+.rcall.onhold   { border-left-color: var(--app-label3); }
+
+.rctop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rcname { min-width: 0; overflow: hidden; font-size: 15px; font-weight: 600;
+  text-overflow: ellipsis; white-space: nowrap; }
+.rcstatus { flex: none; color: var(--app-sub); font-size: 11px; }
+.rcmsg { margin-top: 6px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.rcby { margin-top: 4px; color: var(--app-sub); font-size: 11px; }
+
+/* Wrapping, not scrolling: six actions in a hidden sideways scroller is three actions nobody
+   knows are there - and one of them ends the job. */
+.rcacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rcacts button {
+  padding: 8px 11px;
+  border: 1px solid var(--app-sep);
+  border-radius: 999px;
+  background: var(--app-fill);
+  color: var(--app-label);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform .1s ease, filter .1s ease;
+}
+.rcacts button:active { transform: scale(.94); filter: brightness(.9); }
+.rcacts button.good { border-color: transparent; background: rgba(48, 209, 88, .16); color: #30d158; }
+.rcacts button.bad { border-color: transparent; background: rgba(255, 69, 58, .14); color: #FF453A; }

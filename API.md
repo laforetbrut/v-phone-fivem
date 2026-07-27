@@ -294,6 +294,17 @@ phone:PhoneUsable(src)                       --> boolean
 phone:NumberOf(src)                          --> '555-0182' | nil
 ```
 
+#### Repair
+
+```lua
+-- The callouts waiting at a garage - for a dispatch board, a whiteboard in the workshop, or a
+-- sign in the world. Pass a job name for one garage, or nothing for every garage.
+--
+-- nil on a server running doc-mechanicmdt: the callouts are ITS rows, and a second function
+-- answering the same question from a different table is how the two start disagreeing.
+phone:GetRepairCalls('mechanic')             --> { { id, name, message, x, y, status, handled_by, created_at }, ... } | nil
+```
+
 #### Alerts
 
 ```lua
@@ -723,6 +734,19 @@ phone:PhoneUsable(src)                       --> boolean
 
 -- Le numero de la personne sur cette source, sans passer par le citizenid.
 phone:NumberOf(src)                          --> '555-0182' | nil
+```
+
+#### Depannage
+
+```lua
+-- Les demandes en attente dans un garage - pour un tableau de bord, un tableau blanc dans
+-- l atelier, ou un panneau dans le monde. Passez un nom de metier pour un garage, ou rien
+-- du tout pour tous.
+--
+-- nil sur un serveur qui fait tourner doc-mechanicmdt : les demandes sont SES lignes, et une
+-- seconde fonction repondant a la meme question depuis une autre table est le debut d un
+-- desaccord entre les deux.
+phone:GetRepairCalls('mechanic')             --> { { id, name, message, x, y, status, handled_by, created_at }, ... } | nil
 ```
 
 #### Alertes

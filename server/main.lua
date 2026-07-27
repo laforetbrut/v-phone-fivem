@@ -380,6 +380,24 @@ local function registerApp(id, info, owner)
         -- One sentence for the store page. Optional, because forcing an empty string on
         -- every app would just fill the store with empty strings.
         desc  = info.desc and tostring(info.desc):sub(1, 300) or nil,
+
+        -- **The price, which stopped here.** This is the registry every shipped app is seeded
+        -- into, and it silently dropped `price` and `account` - so `Config.Apps` could say an
+        -- app costs $250 and the registry row said nothing at all. Downstream everything then
+        -- worked perfectly on a price of nil: the store drew "Get" because there was no price
+        -- to draw, `purchased` came out true because a free app is owned by definition, and the
+        -- debit was skipped because `found.price` was nil. A paid app that was never paid for,
+        -- with no error anywhere - the field simply did not survive being registered.
+        --
+        -- Bounded here rather than trusted: `RegisterApp` is an export, and a third-party app
+        -- naming its own price is a third-party app naming its own number.
+        price = (function()
+            local n = math.floor(num(info.price, 0))
+            return n > 0 and n or nil
+        end)(),
+        -- Which purse. Anything that is not the word `cash` is the bank, so a typo bills an
+        -- account rather than reaching into a pocket.
+        account = (info.account == 'cash') and 'cash' or 'bank',
     }
     return true
 end
@@ -1527,6 +1545,31 @@ end
 --- say which branch fired instead of "it charges for ever".
 ChargeReason = {}
 
+--- What this player could plug into, right here: 'vehicle', 'property', 'charger', 'external',
+--- or nil for nowhere.
+---
+--- Kept separately from `ChargeReason` because the two answer different questions. The reason
+--- says what happened; this says what is POSSIBLE - and when charging is opt-in those are not
+--- the same thing, since standing in a car with the phone unplugged is a place that charges and
+--- a phone that is not charging.
+---
+--- Written here rather than worked out again in server/charging.lua: a second detector is a
+--- second answer, and two answers to "am I somewhere that charges" is exactly the bug that
+--- makes a plug button appear where there is nothing to plug into.
+ChargeSource = {}
+
+--- May the phone actually take charge from this source?
+---
+--- `true` when charging is automatic, which is how it always worked; when the source is one the
+--- operator did not put behind the switch; or when the player has plugged in here. The state
+--- itself lives in server/charging.lua, next to the app that turns it on.
+---
+--- Guarded, like `PaidChargeOk` beside it: this file loads before that one.
+local function pluggedIn(src, source)
+    if not PlugOk then return true end
+    return PlugOk(src, source)
+end
+
 local function chargeRateAt(src, ped, coords)
     -- Another resource driving the charge wins over everything: an electric car it put
     -- you in, a socket you plugged into. It named the rate; trust it, within the ceiling -
@@ -1538,6 +1581,11 @@ local function chargeRateAt(src, ped, coords)
         if until_ and os.time() >= until_ then
             ExternalCharge[src], ExternalChargeUntil[src] = nil, nil
         else
+            ChargeSource[src] = 'external'
+            if not pluggedIn(src, 'external') then
+                ChargeReason[src] = 'unplugged:external'
+                return 0.0
+            end
             ChargeReason[src] = 'external'
             return ext
         end
@@ -1547,6 +1595,14 @@ local function chargeRateAt(src, ped, coords)
     -- `chargeAtProperty`: a server that wants a long drive to cost battery turns this off and
     -- leaves properties and the public chargers as the only ways to fill up.
     if Config.Compat.chargeInVehicle ~= false and IsPedInAnyVehicle(ped) then
+        ChargeSource[src] = 'vehicle'
+        -- **Sitting in a car is not plugging in.** With `Config.PlugIn` on, a car is somewhere
+        -- the phone CAN charge and does not until the player says so in FruitCharge - which is
+        -- what a cable is: getting into a car has never charged a phone by itself.
+        if not pluggedIn(src, 'vehicle') then
+            ChargeReason[src] = 'unplugged:vehicle'
+            return 0.0
+        end
         ChargeReason[src] = 'vehicle'
         return 1.0
     end
@@ -1556,6 +1612,11 @@ local function chargeRateAt(src, ped, coords)
     -- how to ask qs-housing, ps-housing, qb-houses and the rest.
     local state = Player(src) and Player(src).state
     if state and state.phoneAtHome == true then
+        ChargeSource[src] = 'property'
+        if not pluggedIn(src, 'property') then
+            ChargeReason[src] = 'unplugged:property'
+            return 0.0
+        end
         ChargeReason[src] = 'property'
         return 1.0
     end
@@ -1568,8 +1629,16 @@ local function chargeRateAt(src, ped, coords)
                 -- answers true without anything being stored, so a server that never sets a
                 -- price behaves exactly as it did before paid charging existed.
                 -- See server/charging.lua.
+                ChargeSource[src] = 'charger'
                 if PaidChargeOk and not PaidChargeOk(src, c) then
                     ChargeReason[src] = 'unpaid:' .. tostring(c.id or '?')
+                    return 0.0
+                end
+                -- Paying and plugging in are two different acts, and the order matters: a
+                -- charger that has been paid for but not plugged into is still not charging,
+                -- and one that is plugged into but not paid for was never going to charge.
+                if not pluggedIn(src, 'charger') then
+                    ChargeReason[src] = 'unplugged:charger'
                     return 0.0
                 end
                 ChargeReason[src] = 'charger:' .. tostring(c.id or '?')
@@ -1577,6 +1646,11 @@ local function chargeRateAt(src, ped, coords)
             end
         end
     end
+    -- Nowhere. Told to the plug state as well, and this call is what unplugs somebody who
+    -- walked away: without it the plug would still be set when they got back into the same car,
+    -- and the switch would only ever need pressing once per session.
+    ChargeSource[src] = nil
+    pluggedIn(src, nil)
     ChargeReason[src] = nil
     return 0.0
 end
@@ -3225,7 +3299,8 @@ V.Callback('v-phone:install', function(src, resolve, data)
         -- phone-view session is the HELD character - so debiting `src` would put the app on
         -- their phone and take the money out of the staff member's account.
         local buyer = PhoneActingSource and PhoneActingSource(src) or src
-        if not Bridge.RemoveMoney(buyer, found.price, found.account) then
+        if not Bridge.RemoveMoney(buyer, found.price, found.account,
+                                  ('v-phone: %s app'):format(id)) then
             resolve({ error = 'nomoney', price = found.price }) return
         end
         local owned = {}
@@ -3598,7 +3673,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         local buyer = PhoneActingSource and PhoneActingSource(src) or src
         if price > 0 then
             local paid = Bridge.RemoveMoney and Bridge.RemoveMoney(buyer, price,
-                tostring(custom.account or 'bank'))
+                tostring(custom.account or 'bank'), ('v-phone: mail domain %s'):format(domain))
             if not paid then resolve({ error = 'nomoney' }) return end
         end
 
@@ -3609,7 +3684,8 @@ V.Callback('v-phone:mail', function(src, resolve, data)
             -- Refund rather than keep the money for nothing. Same rule as the bank: a failure
             -- after the debit has to put it back.
             if price > 0 and Bridge.AddMoney then
-                Bridge.AddMoney(buyer, price, tostring(custom.account or 'bank'))
+                Bridge.AddMoney(buyer, price, tostring(custom.account or 'bank'),
+                                ('v-phone: %s refunded'):format(id))
             end
             resolve({ error = 'x' }) return
         end
@@ -4438,6 +4514,11 @@ AddEventHandler('playerDropped', function()
     ExternalChargeUntil[src] = nil
     ChargeReason[src] = nil
     if PaidChargeDrop then PaidChargeDrop(src) end
+    -- A player who left is not plugged into anything. Hooked onto the disconnect that already
+    -- exists rather than registering a second `playerDropped`: two handlers for one event is
+    -- two places to look when something is not cleaned up.
+    if PlugDrop then PlugDrop(src) end
+    ChargeSource[src] = nil
     FrameLast[src] = nil
     LastBadLine[src] = nil
     MessageLastSend[src], MessageBusy[src] = nil, nil

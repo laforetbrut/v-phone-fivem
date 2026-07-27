@@ -345,7 +345,7 @@ V.Callback('v-phone:taxi:pay', function(src, resolve, data)
 
     local purse = tostring(CFG.account or 'cash')
     local acting = PhoneActingSource and PhoneActingSource(src) or src
-    if not Bridge.RemoveMoney(acting, total, purse) then
+    if not Bridge.RemoveMoney(acting, total, purse, 'v-phone: taxi fare') then
         resolve({ error = 'nomoney', price = total })
         return
     end

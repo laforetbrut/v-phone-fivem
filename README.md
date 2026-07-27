@@ -54,7 +54,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus eight downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge and the Lottery.
+Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus nine downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, FruitCharge and the Lottery.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -80,11 +80,24 @@ Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Mus
   alerts, a searchable archive, and a composer for whoever may broadcast. It is not optional
   and it cannot be bought: an alert system only works if everybody already has it when the
   alert goes out.
+- **Repair** (a free download): reaching a mechanic from the side of the road. Runs on
+  **doc-mechanicmdt** when present - its garages, opening states, ratings, invoice rule and
+  callout queue, through the eight server callbacks its own tablet and iframe used - and on
+  `Config.Repair` otherwise. Garages sorted by distance with their score and whether anybody is
+  in, a callout that carries your position, a live tracker, reviews, and a route. **Both sides**:
+  a mechanic holding the job gets the queue on their phone, takes a job, routes to the customer
+  and can ring them - which the original app had a tablet for, no use to somebody out on a job.
+  Ringing a garage rings a mechanic who is actually on duty there.
 - **Lottery** (a paid download, $250): the weekly draw. Runs on **doc-lottery** when present - its
   session, jackpot, tickets and prize tiers, through its own two callbacks - and on
   `Config.Lottery` otherwise, with its own draw on a schedule you set. Numbers are tapped on a
   grid rather than typed, there is a lucky dip, the draw itself is followed live in the app, and
   your own past lines and winnings are there - none of which its original app had.
+- **Plugging in** (`Config.PlugIn`, off by default): by default the phone charges the moment
+  you sit in any car or step into your own house. Turn this on and those places offer a
+  switch in FruitCharge instead - "Put on charge" - and the battery only moves once it is
+  thrown. Walking away unplugs it, so it is once per stop rather than once per session. Per
+  source, so a server can require it in cars and leave public chargers automatic.
 - **FruitCharge** (a paid download): finds every public charger, routes you to one, and pays a paid charger from the phone - with an optional auto-accept and a price ceiling. Standing at a paid charger without it points you at the store.
 
 ### For developers
@@ -194,7 +207,7 @@ bar), `RingOut`, `Booth` (payphones), `Airdrop` (sharing between two phones in t
 `Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
 
 **The paid and the optional**
-`Charging` and `PaidCharging` (public chargers), `Zuber`, `Taxi`, `Lottery`, `Alerts`, `Media` (photo and
+`Charging`, `PaidCharging` (public chargers) and `PlugIn` (charging on purpose), `Zuber`, `Taxi`, `Repair`, `Lottery`, `Alerts`, `Media` (photo and
 video hosting), `Music`, `Vehicle`, `Police` (the forensics terminal), `Social`, `Store`.
 
 **Staff**
@@ -707,7 +720,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus huit téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, FruitCharge et la Loterie.
+Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus neuf téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, FruitCharge et la Loterie.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
@@ -733,12 +746,26 @@ Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil pho
   propre liste de métiers. Alertes en cours, archives consultables, et un formulaire de
   diffusion pour ceux qui en ont le droit. Ni optionnelle ni payante : un système d'alerte ne
   sert que si tout le monde l'a déjà quand l'alerte part.
+- **Dépannage** (téléchargement gratuit) : joindre un mécano depuis le bord de la route.
+  Fonctionne sur **doc-mechanicmdt** quand il est présent — ses garages, leurs états, les notes,
+  sa règle de facture et sa centrale d'appel, via les huit callbacks serveur que sa tablette et
+  son iframe utilisaient — et sur `Config.Repair` sinon. Garages triés par distance avec leur
+  note et le nombre de mécanos en service, une demande qui emporte votre position, un suivi en
+  direct, les avis, l'itinéraire. **Les deux côtés** : un mécano en poste reçoit la file sur son
+  téléphone, prend une demande, trace la route vers le client et peut l'appeler — ce que
+  l'application d'origine confiait à une tablette, inutile quand on est en intervention.
+  Appeler un garage fait sonner un mécano réellement en service.
 - **Loterie** (téléchargement payant, 250 $) : le tirage hebdomadaire. Fonctionne sur
   **doc-lottery** quand il est présent — sa session, sa cagnotte, ses tickets et ses rangs de gain,
   via ses deux callbacks — et sur `Config.Lottery` sinon, avec son propre tirage à l'heure que vous
   fixez. Les numéros se touchent sur une grille au lieu d'être tapés, il y a un flash, le tirage se
   suit en direct dans l'application, et vos grilles passées et vos gains y sont — ce que son
   application d'origine n'avait pas.
+- **Se brancher** (`Config.PlugIn`, désactivé par défaut) : par défaut le téléphone se charge
+  dès qu'on s'assoit dans une voiture ou qu'on entre chez soi. Activez ceci et ces endroits
+  proposent un bouton dans FruitCharge — « Mettre en charge » — et la batterie ne bouge
+  qu'une fois appuyé. S'éloigner débranche, donc c'est une fois par arrêt et non par session.
+  Réglable par source : exiger le geste en voiture et laisser les bornes publiques automatiques.
 - **FruitCharge** (téléchargement payant) : localise toutes les bornes publiques, place l'itinéraire vers l'une d'elles, et paie une borne payante depuis le téléphone — avec acceptation automatique et plafond de prix. Sans l'application, une borne payante renvoie vers le store.
 
 ### Pour les développeurs
@@ -846,7 +873,7 @@ ouvre l'application).
 `Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
 
 **Payantes et optionnelles**
-`Charging` et `PaidCharging` (bornes publiques), `Zuber`, `Taxi`, `Lottery`, `Alerts`, `Media` (hébergement
+`Charging`, `PaidCharging` (bornes publiques) et `PlugIn` (charge volontaire), `Zuber`, `Taxi`, `Repair`, `Lottery`, `Alerts`, `Media` (hébergement
 photo et vidéo), `Music`, `Vehicle`, `Police` (terminal scientifique), `Social`, `Store`.
 
 **Staff**

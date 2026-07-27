@@ -381,7 +381,10 @@ V.Callback('v-phone:bankpro:deposit', function(src, resolve, data)
 
     -- From the bank, always. The `from` the page used to send is ignored on purpose.
     local acting = PhoneActingSource and PhoneActingSource(src) or src
-    if not Bridge.RemoveMoney(acting, amount, 'bank') then resolve({ error = 'nomoney' }) return end
+    if not Bridge.RemoveMoney(acting, amount, 'bank', 'Bank Pro deposit') then
+        resolve({ error = 'nomoney' })
+        return
+    end
 
     if not (Bridge.AddSociety and Bridge.AddSociety(account, amount,
             'v-phone: deposit by ' .. (p.name or p.citizenid))) then

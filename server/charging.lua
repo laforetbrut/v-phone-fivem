@@ -32,6 +32,108 @@ local function num(v, fallback)
     return n
 end
 
+-- ══════════════════════════════════════════════════════════════
+-- Plugged in
+-- ══════════════════════════════════════════════════════════════
+-- **Being somewhere that charges is not the same as charging.**
+--
+-- The phone used to fill up the moment a player sat in any car or walked into their own house,
+-- which is not what a phone does: a car and a house are places with a cable in them, and the
+-- cable has to be picked up. So a charging PLACE now offers a switch in FruitCharge, and the
+-- battery moves when the player throws it.
+--
+-- Off by default in `Config.PlugIn`, and per source, because this is a change of habit for
+-- everybody on a running server: an operator turns it on when they want it, and a server that
+-- liked the old behaviour never notices this code exists.
+--
+-- Memory only, exactly like a paid session: being plugged in is "right now", and right now does
+-- not survive a restart any more than the player standing there does.
+
+local Plug = {}          -- [src] = { source = 'vehicle' | 'property' | 'charger' | 'external' }
+
+local function plugCfg()
+    return Config.PlugIn or {}
+end
+
+local function plugOn()
+    return plugCfg().enabled == true
+end
+
+--- Does THIS source need the switch thrown?
+---
+--- Per source, because they are not the same promise. A car and a house are places a player
+--- lives in for an hour and should not silently top up; a public charger is a thing you walk to
+--- on purpose, and making that one opt-in as well is mostly a second tap. `external` is another
+--- resource saying "this player is charging" - it already decided, and second-guessing it would
+--- break the contract that export is for.
+local function plugRequired(source)
+    if not plugOn() or source == nil then return false end
+    local sources = plugCfg().sources
+    if type(sources) ~= 'table' then return false end
+    return sources[source] == true
+end
+
+--- May the phone take charge from this source?
+---
+--- Also where UNPLUGGING happens. A player who gets out of the car has not pressed anything, and
+--- without this the plug would still be set when they got back in - so the switch would need
+--- throwing once per session rather than once per stop, which is the same automatic charging
+--- wearing a button. `chargeRateAt` calls this with nil when there is nowhere to plug in, and
+--- that call is what lets go.
+function PlugOk(src, source)
+    src = tonumber(src) or 0
+    local p = Plug[src]
+    if p and p.source ~= source and plugCfg().unplugOnLeave ~= false then
+        -- **Getting out is unplugging.** Stepping out of the car or leaving the property stops
+        -- the charge, and getting back in means opening FruitCharge again - which is the point:
+        -- a cable that reconnects itself when you sit back down is not a cable.
+        --
+        -- Said out loud, because it happens while the phone is in a pocket. A player who is not
+        -- told simply finds a flat battery later and has nothing to point at.
+        Plug[src] = nil
+        p = nil
+        if plugCfg().notifyOnUnplug ~= false then
+            TriggerClientEvent('v-phone:client:unplugged', src)
+        end
+    end
+    if not plugRequired(source) then return true end
+    return p ~= nil
+end
+
+--- Is the switch on, as the app needs to draw it?
+function PlugState(src)
+    src = tonumber(src) or 0
+    local p = Plug[src]
+    return p and p.source or nil
+end
+
+function PlugDrop(src)
+    Plug[tonumber(src) or 0] = nil
+end
+
+--- Throw the switch.
+---
+--- Refused when there is nothing to plug into, from the SERVER's own reading of where the player
+--- is - `ChargeSource` is written by the battery tick in server/main.lua from the ped's real
+--- position. A client asking to charge in the middle of a field is asking for free battery.
+V.Callback('v-phone:charge:plug', function(src, resolve, data)
+    if not plugOn() then resolve({ error = 'off' }) return end
+
+    local want = not (data and data.on == false)
+    if not want then
+        Plug[src] = nil
+        resolve({ ok = true, on = false })
+        return
+    end
+
+    local source = ChargeSource and ChargeSource[src] or nil
+    if not source then resolve({ error = 'nowhere' }) return end
+    if not plugRequired(source) then resolve({ ok = true, on = true, already = true }) return end
+
+    Plug[src] = { source = source, at = os.time() }
+    resolve({ ok = true, on = true, source = source })
+end)
+
 --- What a stop at this charger costs, or 0 for a free one.
 ---
 --- A row's own `price` wins over the default, including a row that says `price = 0` on a
@@ -184,7 +286,7 @@ local function doPay(src, charger)
     end
 
     local purse = (cfg().money == 'bank') and 'bank' or 'cash'
-    if not Bridge.RemoveMoney(src, price, purse) then
+    if not Bridge.RemoveMoney(src, price, purse, 'v-phone: charging') then
         return { error = 'nomoney', price = price }
     end
 
@@ -386,6 +488,14 @@ V.Callback('v-phone:charging:app', function(src, resolve)
         prefs = { autoAccept = pr.autoAccept, autoMax = pr.autoMax },
         autoAcceptOn = cfg().autoAccept ~= false,   -- whether the option is offered at all
         autoMaxCap = math.max(0, math.floor(num(cfg().autoAcceptMax, 0))),
+        -- The switch. `source` is what is here, `needs` is whether it has to be thrown, and `on`
+        -- is whether it has been - three separate facts, because "in a car with the phone
+        -- unplugged" and "nowhere near a socket" look identical if you only send one boolean.
+        plug = plugOn() and {
+            source = ChargeSource and ChargeSource[src] or nil,
+            needs = plugRequired(ChargeSource and ChargeSource[src] or nil),
+            on = PlugState(src) ~= nil,
+        } or nil,
     })
 end)
 

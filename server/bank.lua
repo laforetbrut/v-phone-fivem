@@ -57,6 +57,28 @@ end
 -- The phone's own ledger
 -- ══════════════════════════════════════════════════════════════
 --- One statement line. `amount` is signed: negative left the account.
+--- A reason that says nothing, dropped.
+---
+--- **This is where the word "unknown" came from.** qb-core writes `reason or 'unknown'` on every
+--- money movement, so any resource that moves money without saying why - and plenty do - leaves
+--- that literal word in `bank_statements`. The phone then printed it as the name of the line,
+--- and a statement reading "unknown" eight times tells its owner less than nothing.
+---
+--- Blanked rather than translated, because there is a better sentence available: with no label,
+--- `txTitle` on the page falls through to "Deposit" or "Withdrawal", which is both true and
+--- useful. A placeholder is not information and should not outrank the amount's own sign.
+---
+--- Only exact matches. A real reason that happens to contain one of these words is somebody's
+--- actual note and is none of this function's business.
+local PLACEHOLDER = {
+    ['unknown'] = true, ['inconnu'] = true, ['none'] = true, ['nil'] = true,
+    ['null'] = true, ['n/a'] = true, ['-'] = true, ['v-phone'] = true,
+}
+
+local function placeholder(label)
+    return PLACEHOLDER[label:lower():gsub('^%s+', ''):gsub('%s+$', '')] and '' or label
+end
+
 local function record(citizenid, amount, label, kind, counterparty)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return end
@@ -108,7 +130,7 @@ local function frameworkHistory(src, citizenid)
             -- Every banking script names these differently, and an amount is sometimes a
             -- string. Whatever arrives is coerced here so the page never has to guess.
             local amount = math.floor(num(r.amount or r.value or 0, 0))
-            local label = tostring(r.label or r.reason or r.message or r.type or '')
+            local label = placeholder(tostring(r.label or r.reason or r.message or r.type or ''))
             local at = r.at or r.date or r.time
             -- **Seconds or milliseconds?** Both arrive here and they cannot be told apart by
             -- type: qb-banking and doc-banking both store `date` as `os.time() * 1000`, while a
@@ -426,7 +448,7 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
     -- The debit first, and it fails closed: nothing below runs unless the money actually
     -- left. `total`, so the fee is paid by the sender and the recipient gets the round
     -- number they were promised.
-    if not Bridge.RemoveMoney(acting, total, 'bank') then
+    if not Bridge.RemoveMoney(acting, total, 'bank', 'v-phone: transfer') then
         resolve({ error = 'funds' })
         return
     end

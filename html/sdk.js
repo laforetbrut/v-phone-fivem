@@ -124,6 +124,10 @@
     // A siren horn with two arcs of sound. The stroke twin of the `alerts` tile, used on the
     // cards, the tabs and the empty states inside the Alerts app.
     alerts: 'M4 14V9l9-4v14l-9-4Zm0 0H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1m13-1a3 3 0 0 1 0 6m2-9a7 7 0 0 1 0 12',
+    // A spanner at an angle, for the Repair app: the rows, the tabs and the empty states.
+    repair: 'M14.7 6.3a4 4 0 0 0 5.2 5.2l-8.2 8.2a2.5 2.5 0 0 1-3.5-3.5l8.2-8.2Zm0 0L17.5 3.5M9.5 14.5l-4 4',
+    // A star, for the rating rows. Filled by the fill rule rather than a second path.
+    star: 'M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8L12 3.6Z',
     // A flame, for a fire alert.
     fire: 'M12 21a5 5 0 0 0 5-5c0-4-5-5-4-10-3 1.5-6 4.5-6 9a5 5 0 0 0 5 6Zm0 0a2.5 2.5 0 0 0 2.5-2.5c0-2-2.5-2.5-2.5-4.5-1.5 1-2.5 2.5-2.5 4.5A2.5 2.5 0 0 0 12 21Z',
     // A cloud with a bolt, for a weather alert.
@@ -430,6 +434,12 @@
     shield: { bg: 'linear-gradient(180deg,#3C82F6,#0A48C4)', d: G.shield },
     // 911. Red, because every emergency service on every phone is, and because it has to be
     // findable on a crowded home screen by somebody who is not reading.
+    // Repair. Deep blue with a white spanner: a workshop app, and blue rather than the orange
+    // FruitCharge wears so the two utility tiles are not the same colour at a glance.
+    repair: { bg: 'linear-gradient(180deg,#4C8DFF,#1B3FAE)', fill: '#FFFFFF',
+      d: 'M15.9 4.1a4.6 4.6 0 0 0-1.06 4.72L6.6 17.06a2.9 2.9 0 1 0 4.1 4.1l8.24-8.24A4.6 4.6 0 0 0'
+       + ' 20.7 5.2l-2.63 2.63a1.5 1.5 0 0 1-2.12-2.12L18.58 3.1a4.6 4.6 0 0 0-2.68 1ZM8.65 17.9a1.1'
+       + ' 1.1 0 1 1 1.56 1.56 1.1 1.1 0 0 1-1.56-1.56Z' },
     // Public alerts. Amber rather than the red 911 wears: the two apps sit next to each other on
     // every home screen, and one of them is the one you press when it is YOUR emergency. A siren
     // horn, which is what a public address system looks like anywhere in the world.
