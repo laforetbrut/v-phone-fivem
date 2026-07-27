@@ -190,6 +190,15 @@ Config.Compat = {
         vehicles   = 'auto',
         properties = 'auto',
         licences   = 'auto',
+        -- Where your housing script keeps each house, so the Property app can put a waypoint
+        -- on one. `auto` looks for the tables the common scripts use and reads whichever
+        -- exists; `false` stops it looking at all.
+        --
+        -- Only needed for a script whose OWN export will not give up a position - Quasar keeps
+        -- its coordinates behind an escrowed core, so the phone reads the row instead. If your
+        -- table is named something unusual, name it here; if the position is not in a database
+        -- at all, `Config.Property.houses` is the manual list.
+        houses     = 'auto',
     },
 
     -- ── Your own wiring ────────────────────────────────────────
@@ -414,6 +423,27 @@ Config.Licences = {
     taxi     = 'Taxi licence',
     press    = 'Press card',
     law      = 'Bar licence',
+
+    -- ── Identifiers other servers use ──────────────────────────
+    -- Nothing above is authoritative: these are simply the identifiers seen most often. A
+    -- server whose licence script numbers them - `bike`, `fly2`, `boat2`, `assurance1` - is not
+    -- unusual, and an unlisted identifier shows as a tidied version of itself. Add yours here
+    -- and the Wallet uses the name you wrote.
+    bike     = 'Motorcycle licence',
+    fly      = 'Pilot licence',
+    fly2     = 'Helicopter licence',
+    boat2    = 'Master mariner licence',
+    hunt     = 'Hunting permit',
+    lawyer   = 'Bar licence',
+    detective = 'Private investigator licence',
+    primes   = 'Bounty hunter licence',
+    racing_organizer = 'Race organiser permit',
+    racing_driver = 'Racing licence',
+    -- Insurance tiers, which several French-speaking servers issue as licences.
+    assurance0 = 'Basic health cover',
+    assurance1 = 'Health cover, tier 1',
+    assurance2 = 'Health cover, tier 2',
+    assurance3 = 'Health cover, tier 3',
 }
 
 -- ══════════════════════════════════════════════════════════════
@@ -497,6 +527,44 @@ Config.Calls = {
     --
     -- Somebody who is on their OWN call is never pulled in.
     speakerRange = 8.0,
+
+    -- ── A call on a bad line ───────────────────────────────────
+    -- One bar is not "slightly worse than four bars" - it is a call that keeps breaking up. The
+    -- phone shows it: the voice cuts in and out, the screen stutters, and the call can drop.
+    --
+    -- The VOICE is what matters here. Muting the player's own transmission for a moment is
+    -- what a real drop-out sounds like from both ends, and it is done through the voice script
+    -- rather than faked in the interface - a visual-only glitch on a call you can still hear
+    -- perfectly reads as a broken phone rather than as a broken signal.
+    badSignal = {
+        enabled = true,
+
+        -- At or below this many bars the line starts breaking up. 1 is "only the worst
+        -- reception"; 2 includes a weak signal. 0 switches the whole thing off.
+        atBars = 1,
+
+        -- How often a cut-out happens, as a chance per second at `atBars`. A weaker signal is
+        -- proportionally worse: at 1 bar with a threshold of 2, the chance is doubled.
+        chancePerSecond = 0.18,
+
+        -- How long one cut-out lasts, in milliseconds. Randomised between the two, because a
+        -- drop-out of exactly the same length every time reads as a metronome.
+        minMs = 250,
+        maxMs = 900,
+
+        -- Mute the player's own voice for the duration, so the far end hears the break too.
+        -- This is the honest half of the effect; turn it off and the glitch is decoration.
+        muteVoice = true,
+
+        -- The screen stutter that goes with it, and the static. Off leaves the call silent for
+        -- a moment with no explanation, which reads as a bug.
+        flicker = true,
+        static = true,
+
+        -- A call on a line this bad can drop entirely: a chance per second, checked only while
+        -- the signal is at or below `atBars`. 0 never drops - the call just keeps breaking up.
+        dropChancePerSecond = 0.008,
+    },
 }
 
 -- ── Apps ───────────────────────────────────────────────────────
@@ -527,7 +595,15 @@ Config.Apps = {
       required = true, category = 'essentials' },
     { id = 'contacts', label = 'app.contacts', icon = 'contacts', owner = 'v-phone',    slot = 3, dock = true,
       required = true, category = 'essentials' },
-    { id = 'bank',     label = 'app.bank',     icon = 'bank',     owner = 'v-phone',    slot = 4,
+    -- Reaching the emergency services. `required`, like the Phone app: a phone you cannot
+    -- call for help with is a phone missing the one thing it is for in an emergency, and a
+    -- player who deleted it will discover that at the worst possible moment.
+    { id = 'emergency', label = 'app.emergency', icon = 'emergency', owner = 'v-phone', slot = 4,
+      required = true, category = 'essentials' },
+    -- Bank shares slot 5 with Mail rather than every later app being renumbered to make room
+    -- for the one above. `slot` is a sort key and ties break on the app id, so `bank` still
+    -- comes before `mail` - which is the order that was already here.
+    { id = 'bank',     label = 'app.bank',     icon = 'bank',     owner = 'v-phone',    slot = 5,
       category = 'finance' },
     { id = 'mail',     label = 'app.mail',     icon = 'mail',     owner = 'v-phone',    slot = 5,
       category = 'work' },
@@ -567,7 +643,7 @@ Config.Apps = {
     -- The company account. In the store rather than on the home screen: most characters do
     -- not run a business, and an app that answers "you are not a boss" to almost everybody
     -- does not belong installed by default. See Config.BankPro.
-    { id = 'bankpro',  label = 'app.bankpro',  icon = 'bank',     owner = 'v-phone', slot = 18,
+    { id = 'bankpro',  label = 'app.bankpro',  icon = 'bankpro',  owner = 'v-phone', slot = 18,
       optional = true, category = 'finance' },
     { id = 'bleeter',  label = 'app.bleeter',  icon = 'bleet',    owner = 'v-phone', slot = 19,
       optional = true, category = 'social' },
@@ -583,6 +659,12 @@ Config.Apps = {
     -- pushing the home screen around on the day a server enables it.
     { id = 'cipher',   label = 'app.cipher',   icon = 'cipher',   owner = 'v-phone',    slot = 24,
       optional = true, category = 'social', version = '1.0' },
+    -- FruitCharge: finds public chargers, and pays a paid one from the phone. A DOWNLOAD, and
+    -- a paid one - $200 from the bank - because a paid charger with no way to pay it is a dead
+    -- end, and this is the way. Standing at a paid charger without it pushes the store. See
+    -- Config.PaidCharging.requireApp.
+    { id = 'charging', label = 'app.charging', icon = 'charging', owner = 'v-phone',    slot = 25,
+      optional = true, category = 'utilities', price = 200, account = 'bank', version = '1.0' },
 }
 
 -- Rich FruitStore catalogue. These are presentation/search hints, not duplicated game
@@ -677,6 +759,12 @@ Config.AppMetadata = {
         features = { 'Chiffrement de bout en bout', 'Identité anonyme', 'Messages éphémères', 'Empreinte de sécurité' },
         keywords = { 'privé', 'chiffré', 'illégal', 'anonyme', 'sécurité' },
     },
+    charging = {
+        features = { 'Bornes de recharge sur la carte', 'Point de passage vers une borne',
+                     'Paiement des bornes payantes', 'Acceptation automatique',
+                     'Plafond de prix' },
+        keywords = { 'recharge', 'borne', 'batterie', 'payant', 'electrique' },
+    },
     store = {
         features = { 'Catalogue complet', 'Recherche avancée', 'Installation', 'Mises à jour', 'Fiches détaillées' },
         keywords = { 'application', 'téléchargement', 'installation', 'catalogue' },
@@ -709,6 +797,7 @@ Config.Home = {
     -- Bleeter, Snapmatic, Hush and Cipher are deliberately absent: a social account is
     -- something a character chooses to open, not something their phone arrives with.
     installed = {
+        'emergency',  -- first on the grid, and `required` below: it is never a download
         'bank', 'mail', 'maps', 'camera', 'gallery', 'music',
         'garage', 'property', 'wallet', 'jobs', 'health',
         'notes', 'reminders', 'calc',
@@ -718,7 +807,11 @@ Config.Home = {
 
     -- Cannot be removed by the player. A phone with no Phone app is a brick, and a phone
     -- with no store can never get anything back.
-    required = { 'phone', 'messages', 'contacts', 'store', 'settings' },
+    -- 911 is in here rather than only in the catalogue: this list WINS over the catalogue's
+    -- own `required` field (see the loop below), so an app left out of it is removable
+    -- whatever its entry says. Switch the app off with `Config.Emergency.enabled` - a player
+    -- does not get to delete the one app they will need while they are being shot at.
+    required = { 'phone', 'messages', 'contacts', 'store', 'settings', 'emergency' },
 
     -- Not offered at all: not on the home screen, not in the store, not searchable.
     -- Use this to switch an app off entirely rather than deleting its catalogue entry,
@@ -1017,11 +1110,83 @@ Config.Battery = {
     chargeMinutes = 45.0,   -- flat to full at a charger
     lowAt = 20,             -- first warning
     criticalAt = 5,
+
+    -- ── How quickly the phone notices where it is ──────────────
+    -- Two different questions, on two different clocks, because they move at two different
+    -- speeds.
+    --
+    -- `stateSeconds` is how often SIGNAL and CHARGING are re-checked. Both are step changes
+    -- tied to a position: you walk into a dead zone, or you put the phone on a charger, and the
+    -- status bar should say so almost at once. It used to share the drain tick below, which
+    -- meant "no service" could take twenty seconds to appear - long enough to read as broken.
+    -- It is a handful of distance checks per player, so this is cheap.
+    stateSeconds = 2,
+    -- `drainSeconds` is the battery arithmetic and the row written to the database. A battery
+    -- level genuinely moves this slowly - a percent every few minutes - and checking it faster
+    -- would be arithmetic nobody can see, plus a write per player per tick.
+    drainSeconds = 20,
 }
+
+-- ══════════════════════════════════════════════════════════════
+--  WRITING A POSITION
+-- ══════════════════════════════════════════════════════════════
+-- Every table in this file that names a place accepts BOTH ways of writing it:
+--
+--     { label = 'LSIA', x = -1037.0, y = -2737.0, z = 20.2, radius = 8.0 }
+--     { label = 'LSIA', coords = vector3(-1037.0, -2737.0, 20.2), radius = 8.0 }
+--
+-- `vector3(...)` is what every other script and every coordinate-copying tool in FiveM hands
+-- you, so pasting one straight in has to work - retyping it into three fields is a step whose
+-- only possible outcome is a typo. `vec3` and `vector4` are accepted too, as is a plain
+-- `{ x, y, z }` array, and `pos` is accepted as a spelling of `coords`.
+--
+-- Normalised ONCE, here, into `x`/`y`/`z`, so nothing downstream has to know that any of this
+-- happened: the whole resource keeps reading the three fields it always read.
+local function normalisePlaces(list)
+    if type(list) ~= 'table' then return list end
+    for _, row in ipairs(list) do
+        if type(row) == 'table' then
+            local v = row.coords or row.pos or row.position
+            if v ~= nil and row.x == nil then
+                local kind = type(v)
+                -- **A vector is not a table, and it is not forgiving.** A real CFX `vector3`
+                -- raises "attempt to index a vector value" for any key it does not have - so
+                -- `v.w` on a vector3, and `v[1]` on any vector, are errors rather than nil.
+                -- The first version of this read `tonumber(v.x) or tonumber(v[1])`, which
+                -- survived only because `or` short-circuits; the `v.w` on the heading line had
+                -- nothing to short-circuit past and took the whole config down with it.
+                --
+                -- So the three shapes are handled separately, and each is only asked for what
+                -- it actually has.
+                if kind == 'vector4' then
+                    row.x, row.y, row.z = v.x, v.y, v.z
+                    if row.heading == nil then row.heading = v.w end
+                elseif kind == 'vector3' or kind == 'vector2' then
+                    row.x, row.y = v.x, v.y
+                    -- vector2 has no z. Left nil here and defaulted below, like a map pin.
+                    if kind == 'vector3' then row.z = v.z end
+                elseif kind == 'table' then
+                    -- A plain table: either { x = , y = , z = } or a pasted { 1.0, 2.0, 3.0 }.
+                    -- Indexing a table for a key it lacks is nil, not an error, so both reads
+                    -- are safe here and only here.
+                    row.x = tonumber(v.x) or tonumber(v[1])
+                    row.y = tonumber(v.y) or tonumber(v[2])
+                    row.z = tonumber(v.z) or tonumber(v[3])
+                    if row.heading == nil then row.heading = tonumber(v.w) or tonumber(v[4]) end
+                end
+            end
+            -- z is optional for a place that is only ever a map pin - a hospital, a waypoint.
+            if row.x ~= nil and row.z == nil then row.z = 0.0 end
+        end
+    end
+    return list
+end
 
 -- Charging happens at these, and also in any vehicle and inside a property you hold a key
 -- to. Those two are code, because they follow the player rather than a coordinate.
 -- SEED DATA ONLY: chargers live in `world_chargers` and are edited from the admin panel.
+--
+-- Positions may be written either way - see `normalisePlaces` above.
 --
 -- A charger can COST money. Give a row a `price` and the phone asks before it charges - see
 -- Config.PaidCharging below. `account` overrides where that money goes, so the airport's
@@ -1034,8 +1199,12 @@ Config.Chargers = {
     { id = 'ch_pillbox',   label = 'Pillbox Hill Medical',   x = 306.0,   y = -595.0,  z = 43.3, radius = 8.0 },
     { id = 'ch_paleto',    label = 'Paleto Bay, sheriff',    x = -448.0,  y = 6013.0,  z = 31.7, radius = 6.0 },
     { id = 'ch_sandy',     label = 'Sandy Shores, clinic',   x = 1839.0,  y = 3672.0,  z = 34.3, radius = 8.0 },
-    { id = 'ch_vespucci',  label = 'Vespucci boardwalk',     x = -1223.0, y = -1493.0, z = 4.4,  radius = 6.0 },
+    -- Both spellings work. This one is written the way a coordinate arrives from every other
+    -- FiveM tool, so the file itself shows that pasting one straight in is fine.
+    { id = 'ch_vespucci',  label = 'Vespucci boardwalk',
+      coords = vector3(-1223.0, -1493.0, 4.4), radius = 6.0 },
 }
+normalisePlaces(Config.Chargers)
 
 -- ══════════════════════════════════════════════════════════════
 --  PAID CHARGING
@@ -1078,12 +1247,38 @@ Config.PaidCharging = {
     -- How often the server looks for a player standing at a paid charger. The offer cannot
     -- arrive faster than this, so it is the responsiveness of the whole feature - and it is
     -- a handful of distance checks per player, which is nothing.
-    checkSeconds = 4,
+    --
+    -- Kept in step with `Config.Battery.stateSeconds`: the status bar notices the charger in
+    -- two seconds, so an offer that took four read as the phone hesitating.
+    checkSeconds = 2,
 
     -- Charge nothing when the battery is already this full. Somebody who walks past with a
     -- nearly-full phone is not a customer, and being asked anyway is just noise. 101 asks
     -- always; 100 skips only a phone that is completely full.
     skipAbove = 95,
+
+    -- ── The FruitCharge app ────────────────────────────────────
+    -- Paying a paid charger goes through the app: it lists the chargers, sets a waypoint to
+    -- one, and is where the accept / refuse lives - plus an auto-accept for a regular who does
+    -- not want to be asked every time.
+    --
+    -- `requireApp` gates PAID chargers on having the app installed. A free charger never needs
+    -- it. Standing at a paid one without it sends a notification that opens the FruitStore
+    -- rather than an offer, because there is nothing to accept an offer WITH.
+    requireApp = true,
+    appId = 'charging',
+
+    -- Whether the app offers the auto-accept option at all. Off removes it from the app, for a
+    -- server that wants every charge to be a deliberate tap.
+    autoAccept = true,
+    -- The highest price the app will auto-pay without asking, when a player turns auto-accept
+    -- on. It stops a habit set at a $40 kiosk from quietly clearing a $5,000 one. A player can
+    -- set their own lower ceiling in the app; this is the hard cap over it. 0 means no cap.
+    autoAcceptMax = 500,
+
+    -- How long between two "get the app" nudges at the same charger, so walking past one you
+    -- have not bought the app for does not notify every few seconds. Seconds.
+    appPromptFor = 120,
 }
 
 -- Where the network does not reach. `bars` is the CEILING inside the zone: 0 means no
@@ -1099,6 +1294,7 @@ Config.DeadZones = {
     { id = 'dz_tunnel_ls', label = 'Los Santos tunnels',     x = 800.0,   y = -1300.0, z = -40.0, radius = 260.0, bars = 0 },
     { id = 'dz_mine',      label = 'Davis Quartz',           x = 2900.0,  y = 2800.0,  z = 40.0,  radius = 350.0, bars = 1 },
 }
+normalisePlaces(Config.DeadZones)
 
 -- ══════════════════════════════════════════════════════════════
 --  ADMIN
@@ -1117,6 +1313,245 @@ Config.DeadZones = {
 -- not running, a table that could not be read, a callback with no handler. These switches
 -- only govern the lines that are merely true.
 -- ══════════════════════════════════════════════════════════════
+--  911
+-- ══════════════════════════════════════════════════════════════
+-- Alerting the emergency services from the phone.
+--
+-- **These are alerts, not calls.** A player picks a service, picks a reason, and the people
+-- working that service get it on their own phones with a position they can navigate to. If
+-- they want to speak to the caller they ring the number back - which is why the number
+-- travels with the alert unless the caller asked to stay anonymous.
+--
+-- Another script can raise one too: a shop till under robbery, a fire, a downed player.
+-- `exports['v-phone']:CreateAlert{ ... }` - see API.md.
+Config.Emergency = {
+    enabled = true,
+
+    -- ── Who may send one ───────────────────────────────────────
+    -- A phone is needed. Signal and battery are NOT, by default, and that is deliberate: the
+    -- one call that has to work is the one made from a tunnel by somebody whose phone is
+    -- nearly dead. A server that wants dead zones to bite sets these to true.
+    requireItem = true,
+    requireSignal = false,
+    requireBattery = false,
+
+    -- Seconds between two alerts from the same character. The queue belongs to people who
+    -- are working; a button that can be held down is a queue nobody can read.
+    cooldown = 90,
+    -- How many of your OWN alerts may be open at once, whatever the cooldown allows. The
+    -- cooldown paces somebody in a panic; this stops one character filling a service's screen.
+    -- 0 removes the limit.
+    maxOpenPerPlayer = 3,
+
+    -- Let the caller hide their name and number. The service still gets the position and the
+    -- reason - an anonymous tip is a real thing, and a service that can always identify the
+    -- caller is one nobody uses to report their own employer.
+    anonymous = true,
+    -- Whether a responder may ring an anonymous caller back. Off, and it must stay off unless
+    -- you mean it: a number that can be called is a number, and the promise made on the button
+    -- was that they would not get one.
+    anonymousCallback = false,
+
+    -- ── The queue ──────────────────────────────────────────────
+    -- An alert nobody accepted drops out of the live list after this. It is not deleted: it
+    -- moves to the history below, so a service can see what they missed.
+    expireMinutes = 20,
+    -- How many closed and expired alerts stay in memory, per service. This is the store; the
+    -- two numbers below are how much of it each side is SHOWN.
+    history = 30,
+    -- What a caller sees of their own past alerts, and what a responder sees under the live
+    -- queue. A caller wants to know their last shout was picked up, not to scroll a diary; a
+    -- service wants a short tail of what was just dealt with, not the whole shift.
+    callerHistory = 3,
+    dispatchHistory = 10,
+    -- Close a taken alert by itself after this many minutes, for a service that forgets. 0 is
+    -- never, which is the honest default: an alert closing itself while somebody is driving to
+    -- it is worse than a queue with an old row in it.
+    autoCloseMinutes = 0,
+
+    -- Alerts live in memory, like outages and paid charging stops. An alert is about right
+    -- now; a server that restarts has no shift to hand over.
+
+    -- Who may do what to an alert, once it is on the board.
+    dispatch = {
+        -- Anybody in the service may close one, not only whoever took it. On, because a
+        -- responder who logs off mid-shift would otherwise leave a row nobody can clear.
+        closeAnyone = true,
+        -- Let a second responder take an alert that somebody already took. Off: "taken" means
+        -- somebody is on their way, and two units on one call is a dispatch decision.
+        takeOver = false,
+        -- Tell the rest of the service when one of them takes or closes an alert.
+        notifyService = true,
+        -- Show the history section under the live queue at all.
+        showPast = true,
+    },
+
+    -- ── What a responder gets ──────────────────────────────────
+    -- The sound is generated by tools/make-sounds.py - a two-tone dispatch signal, chosen to
+    -- be bearable on the fiftieth call of an evening rather than alarming on the first.
+    sound = true,
+    -- Which one, and how loud. Any name in `sounds/ui_*.wav`; `alertVolume` is 0 to 1 and
+    -- deliberately ignores the player's ring volume - being on duty is a promise to be
+    -- reachable. Set `sound = false` if you disagree with that.
+    alertSound = 'alert911',
+    alertVolume = 0.85,
+    -- Vibrate as well, ignoring Do Not Disturb. Somebody on duty asked to be reachable.
+    vibrate = true,
+    -- Raise the handset out of a pocket for an incoming alert, the way a message does.
+    peek = true,
+
+    -- ── The blip on the map ────────────────────────────────────
+    -- `auto` is the one that matters: the alert appears on the map of EVERY responder in that
+    -- service the moment it is raised, with no button pressed. That is the difference between
+    -- a dispatch board and a service that has to be reading their phone to notice.
+    --
+    -- Off, the coordinates stay on the server until a responder asks for them with "Take me
+    -- there" - which is stricter, and slower, and some servers want it.
+    blip = {
+        enabled = true,
+        auto = true,
+        sprite = 280,
+        colour = 1,
+        scale = 0.9,
+        alpha = 255,
+        -- A flashing blip is how a responder finds it on a busy map. It stops flashing once
+        -- somebody takes the alert, so what is flashing is what nobody has answered.
+        flash = true,
+        -- How long an automatic blip lives if nothing happens to it. It expires because a
+        -- blip is the thing that accumulates: an evening of alerts is an unreadable map.
+        seconds = 300,
+        -- What happens to it when the alert moves on.
+        clearOnTaken = false,   -- keep it: whoever took it is still driving there
+        clearOnClosed = true,
+        -- Once an alert is taken, keep its blip only on the map of the responder who took it.
+        -- The rest of the service is no longer going, so their map is no longer about it.
+        onlyTaker = true,
+        -- Set a GPS route to it as well. Off by default: a route the player did not ask for
+        -- overwrites the one they were following.
+        route = false,
+        -- Draw the alert as a circle of this radius (metres) instead of a point. Use it for a
+        -- service that should search rather than be given the doorstep. 0 is a point.
+        radius = 0,
+        -- And the waypoint set by the "Take me there" button, which is separate: that one is
+        -- always the exact spot, because a responder pressed a button asking to go there.
+        waypointOnLocate = true,
+    },
+
+    -- ── What the CALLER is told ────────────────────────────────
+    -- The other half of an alert. Somebody who shouted for help and heard nothing back has no
+    -- way to tell "on their way" from "nobody is coming", and will shout again - which is how
+    -- a queue fills with the same emergency four times.
+    notifyCaller = {
+        taken = true,
+        closed = true,
+        -- Name the responder who took it. Off gives "somebody is on their way" instead, for a
+        -- server where knowing which officer is coming is itself information.
+        name = true,
+        sound = true,
+        vibrate = true,
+    },
+
+    -- ── The services ───────────────────────────────────────────
+    -- One entry per service the phone offers. `jobs` is what the framework calls the job;
+    -- everything else is what the player sees.
+    --
+    --   onDutyOnly   only people currently on duty are alerted and see the queue
+    --   minGrade     and only at this grade or above. 0 is everybody in the job.
+    --   reasons      the buttons a caller picks from. Locale keys or plain text - a key that
+    --                exists is translated, anything else is shown as written, so a server can
+    --                put its own wording here without touching the locale files.
+    --
+    -- **Anything above can be overridden per service by naming it in the entry**, and the
+    -- entry wins. A fire brigade that should be reachable every ninety seconds while the
+    -- police line is paced at five minutes is two numbers, not two configs:
+    --
+    --     cooldown, maxOpenPerPlayer, anonymous, anonymousCallback, allowOther, maxText,
+    --     expireMinutes, autoCloseMinutes, sound, alertSound, alertVolume, vibrate, peek,
+    --     blip (merged key by key over the one above), notifyCaller (likewise), dispatch
+    --
+    -- So a service that must never be anonymous, whose blip is a searchable area rather than
+    -- a doorstep, and which nobody may take over, is:
+    --
+    --     anonymous = false,
+    --     blip = { radius = 60.0, colour = 5 },
+    --     dispatch = { takeOver = false },
+    services = {
+        {
+            id = 'police',
+            label = 'ph.911_s_police',
+            icon = 'shield',
+            tint = '#0A84FF',
+            jobs = { 'police', 'bcso', 'sheriff', 'sast' },
+            onDutyOnly = true,
+            minGrade = 0,
+            blip = { sprite = 60, colour = 38 },
+            reasons = {
+                'ph.911_r_violence', 'ph.911_r_theft', 'ph.911_r_shots',
+                'ph.911_r_vehicle', 'ph.911_r_suspicious', 'ph.911_r_traffic',
+            },
+        },
+        {
+            id = 'ems',
+            label = 'ph.911_s_ems',
+            icon = 'heart',
+            tint = '#FF453A',
+            jobs = { 'ambulance', 'ems', 'doctor' },
+            onDutyOnly = true,
+            minGrade = 0,
+            blip = { sprite = 61, colour = 1 },
+            reasons = {
+                'ph.911_r_injured', 'ph.911_r_unconscious', 'ph.911_r_crash',
+                'ph.911_r_overdose', 'ph.911_r_birth',
+            },
+        },
+        {
+            id = 'fire',
+            label = 'ph.911_s_fire',
+            icon = 'warning',
+            tint = '#FF9F0A',
+            -- Most servers run the fire brigade out of the ambulance job. Two entries can
+            -- name the same job: the alert goes to whoever holds it either way.
+            jobs = { 'fire', 'ambulance' },
+            onDutyOnly = true,
+            minGrade = 0,
+            blip = { sprite = 436, colour = 47 },
+            reasons = { 'ph.911_r_fire', 'ph.911_r_smoke', 'ph.911_r_trapped', 'ph.911_r_leak' },
+        },
+        -- Emergency services only, on purpose. A breakdown is not a 911 call, and a queue that
+        -- mixes a tow with a shooting is a queue nobody reads at the top. A server that wants
+        -- roadside assistance here anyway only has to uncomment this - the locale keys it needs
+        -- already ship:
+        --
+        --     {
+        --         id = 'mechanic',
+        --         label = 'ph.911_s_mechanic',
+        --         icon = 'wrench',
+        --         tint = '#5E5CE6',
+        --         jobs = { 'mechanic', 'tow' },
+        --         onDutyOnly = true,
+        --         minGrade = 0,
+        --         blip = { sprite = 446, colour = 5 },
+        --         reasons = { 'ph.911_r_breakdown', 'ph.911_r_tow', 'ph.911_r_stuck' },
+        --     },
+    },
+
+    -- A reason of the caller's own, written on the spot. Off leaves only the buttons above,
+    -- which is the setting for a server tired of reading essays.
+    allowOther = true,
+    maxText = 200,
+}
+
+-- The 911 app cannot be removed by a player, so switching the module off is what has to take
+-- it off the phone. Done here rather than in the layout loop above, which runs before this
+-- table exists: an operator who set `enabled = false` would otherwise be left with an app that
+-- opens onto a refusal and that nobody is allowed to delete.
+if Config.Emergency.enabled == false then
+    for i = #Config.Apps, 1, -1 do
+        if Config.Apps[i].id == 'emergency' then table.remove(Config.Apps, i) end
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════
 --  BANK PRO
 -- ══════════════════════════════════════════════════════════════
 -- The company account, on the phone, for the character who runs the business.
@@ -1130,6 +1565,10 @@ Config.DeadZones = {
 -- job the framework says the character holds - the page never names one.
 Config.BankPro = {
     enabled = true,
+
+    -- **No cash, ever.** Bank Pro moves money between BANK accounts only - the company's, an
+    -- employee's, another person's, another company's. Nothing here puts a note in or takes one
+    -- out of a pocket: cash is handled in person, not through an app, and that is deliberate.
 
     -- Which jobs get a company account. Empty means every job does, which is the only sane
     -- default for a resource that cannot know what jobs a server has.
@@ -1148,21 +1587,26 @@ Config.BankPro = {
     -- `society_mechanic` on a server whose banking script prefixes them.
     accountPrefix = '',
 
-    -- Taking company money out to a personal account. Off leaves deposits and payments only,
-    -- which is what some servers want: money leaves a business by paying somebody, not by
-    -- the boss helping themselves.
+    -- The boss moving company money into their OWN bank account (never cash). Off leaves
+    -- payments and transfers only, which is what some servers want: money leaves a business by
+    -- paying somebody, not by the boss helping themselves.
     allowWithdraw = true,
 
-    -- Paying an employee from the company account. They must actually hold the job, and be
-    -- online - paying somebody who is not connected means writing behind their back, and every
-    -- framework does that differently.
+    -- The boss moving money from their OWN bank account INTO the company (never cash). Off
+    -- removes the deposit button entirely.
+    allowDeposit = true,
+
+    -- Paying an employee from the company account, into their bank. They must actually hold
+    -- the job, and be online - paying somebody who is not connected means writing behind their
+    -- back, and every framework does that differently.
     employees = true,
 
-    -- Paying somebody who does NOT work here: a contractor, a supplier, anybody the business
-    -- owes. A business pays people who are not on its payroll, and restricting payment to
-    -- employees was the app deciding how a business is run.
+    -- Paying ANYONE who does not work here: a contractor, a supplier, a private individual -
+    -- a "joueur lambda". Straight into their bank account. A business pays people who are not
+    -- on its payroll, and restricting payment to employees was the app deciding how a business
+    -- is run.
     --
-    -- Still a list of characters who are connected, never a typed citizen id: an app that
+    -- Still a list of characters who are CONNECTED, never a typed citizen id: an app that
     -- accepts one is an app that pays whoever you can guess.
     payAnyone = true,
 
@@ -1172,6 +1616,10 @@ Config.BankPro = {
     --
     --     payees = { 'mechanic', 'ambulance', 'police' },
     payees = {},
+
+    -- How many movements the history shows. Capped at 50, because that is what fits and what a
+    -- boss actually reads - the bank's own statement is the place for a full audit.
+    historyLimit = 50,
 
     minAmount = 1,
     maxAmount = 0,          -- 0 for no ceiling
@@ -1212,6 +1660,11 @@ Config.Watchdog = {
     -- Dying with the phone open used to leave it open, over a death screen that cannot be
     -- clicked through. Off if your server deliberately keeps the phone usable while down.
     closeOnDeath = true,
+
+    -- Print a line to F8 each time the watchdog releases a stale cursor hold. Off, because it
+    -- is a normal housekeeping event, not a fault - a line every time was read as the phone
+    -- resetting itself inside other resources' menus, which it was not.
+    debug = false,
 }
 
 Config.Log = {
@@ -1433,6 +1886,7 @@ Config.Hospitals = {
     { label = 'Paleto Bay Care Center',      address = 'Paleto Boulevard, Paleto Bay',
       x = -247.8, y = 6331.4 },
 }
+normalisePlaces(Config.Hospitals)
 
 -- ══════════════════════════════════════════════════════════════
 --  PROPERTY
@@ -1628,6 +2082,7 @@ Config.Police = {
         successChance = 0.6,     -- and it can still fail, so it is never a sure thing
     },
 }
+normalisePlaces(Config.Police.points)
 
 -- ══════════════════════════════════════════════════════════════
 --  MEDIA  (photos and video hosting)

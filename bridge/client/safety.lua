@@ -106,10 +106,21 @@ CreateThread(function()
                 strikes = strikes + 1
                 if strikes >= 2 then
                     strikes = 0
-                    print('[v-phone] watchdog: the cursor was held with nothing open. Released.')
-                    SetNuiFocus(false, false)
+                    -- `not wants()` means the phone believes it is CLOSED, so there is no
+                    -- handset, prop or pose of ours to tear down - the only thing wrong is a
+                    -- focus flag left set. So release the focus and clear the flag, and stop.
+                    --
+                    -- The old code ran the full `PhoneForceReset` here, which also calls
+                    -- ClearPedSecondaryTask and StopAnimTask. With the phone closed, those
+                    -- belong to whatever the player is ACTUALLY doing - another script's bank,
+                    -- a sit, an emote - so the reset stomped on it. Opening someone else's UI
+                    -- looked like the phone resetting itself, and that is exactly what it was.
+                    SetNuiFocus(false, false)   -- the wrapper clears weHoldFocus
                     SetNuiFocusKeepInput(false)
-                    if PhoneForceReset then pcall(PhoneForceReset) end
+                    local cfg = Config.Watchdog or {}
+                    if cfg.debug == true then
+                        print('[v-phone] watchdog: released a stale cursor hold.')
+                    end
                 end
             else
                 strikes = 0

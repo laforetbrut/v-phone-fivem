@@ -821,6 +821,21 @@ local function appsFrom(src, p)
     return available, installed
 end
 
+--- Does this character have a given app installed right now? The same question `appsFrom`
+--- answers for the whole home screen, asked about one app - used by paid charging to decide
+--- whether to send an offer or a nudge to the store. A global so server/charging.lua, loaded
+--- before this file, can call it once both are up.
+function PhoneHasApp(src, id)
+    local p = Core and Core.GetPlayer(src)
+    if not p then return false end
+    local _, installed = appsFrom(src, p)
+    for _, a in ipairs(installed) do
+        if a.id == id then return true end
+    end
+    return false
+end
+exports('PhoneHasApp', function(src, id) return PhoneHasApp(src, id) end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Messages
 -- ══════════════════════════════════════════════════════════════
@@ -1363,6 +1378,13 @@ local function setBattery(src, level)
     return level
 end
 
+--- Is this player carrying a working phone? Item and charge, no signal required.
+---
+--- Exported because server/emergency.lua needs exactly this question and the function that
+--- answers it is a local in this file. The alternative was a second copy of the item check
+--- over there, which is how two answers to one question start disagreeing.
+exports('PhoneUsable', function(src) return phoneUsable(src) end)
+
 exports('GetBattery', function(src) return batteryOf(src) end)
 exports('AddBattery', function(src, delta) return setBattery(src, batteryRaw(src) + (tonumber(delta) or 0)) end)
 exports('GetSignal',  function(src) return Signal[src] or 4 end)
@@ -1449,12 +1471,61 @@ local function chargeRateAt(src, ped, coords)
     return 0.0
 end
 
--- One tick for everybody, every 20 seconds. Per-player timers for a value that changes
--- this slowly would be sixty threads doing arithmetic.
-local TICK = 20
+-- One tick for everybody rather than per-player timers, but TWO of them, because the phone
+-- answers two questions that move at completely different speeds.
+--
+--   * WHERE IT IS - signal and charging - changes the instant a player walks into a dead zone
+--     or puts the phone on a charger. That has to be noticed quickly or the status bar is
+--     simply wrong, and "no service" arriving twenty seconds late reads as a broken phone.
+--   * HOW FULL IT IS moves by a percent every few minutes. Checking that faster is arithmetic
+--     nobody can see and a database row per player per tick.
+--
+-- They shared one twenty-second loop, so the fast question was answered on the slow clock.
+local TICK = math.max(5, math.floor(tonumber(Config.Battery.drainSeconds) or 20))
+local STATE_TICK = math.max(1, math.floor(tonumber(Config.Battery.stateSeconds) or 2))
 local Open = {}          -- [source] = true while the screen is on
 local BatterySaved = {}  -- [source] = last whole percent written, so a tick that
                          -- changed nothing does not write a row
+local ChargeRate = {}    -- [source] = the rate the state tick last measured
+
+-- ── Where the phone is: signal, and whether it is charging ─────
+-- Fast, cheap, and it pushes only when something actually changed - a push per player every
+-- two seconds regardless would be a message nobody needs sixty times a minute.
+CreateThread(function()
+    while true do
+        Wait(STATE_TICK * 1000)
+        if Core then
+            for _, raw in ipairs(GetPlayers()) do
+                local src = tonumber(raw)
+                local p = src and Core.GetPlayer(src)
+                if p then
+                    local ped = GetPlayerPed(src)
+                    if ped and ped ~= 0 then
+                        local coords = GetEntityCoords(ped)
+                        local oldSignal, oldCharging = Signal[src], Charging[src]
+
+                        Signal[src] = signalAt(coords)
+                        -- Cached for the drain loop below, so the two never disagree about
+                        -- whether this player is on a charger - and so the expensive half of
+                        -- this work happens once rather than in both loops.
+                        ChargeRate[src] = chargeRateAt(src, ped, coords)
+                        Charging[src] = ChargeRate[src] > 0
+
+                        if Signal[src] ~= oldSignal or Charging[src] ~= oldCharging then
+                            pushPower(src)
+                        end
+                        -- A call cannot survive a phone with no service. Checked here rather
+                        -- than on the drain tick so it ends when the signal goes, not up to
+                        -- twenty seconds afterwards.
+                        if CallOf[src] and not hasBars(src) then
+                            endCall(CallOf[src], 'nosignal')
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
 
 CreateThread(function()
     while true do
@@ -1472,14 +1543,21 @@ CreateThread(function()
                 src = tonumber(src)
                 local p = Core.GetPlayer(src)
                 if p then
-                    local ped = GetPlayerPed(src)
-                    local coords = GetEntityCoords(ped)
-                    local oldSignal, oldCharging = Signal[src], Charging[src]
-                    local oldBattery = batteryOf(src)
-                    Signal[src] = signalAt(coords)
+                    -- Whatever the state tick last measured. Not re-measured here: two answers
+                    -- to "is this player on a charger" would eventually disagree, and the way
+                    -- it would show is a phone that charges without paying.
+                    --
+                    -- `nil` means the state tick has not reached this player yet - somebody who
+                    -- joined a moment ago - so measure once rather than treating them as flat.
+                    local rate = ChargeRate[src]
+                    if rate == nil then
+                        local ped = GetPlayerPed(src)
+                        rate = (ped and ped ~= 0)
+                            and chargeRateAt(src, ped, GetEntityCoords(ped)) or 0.0
+                        ChargeRate[src] = rate
+                        Charging[src] = rate > 0
+                    end
 
-                    local rate = chargeRateAt(src, ped, coords)
-                    Charging[src] = rate > 0
                     if not batteryEnabled then
                         setBattery(src, 100)
                     elseif rate > 0 then
@@ -1487,12 +1565,8 @@ CreateThread(function()
                     else
                         setBattery(src, batteryRaw(src) - drainPerTick * (Open[src] and mult or 1.0))
                     end
-                    if batteryOf(src) == oldBattery
-                        and (Signal[src] ~= oldSignal or Charging[src] ~= oldCharging) then
-                        pushPower(src)
-                    end
-                    if CallOf[src] and (batteryOf(src) <= 0 or not hasBars(src)) then
-                        endCall(CallOf[src], batteryOf(src) <= 0 and 'flat' or 'nosignal')
+                    if CallOf[src] and batteryOf(src) <= 0 then
+                        endCall(CallOf[src], 'flat')
                     end
 
                     -- Persist whenever the whole-percent value moves. Saving on disconnect
@@ -3037,7 +3111,11 @@ V.Callback('v-phone:install', function(src, resolve, data)
     -- The debit is confirmed BEFORE the app is granted, and `Bridge.RemoveMoney` fails closed
     -- - an unconfirmed charge grants nothing rather than handing out a paid app.
     if want and found.price and found.price > 0 and not found.purchased then
-        if not Bridge.RemoveMoney(src, found.price, found.account) then
+        -- Whose money buys it. The app is installed against `p`, which during a staff
+        -- phone-view session is the HELD character - so debiting `src` would put the app on
+        -- their phone and take the money out of the staff member's account.
+        local buyer = PhoneActingSource and PhoneActingSource(src) or src
+        if not Bridge.RemoveMoney(buyer, found.price, found.account) then
             resolve({ error = 'nomoney', price = found.price }) return
         end
         local owned = {}
@@ -3389,8 +3467,11 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         -- false when it could not take the money, and a domain handed over on a failed payment
         -- is the one mistake here that cannot be undone quietly.
         local price = math.max(0, math.floor(num(custom.price, 0)))
+        -- Registered against `p.citizenid` below, so the same character has to pay for it -
+        -- see the app store above for the same reasoning.
+        local buyer = PhoneActingSource and PhoneActingSource(src) or src
         if price > 0 then
-            local paid = Bridge.RemoveMoney and Bridge.RemoveMoney(src, price,
+            local paid = Bridge.RemoveMoney and Bridge.RemoveMoney(buyer, price,
                 tostring(custom.account or 'bank'))
             if not paid then resolve({ error = 'nomoney' }) return end
         end
@@ -3402,7 +3483,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
             -- Refund rather than keep the money for nothing. Same rule as the bank: a failure
             -- after the debit has to put it back.
             if price > 0 and Bridge.AddMoney then
-                Bridge.AddMoney(src, price, tostring(custom.account or 'bank'))
+                Bridge.AddMoney(buyer, price, tostring(custom.account or 'bank'))
             end
             resolve({ error = 'x' }) return
         end
@@ -3918,6 +3999,24 @@ V.Callback('v-phone:hangup', function(src, resolve)
     resolve({ ok = true })
 end)
 
+--- A call that failed on a bad line.
+---
+--- The client decides WHEN, because it is the side watching its own signal tick by tick, but it
+--- cannot decide anything else: the only thing it can do here is end a call it is actually on,
+--- with the reason fixed. A client claiming to have dropped somebody else's call reaches
+--- nothing, because `CallOf[src]` is the only call this event can touch.
+---
+--- Guarded by the same config switch as the effect itself, so an operator who turned dropping
+--- off cannot have calls dropped by an out-of-date client.
+RegisterNetEvent('v-phone:call:dropped', function()
+    local src = source
+    local cfg = (Config.Calls or {}).badSignal or {}
+    if cfg.enabled == false then return end
+    if (tonumber(cfg.dropChancePerSecond) or 0) <= 0 then return end
+    local id = CallOf[src]
+    if id then endCall(id, 'nosignal') end
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Exports for other modules
 -- ══════════════════════════════════════════════════════════════
@@ -4161,6 +4260,9 @@ AddEventHandler('playerDropped', function()
     end
     BatterySaved[src] = nil
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
+    -- Cleared, so the next player to be handed this source id is measured rather than
+    -- inheriting whether the last one was standing on a charger.
+    ChargeRate[src] = nil
     ExternalCharge[src] = nil
     ExternalChargeUntil[src] = nil
     ChargeReason[src] = nil

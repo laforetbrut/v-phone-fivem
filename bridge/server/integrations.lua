@@ -711,10 +711,11 @@ end
 
 --- Recent movements, when the server runs a banking script that keeps them. Returning
 --- nil is normal and the app simply shows the balance without a history.
-function Bridge.Banking.Transactions(src, citizenid)
+function Bridge.Banking.Transactions(src, citizenid, limit)
+    limit = math.max(1, math.min(200, math.floor(tonumber(limit) or 25)))
     local custom = Config.Compat.hooks.transactions
     if custom then
-        local ok, rows = pcall(custom, src, citizenid)
+        local ok, rows = pcall(custom, src, citizenid, limit)
         if ok and type(rows) == 'table' then return rows end
     end
 
@@ -728,8 +729,8 @@ function Bridge.Banking.Transactions(src, citizenid)
         -- so the history is read straight from it when it is there.
         local ok, rows = pcall(function()
             return MySQL.query.await([[SELECT reason AS label, amount, date AS at
-                FROM bank_statements WHERE citizenid = ? ORDER BY id DESC LIMIT 25]],
-                { citizenid })
+                FROM bank_statements WHERE citizenid = ? ORDER BY id DESC LIMIT ?]],
+                { citizenid, limit })
         end)
         if ok and type(rows) == 'table' then return rows end
     end
@@ -740,12 +741,16 @@ function Bridge.Banking.Transactions(src, citizenid)
         -- bank, and everything done at an ATM missing from the phone. qb-banking writes every
         -- movement to `bank_statements` - `statement_type` is 'deposit' or 'withdraw', and the
         -- amount it stores is unsigned - so the sign is put back here rather than showing a
-        -- withdrawal as money arriving.
+        -- withdrawal as money arriving. The personal account is `account_type = 'personal'`
+        -- (or the default checking name), which is what tells it apart from a company account
+        -- in the same table.
         local ok, rows = pcall(function()
             return MySQL.query.await([[SELECT reason AS label, amount, statement_type, date AS at
                 FROM bank_statements
-                WHERE citizenid = ? AND (account_name = 'checking' OR account_name IS NULL)
-                ORDER BY id DESC LIMIT 25]], { citizenid })
+                WHERE citizenid = ?
+                  AND (account_name = 'checking' OR account_name IS NULL)
+                  AND (account_type = 'personal' OR account_type IS NULL OR account_type = 'player')
+                ORDER BY id DESC LIMIT ?]], { citizenid, limit })
         end)
         if ok and type(rows) == 'table' then
             for _, r in ipairs(rows) do
@@ -756,6 +761,41 @@ function Bridge.Banking.Transactions(src, citizenid)
             end
             return rows
         end
+    end
+    return nil
+end
+
+--- A company account's own statement, so Bank Pro shows the movements of the account IN
+--- GENERAL - an ATM deposit, a payroll run by another script, a transfer made at the bank -
+--- and not only the ones made on the phone. The phone's own movements are in here too, because
+--- `WriteStatement` puts them there, so this one read is the whole history rather than half.
+---
+--- Returns rows { label, amount (unsigned), statement_type ('deposit'|'withdraw'), at }, or nil
+--- when the running bank does not keep a readable statement. Keyed on `account_name`, which is
+--- how qb-banking files a society account's lines.
+function Bridge.Banking.SocietyTransactions(account, limit)
+    account = tostring(account or '')
+    if account == '' then return nil end
+    limit = math.max(1, math.min(200, math.floor(tonumber(limit) or 50)))
+
+    local custom = Config.Compat.hooks.societyTransactions
+    if custom then
+        local ok, rows = pcall(custom, account, limit)
+        if ok and type(rows) == 'table' then return rows end
+    end
+
+    local bank = choose('banking', BANKS)
+    if bank == 'qb-banking' or bank == 'qs-banking' then
+        local ok, rows = pcall(function()
+            return MySQL.query.await([[SELECT reason AS label, amount, statement_type, date AS at
+                FROM bank_statements WHERE account_name = ? ORDER BY id DESC LIMIT ?]],
+                { account, limit })
+        end)
+        if ok and type(rows) == 'table' then return rows end
+    end
+    if bank == 'Renewed-Banking' then
+        local rows = callExport(bank, 'getAccountTransactions', account)
+        if type(rows) == 'table' then return rows end
     end
     return nil
 end
@@ -1132,6 +1172,138 @@ local HOUSING = { 'qs-housing', 'ps-housing', 'qb-houses', 'ox_property', 'loaf_
 
 Bridge.Properties = {}
 
+--- **Where is this house?**
+---
+--- Every housing script stores that differently, and the app needs one answer: two numbers, so
+--- tapping a house can set a waypoint to its door. Only qb-houses was handing any over, which
+--- is why the Locate button appeared on qb servers and nowhere else.
+---
+--- Rather than a branch per script, this reads a ROW and recognises the shapes they actually
+--- use. Every one of them is one of:
+---
+---   * `x` / `y` columns outright
+---   * a JSON string or a table under one of the names below - `{"x":1,"y":2}` or `[1,2,3]`
+---   * a nested table, because ps-housing keeps `door_data = { coords = { x = ... } }`
+---
+--- Unrecognised is nil, not a guess: a waypoint to the wrong place is worse than no button, and
+--- `Config.Property.houses` exists for exactly that case.
+local COORD_KEYS = {
+    'coords', 'position', 'location', 'entrance', 'enter', 'entering', 'door', 'door_data',
+    'doorData', 'shell', 'garage', 'exit', 'pos',
+}
+
+local function xyFrom(value, depth)
+    depth = (depth or 0) + 1
+    if depth > 4 or value == nil then return nil end   -- JSON from a database can nest
+
+    -- A JSON string, which is how most of them are stored.
+    if type(value) == 'string' then
+        local text = value:gsub('^%s+', '')
+        if text == '' then return nil end
+        if text:sub(1, 1) ~= '{' and text:sub(1, 1) ~= '[' then return nil end
+        local ok, decoded = pcall(json.decode, value)
+        if not ok then return nil end
+        return xyFrom(decoded, depth)
+    end
+
+    if type(value) ~= 'table' then return nil end
+
+    -- `{ x = , y = }`, or a plain `[x, y, z]` array.
+    local x = tonumber(value.x) or tonumber(value[1])
+    local y = tonumber(value.y) or tonumber(value[2])
+    if x and y then return x, y end
+
+    -- One level in: `door_data = { coords = ... }`, `coords = { enter = ... }`.
+    for _, key in ipairs(COORD_KEYS) do
+        if value[key] ~= nil then
+            local nx, ny = xyFrom(value[key], depth)
+            if nx and ny then return nx, ny end
+        end
+    end
+    return nil
+end
+
+--- The same question asked of a whole database row: the direct columns first, then anything
+--- that looks like it holds a position.
+local function coordsOf(row)
+    if type(row) ~= 'table' then return nil end
+
+    local x, y = tonumber(row.x), tonumber(row.y)
+    if x and y then return x, y end
+
+    for _, key in ipairs(COORD_KEYS) do
+        if row[key] ~= nil then
+            local nx, ny = xyFrom(row[key], 0)
+            if nx and ny then return nx, ny end
+        end
+    end
+    return nil
+end
+
+--- Fill in `x`/`y` on every row a housing script handed back, in place.
+---
+--- Called on the way out of each branch, so a script whose rows already carry coordinates is
+--- untouched and one that buries them in JSON is understood without its own branch.
+local function withCoords(rows)
+    if type(rows) ~= 'table' then return rows end
+    for _, row in ipairs(rows) do
+        if type(row) == 'table' and (row.x == nil or row.y == nil) then
+            local x, y = coordsOf(row)
+            if x and y then row.x, row.y = x, y end
+        end
+    end
+    return rows
+end
+
+--- The table a housing script keeps its houses in, when the phone can find one.
+---
+--- Quasar's export hands back ids and nothing else - its labels and coordinates live behind an
+--- escrowed core - so the only way to point at one of its houses is to read the row it came
+--- from. The table name is DISCOVERED rather than assumed: each candidate is checked against
+--- `information_schema` and the first that exists is used. A server whose table is named
+--- something else entirely says so in `Config.Compat.tables.houses`.
+---
+--- Nil is a normal answer and costs nothing: the app simply shows the house without a Locate
+--- button, exactly as it did before.
+local houseTableChecked, houseTableName = false, nil
+
+local function houseTable()
+    if houseTableChecked then return houseTableName end
+    houseTableChecked = true
+
+    local configured = Config.Compat.tables and Config.Compat.tables.houses
+    if configured == false then return nil end
+    local candidates = (configured and configured ~= 'auto')
+        and { tostring(configured) }
+        or { 'qs_housing', 'housing', 'qs_properties', 'houselocations', 'properties' }
+
+    for _, name in ipairs(candidates) do
+        local ok, found = pcall(function()
+            return MySQL.scalar.await([[SELECT 1 FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1]], { name })
+        end)
+        if ok and found then houseTableName = name break end
+    end
+    return houseTableName
+end
+
+--- One house's row, by whichever column holds its identifier.
+---
+--- The id column differs per script, so several are tried and a failure is silent - this is a
+--- best effort at a nicety, not a feature anything depends on.
+local function houseRow(id)
+    local tbl = houseTable()
+    if not tbl or id == nil then return nil end
+    for _, column in ipairs({ 'name', 'id', 'house', 'property_id', 'house_id', 'label' }) do
+        local ok, rows = pcall(function()
+            return MySQL.query.await(('SELECT * FROM %s WHERE %s = ? LIMIT 1')
+                :format(tbl, column), { id })
+        end)
+        if ok and type(rows) == 'table' and rows[1] then return rows[1] end
+    end
+    return nil
+end
+
 function Bridge.Properties.Owned(citizenid, src)
     local custom = Config.Compat.hooks.properties
     if custom then
@@ -1148,11 +1320,23 @@ function Bridge.Properties.Owned(citizenid, src)
         if type(ids) == 'table' then
             local out = {}
             for _, id in ipairs(ids) do
-                -- Quasar hands back an id and nothing else. Its own coordinates live behind
-                -- an escrowed core, so a house is listed and named but cannot be pointed at
-                -- unless the operator fills in `Config.Property.houses`.
-                out[#out + 1] = { label = tostring(id), address = tostring(id), owned = true,
-                                  key = tostring(id) }
+                -- Quasar hands back an id and nothing else: its labels and coordinates live
+                -- behind an escrowed core. The id is enough to find the ROW it came from
+                -- though, and that row usually does carry a position - so the house can be
+                -- pointed at after all. A miss is silent and leaves the entry as it was.
+                local row = { label = tostring(id), address = tostring(id), owned = true,
+                              key = tostring(id) }
+                local found = houseRow(id)
+                if found then
+                    local x, y = coordsOf(found)
+                    if x and y then row.x, row.y = x, y end
+                    -- And its real name, if the table has one worth using.
+                    local named = found.label or found.name
+                    if type(named) == 'string' and named ~= '' and named ~= tostring(id) then
+                        row.label = named
+                    end
+                end
+                out[#out + 1] = row
             end
             if #out > 0 then return out end
         end
@@ -1194,7 +1378,7 @@ function Bridge.Properties.Owned(citizenid, src)
                 end
                 out[#out + 1] = row
             end
-            if #out > 0 then return out end
+            if #out > 0 then return withCoords(out) end
         end
 
         -- Owning nothing is a real answer on a server whose housing IS readable, and it is
@@ -1203,20 +1387,35 @@ function Bridge.Properties.Owned(citizenid, src)
     end
 
     if housing == 'ps-housing' then
+        -- `SELECT *`, not three named columns: ps-housing keeps the door position in
+        -- `door_data` as JSON, and naming columns meant the phone never saw it. The shared
+        -- pass below finds it whatever the build calls it.
         local ok, rows = pcall(function()
-            return MySQL.query.await([[SELECT property_id AS id, street AS address, owner
+            return MySQL.query.await([[SELECT *, property_id AS id, street AS address
                 FROM properties WHERE owner = ?]], { citizenid })
         end)
-        if ok and type(rows) == 'table' and #rows > 0 then return rows end
+        if ok and type(rows) == 'table' and #rows > 0 then return withCoords(rows) end
         if ok and type(rows) == 'table' then return {} end
     end
 
     if housing == 'esx_property' then
+        -- The owned row names the property; the position lives in esx_property's own
+        -- `properties` table under `entering`. Joined when that table is there, and the join
+        -- is attempted separately so a build without it still lists the houses.
         local ok, rows = pcall(function()
-            return MySQL.query.await([[SELECT name AS label, name AS address
-                FROM owned_properties WHERE owner = ?]], { citizenid })
+            return MySQL.query.await([[SELECT op.*, op.name AS label, op.name AS address,
+                    p.entering AS entering, p.`exit` AS exit_point
+                FROM owned_properties op
+                LEFT JOIN properties p ON p.name = op.name
+                WHERE op.owner = ?]], { citizenid })
         end)
-        if ok and type(rows) == 'table' and #rows > 0 then return rows end
+        if not ok then
+            ok, rows = pcall(function()
+                return MySQL.query.await([[SELECT *, name AS label, name AS address
+                    FROM owned_properties WHERE owner = ?]], { citizenid })
+            end)
+        end
+        if ok and type(rows) == 'table' and #rows > 0 then return withCoords(rows) end
     end
 
     local tbl = T('properties')
@@ -1225,7 +1424,9 @@ function Bridge.Properties.Owned(citizenid, src)
         return MySQL.query.await(('SELECT * FROM %s WHERE citizenid = ? OR owner = ?'):format(tbl),
             { citizenid, citizenid })
     end)
-    return ok and rows or nil
+    -- ox_property and anything else with a table of its own arrive here. `SELECT *` already
+    -- brings whatever column holds the position; this is what recognises it.
+    return ok and withCoords(rows) or nil
 end
 
 -- ── The wallet app ─────────────────────────────────────────────

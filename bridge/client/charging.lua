@@ -111,13 +111,23 @@ local function insideProperty()
     return false
 end
 
--- One light thread. The value changes rarely and drives a slow battery tick, so a check
--- every few seconds is far more often than it needs to be.
+-- One light thread. It used to run every four seconds on the reasoning that it fed a
+-- twenty-second battery tick, so being slow cost nothing - but the server now re-checks
+-- charging every couple of seconds, and this flag is what it reads for "at home". A detector
+-- slower than the thing reading it sets the real delay, so it matches the server's state tick.
+--
+-- The work is one state-bag read or one export call, which is nothing; the flag is written only
+-- when it changes, so the traffic did not go up with the frequency.
+local function stateTick()
+    local ms = math.floor((tonumber((Config.Battery or {}).stateSeconds) or 2) * 1000)
+    return math.max(500, ms)
+end
+
 CreateThread(function()
     local last = nil
-    local reasserted = 0
+    local lastWrite = 0   -- game-timer ms of the last write; 0 forces one on the first pass
     while true do
-        Wait(4000)
+        Wait(stateTick())
         local atHome = false
         -- A server can switch the whole idea off.
         if Config.Battery == nil or Config.Compat == nil or Config.Compat.chargeAtProperty ~= false then
@@ -131,10 +141,14 @@ CreateThread(function()
         -- on change" means one missed write is permanent. That is the difference between a
         -- phone that charges for a minute too long and one that charges until the player
         -- reconnects - and the second is what gets reported.
-        reasserted = reasserted + 1
-        if atHome ~= last or reasserted >= 15 then
+        --
+        -- The re-assert is on a CLOCK, not a tick count: counting ticks tied the interval to
+        -- the tick rate, so making the detector faster silently made the safety net fire twice
+        -- as often for no reason.
+        local now = GetGameTimer()
+        if atHome ~= last or (now - lastWrite) >= 60000 then
             last = atHome
-            reasserted = 0
+            lastWrite = now
             LocalPlayer.state:set('phoneAtHome', atHome, true)   -- replicated to the server
         end
     end

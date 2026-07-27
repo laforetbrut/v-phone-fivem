@@ -883,6 +883,20 @@ input { font: inherit; }
   color: var(--app-label2); font-size: 10px; }
 .tabbar button.on { color: var(--app-tint); }
 .tabbar button svg { width: 23px; height: 23px; }
+/* A count on a tab's icon, the way Messages carries unread. The icon is wrapped so the badge
+   has something to be positioned against: absolute inside the button would hang off the
+   label, which is wider than the icon and moves with the translation. */
+.tbicon { position: relative; display: inline-flex; }
+/* Sat on the icon's top-right corner rather than floating above it: a tab button's content
+   starts at the top of its 48px box, so a badge lifted clear of the glyph is a badge hanging
+   over the edge of the bar - and over the rounded background the active tab draws. */
+.tbicon .tbadge { position: absolute; top: 0; left: 12px; min-width: 17px; height: 17px;
+  padding: 0 5px; display: flex; align-items: center; justify-content: center;
+  border-radius: 99px; background: #ff3b30; color: #fff;
+  font-family: var(--ios-num); font-size: 11px; font-weight: 600; font-style: normal;
+  /* A ring in the bar's own colour would be wrong on the glass bar, which is translucent and
+     shows whatever scrolled under it. A small drop shadow lifts it off any of them. */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
 
 /* ══ Home widgets ═════════════════════════════════════════════
    Two, and both show something true: the in-game weather the server is running,
@@ -985,7 +999,15 @@ input { font: inherit; }
    list inside it is the part that scrolls. */
 .sheet { max-height: 78%; }
 .sheet.on { display: flex; flex-direction: column; overflow-y: auto; }
-.sheet #appres { flex: 1; min-height: 0; overflow-y: auto; }
+/* A flex item's default is `flex-shrink: 1`, and that turned the line above into a bug the
+   moment a sheet had more in it than would fit: instead of the sheet scrolling, its children
+   were COMPRESSED to fit the cap - and `.group` is `overflow: hidden`, so the rows inside it
+   were sliced off at the top and bottom of the card. Nothing overflowed, so nothing scrolled,
+   so there was no way to reach what had been cut. It showed up on the 911 reason list, which
+   is seven rows and a toggle, but it was every long sheet in the phone.
+   Children keep their height; the sheet scrolls, which is what the cap was for. */
+.sheet.on > * { flex: 0 0 auto; }
+.sheet #appres { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .sheet #appres::-webkit-scrollbar { width: 0; }
 .storehero .ic { width: 72px; height: 72px; border-radius: 16px; flex: 0 0 auto;
   box-shadow: 0 6px 16px rgba(0, 0, 0, .28); }
@@ -2159,7 +2181,9 @@ input { font: inherit; }
 
 .app[data-app="bank"],
 .app[data-app="garage"],
-.app[data-app="property"] {
+.app[data-app="property"],
+/* FruitCharge wears the same green as its icon - a charging light. */
+.app[data-app="charging"] {
   --app-tint: #168a61;
   --app-accent: #30d158;
   --app-accent-soft: rgba(48, 209, 88, .14);
@@ -2167,7 +2191,10 @@ input { font: inherit; }
 
 .app[data-app="wallet"],
 .app[data-app="jobs"],
-.app[data-app="mdt"] {
+.app[data-app="mdt"],
+/* Bank Pro is the company account and wears the purple to say so - the personal Bank stays
+   green, and a boss glancing at the two never mistakes one for the other. */
+.app[data-app="bankpro"] {
   --app-tint: #5856d6;
   --app-accent: #5e5ce6;
   --app-accent-soft: rgba(94, 92, 230, .15);
@@ -9423,6 +9450,35 @@ body.inframe.dark .uisearch {
 /* FaceTime: the call screen presented as a video call. No live feed - FiveM cannot
    stream a face - so it is a full, dark video-call layout with the peer front and centre
    and a self-view placeholder, which reads as FaceTime without pretending to show video. */
+/* ══ A call breaking up ═══════════════════════════════════════
+   One bar means the voice keeps cutting out, and the screen says so while it does. Kept to a
+   stutter and a desaturation: a heavy glitch effect on a phone screen reads as the INTERFACE
+   failing rather than the line, which is the wrong thing to tell the player. */
+.callui.glitching {
+  animation: ph-callbreak .28s steps(3) infinite;
+}
+@keyframes ph-callbreak {
+  0%   { opacity: 1;   filter: none; transform: none; }
+  35%  { opacity: .82; filter: saturate(.45) contrast(1.1); transform: translateX(-1px); }
+  70%  { opacity: .95; filter: saturate(.7); transform: translateX(1px); }
+  100% { opacity: 1;   filter: none; transform: none; }
+}
+/* The words under the name, in place of the timer while the line is down. */
+.callbreak {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: rgba(255, 159, 10, .18);
+  color: #ff9f0a;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The stutter is the part that can make somebody feel ill. The desaturation and the words
+     carry the meaning on their own, so only the movement goes. */
+  .callui.glitching { animation: none; filter: saturate(.5); }
+}
+
 .callui.facetime {
   background:
     radial-gradient(120% 90% at 50% 12%, rgba(40, 60, 90, .5), transparent 60%),
@@ -10101,6 +10157,51 @@ body.inframe.dark .uisearch {
 .soctrendrow small { opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; }
 /* Bank Pro's two primary actions, side by side under the balance. Deposit and Pay are what a
    business does most; withdrawing to your own account sits further down on purpose. */
+/* ══ 911 ══════════════════════════════════════════════════════
+   Red where the phone is normally its app's own colour, and only at the top: this is the one
+   app whose first screen should be recognisable to somebody who is not reading it. */
+.e911head {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 18px 16px 20px;
+  margin-bottom: 14px;
+  color: #fff;
+  text-align: center;
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, .22), transparent 58%),
+    linear-gradient(180deg, #ff6b6b, #d70015);
+  box-shadow: 0 12px 28px rgba(215, 0, 21, .26);
+}
+.e911head svg { width: 34px; height: 34px; }
+.e911head b { font-size: 19px; letter-spacing: -.02em; }
+.e911head span { font-size: 12.5px; line-height: 1.4; opacity: .9; }
+
+/* One tab per service a responder answers for. Most hold one and see no tabs at all. */
+.e911tabs { display: flex; gap: 7px; padding: 8px 4px 4px; }
+.e911tabs button {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 9px 10px;
+  color: var(--app-label2);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 12px;
+  background: var(--app-fill);
+}
+.e911tabs button.on { color: #fff; background: var(--app-tint); }
+/* What is waiting on the service you are NOT looking at, which is the only reason to put a
+   number here at all. On the active pill it has to sit on the tint rather than under it. */
+.e911tabs button i { display: inline-block; min-width: 17px; padding: 0 5px; margin-left: 3px;
+  border-radius: 99px; background: #ff3b30; color: #fff;
+  font-family: var(--ios-num); font-size: 11px; font-style: normal; }
+.e911tabs button.on i { background: rgba(255, 255, 255, .28); }
+
 .bankproacts { display: flex; gap: 8px; }
 .bankproacts .uibtn { flex: 1; min-width: 0; margin-bottom: 12px; }
 

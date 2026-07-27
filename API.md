@@ -123,6 +123,60 @@ phone:GetPhoneInfo()
 Useful in a `/phonedebug` command: it says what the phone decided at boot, which is the
 first question when an integration is not behaving.
 
+### 911
+
+Raising an emergency alert from another script: a till under robbery, a fire that started
+itself, a player who went down with nobody around. The alert lands on the phones of everybody
+working that service, with a position they can navigate to.
+
+Which services exist, who answers for them, and the duty and grade rules are all
+`Config.Emergency`. These exports do not bypass any of it — an alert for a service nobody is
+working reaches nobody, and says so.
+
+```lua
+-- Somewhere specific.
+local id, reached = phone:CreateAlert({
+    service = 'police',                          -- an id from Config.Emergency.services
+    reason  = 'Store robbery',                   -- shown as the alert's title
+    detail  = '24/7 on Route 68',                -- optional second line
+    coords  = vector3(1959.0, 3740.0, 32.3),
+})
+
+-- Or about a player, which fills in the position and the callback number for you.
+local id, reached = phone:CreateAlert({
+    service = 'ems',
+    reason  = 'Player down',
+    source  = playerId,
+    anonymous = false,                            -- true hides the name and number
+})
+```
+
+`id` is the alert, `reached` is how many responders received it — **worth checking**. A script
+that raised an alert nobody received may want to do something else as well, and `reached == 0`
+is the only way to know. On failure it returns `false` and a reason.
+
+```lua
+phone:GetAlerts('police')            --> the live queue, newest first
+phone:CloseAlert(id)                 --> true when it was there to close
+phone:GetEmergencyServices()         --> { { id, label, jobs }, ... }
+```
+
+Each alert in `GetAlerts` carries `id`, `service`, `reason`, `detail`, `at`, `state`
+(`open` / `taken` / `closed`), `anonymous`, `takenBy`, and — unless the caller asked to stay
+anonymous — `caller` and `number`. **Coordinates are deliberately not in it.** An alert list
+that carried positions would be a way to read every emergency on the map from anywhere.
+
+The map pin a responder sees is a separate thing, sent only to people already filtered to that
+service, and how it behaves is entirely `Config.Emergency.blip` — automatic or on request, a
+point or a search radius, flashing until answered, cleared or kept when the alert is taken. A
+responder who presses *Take me there* gets a waypoint to the exact spot regardless. None of
+that is reachable from these exports on purpose: a script decides **whether** to raise an
+alert, the config decides what the service then sees.
+
+`CloseAlert` is the full close, not a quiet delete: the pin comes off every map and the caller
+is told, exactly as if a responder had closed it. A script that resolves whatever it raised
+should call this rather than leaving everyone who was alerted still believing in it.
+
 ### External charging
 
 For a vehicle script (an electric car), a solar backpack, a wall socket prop. While it is

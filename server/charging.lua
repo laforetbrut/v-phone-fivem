@@ -71,9 +71,58 @@ local function chargerAt(coords)
     return nil
 end
 
-local Session = {}    -- [source] = charger id they have paid for, for this visit
-local Offer   = {}    -- [source] = { id = charger id, price, account, label, at = os.time() }
-local Refused = {}    -- [source] = os.time() of the refusal, per charger id: [src] = { [id] = at }
+local Session  = {}   -- [source] = charger id they have paid for, for this visit
+local Offer    = {}   -- [source] = { id = charger id, price, account, label, at = os.time() }
+local Refused  = {}   -- [source] = { [charger id] = os.time() of the refusal }
+local Prompted = {}   -- [source] = { [charger id] = os.time() of the "get the app" nudge }
+
+-- ══════════════════════════════════════════════════════════════
+-- The app, and a player's preferences
+-- ══════════════════════════════════════════════════════════════
+-- FruitCharge does the accepting now. It also carries an auto-accept, which is a standing
+-- "yes" to a paid charger up to a price the player set - so a regular is not asked every day.
+
+local function appId()
+    return tostring(cfg().appId or 'charging')
+end
+
+--- Paid charging goes through the app; a free charger never needs it. Read on every offer so
+--- an operator toggling `requireApp` takes effect on the next pass, not the next restart.
+local function requiresApp()
+    return paidOn() and cfg().requireApp ~= false
+end
+
+--- Does this player have FruitCharge installed? Through the export main.lua publishes, which is
+--- the one answer to that question; a second copy here would be a second answer to disagree.
+local function hasApp(src)
+    if not requiresApp() then return true end
+    local self = exports[GetCurrentResourceName()]
+    local ok, has = pcall(function() return self:PhoneHasApp(src, appId()) end)
+    return ok and has == true
+end
+
+--- A player's auto-accept preference, persisted on the character so it survives a relog.
+local function prefsOf(src)
+    local p = Core and Core.GetPlayer(src)
+    local m = p and p.GetMetadata and p.GetMetadata('chargePrefs')
+    if type(m) ~= 'table' then m = {} end
+    return {
+        autoAccept = m.autoAccept == true,
+        autoMax = math.max(0, math.floor(num(m.autoMax, 0))),
+    }
+end
+
+--- The hard ceiling on an auto-payment: the smaller of the player's own limit and the config
+--- cap. Either being 0 means "no limit from that side"; if both are 0 there is no cap at all,
+--- which is the player's own informed choice to make.
+local function autoCeiling(src)
+    local pr = prefsOf(src)
+    local hard = math.max(0, math.floor(num(cfg().autoAcceptMax, 0)))
+    local mine = pr.autoMax
+    if hard <= 0 then return mine end          -- only the player's limit, if any
+    if mine <= 0 then return hard end          -- only the config cap
+    return math.min(hard, mine)
+end
 
 --- Has this player paid for the charger they are standing at?
 ---
@@ -92,7 +141,7 @@ end
 
 --- Forget everything about a player. Called from main.lua's drop handler.
 function PaidChargeDrop(src)
-    Session[src], Offer[src], Refused[src] = nil, nil, nil
+    Session[src], Offer[src], Refused[src], Prompted[src] = nil, nil, nil, nil
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -112,8 +161,67 @@ local function offerAlive(src, id)
     return (os.time() - o.at) < math.max(5, num(cfg().offerSeconds, 45))
 end
 
+local function promptedRecently(src, id)
+    local mine = Prompted[src]
+    local at = mine and mine[id]
+    if not at then return false end
+    return (os.time() - at) < math.max(0, num(cfg().appPromptFor, 120))
+end
+
 local function tellClient(src, payload)
     TriggerClientEvent('v-phone:client:chargeOffer', src, payload)
+end
+
+--- Take the money and open the stop. The single money path, called by the accept button and
+--- by auto-accept alike: two copies of "charge the player and credit the owner" is two places
+--- for the reversal to be forgotten. Returns a result table; never resolves anything itself.
+local function doPay(src, charger)
+    local price = priceOf(charger)
+    if price <= 0 then
+        -- Free by the time they said yes: nothing to take, and it charges anyway.
+        Session[src] = charger.id
+        return { ok = true, free = true, id = charger.id, label = charger.label or charger.id }
+    end
+
+    if Session[src] == charger.id then
+        return { ok = true, already = true, id = charger.id, label = charger.label or charger.id }
+    end
+
+    local purse = (cfg().money == 'bank') and 'bank' or 'cash'
+    if not Bridge.RemoveMoney(src, price, purse) then
+        return { error = 'nomoney', price = price }
+    end
+
+    -- Paid. The session opens whatever the operator's banking script says next: the player's
+    -- money is gone, so refusing to charge the phone would be taking it for nothing.
+    Session[src] = charger.id
+    Offer[src] = nil
+    -- A "no" they have since paid past means nothing. Left in place it would suppress the
+    -- offer at this charger on their next visit, which is the visit they have to pay for.
+    Refused[src] = nil
+
+    local account = accountOf(charger)
+    if account ~= '' then
+        local landed = Bridge.AddSociety and Bridge.AddSociety(account, price,
+            ('v-phone: charging at %s'):format(charger.label or charger.id)) or false
+        if not landed then
+            -- Printed unconditionally, unlike the audit line below: an operator who set an
+            -- account name and never sees the money is looking at a misconfiguration, and a
+            -- silent one of those is worse than a line in the console.
+            V.Log(('paid charging: could not credit "%s" with %d - check the account exists')
+                :format(account, price))
+        end
+    end
+
+    if cfg().log == true then
+        -- Off by default. It is the only paper trail a charge leaves, and it is also a line
+        -- per customer per stop, which on a busy server is a lot of console for something an
+        -- operator either wants deliberately or not at all.
+        V.Log(('paid charging: %s paid %d at %s'):format(tostring(src), price,
+            tostring(charger.label or charger.id)))
+    end
+
+    return { ok = true, price = price, label = charger.label or charger.id, id = charger.id }
 end
 
 local function sendOffer(src, charger)
@@ -156,13 +264,13 @@ CreateThread(function()
                             Session[src], Offer[src] = nil, nil
                             tellClient(src, { clear = true })
                         end
-                        -- And a refusal is forgotten on the way out.
+                        -- And a refusal - and a store nudge - is forgotten on the way out.
                         --
                         -- Otherwise a player who said no by accident has no way to change their
                         -- mind: the offer is the only route to paying, and it would not come
                         -- back for the whole cooldown. Walking out and back in is a deliberate
                         -- act, and it reads as asking again - which is exactly what it now is.
-                        Refused[src] = nil
+                        Refused[src], Prompted[src] = nil, nil
                     elseif Session[src] == charger.id then
                         -- Paid, charging, nothing to say.
                     elseif not offerAlive(src, charger.id)
@@ -173,7 +281,37 @@ CreateThread(function()
                         -- four seconds for every player on the server.
                         and (batteryOf and batteryOf(src) or 0) < skipAbove then
                         -- A nearly-full phone is not a customer, and asking anyway is noise.
-                        sendOffer(src, charger)
+                        if not hasApp(src) then
+                            -- No app, so nothing to accept an offer WITH: point them at the
+                            -- store instead, and not more than once every appPromptFor seconds.
+                            if not promptedRecently(src, charger.id) then
+                                Prompted[src] = Prompted[src] or {}
+                                Prompted[src][charger.id] = os.time()
+                                tellClient(src, {
+                                    needApp = true,
+                                    id = charger.id,
+                                    label = tostring(charger.label or charger.id or ''),
+                                    price = price,
+                                    app = appId(),
+                                })
+                            end
+                        else
+                            local pr = prefsOf(src)
+                            local cap = autoCeiling(src)
+                            if cfg().autoAccept ~= false and pr.autoAccept
+                                and (cap <= 0 or price <= cap) then
+                                -- A standing yes. Pay silently and tell the phone it happened,
+                                -- so the player sees a charge rather than is asked for one.
+                                local res = doPay(src, charger)
+                                tellClient(src, res.ok
+                                    and { auto = true, id = charger.id, price = price,
+                                          label = tostring(charger.label or charger.id or '') }
+                                    or { autofail = true, error = res.error or 'x',
+                                         price = price })
+                            else
+                                sendOffer(src, charger)
+                            end
+                        end
                     end
                 end
             end
@@ -194,55 +332,80 @@ V.Callback('v-phone:charge:pay', function(src, resolve)
     local charger = (ped and ped ~= 0) and chargerAt(GetEntityCoords(ped)) or nil
     if not charger then resolve({ error = 'notatcharger' }) return end
 
-    local price = priceOf(charger)
-    if price <= 0 then
-        -- Free by the time they said yes: nothing to take, and it charges anyway.
-        Session[src] = charger.id
-        resolve({ ok = true, free = true })
-        return
-    end
+    -- Paid chargers need the app; the button cannot be pressed without it, but a hand-made
+    -- request can, so the gate is here too.
+    if priceOf(charger) > 0 and not hasApp(src) then resolve({ error = 'needapp' }) return end
 
-    if Session[src] == charger.id then resolve({ ok = true, already = true }) return end
+    resolve(doPay(src, charger))
+end)
 
-    local purse = (cfg().money == 'bank') and 'bank' or 'cash'
-    if not Bridge.RemoveMoney(src, price, purse) then
-        resolve({ error = 'nomoney', price = price })
-        return
-    end
+-- ══════════════════════════════════════════════════════════════
+-- The FruitCharge app
+-- ══════════════════════════════════════════════════════════════
+-- Locate the chargers, see the one you are standing at, and set the auto-accept. Coordinates
+-- DO travel here, unlike a 911 alert's: a public charger is a fixed, published place, and the
+-- point of the app is to be taken to one.
 
-    -- Paid. The session opens whatever the operator's banking script says next: the player's
-    -- money is gone, so refusing to charge the phone would be taking it for nothing.
-    Session[src] = charger.id
-    Offer[src] = nil
-    -- A "no" they have since paid past means nothing. Left in place it would suppress the
-    -- offer at this charger on their next visit, which is the visit they have to pay for.
-    Refused[src] = nil
+V.Callback('v-phone:charging:app', function(src, resolve)
+    if not paidOn() and #(Config.Chargers or {}) == 0 then resolve({ error = 'off' }) return end
 
-    local account = accountOf(charger)
-    local landed = false
-    if account ~= '' then
-        landed = Bridge.AddSociety and Bridge.AddSociety(account, price,
-            ('v-phone: charging at %s'):format(charger.label or charger.id)) or false
-        if not landed then
-            -- Printed unconditionally, unlike the audit line below: an operator who set an
-            -- account name and never sees the money is looking at a misconfiguration, and a
-            -- silent one of those is worse than a line in the console.
-            V.Log(('paid charging: could not credit "%s" with %d - check the account exists')
-                :format(account, price))
+    local ped = GetPlayerPed(src)
+    local here = (ped and ped ~= 0) and GetEntityCoords(ped) or nil
+    local atNow = here and chargerAt(here) or nil
+
+    local list = {}
+    for _, c in ipairs(Config.Chargers or {}) do
+        if c.enabled ~= false and c.enabled ~= 0 then
+            local price = priceOf(c)
+            local dist = here and #(here - vector3(c.x + 0.0, c.y + 0.0, c.z + 0.0)) or nil
+            list[#list + 1] = {
+                id = c.id,
+                label = tostring(c.label or c.id or ''),
+                x = c.x + 0.0, y = c.y + 0.0, z = c.z + 0.0,
+                price = price,          -- 0 is a free charger
+                distance = dist and math.floor(dist) or nil,
+                here = atNow ~= nil and atNow.id == c.id,
+            }
         end
     end
+    -- Nearest first when we know where they are, so the one they are most likely to want is at
+    -- the top; by name otherwise, so the order is at least stable.
+    table.sort(list, function(a, b)
+        if a.distance and b.distance then return a.distance < b.distance end
+        if a.distance then return true end
+        if b.distance then return false end
+        return a.label < b.label
+    end)
 
-    if cfg().log == true then
-        -- Off by default. It is the only paper trail a charge leaves, and it is also a line
-        -- per customer per stop, which on a busy server is a lot of console for something an
-        -- operator either wants deliberately or not at all.
-        V.Log(('paid charging: %s paid %d at %s'):format(tostring(src), price,
-            tostring(charger.label or charger.id)))
-    end
+    local pr = prefsOf(src)
+    resolve({
+        ok = true,
+        chargers = list,
+        session = Session[src] or nil,          -- the charger they have already paid for
+        offer = Offer[src] and { id = Offer[src].id, label = Offer[src].label,
+                                 price = Offer[src].price } or nil,
+        atCharger = atNow and { id = atNow.id, label = tostring(atNow.label or atNow.id or ''),
+                                price = priceOf(atNow) } or nil,
+        money = (cfg().money == 'bank') and 'bank' or 'cash',
+        prefs = { autoAccept = pr.autoAccept, autoMax = pr.autoMax },
+        autoAcceptOn = cfg().autoAccept ~= false,   -- whether the option is offered at all
+        autoMaxCap = math.max(0, math.floor(num(cfg().autoAcceptMax, 0))),
+    })
+end)
 
-    -- The battery tick will notice the session on its next pass; this just makes the phone
-    -- show it now rather than in twenty seconds.
-    resolve({ ok = true, price = price, label = charger.label or charger.id })
+V.Callback('v-phone:charging:prefs', function(src, resolve, data)
+    local p = Core and Core.GetPlayer(src)
+    if not p or not p.SetMetadata then resolve({ error = 'x' }) return end
+
+    local autoAccept = (cfg().autoAccept ~= false) and (data and data.autoAccept == true) or false
+    local autoMax = math.max(0, math.floor(num(data and data.autoMax, 0)))
+    -- Kept no higher than the config's hard cap: a player cannot raise their own ceiling above
+    -- what the operator allows, only lower it.
+    local hard = math.max(0, math.floor(num(cfg().autoAcceptMax, 0)))
+    if hard > 0 and (autoMax == 0 or autoMax > hard) then autoMax = hard end
+
+    p.SetMetadata('chargePrefs', { autoAccept = autoAccept, autoMax = autoMax })
+    resolve({ ok = true, autoAccept = autoAccept, autoMax = autoMax })
 end)
 
 V.Callback('v-phone:charge:decline', function(src, resolve)

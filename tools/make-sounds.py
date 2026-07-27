@@ -66,6 +66,20 @@ EMERGENCY = {
         (853, 0.00, .90), (960, 0.00, .90),
         (853, 1.00, .90), (960, 1.00, .90),
     ],
+    # The 911 app's alert, for the service being called out.
+    #
+    # Deliberately NOT the wireless-alert pair above. That one is a warning to a whole city
+    # and it is meant to be alarming; this one lands on the phone of somebody at work, over
+    # and over, all evening. It has to be unmistakable on the first note and bearable on the
+    # fiftieth - so it is the two-tone European siren interval, played briefly and clean,
+    # rather than a klaxon.
+    #
+    # A 435/580 Hz pair is a perfect fourth: it reads as "signal" rather than as music, which
+    # is exactly what a dispatch tone is for.
+    'alert911': [
+        (580, 0.00, .26), (435, 0.24, .26),
+        (580, 0.50, .26), (435, 0.74, .34),
+    ],
 }
 
 # The interface sounds. Short enough that the page could synthesise them, but shipping

@@ -217,7 +217,8 @@ V.Callback('v-phone:wallet:data', function(src, resolve)
 
     local rows = safely('licences', function()
         return Bridge.Licences and Bridge.Licences.Held
-            and Bridge.Licences.Held(src, p.citizenid)
+            and Bridge.Licences.Held(PhoneActingSource and PhoneActingSource(src) or src,
+                                     p.citizenid)
     end)
     -- Who the character is, which is the other half of a wallet. Isolated: a framework that
     -- will not say leaves the card off rather than taking the licences down with it.

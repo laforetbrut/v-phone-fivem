@@ -51,6 +51,10 @@
     messages: 'M12 3c-5 0-9 3.4-9 7.6 0 2.4 1.3 4.5 3.3 5.9l-.9 3.9 4.2-2.2c.8.2 1.6.3 2.4.3 5 0 9-3.4 9-7.9S17 3 12 3Z',
     contacts: 'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 21a8 8 0 0 1 16 0',
     bank: 'M3 10h18L12 4 3 10ZM5 10v8M10 10v8M14 10v8M19 10v8M3 20h18',
+    // A battery with a bolt through it. The stroke twin of the `charging` tile, for the rows
+    // and the empty states inside FruitCharge.
+    charging: 'M4 8h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM19 11v2'
+      + 'M10.6 9.4 8 12.3h2.2l-.5 2.3 2.7-3H10l.6-2.2Z',
     garage: 'M3 20V9l9-5 9 5v11M7 20v-7h10v7M7 16h10',
     wallet: 'M3 7h15a2 2 0 0 1 2 2v9H3zM3 7V5h13M17 12h3v3h-3z',
     jobs: 'M4 8h16v12H4zM9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M4 13h16',
@@ -375,6 +379,13 @@
     messages: { bg: GREEN, d: G.messages },
     contacts: { bg: GREY, d: G.contacts },
     bank: { bg: 'linear-gradient(180deg,#2ECC71,#0B8F43)', d: G.bank },
+    // Bank Pro. Purple, so the company account never gets confused for the green personal one
+    // at a glance - the same building glyph, a different tint is the whole point.
+    bankpro: { bg: 'linear-gradient(180deg,#A98BFF,#5E2FD6)', d: G.bank },
+    // FruitCharge. A battery with a bolt, on the electric green of a charging light.
+    charging: { bg: 'linear-gradient(180deg,#5EE68A,#0FB94E)',
+      d: 'M6 4h9a2 2 0 0 1 2 2v1h1.6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H17v1a2 2 0 0 1-2 2H6a2 2 0 0'
+       + ' 1-2-2V6a2 2 0 0 1 2-2zm5.4 3-3 5h2.2l-.6 3.2L13.6 10h-2.2L11.4 7z' },
     garage: { bg: 'linear-gradient(180deg,#54B9FF,#0A63D6)', d: G.garage },
     wallet: { bg: 'linear-gradient(180deg,#3A3A3C,#141416)', d: G.wallet },
     jobs: { bg: 'linear-gradient(180deg,#7D7AFF,#4B48D6)', d: G.jobs },
@@ -382,6 +393,12 @@
     music: { bg: 'linear-gradient(180deg,#FB5C74,#F5233B)', d: G.music },
     house: { bg: 'linear-gradient(180deg,#49C6D8,#0E8FA6)', d: G.house },
     shield: { bg: 'linear-gradient(180deg,#3C82F6,#0A48C4)', d: G.shield },
+    // 911. Red, because every emergency service on every phone is, and because it has to be
+    // findable on a crowded home screen by somebody who is not reading.
+    emergency: { bg: 'linear-gradient(180deg,#FF6B6B,#D70015)',
+      d: 'M12 2.6a1.4 1.4 0 0 1 1.22.71l9.1 15.98A1.4 1.4 0 0 1 21.1 21.4H2.9a1.4 1.4 0 0 1'
+       + '-1.22-2.1l9.1-15.99A1.4 1.4 0 0 1 12 2.6zm-1.15 5.9v6.05h2.3V8.5h-2.3zm0 7.5v2.2h2.3'
+       + 'v-2.2h-2.3z' },
     calc: { bg: 'linear-gradient(180deg,#3A3A3C,#141416)', d: G.calc, fill: '#FF9F0A' },
     heart: { bg: '#FFFFFF', d: G.heart, fill: '#FF2D55' },
     check: { bg: '#FFFFFF', d: G.check, fill: '#FF9500' },

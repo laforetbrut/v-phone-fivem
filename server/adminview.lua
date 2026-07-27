@@ -21,6 +21,11 @@
 -- staff member is standing, not where the target is. Making position follow too would mean a
 -- second choke point and a much larger blast radius, and none of the support cases need it.
 --
+-- Paid charging is left on the staff member's own purse for exactly that reason, and it is the
+-- one money path that is: the offer is about a charger THEY are standing at, so it would be
+-- incoherent for somebody else to pay for it. Everything addressed to "this phone's account" -
+-- the bank, Bank Pro, a store purchase, a mail domain - follows the held character.
+--
 -- Every session is logged with both names, opens only behind the ace, expires on its own, and
 -- ends when either player drops. A tool that acts as somebody else has to leave a trail.
 
@@ -112,6 +117,35 @@ Core.GetPlayer = function(src)
         AdminViewClose(src)
     end
     return Core.GetPlayerReal(src)
+end
+
+--- **The source a MONEY call should act on.**
+---
+--- `Core.GetPlayer` covers everything the phone reads through a player object - messages,
+--- contacts, apps, metadata - because those all start from the object. Money does not: the
+--- framework bridges take a SOURCE, so `Bridge.Banking.Balances(src)` and
+--- `Bridge.RemoveMoney(src, ...)` were still answering for the staff member. Opening the Bank
+--- app inside a session showed the staff member their own balance, and a transfer would have
+--- moved their own money while the screen said somebody else's name.
+---
+--- So the money calls that mean "the caller's own account" ask this instead of using `src`
+--- directly. It is a second choke point, and it is deliberately NOT a wrapper around
+--- `Bridge.AddMoney`: a wrapper would also redirect money being paid TO a staff member who
+--- happens to have a session open - a Bank Pro payment from somebody else, say - because a
+--- wrapper cannot tell "this source is the caller" from "this source is the recipient". The
+--- call sites can, so they are where the question is asked.
+---
+--- Returns `src` unchanged when no session is open, which is every ordinary call.
+function PhoneActingSource(src)
+    src = tonumber(src)
+    local cid = AdminViewTarget(src)
+    if not cid then return src end
+    local held = Core.GetPlayerByCitizenId(cid)
+    if held and held.source then return tonumber(held.source) or src end
+    -- Same rule as above: a target who is gone ends the session rather than quietly letting
+    -- the staff member act on their own account.
+    AdminViewClose(src)
+    return src
 end
 
 -- ══════════════════════════════════════════════════════════════

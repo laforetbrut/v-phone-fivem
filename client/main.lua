@@ -656,6 +656,173 @@ RegisterNetEvent('v-phone:client:emergency', function(alert)
     end
 end)
 
+-- ══════════════════════════════════════════════════════════════
+-- 911
+-- ══════════════════════════════════════════════════════════════
+-- A service being called out, and a responder finding the place.
+
+-- One blip per alert, kept so it can be taken back off the map when the alert stops being
+-- one. Without the table the phone could add blips and never remove them, which is how a
+-- busy evening ends with a map nobody can read.
+local Alert911Blips = {}
+
+local function clearAlertBlip(id)
+    local blip = Alert911Blips[id]
+    if blip and DoesBlipExist(blip) then RemoveBlip(blip) end
+    Alert911Blips[id] = nil
+end
+
+--- Put an alert on the map, or move the one already there. Everything about how it looks was
+--- decided on the server; this only draws it.
+local function drawAlertBlip(id, pin, route)
+    if type(pin) ~= 'table' then return end
+    local x, y, z = tonumber(pin.x), tonumber(pin.y), tonumber(pin.z)
+    if not x or not y then return end
+    clearAlertBlip(id)
+
+    local radius = tonumber(pin.radius) or 0
+    local blip
+    if radius > 0 then
+        -- An area to search rather than a doorstep. A radius blip takes a colour and an alpha
+        -- and nothing else - no sprite, no name - so the two paths cannot be merged.
+        blip = AddBlipForRadius(x + 0.0, y + 0.0, (z or 0.0) + 0.0, radius + 0.0)
+        SetBlipColour(blip, math.floor(tonumber(pin.colour) or 1))
+        SetBlipAlpha(blip, math.floor(tonumber(pin.alpha) or 128))
+    else
+        blip = AddBlipForCoord(x + 0.0, y + 0.0, (z or 0.0) + 0.0)
+        SetBlipSprite(blip, math.floor(tonumber(pin.sprite) or 280))
+        SetBlipColour(blip, math.floor(tonumber(pin.colour) or 1))
+        SetBlipScale(blip, (tonumber(pin.scale) or 0.9) + 0.0)
+        SetBlipAlpha(blip, math.floor(tonumber(pin.alpha) or 255))
+        SetBlipAsShortRange(blip, false)
+        if pin.flash then SetBlipFlashes(blip, true) end
+        if route then SetBlipRoute(blip, true) end
+        BeginTextCommandSetBlipName('STRING')
+        -- **Translated here.** A reason travels as a LOCALE KEY, because a config that says
+        -- `ph.911_r_violence` is a config that reads in the player's own language - and the map
+        -- was drawing that key verbatim, so every 911 blip was labelled `ph.911_r_violence`.
+        -- `L()` on a plain string a server wrote itself returns it unchanged, so both shapes
+        -- work: a key is translated, free text is left alone.
+        AddTextComponentSubstringPlayerName(tostring(
+            pin.label and L(tostring(pin.label)) or L('ph.911_new')))
+        EndTextCommandSetBlipName(blip)
+    end
+    Alert911Blips[id] = blip
+
+    -- It expires on its own even if nothing else happens to it. A responder who never opens
+    -- the app should not accumulate an evening of pins.
+    local seconds = math.max(10, math.floor(tonumber(pin.seconds) or 300))
+    SetTimeout(seconds * 1000, function()
+        if Alert911Blips[id] == blip then clearAlertBlip(id) end
+    end)
+end
+
+--- An alert for a service this player works. Arrives whether or not the phone is open: a
+--- responder with their phone in their pocket is exactly who this is for.
+RegisterNetEvent('v-phone:client:911', function(d)
+    if type(d) ~= 'table' or type(d.alert) ~= 'table' then return end
+    local a = d.alert
+    local service = d.service or {}
+
+    -- On the map straight away, for everybody working the service. No button, and no need to
+    -- have the phone out - which is the whole point of a dispatch pin.
+    if d.pin then drawAlertBlip(a.id, d.pin, d.pin.route) end
+
+    -- The page owns the sound and the notification centre, and it is loaded whether or not
+    -- the handset is out.
+    SendNUIMessage({ action = 'emergencyAlert', alert = a, service = service,
+                     sound = d.sound ~= false, file = d.file, volume = d.volume,
+                     strings = strings() })
+
+    -- Straight to the pad rather than through `buzz`, which stands down for Do Not Disturb.
+    -- Somebody on duty asked to be reachable; that is what being on duty is.
+    if d.vibrate ~= false and prefsCache.vibrate ~= false then
+        SendNUIMessage({ action = 'buzz' })
+        SetPadShake(0, 350, 95)
+    end
+
+    -- And the handset rises out of a pocket. The peek message on its own, not the `peek`
+    -- helper: that one files its own notification and the page files one from the message
+    -- above, which would leave two cards for one alert.
+    if d.peek ~= false and not isOpen and prefsCache.peek ~= false then
+        SendNUIMessage({ action = 'peek', kind = 'banner', strings = strings(), data = {
+            app = 'emergency', icon = 'warning',
+            title = L('ph.911_new'),
+            -- Translated, for the same reason as the blip name: a reason is a locale key.
+            body = a.reason and L(tostring(a.reason)) or '',
+            hasItem = true,
+        } })
+    end
+end)
+
+--- An alert changed hands or was closed. Nothing but a repaint.
+RegisterNetEvent('v-phone:client:911update', function(d)
+    if type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'emergencyUpdate', update = d })
+end)
+
+--- The map, after something happened to an alert: taken by somebody, closed, or handed to the
+--- one responder who is actually going.
+RegisterNetEvent('v-phone:client:911blip', function(d)
+    if type(d) ~= 'table' or not d.id then return end
+    if d.clear then clearAlertBlip(d.id) return end
+    drawAlertBlip(d.id, d.pin, d.route)
+end)
+
+--- The caller's side: somebody picked up their alert, or closed it. This is the answer to the
+--- silence - without it there is no way to tell "on their way" from "nobody is coming", and
+--- the reasonable thing to do about silence is to send the alert again.
+RegisterNetEvent('v-phone:client:911status', function(d)
+    if type(d) ~= 'table' then return end
+    local service = d.service or {}
+    SendNUIMessage({ action = 'emergencyStatus', update = d, strings = strings() })
+
+    if d.vibrate ~= false and prefsCache.vibrate ~= false then
+        SendNUIMessage({ action = 'buzz' })
+        SetPadShake(0, 220, 70)
+    end
+
+    if not isOpen and prefsCache.peek ~= false then
+        local key = d.state == 'closed' and 'ph.911_c_closed' or 'ph.911_c_taken'
+        SendNUIMessage({ action = 'peek', kind = 'banner', strings = strings(), data = {
+            app = 'emergency', icon = 'shield',
+            title = service.label and L(service.label) or L('ph.911_new'),
+            body = d.by and (L(key .. '_by'):gsub('{n}', tostring(d.by))) or L(key),
+            hasItem = true,
+        } })
+    end
+end)
+
+--- Where it happened.
+---
+--- A waypoint always, because that is what a responder actually navigates with, and a blip
+--- when the operator wants one - a blip is the thing that accumulates on a map, so it goes
+--- away on its own.
+RegisterNetEvent('v-phone:client:911locate', function(d)
+    if type(d) ~= 'table' then return end
+    local x, y, z = tonumber(d.x), tonumber(d.y), tonumber(d.z)
+    if not x or not y then return end
+
+    -- Always the exact spot, even for a service whose blip is a search area: a responder
+    -- pressed a button that says "take me there".
+    if d.waypoint ~= false then SetNewWaypoint(x + 0.0, y + 0.0) end
+
+    local b = d.blip
+    if type(b) ~= 'table' then return end
+    -- Through the same registry as the automatic pin, keyed on the alert. Pressing the button
+    -- twice used to leave two blips stacked on one spot, and closing the alert removed
+    -- neither of them.
+    b.x, b.y, b.z = x, y, z
+    drawAlertBlip(d.id or ('locate' .. tostring(x)), b, d.route == true)
+end)
+
+--- A responder reconnecting, or the resource restarting, must not leave pins behind: a blip
+--- outlives the script that made it, and one that nothing owns can never be removed.
+AddEventHandler('onResourceStop', function(name)
+    if name ~= GetCurrentResourceName() then return end
+    for id in pairs(Alert911Blips) do clearAlertBlip(id) end
+end)
+
 RegisterNetEvent('v-phone:client:open', function() if not isOpen then openPhone() end end)
 RegisterNetEvent('v-phone:client:close', function() if isOpen then closePhone() end end)
 
@@ -809,8 +976,10 @@ RegisterCommand('phonevoice', function()
     print(('  you are on a call now   %s'):format(tostring(call ~= nil and call.state or 'no')))
 end, false)
 
--- And a server nudge, so an admin can un-stick a player's phone remotely.
-RegisterNetEvent('v-phone:client:forceReset', forceReset)
+-- And a server nudge, so an admin can un-stick a player's phone remotely. Quiet: a reset the
+-- player did not ask for should not announce itself, and passing `forceReset` straight to the
+-- handler would hand it the event's first argument as `quiet` - a value nobody chose.
+RegisterNetEvent('v-phone:client:forceReset', function() forceReset(true) end)
 
 local function sendWhenOpen(message)
     if isOpen then
@@ -939,6 +1108,16 @@ end
 -- nothing it could usefully lie about.
 RegisterNUICallback('bankTransfer', relay('v-phone:bank:transfer'))
 RegisterNUICallback('bankFavourite', relay('v-phone:bank:favourite'))
+
+-- 911. Relays: which service, who receives it, where the caller is and who may act on an
+-- alert are all the server's to decide. Down here with the others rather than beside the
+-- events above, because `relay` is declared on the line before this one - a local called
+-- above its own declaration is a nil global, which is how the phone lost every call once.
+RegisterNUICallback('emergency',       relay('v-phone:911:open'))
+RegisterNUICallback('emergencySend',   relay('v-phone:911:send'))
+RegisterNUICallback('emergencyTake',   relay('v-phone:911:take'))
+RegisterNUICallback('emergencyClose',  relay('v-phone:911:close'))
+RegisterNUICallback('emergencyLocate', relay('v-phone:911:locate'))
 
 -- Bank Pro. Relays, like the bank's: the account, who may reach it and whether the money
 -- moved are all decided on the server, so there is nothing here to check and nothing this
@@ -1159,6 +1338,23 @@ RegisterNUICallback('chargeDecline', function(_, cb)
     V.Request('v-phone:charge:decline', function(res) cb(res or { error = 'x' }) end, {})
 end)
 
+-- The FruitCharge app: the charger list and the auto-accept preference. Coordinates come
+-- down with the list (a public charger is a published place), so the waypoint is set here
+-- from what the page was already given rather than a second server round-trip.
+RegisterNUICallback('chargingApp', function(_, cb)
+    V.Request('v-phone:charging:app', function(res) cb(res or { error = 'x' }) end, {})
+end)
+
+RegisterNUICallback('chargingPrefs', function(data, cb)
+    V.Request('v-phone:charging:prefs', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
+RegisterNUICallback('chargingWaypoint', function(data, cb)
+    local x, y = tonumber(data and data.x), tonumber(data and data.y)
+    if x and y then SetNewWaypoint(x + 0.0, y + 0.0) end
+    cb({ ok = x ~= nil and y ~= nil })
+end)
+
 --- Somebody is standing at a paid charger.
 ---
 --- It arrives as a real phone notification rather than a prompt on the world: the phone is
@@ -1171,10 +1367,64 @@ RegisterNetEvent('v-phone:client:chargeOffer', function(d)
         SendNUIMessage({ action = 'chargeClear' })
         return
     end
+
+    -- Standing at a paid charger without FruitCharge. A notification that opens the store, not
+    -- an offer: there is nothing to accept an offer with until the app is bought.
+    if d.needApp then
+        local b = {
+            app = 'store', icon = 'store',
+            title = L('ph.charge_needapp_title'),
+            body = L('ph.charge_needapp_body'):format(tostring(d.price or 0)),
+            hasItem = true,
+        }
+        SendNUIMessage({ action = 'chargeClear' })
+        if isOpen then
+            if not notificationMuted('banner', b) then buzz(false) end
+        else
+            peek('banner', b)
+        end
+        return
+    end
+
+    -- Auto-accept paid it without asking. A quiet confirmation, and a refresh so the app shows
+    -- the stop it just opened.
+    if d.auto then
+        local b = {
+            app = 'charging', icon = 'charging',
+            title = L('ph.charge_auto_title'),
+            body = L('ph.charge_auto_body'):format(tostring(d.price or 0), tostring(d.label or '')),
+            hasItem = true,
+        }
+        SendNUIMessage({ action = 'chargeRefresh' })
+        if isOpen then
+            if not notificationMuted('banner', b) then buzz(false) end
+        else
+            peek('banner', b)
+        end
+        return
+    end
+
+    -- Auto-accept was on but could not pay - no money, most likely. Say so, once, rather than
+    -- silently not charging and leaving the player to wonder.
+    if d.autofail then
+        local b = {
+            app = 'charging', icon = 'charging',
+            title = L('ph.charge_auto_title'),
+            body = L('ph.charge_autofail_body'),
+            hasItem = true,
+        }
+        if isOpen then
+            if not notificationMuted('banner', b) then buzz(false) end
+        else
+            peek('banner', b)
+        end
+        return
+    end
+
     if not d.offer then return end
 
     local b = {
-        app = 'settings', icon = 'settings',
+        app = 'charging', icon = 'charging',
         title = L('ph.charge_offer_title'),
         body = L('ph.charge_offer_body'):format(tostring(d.price or 0), tostring(d.label or '')),
         hasItem = true,
@@ -1967,6 +2217,79 @@ end
 local function leaveCallAudio()
     if voice() then exports['v-voice']:PhoneCallEnd(call and call.id) end
 end
+
+-- ── A call on a bad line ───────────────────────────────────────
+-- One bar is not "a bit worse than four" - it is a call that keeps breaking up. While the
+-- signal is at or below `Config.Calls.badSignal.atBars`, the line cuts out at random: the
+-- player's own voice is muted for a moment so the FAR END hears the break too, the page
+-- stutters and hisses, and a line this bad can drop the call outright.
+--
+-- The voice half is the honest half. A glitch drawn on a call you can still hear perfectly
+-- reads as a broken phone rather than as a broken signal, which is the opposite of the point.
+local badLine = false          -- true while a cut-out is in progress
+
+local function badCfg()
+    return (Config.Calls or {}).badSignal or {}
+end
+
+--- Drop the line for a moment, and put it back.
+---
+--- It leaves the call's voice channel and rejoins it, which is a real cut-out rather than a
+--- simulated one: on pma-voice a call channel wires every member to every other, so leaving it
+--- is exactly "neither end can hear the other" for as long as it lasts. The compat shim in
+--- bridge/shared/compat.lua is what turns these two into `setCallChannel`.
+---
+--- The rejoin is unconditional and on a timer of its own. A cut-out that failed to undo itself
+--- would be a call nobody can hear again, which is far worse than no effect at all.
+local function cutOut(ms)
+    if badLine then return end
+    badLine = true
+    local cfg = badCfg()
+
+    if cfg.muteVoice ~= false then leaveCallAudio() end
+    SendNUIMessage({ action = 'callGlitch', on = true,
+                     flicker = cfg.flicker ~= false, static = cfg.static ~= false })
+
+    SetTimeout(math.max(60, math.floor(ms)), function()
+        badLine = false
+        SendNUIMessage({ action = 'callGlitch', on = false })
+        -- Only if the call is still up: rejoining a call that ended while the line was down
+        -- would open a channel for a conversation that is over.
+        if cfg.muteVoice ~= false and call and call.state == 'active' then joinCallAudio() end
+    end)
+end
+
+CreateThread(function()
+    while true do
+        Wait(1000)
+        local cfg = badCfg()
+        local threshold = math.floor(tonumber(cfg.atBars) or 1)
+        if cfg.enabled ~= false and threshold > 0
+            and call and call.state == 'active' and not badLine then
+            local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+            -- No service at all is not a bad line, it is no line - the server ends those.
+            if bars > 0 and bars <= threshold then
+                -- Weaker is proportionally worse: at 1 bar with a threshold of 2, twice the
+                -- chance of the threshold bar itself.
+                local severity = (threshold - bars + 1) / threshold
+                local chance = (tonumber(cfg.chancePerSecond) or 0.18) * severity
+                if math.random() < chance then
+                    local lo = math.floor(tonumber(cfg.minMs) or 250)
+                    local hi = math.floor(tonumber(cfg.maxMs) or 900)
+                    if hi < lo then hi = lo end
+                    cutOut(math.random(lo, hi))
+                end
+
+                -- And a line this bad can simply fail. Checked separately, so a server can
+                -- have break-up without ever dropping a call.
+                local dropChance = (tonumber(cfg.dropChancePerSecond) or 0) * severity
+                if dropChance > 0 and math.random() < dropChance then
+                    TriggerServerEvent('v-phone:call:dropped')
+                end
+            end
+        end
+    end
+end)
 
 applyServerCall = function(nextCall, notifyUi)
     local previous = call

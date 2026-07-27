@@ -177,6 +177,13 @@ const L = (k) => {
   }
   return humaniseKey(k);
 };
+/// Is there really a string for this key?
+///
+/// `L()` cannot answer it: a miss comes back humanised, so `L(k) !== k` is true for every
+/// missing key. Anything choosing between a translation and a fallback of its own has to ask
+/// this instead - see the licence rows in the Wallet, where that mistake hid every operator's
+/// configured licence names behind a tidied identifier.
+const hasString = (k) => !!(k && S && S[k]);
 const money = (n) => {
   const v = Number(n || 0);
   // "-$1,015", not "$-1,015". The sign goes before the symbol in every locale that puts the
@@ -2585,7 +2592,10 @@ function mailCompose(o) {
   }
 
   // An attachment survives a redraw of the preview, so it lives here rather than in the DOM.
-  let image = (d && d.image) || '';
+  // A forward keeps the picture it is forwarding - dropping it was silent, and "forward" of a
+  // mail that was mostly a photo forwarded nothing. A reply does not: you are answering, not
+  // re-sending their attachment back to them.
+  let image = (d && d.image) || (o.forward && o.forward.image) || '';
 
   setNav(L('ph.mail_new'), L('app.mail'), null, () => mailList());
   body(
@@ -2626,13 +2636,20 @@ function mailCompose(o) {
         const epoch = sheetEpoch;
         byId('mfrom_roll').addEventListener('click', () => pickPhoto((url) => {
           image = url;
+          // Picking a photo IS the choice - dismiss the attach sheet rather than leaving it
+          // open. `pickPhoto` restores this sheet by default, and the empty URL field it comes
+          // back with was a trap: tapping "Use" next read that empty field and wiped the photo
+          // just picked, so the mail sent with no attachment. Nobody, sender included, saw it.
+          closeSheet(true);
           paintAttach();
           ui('shutter');
         }));
         byId('mfrom_use').addEventListener('click', () => {
           const url = byId('mfrom_url').value.trim();
           if (!closeSheet(false, epoch)) return;
-          image = url;
+          // An empty field must not clear a photo already chosen from the roll: "Use" with
+          // nothing typed means "keep what I have", not "attach nothing".
+          if (url) image = url;
           paintAttach();
         });
       });
@@ -3695,6 +3712,378 @@ RENDER.bank = async () => {
   rows('[data-addfav]', (el) => el.addEventListener('click', () => addFavouriteSheet()));
 };
 
+// ── 911 ────────────────────────────────────────────────────────
+// Two apps in one, and which one you get is decided on the server: a caller picks a service
+// and a reason, and somebody working that service sees the queue instead.
+//
+// Nothing here decides anything. Which services exist, whether this player answers for one,
+// where an alert happened and who may act on it are all the server's - the page draws what it
+// is given and sends back a choice. See server/emergency.lua.
+
+let emergencyService = null;   // the service being called, while choosing a reason
+let emergencyView = null;      // 'call' or 'dispatch'; null until we know whether there is one
+let emergencyTab = null;       // which service's queue, inside Dispatch
+
+RENDER.emergency = async () => {
+  loading();
+  const d = await post('emergency', {});
+  if (!d || d.error) { body(UI.empty(L('ph.911_e_' + ((d && d.error) || 'off')), 'warning')); return; }
+
+  const queues = d.queues || [];
+  // Somebody who answers for a service opens on Dispatch the first time - it is what they
+  // opened the app for. After that the bar remembers where they were. Anybody who is not on
+  // duty has no Dispatch to be on, whatever they were looking at when they clocked off.
+  if (emergencyView === null) emergencyView = queues.length ? 'dispatch' : 'call';
+  if (!queues.length) emergencyView = 'call';
+
+  if (emergencyView === 'dispatch') {
+    const active = queues.find((q) => q.id === emergencyTab) || queues[0];
+    emergencyTab = active.id;
+    emergencyQueue(d, queues, active);
+    return;
+  }
+  emergencyCaller(d, queues);
+};
+
+/// The bar along the bottom. Only drawn for somebody who answers for a service - a civilian
+/// has one screen and a tab bar over a single tab is furniture.
+///
+/// It replaced a small icon in the top right that switched between the two. Nobody found it,
+/// which is the ordinary fate of a mode switch hidden in a corner: the two sides of this app
+/// are two places, and two places on a phone are a bar along the bottom.
+function emergencyFoot(d, queues) {
+  if (!queues.length) { foot(''); return; }
+  // Only what is still waiting. A number that counts alerts somebody already took is a number
+  // that never reaches zero, and a badge that never clears is a badge people stop seeing.
+  const waiting = queues.reduce((n, q) =>
+    n + (q.live || []).filter((a) => a.state === 'open').length, 0);
+  tabbar([
+    { id: 'call', icon: 'warning', label: 'ph.911_tab_call' },
+    { id: 'dispatch', icon: 'shield', label: 'ph.911_tab_dispatch', badge: waiting },
+  ], emergencyView, (t) => { emergencyView = t; RENDER.emergency(); });
+}
+
+/// The caller's side: pick a service. Reachable by everybody, including a responder - being on
+/// duty does not stop you being the one who needs the other service.
+function emergencyCaller(d, queues) {
+  setNav(L('app.emergency'), null, null);
+  emergencyFoot(d, queues);
+
+  const mine = d.mine || [];
+  body(
+    '<div class="e911head">' + svg('warning') +
+      '<b>' + esc(L('ph.911_title')) + '</b>' +
+      '<span>' + esc(L('ph.911_hint')) + '</span></div>' +
+    (d.cooldown
+      ? '<div class="groupfoot">' +
+          esc(L('ph.911_cooldown').replace('{s}', String(d.cooldown))) + '</div>'
+      : '') +
+    UI.group((d.services || []).map((s) => UI.row({
+      icon: s.icon || 'warning', tint: s.wait ? '#8E8E93' : (s.tint || '#FF453A'),
+      title: L(s.label),
+      // Per service, because the cooldown is: having just called the police does not stop you
+      // needing an ambulance, and a list greyed out as a whole would say that it did.
+      subtitle: s.wait
+        ? L('ph.911_wait').replace('{s}', String(s.wait))
+        : L('ph.911_pick_reason'),
+      chevron: !s.wait,
+      data: { e911: s.id },
+    })), { header: L('ph.911_services') }) +
+    (mine.length
+      ? UI.group(mine.map((a) => UI.row({
+          icon: 'warning', tint: '#8E8E93',
+          title: L(a.reason) + (a.detail ? ' - ' + a.detail : ''),
+          subtitle: shortWhen(a.at * 1000) + '  ' + L('ph.911_st_' + (a.state || 'open')) +
+            (a.takenBy ? ' - ' + a.takenBy : ''),
+        })), { header: L('ph.911_mine'), footer: L('ph.911_mine_hint') })
+      : '')
+  );
+
+  rows('[data-e911]', (r) => r.addEventListener('click', () => {
+    const s = (d.services || []).find((x) => x.id === r.dataset.e911) || null;
+    if (!s) return;
+    // The server refuses it anyway; this is so the refusal is not the first thing the player
+    // learns after picking a reason and pressing send.
+    if (s.wait) { toast(L('ph.911_e_cooldown').replace('{s}', String(s.wait))); return; }
+    emergencyService = s;
+    emergencyReasonSheet(d);
+  }));
+}
+
+/// Pick a reason, optionally write one, optionally stay anonymous, send.
+function emergencyReasonSheet(d) {
+  const s = emergencyService;
+  let anonymous = false;
+  // Each service answers for itself and falls back to the server's global defaults: a fire
+  // brigade can take free text and refuse anonymity while the police line does the opposite.
+  const allowOther = s.allowOther !== undefined ? s.allowOther : d.allowOther;
+  const allowAnon = s.anonymous !== undefined ? s.anonymous : d.anonymous;
+
+  sheet(L(s.label),
+    UI.group((s.reasons || []).map((key) => UI.row({
+      icon: s.icon || 'warning', tint: s.tint || '#FF453A',
+      title: L(key), chevron: true, data: { e911r: key },
+    })).concat(allowOther
+      ? [UI.row({ icon: 'note', tint: '#8E8E93', title: L('ph.911_other'),
+                  chevron: true, data: { e911r: '' } })]
+      : []), { header: L('ph.911_pick_reason') }) +
+    (allowAnon
+      ? UI.group([UI.row({ icon: 'lockshut', tint: '#5E5CE6', title: L('ph.911_anon'),
+                           subtitle: L('ph.911_anon_hint'), toggle: false,
+                           data: { e911anon: '1' } })])
+      : '') +
+    '<div class="groupfoot">' + esc(L('ph.911_where')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      const anon = byId('sheet').querySelector('[data-e911anon]');
+      if (anon) anon.addEventListener('click', () => {
+        anonymous = !anonymous;
+        // The row draws its own switch from a class, so the state has to be shown here as
+        // well as remembered - a toggle that does not move is a toggle nobody trusts.
+        anon.classList.toggle('on', anonymous);
+        const knob = anon.querySelector('.sw');
+        if (knob) knob.classList.toggle('on', anonymous);
+      });
+
+      [...byId('sheet').querySelectorAll('[data-e911r]')].forEach((row) =>
+        row.addEventListener('click', () => {
+          const key = row.dataset.e911r;
+          if (key === '') {
+            if (!closeSheet(false, epoch)) return;
+            emergencyOtherSheet(d, anonymous);
+            return;
+          }
+          emergencySend({ reason: key, anonymous, epoch });
+        }));
+    });
+}
+
+/// A reason of the caller's own.
+function emergencyOtherSheet(d, anonymous) {
+  sheet(L('ph.911_other'),
+    UI.field('e911text', L('ph.911_other_field'), '',
+             'maxlength="' + (Number(emergencyService && emergencyService.maxText) ||
+                              Number(d.maxText) || 200) + '"') +
+    '<div class="groupfoot">' + esc(L('ph.911_where')) + '</div>' +
+    UI.button(L('ph.911_send'), 'e911go', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      const go = () => {
+        const text = byId('e911text').value.trim();
+        if (!text) return;
+        emergencySend({ reason: L('ph.911_other'), detail: text, anonymous, epoch });
+      };
+      byId('e911go').addEventListener('click', go);
+      byId('e911text').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      byId('e911text').focus();
+    });
+}
+
+async function emergencySend(o) {
+  const r = await post('emergencySend', {
+    service: emergencyService && emergencyService.id,
+    reason: o.reason,
+    detail: o.detail,
+    anonymous: o.anonymous === true,
+  });
+  if (!r || !r.ok) {
+    const code = (r && r.error) || 'x';
+    toast(code === 'cooldown'
+      ? L('ph.911_e_cooldown').replace('{s}', String((r && r.wait) || 0))
+      : L('ph.911_e_' + code));
+    return;
+  }
+  if (!closeSheet(false, o.epoch)) return;
+  ui('success');
+  // How many people it reached, because "nobody is on duty" is something the person in
+  // trouble should be told rather than left to work out from the silence.
+  toast(r.responders > 0
+    ? L('ph.911_sent').replace('{n}', String(r.responders))
+    : L('ph.911_sent_nobody'));
+  RENDER.emergency();
+}
+
+/// An alert landing on a responder's phone. The client sends this whether or not the handset
+/// is out - somebody on duty with their phone in their pocket is exactly who it is for.
+///
+/// Three separate things, and they are separate on purpose: the sound (which a responder needs
+/// even when they are not looking), the card in the notification centre (which is how they find
+/// it again ten seconds later), and the repaint (only when they are already in the app).
+function emergency911Alert(d) {
+  const a = d.alert || {};
+  const s = d.service || {};
+  const what = L(a.reason || '') || '';
+
+  if (d.sound !== false) {
+    // Straight to the file at the volume the config named rather than through `ui()`, which
+    // stands down at ring volume zero. Being on duty is a promise to be reachable; a silenced
+    // phone still pages. It is quieter than the citywide alert, which cannot be silenced.
+    const vol = Math.max(0, Math.min(1, Number(d.volume) >= 0 ? Number(d.volume) : .85));
+    const src = soundUrl('ui', d.file || 'alert911');
+    let played = false;
+    if (src && vol > 0) {
+      try {
+        const el = new Audio(src);
+        el.volume = vol;
+        el.play().catch(() => {});
+        played = true;
+      } catch { /* fall through to the oscillators */ }
+    }
+    // The fallback is the tone for whatever file was asked for if the page knows one, and the
+    // dispatch pair otherwise - a server that renamed the sound still gets a sound.
+    if (!played && vol > 0) {
+      (UI_TONES[d.file] || UI_TONES.alert911)
+        .forEach(([f, t, len]) => note(f, t, len, .1 * vol, 'square'));
+    }
+  }
+
+  // The card. `archivePeek` is what every other push files through, so this one sorts, groups
+  // and clears with the rest instead of being a special case nobody can dismiss.
+  archivePeek('notif', {
+    app: 'emergency',
+    icon: 'warning',
+    title: L('ph.911_new') + (s.label ? ' - ' + L(s.label) : ''),
+    body: [what, a.detail, a.street].filter(Boolean).join(' - '),
+  });
+
+  // And if they are looking at the queue, it appears in it.
+  if (openApp && openApp.id === 'emergency') RENDER.emergency();
+}
+
+/// The other end of it: the caller being told that somebody picked their alert up, or closed
+/// it. The one thing a person who shouted for help cannot work out on their own.
+function emergency911Status(d) {
+  const s = d.service || {};
+  const key = d.state === 'closed' ? 'ph.911_c_closed' : 'ph.911_c_taken';
+  const line = d.by ? L(key + '_by').replace('{n}', d.by) : L(key);
+
+  if (d.sound !== false) ui(d.state === 'closed' ? 'received' : 'success');
+
+  archivePeek('notif', {
+    app: 'emergency',
+    icon: 'shield',
+    title: s.label ? L(s.label) : L('app.emergency'),
+    body: line,
+  });
+  // A toast as well when they are holding the phone: the card is where it is FOUND, the toast
+  // is what is seen. Only when they are looking, so it is never a second copy of the banner.
+  if (!byId('device').classList.contains('hidden')) toast(line);
+
+  if (openApp && openApp.id === 'emergency') RENDER.emergency();
+}
+
+/// The responder's side: the queue for one service.
+function emergencyQueue(d, queues, active) {
+  setNav(queues.length > 1 ? L('ph.911_tab_dispatch') : L(active.label), null, null);
+  emergencyFoot(d, queues);
+
+  const row = (a, live) => UI.row({
+    icon: active.icon || 'warning',
+    tint: live ? (active.tint || '#FF453A') : '#8E8E93',
+    title: L(a.reason) + (a.detail ? ' - ' + a.detail : ''),
+    subtitle: [
+      shortWhen(a.at * 1000),
+      a.anonymous ? L('ph.911_anon_caller') : (a.caller || ''),
+      a.state !== 'open' ? L('ph.911_st_' + a.state) + (a.takenBy ? ' - ' + a.takenBy : '') : '',
+    ].filter(Boolean).join('  '),
+    chevron: true,
+    data: { e911a: String(a.id) },
+  });
+
+  const live = active.live || [];
+  const past = active.past || [];
+  // One tab per service this player answers for, at the top of the queue itself. Most hold
+  // one and see nothing; a volunteer firefighter who is also an EMT holds two, and switching
+  // should not mean leaving the app. Each carries its own waiting count, so the other service
+  // does not have to be opened to find out whether anything is happening there.
+  const switcher = queues.length > 1
+    ? '<div class="e911tabs">' + queues.map((q) => {
+        const n = (q.live || []).filter((a) => a.state === 'open').length;
+        return '<button class="' + (q.id === active.id ? 'on' : '') +
+          '" data-e911tab="' + esc(q.id) + '" type="button">' + esc(L(q.label)) +
+          (n ? ' <i>' + n + '</i>' : '') + '</button>';
+      }).join('') + '</div>'
+    : '';
+
+  body(
+    switcher +
+    (live.length
+      ? UI.group(live.map((a) => row(a, true)), { header: L('ph.911_live') })
+      : UI.empty(L('ph.911_none'), 'shield')) +
+    (past.length
+      ? UI.group(past.map((a) => row(a, false)), { header: L('ph.911_past') })
+      : '')
+  );
+
+  rows('[data-e911tab]', (b) =>
+    b.addEventListener('click', () => { emergencyTab = b.dataset.e911tab; RENDER.emergency(); }));
+
+  rows('[data-e911a]', (r) => r.addEventListener('click', () => {
+    const id = Number(r.dataset.e911a);
+    const a = live.concat(past).find((x) => x.id === id);
+    if (a) emergencyAlertSheet(a, active);
+  }));
+}
+
+/// One alert: who, what, where, and the three things a responder does with it.
+function emergencyAlertSheet(a, service) {
+  sheet(L(a.reason),
+    UI.group([
+      a.detail ? UI.row({ icon: 'note', title: L('ph.911_detail'), subtitle: a.detail }) : '',
+      UI.row({ icon: 'timer', title: L('ph.911_when'), value: shortWhen(a.at * 1000) }),
+      // Anonymous means no name, always. A number appears only when the server chose to send
+      // one - which, for an anonymous alert, happens only if the operator turned
+      // `anonymousCallback` on. The page never has to know that rule: it draws whatever it was
+      // given, so a withheld number is a number it never received.
+      a.anonymous
+        ? UI.row({ icon: 'lockshut', title: L('ph.911_caller'),
+                   subtitle: L('ph.911_anon_caller'),
+                   value: a.number ? maskNum(a.number) : '' })
+        : UI.row({ icon: 'contacts', title: L('ph.911_caller'), subtitle: a.caller || '',
+                   value: a.number ? maskNum(a.number) : '' }),
+      a.state !== 'open'
+        ? UI.row({ icon: 'check', title: L('ph.911_st_' + a.state), subtitle: a.takenBy || '' })
+        : '',
+    ].filter(Boolean)) +
+    UI.button(L('ph.911_locate'), 'e911loc', 'tinted') +
+    // Ringing back is the point of the number travelling with the alert. Keyed on the number,
+    // not on anonymity: an anonymous alert has one exactly when the operator allowed it.
+    (a.number ? UI.button(L('ph.911_callback'), 'e911call', 'plain') : '') +
+    (a.state === 'open' ? UI.button(L('ph.911_take'), 'e911take', 'plain') : '') +
+    (a.state !== 'closed' ? UI.button(L('ph.911_done'), 'e911done', 'destructive') : ''),
+    () => {
+      const epoch = sheetEpoch;
+      byId('e911loc').addEventListener('click', async () => {
+        const r = await post('emergencyLocate', { id: a.id });
+        if (!r || !r.ok) { toast(L('ph.911_e_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('waypoint');
+        toast(L('ph.911_located'));
+      });
+      const back = byId('e911call');
+      if (back) back.addEventListener('click', () => {
+        if (!closeSheet(false, epoch)) return;
+        // `placeCall` is what every other screen uses to ring a number; there is no `dial`.
+        placeCall(a.number);
+      });
+      const take = byId('e911take');
+      if (take) take.addEventListener('click', async () => {
+        const r = await post('emergencyTake', { id: a.id });
+        if (!r || !r.ok) { toast(L('ph.911_e_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        RENDER.emergency();
+      });
+      const done = byId('e911done');
+      if (done) done.addEventListener('click', async () => {
+        const r = await post('emergencyClose', { id: a.id });
+        if (!r || !r.ok) { toast(L('ph.911_e_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        RENDER.emergency();
+      });
+    });
+}
+
 // ── Bank Pro: the company account ──────────────────────────────
 // The Bank app is a person's money; this is a business's, for the character who runs it.
 //
@@ -3720,7 +4109,9 @@ RENDER.bankpro = async () => {
 
   body(
     UI.hero({
-      appicon: 'bank',
+      // The purple company tile, not the green personal one - a boss glancing at the two apps
+      // must never mistake which account is on screen.
+      appicon: 'bankpro',
       eyebrow: job.label || job.name || '',
       // A balance that cannot be read says so instead of showing zero. Telling somebody
       // their company has nothing, when the truth is that the banking script does not
@@ -3731,24 +4122,31 @@ RENDER.bankpro = async () => {
         : L('ph.bankpro_unreadable_hint'),
     }) +
     '<div class="bankproacts">' +
-      UI.button(L('ph.bankpro_deposit'), 'bpdep', 'tinted') +
+      (d.deposit === false ? '' : UI.button(L('ph.bankpro_deposit'), 'bpdep', 'tinted')) +
       (d.readable === false ? '' : UI.button(L('ph.bankpro_pay'), 'bppay', 'plain')) +
     '</div>' +
+    // Pay is the payroll: your own staff. Transfer is money OUT of the business to somebody
+    // else - a private individual or another company - which is a different intent and a
+    // different list, so it is its own button rather than a third section inside Pay.
+    (d.readable === false ? '' : UI.button(L('ph.bankpro_transfer'), 'bpxfer', 'plain')) +
+    // The boss's own bank balance, so a deposit can be judged before it is made. No cash:
+    // Bank Pro moves money between accounts, never in or out of a pocket.
     UI.group([
       UI.row({ icon: 'wallet', title: L('ph.balance'),
                value: money((d.mine || {}).bank), mono: true }),
-      UI.row({ icon: 'bank', title: L('ph.cash'), value: money((d.mine || {}).cash), mono: true }),
       UI.row({ icon: 'jobs', title: L('ph.bankpro_grade'),
                value: job.gradeLabel || String(job.grade || 0) }),
     ], { header: L('ph.bankpro_you') }) +
     (d.withdraw === false ? '' : UI.button(L('ph.bankpro_withdraw'), 'bpwd', 'plain')) +
+    // The account's movements in general, signed on the server: positive arrived, negative
+    // left. The label already carries who or what it was, so the row just draws it.
     (history.length
       ? UI.group(history.map((h) => UI.row({
-          title: L('ph.bankpro_k_' + h.kind) + ' - ' + (h.target || ''),
-          subtitle: (h.name || '') + '  ' + shortWhen(h.at) + (h.note ? '  ' + h.note : ''),
-          value: money(h.kind === 'deposit' ? h.amount : -Math.abs(Number(h.amount) || 0)),
+          title: h.label || '',
+          subtitle: [h.who, shortWhen(h.at), h.note].filter(Boolean).join('  '),
+          value: money(Number(h.amount) || 0),
           mono: true,
-          tone: h.kind === 'deposit' ? 'pos' : 'neg',
+          tone: (Number(h.amount) || 0) >= 0 ? 'pos' : 'neg',
         })), { header: L('ph.bankpro_history'), footer: L('ph.bankpro_history_hint') })
       : UI.empty(L('ph.bankpro_no_history')))
   );
@@ -3756,39 +4154,24 @@ RENDER.bankpro = async () => {
   const again = () => RENDER.bankpro();
 
   if (byId('bpdep')) byId('bpdep').addEventListener('click', () => bankproAmountSheet({
-    title: L('ph.bankpro_deposit'), limits, action: 'bankproDeposit',
-    purse: true, mine: d.mine || {}, after: again,
+    title: L('ph.bankpro_deposit'), limits, action: 'bankproDeposit', after: again,
   }));
   if (byId('bpwd')) byId('bpwd').addEventListener('click', () => bankproAmountSheet({
     title: L('ph.bankpro_withdraw'), limits, action: 'bankproWithdraw', after: again,
   }));
   if (byId('bppay')) byId('bppay').addEventListener('click', () => bankproPaySheet(d, again));
+  if (byId('bpxfer')) byId('bpxfer').addEventListener('click', () => bankproTransferSheet(d, again));
 };
 
-/// One amount sheet for deposit and withdrawal. `purse` adds the cash/bank choice, which
-/// only a deposit has: money can leave a pocket, it can only arrive in an account.
+/// One amount sheet for deposit, withdrawal and payment. Bank accounts only - there is no
+/// cash choice, because Bank Pro never moves money in or out of a pocket.
 function bankproAmountSheet(o) {
-  let from = 'bank';
   sheet(o.title,
     UI.field('bpamount', L('ph.bank_amount'), '', 'type="number" inputmode="numeric" min="' +
       (o.limits.min || 1) + '"' + (o.limits.max > 0 ? ' max="' + o.limits.max + '"' : '')) +
-    (o.purse
-      ? '<div class="seg" id="bppurse">' +
-          '<button class="on" data-p="bank">' + esc(L('ph.balance')) + ' ' + esc(money(o.mine.bank)) + '</button>' +
-          '<button data-p="cash">' + esc(L('ph.cash')) + ' ' + esc(money(o.mine.cash)) + '</button>' +
-        '</div>'
-      : '') +
     UI.field('bpnote', L('ph.bank_note'), '', 'maxlength="40"') +
     UI.button(L('ph.confirm'), 'bpgo', 'tinted'),
     () => {
-      if (o.purse) {
-        [...byId('bppurse').querySelectorAll('button')].forEach((b) =>
-          b.addEventListener('click', () => {
-            [...byId('bppurse').children].forEach((x) => x.classList.remove('on'));
-            b.classList.add('on');
-            from = b.dataset.p;
-          }));
-      }
       byId('bpgo').addEventListener('click', async () => {
         const go = byId('bpgo');
         if (go.disabled) return;      // double-tapping send must not send twice
@@ -3797,7 +4180,6 @@ function bankproAmountSheet(o) {
         const r = await post(o.action, {
           amount: Math.floor(Number(byId('bpamount').value) || 0),
           note: byId('bpnote').value.trim(),
-          from,
           // Only a payment has one. The server re-checks it either way: an employee must
           // hold the job, and an account must be one the operator listed.
           to: o.to,
@@ -3815,9 +4197,10 @@ function bankproAmountSheet(o) {
     });
 }
 
-/// Paying: an employee, or another company. Both lists come from the server, and a
-/// destination that is not in one of them does not exist as far as this app is concerned.
-async function bankproPaySheet(d, after) {
+/// The shared machinery behind Pay and Transfer. Both pick a destination from a list the
+/// server produced and then ask for an amount; only which lists are offered differs, so the
+/// picking, the searching and the wiring live here once.
+async function bankproPickSheet(d, after, o) {
   const r = await post('bankproStaff', {});
   const staff = (r && r.staff) || [];
   const others = (r && r.others) || [];
@@ -3828,22 +4211,21 @@ async function bankproPaySheet(d, after) {
     data: { bpto: kind + ':' + s.citizenid, bpname: s.name },
   });
 
+  // Which lists this sheet is about. Pay is the payroll; Transfer is everybody who is not on it.
+  const people = o.staff ? staff : others;
   const draw = (query) => {
     const q = String(query || '').trim().toLowerCase();
     const match = (s) => !q || String(s.name || '').toLowerCase().includes(q);
-    return (staff.filter(match).length
-        ? UI.group(staff.filter(match).map((s) => personRow(s, 'staff')),
-                   { header: L('ph.bankpro_staff') })
-        : (q ? '' : '<div class="groupfoot">' + esc(L('ph.bankpro_no_staff')) + '</div>')) +
-      // Anybody else connected: a contractor, a supplier, somebody owed a favour. A list,
-      // never a typed id.
-      (others.filter(match).length
-        ? UI.group(others.filter(match).map((s) => personRow(s, 'person')),
-                   { header: L('ph.bankpro_anyone') })
-        : '') +
-      (payees.length && !q
+    const hits = people.filter(match);
+    return (hits.length
+        ? UI.group(hits.map((s) => personRow(s, o.staff ? 'staff' : 'person')),
+                   { header: L(o.peopleHeader) })
+        : (q ? '' : '<div class="groupfoot">' + esc(L(o.emptyHint)) + '</div>')) +
+      // Company accounts, on the Transfer side only: paying a business is a transfer, not
+      // payroll.
+      (o.companies && payees.length && !q
         ? UI.group(payees.map((a) => UI.row({
-            icon: 'bank', tint: '#0A84FF', title: a, chevron: true,
+            icon: 'bank', tint: '#5E5CE6', title: a, chevron: true,
             data: { bpto: 'account:' + a, bpname: a },
           })), { header: L('ph.bankpro_companies') })
         : '');
@@ -3856,7 +4238,7 @@ async function bankproPaySheet(d, after) {
         const name = row.dataset.bpname;
         if (!closeSheet(false, epoch)) return;
         bankproAmountSheet({
-          title: L('ph.bankpro_pay') + ' - ' + name,
+          title: L(o.title) + ' - ' + name,
           limits: d.limits || {},
           action: 'bankproPay',
           after,
@@ -3865,11 +4247,11 @@ async function bankproPaySheet(d, after) {
       }));
   };
 
-  sheet(L('ph.bankpro_pay'),
+  sheet(L(o.title),
     // A search, because "anybody connected" on a busy server is a list nobody scrolls.
-    ((staff.length + others.length) > 6
-      ? UI.field('bpfind', L('ph.search'), '', 'autocomplete="off"') : '') +
-    '<div id="bplist">' + draw('') + '</div>',
+    (people.length > 6 ? UI.field('bpfind', L('ph.search'), '', 'autocomplete="off"') : '') +
+    '<div id="bplist">' + draw('') + '</div>' +
+    (o.foot ? '<div class="groupfoot">' + esc(L(o.foot)) + '</div>' : ''),
     () => {
       const epoch = sheetEpoch;
       wire(epoch);
@@ -3879,6 +4261,32 @@ async function bankproPaySheet(d, after) {
         wire(epoch);
       });
     });
+}
+
+/// Pay: the payroll. Only people who hold this job.
+function bankproPaySheet(d, after) {
+  return bankproPickSheet(d, after, {
+    title: 'ph.bankpro_pay',
+    staff: true,
+    companies: false,
+    peopleHeader: 'ph.bankpro_staff',
+    emptyHint: 'ph.bankpro_no_staff',
+    foot: 'ph.bankpro_pay_hint',
+  });
+}
+
+/// Transfer: money out of the business to somebody who is not on its payroll - a private
+/// individual, or another company's account. Same money path, different intent, and worth its
+/// own button: paying an employee and wiring a stranger are not the same decision.
+function bankproTransferSheet(d, after) {
+  return bankproPickSheet(d, after, {
+    title: 'ph.bankpro_transfer',
+    staff: false,
+    companies: true,
+    peopleHeader: 'ph.bankpro_anyone',
+    emptyHint: 'ph.bankpro_no_others',
+    foot: 'ph.bankpro_transfer_hint',
+  });
 }
 
 // ── Sending money ──────────────────────────────────────────────
@@ -4219,7 +4627,15 @@ RENDER.wallet = async () => {
     // identifier with its separators tidied - `weapon_license` reads as `Weapon License`
     // rather than as a column value, even on a server that has configured nothing.
     icon: 'wallet', tint: '#5856D6',
-    title: L(l.i18n) !== l.i18n ? L(l.i18n)
+    // A translation if one really exists, then the label the server resolved from
+    // `Config.Licences`, and last the bare identifier tidied.
+    //
+    // **`L()` never returns its own key** - a miss comes back HUMANISED, so `ph.lic_weapon`
+    // became "Lic Weapon". The old test here was `L(key) !== key`, which is true for every
+    // missing key, so the configured label was unreachable and every server saw the tidied
+    // identifier instead of the name it had written in the config. Ask the string table
+    // directly: present means translate, absent means fall through.
+    title: hasString(l.i18n) ? L(l.i18n)
       : (l.label && l.label !== l.key ? l.label : placeName(l.key)),
     subtitle: l.issuer || '',
     value: l.held ? L('ph.lic_status_held') : L('ph.lic_status_none'),
@@ -4997,7 +5413,10 @@ async function musicRemember(track) {
 
 function musicKind(kind) {
   const key = 'ph.music_' + String(kind || 'headphones');
-  return L(key) === key ? L('ph.music_device') : L(key);
+  // Same trap as the licence rows: `L()` humanises a miss instead of returning the key, so
+  // `L(key) === key` was never true and an unknown speaker kind printed a tidied identifier
+  // rather than the generic "device" label this line exists to reach.
+  return hasString(key) ? L(key) : L('ph.music_device');
 }
 
 async function musicModel() {
@@ -5789,9 +6208,23 @@ RENDER.property = async () => {
     chevron: true, data: { i },
   })), { footer: L('ph.property_hint') }));
 
-  rows('.row[data-i]', (r) => r.addEventListener('click', () => {
+  rows('.row[data-i]', (r) => r.addEventListener('click', async () => {
     const pr = list[Number(r.dataset.i)];
     if (!pr) return;
+    // Tapping your own house routes you to it, there and then. That is what somebody opening
+    // this app is almost always here for - "where is my house" - and making them open a sheet
+    // and find a second button first was a step with no purpose.
+    //
+    // The sheet still opens behind it, because the rent and the details live there. Only when
+    // the server actually knows where the house is: no coordinates means no waypoint and no
+    // claim to have set one.
+    if (pr.x && pr.y) {
+      const set = await post('waypoint', { x: pr.x, y: pr.y });
+      if (set && set.ok) {
+        ui('waypoint');
+        toast(L('ph.property_located').replace('{n}', placeName(pr.label) || ''));
+      }
+    }
     propertySheet(pr);
   }));
 };
@@ -7478,6 +7911,120 @@ function chargeOfferSheet(o) {
     });
 }
 
+// ── FruitCharge: find a charger, and pay a paid one ────────────
+// The app the paid-charging notification points at. It lists the public chargers, takes you
+// to one, and is where a paid charge is accepted - with an auto-accept for a regular who does
+// not want to be asked. Everything money and position is the server's; this draws and asks.
+// See server/charging.lua.
+RENDER.charging = async () => {
+  loading();
+  const d = await post('chargingApp', {});
+  if (!d || d.error) {
+    body(UI.empty(L('ph.charge_e_' + ((d && d.error) || 'off')), 'charging'));
+    return;
+  }
+
+  const chargers = d.chargers || [];
+  const prefs = d.prefs || {};
+  const priceText = (n) => (Number(n) > 0 ? money(n) : L('ph.charge_free'));
+  const labelOf = (id) => (chargers.find((c) => c.id === id) || {}).label || '';
+
+  const atPaid = d.atCharger && Number(d.atCharger.price) > 0;
+  const paying = d.session && (!d.atCharger || d.session === d.atCharger.id);
+
+  const header = d.session
+    ? UI.hero({ appicon: 'charging', eyebrow: L('ph.charge_status'),
+                value: L('ph.charge_active'), subtitle: labelOf(d.session) || (d.atCharger || {}).label || '' })
+    : (atPaid
+      ? UI.hero({ appicon: 'charging', eyebrow: d.atCharger.label,
+                  value: money(d.atCharger.price), subtitle: L('ph.charge_here_pay') })
+      : UI.hero({ appicon: 'charging', eyebrow: L('app.charging'),
+                  value: L('ph.charge_idle'), subtitle: L('ph.charge_idle_hint') }));
+
+  const payBtn = (atPaid && !paying)
+    ? UI.button(L('ph.charge_pay').replace('{price}', String(d.atCharger.price)), 'chgpay', 'tinted')
+    : '';
+
+  const list = chargers.length
+    ? UI.group(chargers.map((c) => UI.row({
+        icon: 'charging',
+        tint: c.here ? '#30d158' : (Number(c.price) > 0 ? '#0A84FF' : '#8E8E93'),
+        title: c.label,
+        subtitle: [
+          c.here ? L('ph.charge_youre_here') : null,
+          c.distance != null ? (c.distance + ' m') : null,
+          priceText(c.price),
+        ].filter(Boolean).join('  '),
+        chevron: true, data: { chg: c.id },
+      })), { header: L('ph.charge_points'), footer: L('ph.charge_points_hint') })
+    : UI.empty(L('ph.charge_none'), 'charging');
+
+  // Auto-accept: a standing yes to a paid charger, up to a ceiling the player sets.
+  const auto = d.autoAcceptOn
+    ? UI.group([
+        UI.row({ icon: 'timer', tint: '#5E5CE6', title: L('ph.charge_auto'),
+                 subtitle: L('ph.charge_auto_hint'),
+                 toggle: prefs.autoAccept === true, data: { chgauto: '1' } }),
+      ].concat(prefs.autoAccept
+        ? [UI.row({ icon: 'bank', tint: '#30d158', title: L('ph.charge_auto_max'),
+                    value: Number(prefs.autoMax) > 0 ? money(prefs.autoMax) : L('ph.charge_auto_nomax'),
+                    chevron: true, data: { chgmax: '1' } })]
+        : []), { header: L('ph.charge_options') })
+    : '';
+
+  body(header + payBtn + list + auto);
+
+  const again = () => RENDER.charging();
+
+  if (byId('chgpay')) byId('chgpay').addEventListener('click', async () => {
+    const r = await post('chargePay', {});
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    ui('money');
+    toast(L('ph.charge_paid'));
+    again();
+  });
+
+  rows('[data-chg]', (el) => el.addEventListener('click', async () => {
+    const c = chargers.find((x) => x.id === el.dataset.chg);
+    if (!c) return;
+    await post('chargingWaypoint', { x: c.x, y: c.y });
+    ui('waypoint');
+    toast(L('ph.charge_routed').replace('{n}', c.label));
+  }));
+
+  const savePrefs = async (next) => {
+    const r = await post('chargingPrefs', {
+      autoAccept: next.autoAccept, autoMax: next.autoMax,
+    });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    again();
+  };
+
+  const autoRow = document.querySelector('[data-chgauto]');
+  if (autoRow) autoRow.addEventListener('click', () =>
+    savePrefs({ autoAccept: !(prefs.autoAccept === true), autoMax: prefs.autoMax || 0 }));
+
+  const maxRow = document.querySelector('[data-chgmax]');
+  if (maxRow) maxRow.addEventListener('click', () => {
+    const cap = Number(d.autoMaxCap) || 0;
+    sheet(L('ph.charge_auto_max'),
+      UI.field('chgmaxval', L('ph.bank_amount'), Number(prefs.autoMax) > 0 ? String(prefs.autoMax) : '',
+               'type="number" inputmode="numeric" min="0"' + (cap > 0 ? ' max="' + cap + '"' : '')) +
+      '<div class="groupfoot">' + esc(cap > 0
+        ? L('ph.charge_auto_max_hint').replace('{n}', String(cap))
+        : L('ph.charge_auto_max_hint_free')) + '</div>' +
+      UI.button(L('ph.confirm'), 'chgmaxgo', 'tinted'),
+      () => {
+        const epoch = sheetEpoch;
+        byId('chgmaxgo').addEventListener('click', async () => {
+          const v = Math.max(0, Math.floor(Number(byId('chgmaxval').value) || 0));
+          if (!closeSheet(false, epoch)) return;
+          savePrefs({ autoAccept: true, autoMax: v });
+        });
+      });
+  });
+};
+
 function airdropOffer(o) {
   o = o || {};
   const icon = o.kind === 'photo' ? 'images'
@@ -7621,10 +8168,16 @@ function onSearch(fn) {
 
 // ══ Tab bar ════════════════════════════════════════════════════
 function tabbar(tabs, current, onPick) {
-  foot('<div class="tabbar">' + tabs.map((t) =>
-    '<button class="' + (t.id === current ? 'on' : '') + '" data-t="' + esc(t.id) + '" type="button" ' +
-    'aria-current="' + (t.id === current ? 'page' : 'false') + '">' +
-    svg(t.icon) + '<span>' + esc(L(t.label)) + '</span></button>').join('') + '</div>');
+  foot('<div class="tabbar">' + tabs.map((t) => {
+    // A count on the icon, the way Messages carries unread. Drawn only when there is one:
+    // `badge: 0` is a tab with nothing waiting, not a tab wearing a zero.
+    const n = Number(t.badge) || 0;
+    return '<button class="' + (t.id === current ? 'on' : '') + '" data-t="' + esc(t.id) +
+      '" type="button" aria-current="' + (t.id === current ? 'page' : 'false') + '">' +
+      '<span class="tbicon">' + svg(t.icon) +
+        (n ? '<i class="tbadge">' + esc(n > 99 ? '99+' : String(n)) + '</i>' : '') + '</span>' +
+      '<span>' + esc(L(t.label)) + '</span></button>';
+  }).join('') + '</div>');
   [...byId('appfoot').querySelectorAll('button')].forEach((b) =>
     b.addEventListener('click', () => onPick(b.dataset.t)));
 }
@@ -9773,6 +10326,40 @@ function note(freq, t, dur, gain, type) {
   o.start(at); o.stop(at + dur + 0.02);
 }
 
+/// The hiss of a line breaking up.
+///
+/// Real noise, not a tone: filtered white noise is what interference sounds like, and no
+/// arrangement of oscillators gets close. Short, quiet, and it respects the ring volume - this
+/// is an effect, not an alert, so a player who turned the phone down does not want it either.
+function callStatic() {
+  const ac = audio(); if (!ac) return;
+  const vol = (state.prefs || {}).ringVolume;
+  const v = (vol == null ? 0.7 : Number(vol)) * 0.22;
+  if (v <= 0) return;
+
+  const seconds = 0.28;
+  const frames = Math.floor(ac.sampleRate * seconds);
+  const buffer = ac.createBuffer(1, frames, ac.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < frames; i += 1) data[i] = Math.random() * 2 - 1;
+
+  const src = ac.createBufferSource();
+  src.buffer = buffer;
+  // Band-limited, because full-spectrum white noise is a burst of sand rather than a radio.
+  const band = ac.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = 1400;
+  band.Q.value = 0.7;
+  const g = ac.createGain();
+  const now = ac.currentTime;
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(v, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+  src.connect(band); band.connect(g); g.connect(ac.destination);
+  src.start(now);
+  src.stop(now + seconds);
+}
+
 // Each built-in is a short score: [frequency, start, length].
 const TONES = {
   classic: [[880, 0, .16], [1175, .18, .16], [880, .36, .16], [1175, .54, .26]],
@@ -9800,7 +10387,8 @@ const SOUND_BASE = 'https://cfx-nui-v-phone/sounds/';
 const SOUND_FILES = {
   ring: { classic: 1, chime: 1, pulse: 1, radar: 1, signal: 1 },
   alert: { ping: 1, pop: 1, tick: 1, note: 1 },
-  ui: { unlock: 1, lock: 1, success: 1, error: 1, shutter: 1, boothkey: 1, boothkeyback: 1 },
+  ui: { unlock: 1, lock: 1, success: 1, error: 1, shutter: 1, boothkey: 1, boothkeyback: 1,
+        alert911: 1 },
 };
 let soundsOff = false;   // set once a file has failed, so we stop asking every ring
 
@@ -9891,6 +10479,11 @@ const UI_TONES = {
   // pleasant interval is one people learn to ignore. Deliberately the least pleasant sound the
   // phone makes, because it is the only one that means "stop what you are doing".
   emergency: [[853, 0, .9], [960, 0, .9], [853, 1.0, .9], [960, 1.0, .9]],
+  // The 911 dispatch tone, for a server running with sound files off. Deliberately NOT the
+  // one above: that warns a whole city and is meant to be alarming, this lands on the phone of
+  // somebody at work, all evening. Unmistakable on the first note, bearable on the fiftieth -
+  // so the two-tone siren fourth, played clean. Kept in step with tools/make-sounds.py.
+  alert911: [[580, 0, .26], [435, .24, .26], [580, .5, .26], [435, .74, .34]],
   // ── The quiet half of the phone ────────────────────────────
   // Everything below is an action that used to happen in silence. None of them is a fanfare:
   // a phone that chimes at every touch is a phone people mute, so these are all short, low and
@@ -11454,6 +12047,17 @@ window.addEventListener('message', (e) => {
     // phone. That is also exactly why it is behind an ace and a config switch - a channel that
     // ignores a player's own silence settings is one that has to be hard to reach.
     emergencyAlert(d.alert || {});
+  } else if (d.action === 'emergencyAlert') {
+    // A 911 alert for a service this player answers for. A different thing entirely from the
+    // staff broadcast above, despite the neighbouring name: that one goes to a whole city.
+    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    emergency911Alert(d);
+  } else if (d.action === 'emergencyStatus') {
+    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    emergency911Status(d.update || {});
+  } else if (d.action === 'emergencyUpdate') {
+    // Somebody took an alert or closed one. Nothing to show; the queue just stops being wrong.
+    if (openApp && openApp.id === 'emergency') RENDER.emergency();
   } else if (d.action === 'strings') {
     // Pushed by the client when the language lands after this page loaded.
     if (d.strings && Object.keys(d.strings).length) {
@@ -11484,6 +12088,32 @@ window.addEventListener('message', (e) => {
       closeSheet(false, chargeSheetEpoch);
       chargeSheetEpoch = null;
     }
+    if (openApp && openApp.id === 'charging') RENDER.charging();
+  } else if (d.action === 'callGlitch') {
+    // The line broke up. The voice is already gone - the client left the call channel - and
+    // this is the half that says WHY, so a player hears silence and reads "bad line" rather
+    // than "the phone is broken".
+    const ui = byId('callui');
+    if (ui) {
+      ui.classList.toggle('glitching', d.on === true && d.flicker !== false);
+      const label = byId('callstate');
+      if (label) {
+        if (d.on === true) {
+          if (!label.dataset.was) label.dataset.was = label.innerHTML;
+          label.innerHTML = '<span class="callbreak">' + esc(L('ph.call_breaking')) + '</span>';
+        } else if (label.dataset.was) {
+          label.innerHTML = label.dataset.was;
+          delete label.dataset.was;
+        }
+      }
+    }
+    // A short burst of noise. Synthesised rather than a file: it is a hiss, and shipping a
+    // wav of a hiss is a download for something six lines of oscillator does better.
+    if (d.on === true && d.static !== false) callStatic();
+  } else if (d.action === 'chargeRefresh') {
+    // Auto-accept paid for a stop. Nothing to ask, but FruitCharge is now showing a stale
+    // "not charging" if it happens to be open.
+    if (openApp && openApp.id === 'charging') RENDER.charging();
   } else if (d.action === 'airdropResult') {
     const r = d.result || {};
     toast(r.ok ? (L('ph.airdrop_took') + (r.name ? ' ' + r.name : '')) : L('ph.airdrop_declined'));

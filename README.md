@@ -54,15 +54,18 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus four downloads: Bleeter, Snapmatic, Hush and Cipher.
+Phone, Messages, Contacts, **911**, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus six downloads: Bleeter, Snapmatic, Hush, Cipher, Bank Pro and FruitCharge.
 
-- **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players.
+- **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
+- **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
 - **Messages**: private and group threads, photos, GIFs, location sharing, reactions, forwarding and emoji.
 - **Bank**: the balance your framework already keeps, a statement, transfers to another character by phone number, saved beneficiaries, and a notification when money arrives - a salary, a society payout, a transfer. No companion resource - it reads qb-core, qbx, ESX, ox or your banking script through the bridge. Limits, an optional fee and offline transfers are configurable.
 - **Bleeter** (Twitter): two timelines, likes, comments, reposts, a searchable directory, follows, direct messages and profiles.
 - **Snapmatic** (Instagram): stories with a 24 hour life, a photo feed, a profile grid, search and direct messages.
 - **Hush** (Tinder): a card you throw with your finger, matches kept in their own tab, an editable profile.
 - **Cipher**: an encrypted messenger. The server routes sealed envelopes and keeps neither the clear text nor a private key.
+- **Bank Pro** (a download): the company account, for the character who runs the business. Deposit, withdraw, pay an employee, and transfer to a private individual or another company - all between BANK accounts, never cash. The history is the account's own statement, so an ATM deposit and a payroll run by another script are in it too.
+- **FruitCharge** (a paid download): finds every public charger, routes you to one, and pays a paid charger from the phone - with an optional auto-accept and a price ceiling. Standing at a paid charger without it points you at the store.
 
 ### For developers
 - **Drop-in apps**: an app is a folder in `apps/`. No edit to the phone, no build step, no JavaScript framework. See [DEVELOPERS.md](DEVELOPERS.md).
@@ -649,15 +652,18 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, Mail, Plans, Appareil photo, Galerie, Musique, Banque, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatre téléchargements : Bleeter, Snapmatic, Hush et Cipher.
+Téléphone, Messages, Contacts, **911**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus six téléchargements : Bleeter, Snapmatic, Hush, Cipher, Bank Pro et FruitCharge.
 
-- **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour.
+- **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
+- **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
 - **Messages** : conversations privées et groupées, photos, GIF, partage de position, réactions, transfert et emoji.
 - **Banque** : le solde que votre framework tient déjà, un relevé, des virements vers un autre personnage par numéro de téléphone, des bénéficiaires enregistrés, et une notification quand de l'argent arrive — salaire, versement de société, virement. Aucune ressource compagnon : elle lit qb-core, qbx, ESX, ox ou votre script bancaire via le bridge. Limites, frais optionnels et virements hors ligne configurables.
 - **Bleeter** (Twitter) : deux fils, likes, commentaires, republications, annuaire cherchable, abonnements, messages privés et profils.
 - **Snapmatic** (Instagram) : stories d'une journée, fil photo, profil en grille, recherche et messages privés.
 - **Hush** (Tinder) : une carte qu'on lance au doigt, les matchs conservés dans leur onglet, un profil modifiable.
 - **Cipher** : messagerie chiffrée. Le serveur route des enveloppes scellées et ne conserve ni le texte clair ni la clé privée.
+- **Bank Pro** (téléchargement) : le compte de l'entreprise, pour le personnage qui la dirige. Dépôt, retrait, paie d'un employé, et virement vers un particulier ou une autre entreprise — toujours entre comptes BANCAIRES, jamais d'espèces. L'historique est le relevé du compte lui-même : un dépôt au DAB ou une paie faite par un autre script y figurent aussi.
+- **FruitCharge** (téléchargement payant) : localise toutes les bornes publiques, place l'itinéraire vers l'une d'elles, et paie une borne payante depuis le téléphone — avec acceptation automatique et plafond de prix. Sans l'application, une borne payante renvoie vers le store.
 
 ### Pour les développeurs
 - **Applications déposables** : une application est un dossier dans `apps/`. Aucune modification du téléphone, aucune étape de build, aucun framework JavaScript. Voir [DEVELOPERS.md](DEVELOPERS.md).

@@ -70,10 +70,18 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- The ledger
 -- ══════════════════════════════════════════════════════════════
--- The phone keeps its own record of what the phone did. It is deliberately not an attempt to
--- mirror the banking script's statement: that script has its own, it is authoritative, and two
--- half-histories are worse than one complete one. What this answers is the question a business
--- owner actually asks about an app - "who moved money with THIS, and when".
+-- The history shows the movements of the account IN GENERAL, not only the ones made with the
+-- phone. On a banking script whose statement can be read - qb-banking keeps every line in
+-- `bank_statements` - that statement IS the history: an ATM deposit, a payroll another script
+-- ran, a transfer made at the bank, and the phone's own movements too, because every phone
+-- movement is written into the same statement. One read, one complete history.
+--
+-- The phone keeps its own log as well, and falls back to it when the bank cannot be read - a
+-- business on such a server still sees what the phone did, which is better than nothing.
+
+local function historyLimit()
+    return math.max(1, math.min(50, math.floor(num(CFG.historyLimit, 50))))
+end
 
 CreateThread(function()
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_bankpro_log` (
@@ -98,10 +106,52 @@ local function record(account, p, kind, amount, target, note)
           tostring(note or ''):sub(1, 100) })
 end
 
+--- Normalised for the app: every row is `{ label, amount (SIGNED: + in, - out), at, who }`, so
+--- the page renders one shape whether it came from the bank's statement or the phone's log.
 local function history(account)
+    local limit = historyLimit()
+
+    -- The account's own statement first, so the history is the whole account and not just the
+    -- phone. `date` comes back as a millisecond epoch and `amount` unsigned; the sign is put
+    -- back from `statement_type` here, exactly as the personal Bank does.
+    if Bridge.Banking and Bridge.Banking.SocietyTransactions then
+        local rows = Bridge.Banking.SocietyTransactions(account, limit)
+        if type(rows) == 'table' and #rows > 0 then
+            local out = {}
+            for _, r in ipairs(rows) do
+                -- Trimmed here as well as in the query: a hook or a bank export may hand back
+                -- more than was asked for, and the cap is what the app promised to show.
+                if #out >= limit then break end
+                local amt = math.abs(math.floor(num(r.amount, 0)))
+                local outward = tostring(r.statement_type) == 'withdraw'
+                    or (num(r.amount, 0) < 0)   -- a bank that already signs it
+                out[#out + 1] = {
+                    label = tostring(r.label or r.reason or ''),
+                    amount = outward and -amt or amt,
+                    at = r.at,
+                }
+            end
+            return out
+        end
+    end
+
+    -- Fallback: the phone's own log, for a bank whose statement cannot be read.
     local rows = MySQL.query.await([[SELECT name, kind, amount, target, note, at
-        FROM vphone_bankpro_log WHERE account = ? ORDER BY id DESC LIMIT 40]], { account }) or {}
-    return rows
+        FROM vphone_bankpro_log WHERE account = ? ORDER BY id DESC LIMIT ?]],
+        { account, limit }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do
+        local inward = r.kind == 'deposit'
+        local amt = math.abs(math.floor(num(r.amount, 0)))
+        out[#out + 1] = {
+            label = (r.target ~= '' and r.target) or tostring(r.kind or ''),
+            who = r.name,
+            note = r.note,
+            amount = inward and amt or -amt,
+            at = r.at,
+        }
+    end
+    return out
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -117,7 +167,10 @@ V.Callback('v-phone:bankpro:open', function(src, resolve)
     local job = jobOrWhy
 
     local balance = Bridge.SocietyBalance and Bridge.SocietyBalance(account) or nil
-    local mine = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src) or nil
+    -- The bank balance of whoever the phone is acting as: during a staff phone-view session
+    -- that is the held character, not the staff member. See PhoneActingSource in adminview.lua.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    local mine = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(acting) or nil
 
     resolve({
         ok = true,
@@ -128,14 +181,15 @@ V.Callback('v-phone:bankpro:open', function(src, resolve)
         -- an empty balance it does not have.
         balance = balance,
         readable = balance ~= nil,
-        -- What the player has, so the deposit sheet can refuse before it asks.
-        mine = { cash = math.floor(num(mine and mine.cash, 0)),
-                 bank = math.floor(num(mine and mine.bank, 0)) },
+        -- The boss's OWN bank balance, so the deposit sheet can refuse before it asks. No cash:
+        -- Bank Pro never touches a pocket, so it has no reason to know what is in one.
+        mine = { bank = math.floor(num(mine and mine.bank, 0)) },
         limits = {
             min = math.max(1, math.floor(num(CFG.minAmount, 1))),
             max = math.floor(num(CFG.maxAmount, 0)),
         },
         employees = CFG.employees ~= false,
+        deposit = CFG.allowDeposit ~= false,
         withdraw = CFG.allowWithdraw ~= false,
         -- The only accounts a transfer may reach, sent so the app can offer them as a list
         -- rather than a text box. It is not the authority - `pay` checks the same list again
@@ -226,7 +280,8 @@ V.Callback('v-phone:bankpro:withdraw', function(src, resolve, data)
         resolve({ error = 'nofunds' })
         return
     end
-    if not Bridge.AddMoney(src, amount, 'bank', 'Bank Pro withdrawal') then
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    if not Bridge.AddMoney(acting, amount, 'bank', 'Bank Pro withdrawal') then
         -- Put it back. A credit that failed after a confirmed debit is money deleted.
         if Bridge.AddSociety then
             Bridge.AddSociety(account, amount, 'v-phone: withdrawal reversed')
@@ -239,9 +294,9 @@ V.Callback('v-phone:bankpro:withdraw', function(src, resolve, data)
     -- Both statements the bank itself keeps: out of the company, into the person. Without
     -- these the ATM shows a balance that changed for no reason anybody can point at.
     if Bridge.Banking and Bridge.Banking.WriteStatement then
-        Bridge.Banking.WriteStatement(src, account, amount,
+        Bridge.Banking.WriteStatement(acting, account, amount,
             ('v-phone: %s'):format(p.name or p.citizenid), 'withdraw', true)
-        Bridge.Banking.WriteStatement(src, 'checking', amount,
+        Bridge.Banking.WriteStatement(acting, 'checking', amount,
             ('v-phone: %s'):format(account), 'deposit', false)
     end
     Core.Log('bankpro', ('%s withdrew %d from %s'):format(p.name or p.citizenid, amount, account),
@@ -250,37 +305,38 @@ V.Callback('v-phone:bankpro:withdraw', function(src, resolve, data)
               balance = Bridge.SocietyBalance and Bridge.SocietyBalance(account) or nil })
 end)
 
---- The player's own money into the company.
+--- The boss's own BANK money into the company. Never cash: a deposit comes out of the boss's
+--- personal bank account and into the society account, both sides written to the statement.
 V.Callback('v-phone:bankpro:deposit', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
     local account, why = accountFor(p)
     if not account then resolve({ error = why }) return end
+    if CFG.allowDeposit == false then resolve({ error = 'notallowed' }) return end
 
     local limits = { min = math.max(1, math.floor(num(CFG.minAmount, 1))),
                      max = math.floor(num(CFG.maxAmount, 0)) }
     local amount, bad = amountFrom(data, limits)
     if not amount then resolve({ error = bad }) return end
 
-    local purse = (data and data.from == 'cash') and 'cash' or 'bank'
-    if not Bridge.RemoveMoney(src, amount, purse) then resolve({ error = 'nomoney' }) return end
+    -- From the bank, always. The `from` the page used to send is ignored on purpose.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    if not Bridge.RemoveMoney(acting, amount, 'bank') then resolve({ error = 'nomoney' }) return end
 
     if not (Bridge.AddSociety and Bridge.AddSociety(account, amount,
             'v-phone: deposit by ' .. (p.name or p.citizenid))) then
-        -- Straight back into the pocket it came from.
-        Bridge.AddMoney(src, amount, purse, 'Bank Pro deposit reversed')
+        -- Straight back into the bank it came from.
+        Bridge.AddMoney(acting, amount, 'bank', 'Bank Pro deposit reversed')
         resolve({ error = 'noaccount' })
         return
     end
 
     record(account, p, 'deposit', amount, p.name or p.citizenid, data and data.note)
     if Bridge.Banking and Bridge.Banking.WriteStatement then
-        Bridge.Banking.WriteStatement(src, account, amount,
+        Bridge.Banking.WriteStatement(acting, account, amount,
             ('v-phone: %s'):format(p.name or p.citizenid), 'deposit', true)
-        if purse == 'bank' then
-            Bridge.Banking.WriteStatement(src, 'checking', amount,
-                ('v-phone: %s'):format(account), 'withdraw', false)
-        end
+        Bridge.Banking.WriteStatement(acting, 'checking', amount,
+            ('v-phone: %s'):format(account), 'withdraw', false)
     end
     resolve({ ok = true, amount = amount,
               balance = Bridge.SocietyBalance and Bridge.SocietyBalance(account) or nil })
@@ -296,6 +352,9 @@ V.Callback('v-phone:bankpro:pay', function(src, resolve, data)
     if not p then resolve(false) return end
     local account, why = accountFor(p)
     if not account then resolve({ error = why }) return end
+    -- Only the COMPANY's money moves here, never the caller's own purse - but the statement
+    -- line is filed against a player id, and it has to be the character whose phone this is.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
 
     local limits = { min = math.max(1, math.floor(num(CFG.minAmount, 1))),
                      max = math.floor(num(CFG.maxAmount, 0)) }
@@ -339,7 +398,7 @@ V.Callback('v-phone:bankpro:pay', function(src, resolve, data)
 
         record(account, p, 'pay', amount, target.name or who, data and data.note)
         if Bridge.Banking and Bridge.Banking.WriteStatement then
-            Bridge.Banking.WriteStatement(src, account, amount,
+            Bridge.Banking.WriteStatement(acting, account, amount,
                 ('v-phone: %s'):format(target.name or who), 'withdraw', true)
             Bridge.Banking.WriteStatement(target.source, 'checking', amount,
                 ('v-phone: %s'):format(account), 'deposit', false)
@@ -377,9 +436,9 @@ V.Callback('v-phone:bankpro:pay', function(src, resolve, data)
 
         record(account, p, 'transfer', amount, who, data and data.note)
         if Bridge.Banking and Bridge.Banking.WriteStatement then
-            Bridge.Banking.WriteStatement(src, account, amount,
+            Bridge.Banking.WriteStatement(acting, account, amount,
                 ('v-phone: %s'):format(who), 'withdraw', true)
-            Bridge.Banking.WriteStatement(src, who, amount,
+            Bridge.Banking.WriteStatement(acting, who, amount,
                 ('v-phone: %s'):format(account), 'deposit', true)
         end
         resolve({ ok = true, amount = amount,

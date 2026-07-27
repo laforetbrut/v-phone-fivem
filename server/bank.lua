@@ -92,8 +92,14 @@ end
 --- same shape. Two sources rather than one because neither is complete: the phone knows
 --- about phone transfers and nothing else, the banking script knows about everything else.
 local function frameworkHistory(src, citizenid)
+    -- Ask for as many as the app will show, so a 50-line history is not quietly trimmed to
+    -- the 25 the reader used to hardcode.
+    -- `citizenid` is already the held character's during a staff session; the source is routed
+    -- too so a server's own `hooks.transactions` sees one consistent identity rather than the
+    -- staff member's id paired with somebody else's citizen id.
     local rows = Bridge.Banking and Bridge.Banking.Transactions
-        and Bridge.Banking.Transactions(src, citizenid)
+        and Bridge.Banking.Transactions(PhoneActingSource and PhoneActingSource(src) or src,
+                                        citizenid, historyLimit())
     if type(rows) ~= 'table' then return {} end
 
     local out = {}
@@ -169,6 +175,10 @@ end
 --- credit-then-delete would pay twice on a retry, and inventing money is the worse of the
 --- two failures.
 local function payPending(src, citizenid)
+    -- Whose purse this is. `src` is the connection that asked; during a staff phone-view
+    -- session the money belongs to the character being held, not to the staff member.
+    -- See PhoneActingSource in server/adminview.lua.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
     if not citizenid or citizenid == '' then return 0 end
     local rows = MySQL.query.await([[SELECT id, amount, label, counterparty
         FROM vphone_bank_pending WHERE citizenid = ? LIMIT 25]], { citizenid }) or {}
@@ -181,7 +191,7 @@ local function payPending(src, citizenid)
             local amount = math.floor(num(r.amount, 0))
             local label = tostring(r.label or '')
             local who = tostring(r.counterparty or '')
-            if amount > 0 and Bridge.AddMoney(src, amount, 'bank', 'v-phone: transfer') then
+            if amount > 0 and Bridge.AddMoney(acting, amount, 'bank', 'v-phone: transfer') then
                 record(citizenid, amount, label, 'transfer', who)
                 paid = paid + amount
             else
@@ -246,8 +256,11 @@ V.Callback('v-phone:bank:data', function(src, resolve)
         print(('[v-phone] bank: pending transfers could not be settled: %s'):format(paidErr))
     end
 
+    -- The balance of whoever the phone is acting as. Reading it for `src` is what showed a
+    -- staff member their OWN account while the screen carried somebody else's name.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
     local gotBalance, balances = pcall(function()
-        return Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+        return Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(acting)
     end)
     if not gotBalance then
         print(('[v-phone] bank: the balance could not be read: %s'):format(balances))
@@ -335,7 +348,8 @@ V.Callback('v-phone:card', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'nochar' }) return end
 
-    local balances = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    local balances = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(acting)
     local holder = p.name or ''
     -- The name on a card is the character's, and a framework that will not say who they are
     -- leaves it blank rather than guessing.
@@ -361,6 +375,11 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
     if not transfersOn() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolve({ error = 'x' }) return end
+    -- Whose money is being sent. During a staff phone-view session that is the character being
+    -- held, not the staff member - `p` is already theirs, and this makes the PURSE match the
+    -- name on the statement line. Without it a transfer sent from a held phone debited the
+    -- staff member and credited the recipient, which is the worst kind of near-miss.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
 
     -- Whole currency only, and the client's number is a suggestion.
     local amount = math.floor(num(data and data.amount, 0))
@@ -395,7 +414,7 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
     -- The debit first, and it fails closed: nothing below runs unless the money actually
     -- left. `total`, so the fee is paid by the sender and the recipient gets the round
     -- number they were promised.
-    if not Bridge.RemoveMoney(src, total, 'bank') then
+    if not Bridge.RemoveMoney(acting, total, 'bank') then
         resolve({ error = 'funds' })
         return
     end
@@ -403,7 +422,7 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
     --- Put it back where it came from. Escrowed if even that fails, because the one
     --- outcome that is not acceptable is money that stopped existing.
     local function refund()
-        if not Bridge.AddMoney(src, total, 'bank', 'v-phone: transfer refunded') then
+        if not Bridge.AddMoney(acting, total, 'bank', 'v-phone: transfer refunded') then
             escrow(p.citizenid, total, '', theirName)
         end
     end
@@ -428,7 +447,7 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
         -- written is a cosmetic loss and is deliberately not checked.
         if Bridge.Banking and Bridge.Banking.WriteStatement then
             local label = note ~= '' and note or ('v-phone: %s'):format(theirName)
-            Bridge.Banking.WriteStatement(src, 'checking', total, label, 'withdraw', false)
+            Bridge.Banking.WriteStatement(acting, 'checking', total, label, 'withdraw', false)
             Bridge.Banking.WriteStatement(target.source, 'checking', amount,
                 note ~= '' and note or ('v-phone: %s'):format(myName), 'deposit', false)
         end
