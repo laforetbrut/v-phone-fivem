@@ -79,6 +79,18 @@ local function voiceResource()
     return anyStarted(VOICE)
 end
 
+--- **Which voice script is actually going to carry a call.**
+---
+--- Exposed because `GetResourceState('v-voice')` is the wrong question and was being asked: this
+--- resource has no `v-voice`, it has a STUB that drives pma-voice or SaltyChat on its behalf. A
+--- caller gating on the resource being started therefore gated on something that is never true,
+--- and the whole branch behind it did nothing. Ask this instead.
+---
+--- Returns the resource name, or nil when nothing here can carry audio.
+function PhoneVoiceScript()
+    return voiceResource()
+end
+
 --- The channel a call runs on. Spread over a range so two calls in the same minute do
 --- not share one, which would let each side hear the other conversation.
 --- How many channels calls may spread over. Read in one place, because the server's call-id

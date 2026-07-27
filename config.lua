@@ -201,12 +201,27 @@ Config.Compat = {
         houses     = 'auto',
     },
 
+    -- **Which grade counts as a boss on ox_core.** ox has no boss flag - a group's grade list
+    -- decides - so nothing is guessed unless you say so. nil leaves Bank Pro's `minGrade` as the
+    -- route on such a server. On qb this is ignored (`isboss` answers it) and on ESX the grade
+    -- NAMED `boss` answers it, which is the ESX convention.
+    bossGrade = nil,
+
     -- ── Your own wiring ────────────────────────────────────────
     -- The escape hatch. Any hook you fill is used INSTEAD of the detection above, so a
     -- server with a bespoke banking script wires it in one function rather than forking
     -- the resource.
     --
     --     balances = function(src) return { cash = 100, bank = 5000 } end,
+    --
+    -- **`onDuty`** is worth calling out. qb tracks duty itself; ESX and ox do not, so everybody
+    -- holding a job is treated as on it - the safe direction, because the other one is an app
+    -- that never works at all there. A server that DOES track duty answers here, and the taxi
+    -- queue, 911's responders and Bank Pro all follow the same answer:
+    --
+    --     onDuty = function(src, job) return exports['esx_service']:IsInService(src, job.name) end
+    --
+    -- Return nil for "no opinion" and the framework's own answer stands.
     --
     hooks = {
         balances = nil,       -- (src) -> { cash, bank }
@@ -529,6 +544,7 @@ Config.Calls = {
     speakerRange = 8.0,
 
     -- ── A call on a bad line ───────────────────────────────────
+    -- **This is the switch for "calls break up on a weak signal".** `badSignal.enabled`.
     -- One bar is not "slightly worse than four bars" - it is a call that keeps breaking up. The
     -- phone shows it: the voice cuts in and out, the screen stutters, and the call can drop.
     --
@@ -560,6 +576,9 @@ Config.Calls = {
         -- a moment with no explanation, which reads as a bug.
         flicker = true,
         static = true,
+        -- And a short buzz of the controller, which is the only part that reaches somebody whose
+        -- handset is in their pocket - where most of a call is spent.
+        vibrate = true,
 
         -- A call on a line this bad can drop entirely: a chance per second, checked only while
         -- the signal is at or below `atBars`. 0 never drops - the call just keeps breaking up.
@@ -669,6 +688,9 @@ Config.Apps = {
     -- installs is a delivery app no restaurant gets orders from. See Config.Zuber.
     { id = 'zuber',    label = 'app.zuber',    icon = 'zuber',    owner = 'v-phone',    slot = 26,
       optional = true, category = 'utilities', version = '1.0' },
+    -- Taxi: hail a ride, or drive one. A free download. See Config.Taxi.
+    { id = 'taxi',     label = 'app.taxi',     icon = 'taxi',     owner = 'v-phone',    slot = 27,
+      optional = true, category = 'travel', version = '1.0' },
 }
 
 -- Rich FruitStore catalogue. These are presentation/search hints, not duplicated game
@@ -1711,6 +1733,22 @@ Config.Zuber = {
     -- A sound and a notification on the customer's phone at each step.
     sound = true,
 
+    -- ── Dish pictures ──────────────────────────────────────────
+    -- doc-restaurant hands back a FILE NAME for each dish - `burger.png`, or whatever the item's
+    -- own `image` field says - because its own page knew which inventory the server runs. This
+    -- phone does not, so the folder is named here and the file name is appended.
+    --
+    -- Point it at your inventory's image folder. The usual ones:
+    --
+    --     'nui://qb-inventory/html/images'      qb-inventory
+    --     'nui://ox_inventory/web/images'       ox_inventory
+    --     'nui://qs-inventory/html/images'      Quasar
+    --     'nui://lj-inventory/html/images'      lj-inventory
+    --
+    -- Empty means no pictures at all, and the app falls back to its own glyph - which is what it
+    -- did before, and is better than a grid of broken images.
+    imageBase = 'nui://qb-inventory/html/images',
+
     -- ── The customer's side ────────────────────────────────────
     -- A tip, added to the order. Bounded here as well as by the app: a page asking to tip a
     -- million is a page asking to empty an account by accident.
@@ -1733,6 +1771,7 @@ Config.Zuber = {
         history = true,       -- the Orders tab
         reorder = true,       -- and the one tap that repeats a past order
         tracker = true,       -- the live status bar at the top
+        loyalty = true,       -- the loyalty card and its redeemable tiers (doc-restaurant)
         reviews = true,       -- reading reviews (doc-restaurant only)
         ratings = true,       -- and leaving one (doc-restaurant only)
         route = true,         -- "take me there"
@@ -1816,6 +1855,87 @@ Config.Zuber = {
                 { item = 'cheesecake',      label = 'Cheesecake',         price = 9,  category = 'desserts' },
             },
         },
+    },
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  TAXI  (hail a ride, or drive one)
+-- ══════════════════════════════════════════════════════════════
+-- A free download that works two ways, and the player is never told which:
+--
+--   * **doc-taxijob**, when it is running. Its drivers, its calls, its fares, its ratings and
+--     its tips, reached through the same server callbacks its own phone app used. **Nothing in
+--     doc-taxijob is edited, wrapped or replaced.** Update it and this keeps working.
+--   * **the settings below** otherwise - so the app is worth having on an ESX, ox or standalone
+--     server, with its own ride queue, its own fare arithmetic and its own money.
+Config.Taxi = {
+    enabled = true,
+
+    -- 'auto' uses doc-taxijob when it is started and the settings below when it is not.
+    -- 'doc-taxijob' or 'config' pin it.
+    provider = 'auto',
+
+    -- **The driver job.** In doc-taxijob mode this must MATCH its own `Config.JobName`: its
+    -- config lives in its own client and cannot be read from here, so this is how the phone
+    -- knows whether the person holding it is a driver. Get it wrong and a driver simply never
+    -- sees the queue, which reads as a broken app rather than as a wrong job name.
+    job = 'taxi',
+
+    -- ── Config-provider settings ───────────────────────────────
+    -- Ignored in doc-taxijob mode: fares, ratings and tips are its own there.
+    --
+    -- Only drivers who are clocked on are called out, and only from this grade up.
+    onDutyOnly = true,
+    minGrade = 0,
+
+    -- Which purse pays: 'cash' or 'bank'. A taxi is cash on most servers, which is why it is
+    -- the default here and not in the apps that move real money.
+    account = 'cash',
+
+    -- The fare: a flat charge plus a rate per kilometre ACTUALLY covered - the distance is
+    -- measured between where the ride started and where the driver ended it, not estimated.
+    basePrice = 50,
+    pricePerKm = 15,
+    maxFare = 0,              -- 0 for no ceiling
+
+    -- Where the money goes when the driver logged off mid-fare. Better the company than nobody.
+    paySociety = true,
+    society = nil,            -- defaults to the job name above
+
+    -- How many people one booking may be for, and how long a booking waits for a driver before
+    -- it gives up. Seconds.
+    maxPassengers = 4,
+    expireSeconds = 300,
+
+    -- Seconds between two bookings from the same character, so a button cannot be held down.
+    cooldown = 60,
+
+    -- May somebody on the taxi job book a taxi? Off stops a driver appearing in their own queue.
+    driversMayCall = false,
+
+    -- Rating a finished ride, once, by the passenger who took it. The driver is told.
+    rating = true,
+
+    -- The tip, added when the passenger settles up. Bounded here as well as in the app.
+    tip = {
+        enabled = true,
+        presets = { 0, 10, 20 },   -- as a percentage of the fare
+        max = 500,
+    },
+
+    -- How many finished rides stay in memory before the oldest are dropped.
+    history = 40,
+
+    -- ── What the app offers ────────────────────────────────────
+    -- Each of these removes a piece of the app rather than leaving a button that apologises.
+    features = {
+        driver = true,        -- the Driver tab, for somebody holding the job
+        rating = true,        -- rating a finished ride
+        tip = true,           -- the tip when settling up
+        estimate = true,      -- the fare estimate before booking
+        destination = true,   -- the "where to" field on a booking
+        note = true,          -- the free-text note for the driver
+        route = true,         -- "take me there", for a driver picking a fare
     },
 }
 

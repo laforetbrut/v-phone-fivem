@@ -108,7 +108,19 @@ AddStateBagChangeHandler('lang', ('player:%s'):format(GetPlayerServerId(PlayerId
         SendNUIMessage({ action = 'strings', strings = strings(), locale = value })
     end)
 
-local function voice() return GetResourceState('v-voice') == 'started' end
+--- Can a call carry audio at all?
+---
+--- **Not `GetResourceState('v-voice')`.** There is no `v-voice` resource - bridge/shared/compat.lua
+--- serves that name from a stub that drives pma-voice or SaltyChat - so that check was false on
+--- every server, and everything behind it was dead code. It is why the bad-signal cut-out had no
+--- audible effect: `leaveCallAudio` was a no-op.
+---
+--- A real `v-voice`, if somebody ships one, still wins; otherwise the stub answers for whichever
+--- voice script is running.
+local function voice()
+    if GetResourceState('v-voice') == 'started' then return true end
+    return PhoneVoiceScript and PhoneVoiceScript() ~= nil
+end
 
 --- The client half of the same switch the server answers in the phone's payload. Config first,
 --- then the convar, and off unless one of them says otherwise.
@@ -999,6 +1011,22 @@ RegisterCommand('phonevoice', function()
         print('  the call stays between the two handsets.')
     end
     print(('  you are on a call now   %s'):format(tostring(call ~= nil and call.state or 'no')))
+
+    -- The bad-line effect, because "calls do not break up at one bar" has four possible causes
+    -- and no way for the person reporting it to tell them apart.
+    local bad = (Config.Calls or {}).badSignal or {}
+    local bars = math.max(0, math.min(4, math.floor(tonumber(power.signal) or 4)))
+    print('[v-phone] bad line ───────────────────────────────────')
+    print(('  effect enabled          %s'):format(tostring(bad.enabled ~= false)))
+    print(('  breaks up at or below   %s bar(s)'):format(tostring(math.floor(tonumber(bad.atBars) or 1))))
+    print(('  your signal right now   %d bar(s)%s'):format(bars,
+        bars == 0 and ' - no service at all, which ends a call rather than glitching it' or ''))
+    print(('  chance per second       %s'):format(tostring(tonumber(bad.chancePerSecond) or 0.18)))
+    print(('  audio can be cut        %s (voice script: %s)'):format(
+        tostring(voice()), tostring((PhoneVoiceScript and PhoneVoiceScript()) or 'none')))
+    if not voice() then
+        print('  -> no voice script is running, so the line can only glitch visually.')
+    end
 end, false)
 
 -- And a server nudge, so an admin can un-stick a player's phone remotely. Quiet: a reset the
@@ -2274,6 +2302,11 @@ local function cutOut(ms)
     if cfg.muteVoice ~= false then leaveCallAudio() end
     SendNUIMessage({ action = 'callGlitch', on = true,
                      flicker = cfg.flicker ~= false, static = cfg.static ~= false })
+
+    -- **Something happens even with the phone in a pocket.** Most of a call is spent with the
+    -- handset away, and a glitch drawn on a screen nobody is looking at is a glitch that did not
+    -- happen. A short buzz is the part that reaches somebody mid-conversation.
+    if cfg.vibrate ~= false then SetPadShake(0, 120, 40) end
 
     SetTimeout(math.max(60, math.floor(ms)), function()
         badLine = false

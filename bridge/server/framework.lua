@@ -245,7 +245,12 @@ function Bridge.GetPlayer(src)
         return wrap(src, tostring(player.charId),
             ((player.firstName or '') .. ' ' .. (player.lastName or '')):gsub('^%s+', ''),
             { name = jobName, label = jobName, grade = jobGrade, gradeLabel = tostring(jobGrade),
-              onDuty = true, boss = false })
+              -- ox_core has no boss flag either; a group's own grade list decides, and the
+              -- operator names the grade that counts as one. Nil means "do not guess", and
+              -- Bank Pro's `minGrade` is the route on such a server.
+              boss = (Config.Compat.bossGrade ~= nil)
+                     and (jobGrade >= tonumber(Config.Compat.bossGrade)) or false,
+              onDuty = true })
 
     elseif Bridge.framework == 'esx' then
         local player = esxPlayer(src)
@@ -257,11 +262,45 @@ function Bridge.GetPlayer(src)
               -- ESX puts the grade's wage on the job object it hands over, so the card needs
               -- no second lookup to be right.
               pay = tonumber(job.grade_salary),
-              onDuty = true, boss = false })
+              -- **A boss on ESX is the grade NAMED `boss`.** ESX has no `isboss` flag - that is
+              -- qb's - and esx_society decides who may open a society account by the grade name.
+              -- This used to answer `false` unconditionally, which meant `requireBoss` locked
+              -- every ESX player out of Bank Pro and looked like the app refusing to work.
+              boss = tostring(job.grade_name or ''):lower() == 'boss',
+              -- ESX has no duty concept of its own, so everybody holding the job is on it. A
+              -- server running esx_service points `Config.Compat.hooks.onDuty` at the real
+              -- answer; see the hook below.
+              onDuty = true })
     end
 
     -- Standalone: the phone still works, it simply has no job and no character name.
     return wrap(src, licenceOf(src), GetPlayerName(src), nil)
+end
+
+--- **Is this character clocked on?**
+---
+--- qb answers it itself. ESX and ox have no duty concept, so the bridge reports everybody holding
+--- the job as on duty - which is the safe direction: the cost of getting it wrong that way is a
+--- taxi driver who is called out when they did not want to be, and the cost of the other way is
+--- an app that never works at all on those frameworks.
+---
+--- A server that DOES track duty - esx_service, a boolean on the player, a table of its own -
+--- points `Config.Compat.hooks.onDuty` at the real answer and every app that asks about duty
+--- follows: the taxi queue, 911's responders, Bank Pro.
+---
+---     onDuty = function(src, job) return exports['esx_service']:IsInService(src, job) end
+---
+--- Returning nil from the hook means "no opinion", and the framework's own answer stands.
+function Bridge.OnDuty(src, p)
+    local job = p and p.job
+    if type(job) ~= 'table' then return false end
+
+    local hook = Config.Compat.hooks and Config.Compat.hooks.onDuty
+    if hook then
+        local ok, answer = pcall(hook, src, job)
+        if ok and answer ~= nil then return answer == true end
+    end
+    return job.onDuty ~= false
 end
 
 --- The same player, addressed by citizen id. Used when the phone has to reach somebody

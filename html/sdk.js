@@ -51,6 +51,8 @@
     messages: 'M12 3c-5 0-9 3.4-9 7.6 0 2.4 1.3 4.5 3.3 5.9l-.9 3.9 4.2-2.2c.8.2 1.6.3 2.4.3 5 0 9-3.4 9-7.9S17 3 12 3Z',
     contacts: 'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 21a8 8 0 0 1 16 0',
     bank: 'M3 10h18L12 4 3 10ZM5 10v8M10 10v8M14 10v8M19 10v8M3 20h18',
+    // A taxi roof sign over a windscreen. The stroke twin of the `taxi` tile.
+    taxi: 'M5 17V11l2-4h10l2 4v6M5 17h14M7 17v2M17 17v2M8 11h8M9.5 7V5h5v2',
     // A takeaway bag with a handle. The stroke twin of the `zuber` tile, for the menu rows.
     zuber: 'M6 8h12l-1 12H7L6 8Zm3 0V6a3 3 0 0 1 6 0v2M4 8h16',
     // A battery with a bolt through it. The stroke twin of the `charging` tile, for the rows
@@ -384,6 +386,11 @@
     // Bank Pro. Purple, so the company account never gets confused for the green personal one
     // at a glance - the same building glyph, a different tint is the whole point.
     bankpro: { bg: 'linear-gradient(180deg,#A98BFF,#5E2FD6)', d: G.bank },
+    // Taxi. The yellow every taxi on earth is, with a roof sign - recognisable at tile size
+    // without reading the name, which is the whole job of an icon.
+    taxi: { bg: 'linear-gradient(180deg,#FFD84D,#F0A400)', fill: '#1A1A1A',
+      d: 'M6.2 17.4v-5.6l1.9-3.8h7.8l1.9 3.8v5.6H6.2Zm1.6-5.2h8.4l-1.2-2.4H9L7.8 12.2Zm.4 5.9h1.9v1.6H8.2'
+       + 'v-1.6Zm5.7 0h1.9v1.6h-1.9v-1.6ZM9.4 4.6h5.2v2.2H9.4V4.6Z' },
     // Zuber. Black on black with a white bag, which is what a delivery app looks like: the
     // brand it is dressed as owns almost nothing else.
     zuber: { bg: 'linear-gradient(180deg,#2B2B2E,#0A0A0B)',

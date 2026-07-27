@@ -7960,6 +7960,391 @@ function chargeOfferSheet(o) {
 // to one, and is where a paid charge is accepted - with an auto-accept for a regular who does
 // not want to be asked. Everything money and position is the server's; this draws and asks.
 // See server/charging.lua.
+// ── Taxi: hail a ride, or drive one ────────────────────────────
+// A ride-hailing app's shape on this phone's components: a card that says whether anybody is out
+// driving, a booking sheet, and a live strip once a ride is on. A driver gets a second tab with
+// the queue, sorted by how far away each fare is.
+//
+// Both providers answer and the page is written for both. doc-taxijob keeps its own field names -
+// `callId`, `taxisAvailable`, `etoiles` - and the config provider's are flatter; `taxiPost` and
+// `taxiRideOf` are the only two places that know the difference.
+let taxiTab = 'ride';          // 'ride' | 'drive'
+let taxiData = null;
+let taxiPassengers = 1;
+let taxiDest = '';
+let taxiNote = '';
+let taxiTip = 0;
+
+/// Which provider is live, and therefore which relay to talk to.
+const taxiDoc = () => !!(taxiData && taxiData.doc);
+
+/// The one ride this player is on, in either provider's shape.
+function taxiRideOf(d) {
+  if (!d) return null;
+  if (d.ride) return d.ride;                       // config provider
+  // doc-taxijob does not hand back a ride object - its own app tracked a callId it had been
+  // given. `taxiCall` remembers it, so a booking made in this session is still followed.
+  if (d.doc && taxiLastCall) return { id: taxiLastCall, state: 'pending' };
+  return null;
+}
+let taxiLastCall = null;
+
+/// The steps of a ride, so the strip can draw progress rather than one word.
+function taxiStep(state) {
+  const order = ['pending', 'accepted', 'riding', 'done'];
+  const at = order.indexOf(String(state || 'pending'));
+  return at < 0 ? 0 : at;
+}
+
+RENDER.taxi = async () => {
+  loading();
+  // The config provider answers `taxiOpen` and says whether doc-taxijob owns this server; if it
+  // does, its own state is asked for instead.
+  let d = await post('taxiOpen', {});
+  if (d && d.doc) {
+    const doc = await post('taxiDoc', { op: 'state' });
+    if (doc && !doc.error) d = Object.assign({}, d, doc, { doc: true });
+  }
+  if (!d || d.error) {
+    body(UI.empty(L('ph.taxi_e_' + ((d && d.error) || 'off')), 'taxi'));
+    return;
+  }
+  taxiData = d;
+
+  const on = (name) => ((d.features || {})[name] !== false);
+  const driver = d.isDriver === true && on('driver');
+
+  if (driver) {
+    tabbar([
+      { id: 'ride', icon: 'taxi', label: 'ph.taxi_tab_ride' },
+      { id: 'drive', icon: 'garage', label: 'ph.taxi_tab_drive',
+        badge: (d.queue || []).length },
+    ], taxiTab, (tab) => { taxiTab = tab; RENDER.taxi(); });
+  } else {
+    taxiTab = 'ride';
+    foot('');
+  }
+
+  if (taxiTab === 'drive') { taxiDriver(d); return; }
+
+  setNav(L('app.taxi'), null, null);
+
+  const ride = taxiRideOf(d);
+  const drivers = Number(d.drivers !== undefined ? d.drivers : d.taxisAvailable) || 0;
+
+  // ── the live strip ──
+  // Only while a ride is on. It is the reason somebody opens this app twice.
+  const strip = ride ? (() => {
+    const step = taxiStep(ride.state);
+    return '<div class="txtrack">' +
+      '<div class="txtrackrow"><b>' + esc(L('ph.taxi_st_' + String(ride.state || 'pending'))) +
+        '</b><span>' + esc(ride.driver || '') + '</span></div>' +
+      '<div class="txbar"><i style="width:' + Math.round(((step + 1) / 4) * 100) + '%"></i></div>' +
+      '<div class="txsteps">' +
+        ['pending', 'accepted', 'riding', 'done'].map((s, i) =>
+          '<span class="' + (step >= i ? 'on' : '') + '">' +
+          esc(L('ph.taxi_step_' + s)) + '</span>').join('') +
+      '</div>' +
+      (Number(ride.fare) > 0
+        ? '<div class="txfare">' + esc(L('ph.taxi_due').replace('{n}', money(ride.fare))) + '</div>'
+        : '') +
+    '</div>';
+  })() : '';
+
+  body(
+    strip +
+    UI.hero({
+      appicon: 'taxi',
+      eyebrow: L('app.taxi'),
+      // The one fact that decides whether booking is worth trying.
+      value: drivers > 0 ? L('ph.taxi_drivers').replace('{n}', String(drivers))
+                         : L('ph.taxi_nodrivers'),
+      subtitle: (on('estimate') && d.basePrice !== undefined)
+        ? L('ph.taxi_rates').replace('{base}', money(d.basePrice))
+                            .replace('{km}', money(d.pricePerKm))
+        : '',
+    }) +
+    // What can be done depends entirely on where the ride is.
+    (!ride
+      ? (d.cooldown
+          ? '<div class="groupfoot">' +
+              esc(L('ph.taxi_cooldown').replace('{s}', String(d.cooldown))) + '</div>'
+          : UI.button(L('ph.taxi_book'), 'txbook', 'tinted'))
+      : (ride.state === 'done'
+          ? UI.button(L('ph.taxi_settle'), 'txpay', 'tinted')
+          : UI.button(L('ph.taxi_cancel'), 'txcancel', 'destructive'))) +
+    (ride && ride.state === 'done' && on('rating') && d.rating !== false
+      ? UI.button(L('ph.taxi_rate'), 'txrate', 'plain') : '') +
+    '<div class="groupfoot">' + esc(L('ph.taxi_hint')) + '</div>'
+  );
+
+  if (byId('txbook')) byId('txbook').addEventListener('click', () => taxiBook(d));
+  if (byId('txcancel')) byId('txcancel').addEventListener('click', async () => {
+    const r = taxiDoc()
+      ? await post('taxiDoc', { op: 'cancel', callId: ride.id })
+      : await post('taxiAct', { op: 'cancel', id: ride.id });
+    if (!r || r.error) { toast(L('ph.taxi_e_' + ((r && r.error) || 'x'))); return; }
+    taxiLastCall = null;
+    toast(L('ph.taxi_cancelled'));
+    RENDER.taxi();
+  });
+  if (byId('txpay')) byId('txpay').addEventListener('click', () => taxiSettle(d, ride));
+  if (byId('txrate')) byId('txrate').addEventListener('click', () => taxiRate(d, ride));
+};
+
+/// Booking: how many people, where to, and anything the driver should know.
+function taxiBook(d) {
+  const on = (name) => ((d.features || {})[name] !== false);
+  const max = Math.max(1, Number(d.maxPassengers) || 4);
+  taxiPassengers = Math.min(taxiPassengers, max);
+
+  const seats = () => '<div class="seg" id="txseats">' +
+    Array.from({ length: max }, (_, i) => i + 1).map((n) =>
+      '<button class="' + (n === taxiPassengers ? 'on' : '') + '" data-p="' + n + '">' +
+      n + '</button>').join('') + '</div>';
+
+  sheet(L('ph.taxi_book'),
+    '<div class="grouphead">' + esc(L('ph.taxi_passengers')) + '</div>' + seats() +
+    (on('destination')
+      ? UI.field('txdest', L('ph.taxi_dest'), taxiDest, 'maxlength="60"') : '') +
+    (on('note') ? UI.field('txnote', L('ph.taxi_note'), taxiNote, 'maxlength="120"') : '') +
+    (on('estimate') && d.basePrice !== undefined
+      ? '<div class="groupfoot">' +
+          esc(L('ph.taxi_estimate').replace('{n}', money(d.basePrice))) + '</div>'
+      : '') +
+    UI.button(L('ph.taxi_confirm'), 'txgo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      [...byId('txseats').querySelectorAll('button')].forEach((b) =>
+        b.addEventListener('click', () => {
+          taxiPassengers = Number(b.dataset.p) || 1;
+          [...byId('txseats').children].forEach((x) => x.classList.remove('on'));
+          b.classList.add('on');
+        }));
+
+      byId('txgo').addEventListener('click', async () => {
+        const go = byId('txgo');
+        if (go.disabled) return;          // double-tapping must not book twice
+        go.disabled = true;
+        taxiDest = byId('txdest') ? byId('txdest').value.trim() : '';
+        taxiNote = byId('txnote') ? byId('txnote').value.trim() : '';
+
+        const r = taxiDoc()
+          // doc-taxijob reads `name`, `passengers` and `destination`. The name is its own
+          // player's, which its callback already knows - passed for the ticket it prints.
+          ? await post('taxiDoc', { op: 'call', call: {
+              name: d.playerName || '', passengers: taxiPassengers, destination: taxiDest,
+            } })
+          : await post('taxiCall', {
+              passengers: taxiPassengers, destination: taxiDest, note: taxiNote,
+            });
+
+        if (!r || (!r.ok && !r.success)) {
+          go.disabled = false;
+          // doc-taxijob answers a human `reason`; the config provider answers a code.
+          toast((r && r.reason) ? r.reason : L('ph.taxi_e_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        ui('sent');
+        taxiLastCall = r.callId || r.id || null;
+        const n = Number(r.drivers !== undefined ? r.drivers : r.taxisAvailable) || 0;
+        toast(n > 0 ? L('ph.taxi_sent').replace('{n}', String(n)) : L('ph.taxi_sent_nobody'));
+        RENDER.taxi();
+      });
+    });
+}
+
+/// Settling up: the fare, and a tip if the server allows one.
+function taxiSettle(d, ride) {
+  const on = (name) => ((d.features || {})[name] !== false);
+  const fare = Math.max(0, Number(ride.fare) || 0);
+  const tipCfg = d.tip || {};
+  const tipOn = on('tip') && tipCfg.on !== false;
+  const tipAmount = Math.min(Math.floor(fare * taxiTip / 100), Number(tipCfg.max) || 500);
+
+  sheet(L('ph.taxi_settle'),
+    UI.group([
+      UI.row({ icon: 'taxi', title: L('ph.taxi_fare'), value: money(fare), mono: true }),
+      ride.km ? UI.row({ icon: 'map', title: L('ph.taxi_distance'),
+                         value: (Number(ride.km) / 1000).toFixed(1) + ' km' }) : '',
+      tipAmount ? UI.row({ icon: 'heart', title: L('ph.taxi_tip'),
+                           value: money(tipAmount), mono: true }) : '',
+      UI.row({ icon: 'wallet', title: L('ph.taxi_total'),
+               value: money(fare + tipAmount), mono: true }),
+    ].filter(Boolean)) +
+    (tipOn
+      ? '<div class="grouphead">' + esc(L('ph.taxi_tip')) + '</div>' +
+        '<div class="seg" id="txtip">' + (tipCfg.presets || [0, 10, 20]).map((pct) =>
+          '<button class="' + (Number(pct) === taxiTip ? 'on' : '') + '" data-t="' + pct + '">' +
+          (Number(pct) === 0 ? esc(L('ph.taxi_tip_none')) : pct + '%') + '</button>').join('') +
+        '</div>'
+      : '') +
+    UI.button(L('ph.taxi_pay').replace('{n}', money(fare + tipAmount)), 'txpaygo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      const tip = byId('txtip');
+      if (tip) [...tip.querySelectorAll('button')].forEach((b) =>
+        b.addEventListener('click', () => {
+          taxiTip = Number(b.dataset.t) || 0;
+          if (!closeSheet(false, epoch)) return;
+          taxiSettle(d, ride);
+        }));
+
+      byId('txpaygo').addEventListener('click', async () => {
+        const go = byId('txpaygo');
+        if (go.disabled) return;
+        go.disabled = true;
+        // In doc-taxijob mode the fare is its own business - it charges at the end of the ride -
+        // so this only offers the TIP, through its own callback.
+        const r = taxiDoc()
+          ? await post('taxiDoc', { op: 'tip', tip: { amount: tipAmount, method: 'cash' } })
+          : await post('taxiPay', { id: ride.id, tip: tipAmount });
+        if (!r || (!r.ok && !r.success)) {
+          go.disabled = false;
+          toast(L('ph.taxi_e_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        ui('money');
+        toast(L('ph.taxi_paid'));
+        taxiLastCall = null;
+        taxiTip = 0;
+        RENDER.taxi();
+      });
+    });
+}
+
+/// Rating the driver.
+function taxiRate(d, ride) {
+  let stars = 5;
+  const draw = () => [1, 2, 3, 4, 5].map((n) =>
+    '<button class="zustar' + (n <= stars ? ' on' : '') + '" data-s="' + n + '" type="button">' +
+    svg('star') + '</button>').join('');
+
+  sheet(L('ph.taxi_rate'),
+    '<div class="zustars" id="txstars">' + draw() + '</div>' +
+    UI.field('txcomment', L('ph.taxi_comment'), '', 'maxlength="200"') +
+    UI.button(L('ph.taxi_rate_send'), 'txratego', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      const wire = () => [...byId('txstars').querySelectorAll('[data-s]')].forEach((b) =>
+        b.addEventListener('click', () => {
+          stars = Number(b.dataset.s) || 5;
+          byId('txstars').innerHTML = draw();
+          wire();
+        }));
+      wire();
+      byId('txratego').addEventListener('click', async () => {
+        const comment = byId('txcomment') ? byId('txcomment').value.trim() : '';
+        // **`etoiles` and `commentaire`** for doc-taxijob: those are the names its callback
+        // reads, and the English ones would rate every driver at nought.
+        const r = taxiDoc()
+          ? await post('taxiDoc', { op: 'rate', rating: { etoiles: stars, commentaire: comment } })
+          : await post('taxiRate', { id: ride.id, stars, comment });
+        if (!r || (!r.ok && !r.success)) {
+          toast(L('ph.taxi_e_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        toast(L('ph.taxi_rated'));
+        RENDER.taxi();
+      });
+    });
+}
+
+/// The driver's side: the queue, nearest first, and what to do with a fare.
+async function taxiDriver(d) {
+  setNav(L('ph.taxi_tab_drive'), null, {
+    icon: 'refresh', label: L('ph.refresh'), onClick: () => RENDER.taxi(),
+  });
+
+  // In doc-taxijob mode the queue comes from it, with the distance worked out on the client.
+  let calls = d.queue || [];
+  if (taxiDoc()) {
+    const q = await post('taxiDoc', { op: 'pending' });
+    calls = (q && q.calls) || [];
+  }
+  // Nearest first: a driver takes the fare they can reach, not the one that waited longest.
+  calls = calls.slice().sort((a, b) => {
+    const da = Number(a.dist), db = Number(b.dist);
+    if (Number.isFinite(da) && da >= 0 && Number.isFinite(db) && db >= 0) return da - db;
+    return 0;
+  });
+
+  const row = (c) => UI.row({
+    icon: 'taxi', tint: '#ffb300',
+    title: c.name || L('ph.taxi_anon'),
+    subtitle: [
+      c.dist >= 0 ? ((Number(c.dist) / 1000).toFixed(1) + ' km') : null,
+      c.passengers ? L('ph.taxi_seats').replace('{n}', String(c.passengers)) : null,
+      c.destination || null,
+    ].filter(Boolean).join('  ·  '),
+    chevron: true,
+    data: { txc: String(c.callId || c.id) },
+  });
+
+  body(
+    UI.hero({ appicon: 'taxi', eyebrow: L('ph.taxi_tab_drive'),
+              value: calls.length ? String(calls.length) : L('ph.taxi_queue_empty'),
+              subtitle: calls.length ? L('ph.taxi_queue') : L('ph.taxi_queue_empty_hint') }) +
+    (calls.length
+      ? UI.group(calls.map(row), { footer: L('ph.taxi_queue_hint') })
+      : UI.empty(L('ph.taxi_queue_empty'), 'taxi'))
+  );
+
+  rows('[data-txc]', (el) => el.addEventListener('click', () => {
+    const c = calls.find((x) => String(x.callId || x.id) === el.dataset.txc);
+    if (!c) return;
+    const id = c.callId || c.id;
+    const mine = d.ride && String(d.ride.id) === String(id) ? d.ride : null;
+
+    sheet(c.name || L('ph.taxi_anon'),
+      UI.group([
+        c.destination ? UI.row({ icon: 'map', title: L('ph.taxi_dest'), subtitle: c.destination }) : '',
+        c.passengers ? UI.row({ icon: 'contacts', title: L('ph.taxi_passengers'),
+                                value: String(c.passengers) }) : '',
+        c.dist >= 0 ? UI.row({ icon: 'location', title: L('ph.taxi_distance'),
+                               value: (Number(c.dist) / 1000).toFixed(1) + ' km' }) : '',
+        c.note ? UI.row({ icon: 'note', title: L('ph.taxi_note'), subtitle: c.note }) : '',
+      ].filter(Boolean)) +
+      // Accept, then the two steps of the ride. Only the config provider has those: doc-taxijob
+      // runs the ride itself once its driver accepts, and a second thing driving it would be two
+      // systems disagreeing about who is in the car.
+      UI.button(L('ph.taxi_accept'), 'txaccept', 'tinted') +
+      ((c.x || (c.coords && c.coords.x)) ? UI.button(L('ph.taxi_route'), 'txroute', 'plain') : '') +
+      (!taxiDoc() && mine && mine.state === 'accepted'
+        ? UI.button(L('ph.taxi_arrived'), 'txarrived', 'plain') : '') +
+      (!taxiDoc() && mine && mine.state === 'riding'
+        ? UI.button(L('ph.taxi_finish'), 'txfinish', 'plain') : ''),
+      () => {
+        const epoch = sheetEpoch;
+        const act = async (op, label) => {
+          const r = taxiDoc()
+            ? await post('taxiDoc', { op: 'accept', callId: id })
+            : await post('taxiAct', { op, id });
+          if (!r || r.error) { toast(L('ph.taxi_e_' + ((r && r.error) || 'x'))); return; }
+          if (!closeSheet(false, epoch)) return;
+          ui('success');
+          toast(L(label));
+          RENDER.taxi();
+        };
+        byId('txaccept').addEventListener('click', () => act('accept', 'ph.taxi_accepted'));
+        if (byId('txarrived')) byId('txarrived').addEventListener('click',
+          () => act('arrived', 'ph.taxi_arrived_ok'));
+        if (byId('txfinish')) byId('txfinish').addEventListener('click',
+          () => act('finish', 'ph.taxi_finished'));
+        if (byId('txroute')) byId('txroute').addEventListener('click', async () => {
+          const x = c.x !== undefined ? c.x : (c.coords && c.coords.x);
+          const y = c.y !== undefined ? c.y : (c.coords && c.coords.y);
+          const r = await post('taxiRoute', { x, y });
+          if (r && r.ok) { ui('waypoint'); toast(L('ph.taxi_routed')); }
+        });
+      });
+  }));
+}
+
 // ── Zuber: food, ordered from the phone ────────────────────────
 // Uber Eats' shape, on this phone's components: a dark header with the address, cards with a
 // tint and a rating, a menu by category, a basket, and a tracker at the top once an order is
@@ -7975,12 +8360,28 @@ let zuberTab = 'browse';       // 'browse' | 'orders'
 let zuberOpenId = null;        // the restaurant whose menu is showing
 let zuberCart = {};            // { [item]: { label, price, qty } }
 let zuberKind = 'delivery';
-let zuberTip = 0;              // a percentage, chosen from the presets
+let zuberTip = 0;
+let zuberTier = 0;          // the loyalty tier being redeemed, 0 for none              // a percentage, chosen from the presets
 let zuberNote = '';
 let zuberQuery = '';
 let zuberData = null;          // the last payload, so a repaint needs no round trip
 
 const ZUBER_CATS = ['formulas', 'drinks', 'softs', 'alcohols', 'starters', 'mains', 'desserts'];
+
+/// Where a dish's picture lives.
+///
+/// doc-restaurant hands back a FILE NAME - `burger.png`, or whatever the item's own `image` says -
+/// because its own page knew which inventory the server runs. This phone does not, so the folder
+/// is `Config.Zuber.imageBase` and the name is appended. An absolute URL is passed through
+/// untouched, for a server that stores full links.
+function zuberImage(name) {
+  const file = String(name || '');
+  if (!file) return '';
+  if (/^https?:\/\//i.test(file) || file.indexOf('nui://') === 0) return file;
+  const base = (zuberData && zuberData.imageBase) || '';
+  if (!base) return '';
+  return base.replace(/\/+$/, '') + '/' + file.replace(/^\/+/, '');
+}
 
 /// Both payloads, reduced to one shape the rest of this app reads.
 ///
@@ -8001,19 +8402,37 @@ function zuberCards(d) {
     // touching the catalogue.
     const menu = [];
     const products = r.products || {};
+    // **`promotions` is an ARRAY**, not a map: doc-restaurant builds it with `table.insert` as
+    // `{ item, discount, title }` rows. Reading it as `promotions[item]` found nothing, so every
+    // promotion was invisible and every discounted price was the full one.
+    const promoFor = (item) => {
+      const list = r.promotions;
+      if (!list) return null;
+      if (Array.isArray(list)) return list.find((x) => x && x.item === item) || null;
+      return list[item] || null;   // a fork that keyed it, or the config provider
+    };
     Object.keys(products).forEach((category) => {
       (products[category] || []).forEach((prod) => {
+        // `prices` IS keyed by item, and holds a plain number. A restaurant that has not set a
+        // price for a dish has no entry at all - and that dish is not for sale, which is a
+        // different thing from being free. `$0` on a menu is a bug somebody will exploit.
         const priced = (r.prices || {})[prod.item];
-        const promo = (r.promotions || {})[prod.item];
-        const base = Number(priced && priced.price !== undefined ? priced.price : priced) || 0;
+        const base = Number(priced && priced.price !== undefined ? priced.price : priced);
+        const hasPrice = Number.isFinite(base) && base > 0;
+        const promo = hasPrice ? promoFor(prod.item) : null;
         menu.push({
           item: prod.item,
           label: prod.label || prod.item,
-          price: promo ? Math.round(base * (1 - (Number(promo.discount) || 0) / 100)) : base,
+          // doc-restaurant resolves the item's own image for us - `itemData.image`, or
+          // `<item>.png` - so the app shows the real dish rather than a generic bag.
+          image: prod.image || null,
+          price: promo ? Math.round(base * (1 - (Number(promo.discount) || 0) / 100)) : (hasPrice ? base : 0),
           was: promo ? base : null,
           promo: promo ? Number(promo.discount) || 0 : 0,
           category,
-          enabled: prod.enabled !== false,
+          // Unpriced is unavailable. So is a dish the restaurant switched off.
+          enabled: prod.enabled !== false && hasPrice,
+          unpriced: !hasPrice,
         });
       });
     });
@@ -8029,6 +8448,12 @@ function zuberCards(d) {
       x: r.coords && (r.coords.x !== undefined ? r.coords.x : r.coords[1]),
       y: r.coords && (r.coords.y !== undefined ? r.coords.y : r.coords[2]),
       discount: Number((d.clientDiscounts || {})[job]) || 0,
+      // The loyalty scheme. doc-restaurant keeps the customer's card in `fidelityProfiles` and
+      // the restaurant's tiers in `fidelityConfigs`, both keyed by job - and its own server
+      // RE-CHECKS whichever tier is claimed, so this only offers what is already true.
+      loyalty: (d.fidelityProfiles || {})[job] || null,
+      loyaltyConfig: (d.fidelityConfigs || {})[job] || null,
+      employee: (d.isEmployeeMap || {})[job] === true,
       menu,
       tags: [],
     });
@@ -8203,16 +8628,28 @@ function zuberMenu(d, c) {
   const cats = ZUBER_CATS.filter((k) => byCat[k])
     .concat(Object.keys(byCat).filter((k) => ZUBER_CATS.indexOf(k) === -1));
 
-  const line = (m) => UI.row({
-    icon: 'zuber', tint: m.enabled === false ? '#8E8E93' : (c.tint || '#111'),
-    title: m.label,
-    subtitle: m.enabled === false ? L('ph.zuber_soldout')
-      : (m.promo ? L('ph.zuber_promo').replace('{n}', String(m.promo)) : ''),
-    value: money(m.price),
-    mono: true,
-    chevron: m.enabled !== false,
-    data: m.enabled === false ? {} : { zi: m.item },
-  });
+  const line = (m) => {
+    const row = UI.row({
+      icon: 'zuber', tint: m.enabled === false ? '#8E8E93' : (c.tint || '#111'),
+      title: m.label,
+      // "Unavailable" and "no price set" are different facts, and a restaurant owner reading
+      // their own menu on a phone needs to know which one they are looking at.
+      subtitle: m.unpriced ? L('ph.zuber_noprice')
+        : (m.enabled === false ? L('ph.zuber_soldout')
+          : (m.promo ? L('ph.zuber_promo').replace('{n}', String(m.promo)) : '')),
+      // The old price struck through beside the new one, which is what a promotion looks like.
+      value: m.enabled === false ? '' : money(m.price),
+      mono: true,
+      chevron: m.enabled !== false,
+      data: m.enabled === false ? {} : { zi: m.item },
+    });
+    if (!m.image) return row;
+    // The item's own picture replaces the glyph tile. Swapped into the rendered row rather than
+    // adding an option to `UI.row`, because a picture is this app's idea and not the kit's.
+    return row.replace('<span class="ricon"',
+      '<span class="ricon zupic" style="background-image:url(&quot;' +
+      esc(zuberImage(m.image)) + '&quot;)"');
+  };
 
   const count = zuberCartCount();
   body(
@@ -8304,11 +8741,44 @@ function zuberCheckout(d, c) {
   if (!items.length) return;
 
   const food = zuberCartTotal();
+  // What the tier takes off the food. Shown here and recomputed on doc-restaurant's side, which
+  // is the authority - this is a preview of its arithmetic, never a substitute for it.
+  const loyaltyOff = (chosen && points >= chosen.points)
+    ? Math.floor(food * chosen.discount / 100) : 0;
   const fee = zuberKind === 'delivery' ? (Number(d.fee) || 0) : 0;
   const tax = Math.floor(food * (Number(d.tax) || 0) / 100);
   const tipCfg = d.tip || {};
   const tipAmount = Math.min(Math.floor(food * zuberTip / 100), Number(tipCfg.max) || 500);
-  const total = food + fee + tax + tipAmount;
+  const total = Math.max(0, food - loyaltyOff) + fee + tax + tipAmount;
+
+  // ── the loyalty card ──
+  // Only when the restaurant runs a scheme AND this customer holds an active card: an empty
+  // loyalty block on every order would be furniture.
+  const card = c.loyalty;
+  const lcfg = c.loyaltyConfig;
+  const loyaltyOn = on('loyalty') && !!(card && lcfg)
+    && (card.has_fidelity === true || card.has_fidelity === 1)
+    && String(card.fidelity_status || 'active') === 'active';
+  const points = loyaltyOn ? (Number(card.points) || 0) : 0;
+
+  // Every tier the restaurant switched on, with what it costs in points and what it gives back.
+  // A tier the customer cannot afford is shown and locked rather than hidden - knowing the next
+  // one is forty points away is the whole reason to collect them.
+  const tiers = [];
+  if (loyaltyOn) {
+    for (let n = 1; n <= 5; n += 1) {
+      const enabled = lcfg['tier_' + n + '_enabled'];
+      if (enabled === 1 || enabled === true) {
+        tiers.push({
+          n,
+          points: Number(lcfg['tier_' + n + '_points']) || 0,
+          discount: Number(lcfg['tier_' + n + '_discount']) || 0,
+        });
+      }
+    }
+  }
+  const chosen = tiers.find((x) => x.n === zuberTier) || null;
+  if (zuberTier && !chosen) zuberTier = 0;        // a tier that stopped being offered
 
   const rows_ = items.map((key) => {
     const e = zuberCart[key];
@@ -8332,6 +8802,29 @@ function zuberCheckout(d, c) {
             esc(L('ph.zuber_takeaway')) + '</button>' +
         '</div>'
       : '') +
+    // The loyalty card: what is on it, and what it can buy off this order.
+    (loyaltyOn
+      ? '<div class="grouphead">' + esc(L('ph.zuber_loyalty')) + '</div>' +
+        '<div class="zuloyal">' +
+          '<b>' + esc(L('ph.zuber_points').replace('{n}', String(points))) + '</b>' +
+          (Number(card.points_lifetime) > 0
+            ? '<span>' + esc(L('ph.zuber_points_life')
+                .replace('{n}', String(Math.floor(Number(card.points_lifetime))))) + '</span>'
+            : '') +
+        '</div>' +
+        (tiers.length
+          ? '<div class="seg scroll" id="zutier">' +
+              '<button class="' + (zuberTier === 0 ? 'on' : '') + '" data-tier="0">' +
+                esc(L('ph.zuber_tier_none')) + '</button>' +
+              tiers.map((x) => {
+                const can = points >= x.points;
+                return '<button class="' + (zuberTier === x.n ? 'on' : '') +
+                  (can ? '' : ' off') + '" data-tier="' + (can ? x.n : '') + '">' +
+                  '-' + x.discount + '% · ' + x.points + ' pts</button>';
+              }).join('') +
+            '</div>'
+          : '<div class="groupfoot">' + esc(L('ph.zuber_no_tiers')) + '</div>')
+      : '') +
     (tipCfg.on === false ? '' :
       '<div class="grouphead">' + esc(L('ph.zuber_tip')) + '</div>' +
       '<div class="seg" id="zutip">' + (tipCfg.presets || [0, 5, 10, 15]).map((pct) =>
@@ -8342,6 +8835,9 @@ function zuberCheckout(d, c) {
     UI.group([
       UI.row({ icon: 'zuber', title: L('ph.zuber_food'), value: money(food), mono: true }),
       fee ? UI.row({ icon: 'garage', title: L('ph.zuber_fee'), value: money(fee), mono: true }) : '',
+      loyaltyOff ? UI.row({ icon: 'star', title: L('ph.zuber_loyalty_off')
+                              .replace('{n}', String(chosen.discount)),
+                            value: '-' + money(loyaltyOff), mono: true, tone: 'pos' }) : '',
       tax ? UI.row({ icon: 'bank', title: L('ph.zuber_tax'), value: money(tax), mono: true }) : '',
       tipAmount ? UI.row({ icon: 'heart', title: L('ph.zuber_tip'), value: money(tipAmount), mono: true }) : '',
       UI.row({ icon: 'wallet', title: L('ph.zuber_total'), value: money(total), mono: true }),
@@ -8356,6 +8852,17 @@ function zuberCheckout(d, c) {
           if (!closeSheet(false, epoch)) return;
           zuberCheckout(d, c);
         }));
+      const tierSeg = byId('zutier');
+      if (tierSeg) [...tierSeg.querySelectorAll('button')].forEach((b) =>
+        b.addEventListener('click', () => {
+          // A locked tier carries no value, so it cannot be chosen by tapping it.
+          if (b.dataset.tier === '') { toast(L('ph.zuber_tier_locked')); return; }
+          zuberTier = Number(b.dataset.tier) || 0;
+          zuberNote = byId('zunote') ? byId('zunote').value : zuberNote;
+          if (!closeSheet(false, epoch)) return;
+          zuberCheckout(d, c);
+        }));
+
       const tip = byId('zutip');
       if (tip) [...tip.querySelectorAll('button')].forEach((b) =>
         b.addEventListener('click', () => {
@@ -8399,6 +8906,12 @@ function zuberCheckout(d, c) {
               items: basket,
               orderComment: zuberNote,
               type: zuberKind,
+              // **The loyalty tier.** Its `submitOrder` reads `fidelityTierApplied`, checks the
+              // tier is enabled and that the customer really has the points, then consumes them
+              // and applies the discount itself. Zuber never sent it, so the whole scheme was
+              // unusable from this app - the points were shown by its own tablet and could not
+              // be spent from the phone.
+              fidelityTierApplied: zuberTier,
             } })
           : await post('zuberOrder', { restaurant: c.id, kind: zuberKind, items: basket,
                                        note: zuberNote, tip: tipAmount });
@@ -8412,6 +8925,7 @@ function zuberCheckout(d, c) {
         ui('money');
         toast(L('ph.zuber_sent'));
         zuberCart = {};
+        zuberTier = 0;
         zuberOpenId = null;
         zuberTab = 'orders';
         RENDER.zuber();
@@ -8594,14 +9108,59 @@ async function zuberReviews(c) {
     list.length
       // doc-restaurant returns { etoiles, commentaire, author, updated_at }. The English
       // names are kept as fallbacks so a fork that renamed them still renders.
-      ? UI.group(list.map((rev) => UI.row({
+      //
+      // A row is ONE line and ellipsises, which is right for a list and wrong for the only place
+      // a review can be read: half a sentence is not an opinion. So each row opens the review in
+      // full - see `zuberReview` below.
+      ? UI.group(list.map((rev, i) => UI.row({
           avatar: rev.author || rev.name || '?',
           title: (rev.author || rev.name || L('ph.zuber_anon')),
           subtitle: rev.commentaire || rev.comment || '',
           value: '★ ' + (Number(rev.etoiles !== undefined ? rev.etoiles
                                 : (rev.note || rev.stars)) || 0),
-        })))
-      : UI.empty(L('ph.zuber_noreviews'), 'star'));
+          chevron: true, data: { zrev: String(i) },
+        })), { footer: L('ph.zuber_review_hint') })
+      : UI.empty(L('ph.zuber_noreviews'), 'star'),
+    () => {
+      const epoch = sheetEpoch;
+      [...byId('sheet').querySelectorAll('[data-zrev]')].forEach((row) =>
+        row.addEventListener('click', () => {
+          const rev = list[Number(row.dataset.zrev)];
+          if (!rev) return;
+          if (!closeSheet(false, epoch)) return;
+          zuberReview(c, rev, list);
+        }));
+    });
+}
+
+/// One review, in full.
+///
+/// The list can only afford a line each; this is where the whole thing is readable, with the
+/// stars drawn rather than counted and the date if the server sent one. `back` returns to the
+/// list, because reading one review is almost never the end of it.
+function zuberReview(c, rev, list) {
+  const stars = Number(rev.etoiles !== undefined ? rev.etoiles : (rev.note || rev.stars)) || 0;
+  const text = rev.commentaire || rev.comment || '';
+  const when = rev.updated_at || rev.at || rev.date;
+
+  sheet(rev.author || rev.name || L('ph.zuber_anon'),
+    '<div class="zurevhead">' +
+      '<div class="zurevstars">' + [1, 2, 3, 4, 5].map((n) =>
+        '<i class="' + (n <= stars ? 'on' : '') + '">' + svg('star') + '</i>').join('') + '</div>' +
+      (when ? '<span>' + esc(shortWhen(txEpochMs(when) || when)) + '</span>' : '') +
+    '</div>' +
+    // The comment itself, wrapping and selectable, in the same block the phone reads mail in.
+    (text
+      ? '<div class="mailbody zurevbody">' + esc(text) + '</div>'
+      : '<div class="groupfoot">' + esc(L('ph.zuber_review_nocomment')) + '</div>') +
+    (list && list.length > 1 ? UI.button(L('ph.zuber_reviews'), 'zurevback', 'plain') : ''),
+    () => {
+      const epoch = sheetEpoch;
+      if (byId('zurevback')) byId('zurevback').addEventListener('click', () => {
+        if (!closeSheet(false, epoch)) return;
+        zuberReviews(c);
+      });
+    });
 }
 
 RENDER.charging = async () => {
@@ -12798,6 +13357,25 @@ window.addEventListener('message', (e) => {
     // A short burst of noise. Synthesised rather than a file: it is a hiss, and shipping a
     // wav of a hiss is a download for something six lines of oscillator does better.
     if (d.on === true && d.static !== false) callStatic();
+  } else if (d.action === 'taxiPing') {
+    // doc-taxijob told a driver a call came in, or told a passenger theirs was accepted. It
+    // notifies on its own account; this only stops an open app being stale.
+    if (openApp && openApp.id === 'taxi') RENDER.taxi();
+    if (d.kind === 'incoming') ui('received');
+  } else if (d.action === 'taxi') {
+    // The config provider's own ride events, which carry what happened.
+    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    const u = d.update || {};
+    const kind = String(u.kind || '');
+    if (kind !== 'taken' && kind !== 'cancelled') {
+      archivePeek('notif', {
+        app: 'taxi', icon: 'taxi',
+        title: L('app.taxi'),
+        body: L('ph.taxi_ev_' + kind),
+      });
+      ui(kind === 'done' || kind === 'paid' ? 'success' : 'received');
+    }
+    if (openApp && openApp.id === 'taxi') RENDER.taxi();
   } else if (d.action === 'zuberStatus') {
     // An order moved along in the kitchen. The card and the sound are the client's; this keeps
     // the app honest if it happens to be open on the tracker.

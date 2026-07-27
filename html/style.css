@@ -2189,6 +2189,17 @@ input { font: inherit; }
   --app-accent-soft: rgba(48, 209, 88, .14);
 }
 
+/* Taxi. The accent is the roof-sign yellow; the tint is a dark amber, because yellow text on
+   white is unreadable and a taxi app that cannot be read is a worse joke than a beige one. */
+.app[data-app="taxi"] {
+  --app-tint: #8a5a00;
+  --app-accent: #ffb300;
+  --app-accent-soft: rgba(255, 179, 0, .16);
+}
+.screen.dark .app[data-app="taxi"] {
+  --app-tint: #ffc94d;
+}
+
 /* Zuber wears near-black, the way the app it is dressed as does. Its own accent is the green of
    an order on its way, so the one tinted thing on screen is the thing that is happening. */
 .app[data-app="zuber"] {
@@ -10169,11 +10180,48 @@ body.inframe.dark .uisearch {
 .soctrendrow small { opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; }
 /* Bank Pro's two primary actions, side by side under the balance. Deposit and Pay are what a
    business does most; withdrawing to your own account sits further down on purpose. */
+/* ══ Taxi ═════════════════════════════════════════════════════
+   The strip that follows a ride. Deliberately the same shape as Zuber's tracker - two apps that
+   both answer "where is my thing" should not each invent their own - but in the taxi's amber,
+   because the colour is how you tell at a glance which one you are looking at. */
+.txtrack {
+  padding: 13px 15px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(135deg, #3a2c05, #14100a);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .26);
+}
+.txtrackrow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.txtrackrow b { font-size: 15.5px; }
+.txtrackrow span { font-size: 12.5px; opacity: .72; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.txbar { height: 4px; margin-top: 10px; border-radius: 99px;
+  background: rgba(255, 255, 255, .16); overflow: hidden; }
+.txbar i { display: block; height: 100%; border-radius: 99px; background: #ffb300;
+  transition: width .5s ease; }
+.txsteps { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px;
+  font-size: 10.5px; color: rgba(255, 255, 255, .45); }
+.txsteps span.on { color: #ffb300; }
+/* What is owed, once the meter stops. The one number on the strip worth a size of its own. */
+.txfare { margin-top: 10px; padding-top: 9px; border-top: .5px solid rgba(255, 255, 255, .14);
+  font-size: 14px; font-variant-numeric: tabular-nums; color: #ffc94d; }
+
 /* ══ Zuber ════════════════════════════════════════════════════
    A delivery app's shape: a card per restaurant with a colour band, a status line, and a
    tracker that only exists while something is on its way. Built out of the same tokens as the
    rest of the phone, so it reads as an app on this handset rather than a website inside it. */
 .zulist { display: flex; flex-direction: column; gap: 12px; padding-bottom: 6px; }
+
+/* A dish's own picture in place of the glyph tile. `contain`, not `cover`: an inventory image is
+   a small sprite on a transparent background, and cropping one cuts the food in half. */
+.row .ricon.zupic {
+  background-color: var(--app-fill);
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.row .ricon.zupic svg { display: none; }
 
 .zucard {
   display: flex;
@@ -10234,6 +10282,16 @@ body.inframe.dark .uisearch {
   font-size: 10.5px; color: rgba(255, 255, 255, .45); }
 .zusteps span.on { color: #00d16a; }
 
+/* The loyalty card: what is on it, above the tiers it can buy. */
+.zuloyal { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 11px 14px; margin-bottom: 8px; border-radius: 12px;
+  background: var(--app-accent-soft); }
+.zuloyal b { font-size: 16px; color: var(--app-accent); font-variant-numeric: tabular-nums; }
+.zuloyal span { font-size: 12px; color: var(--app-label2); }
+/* A tier the customer cannot afford yet. Shown, not hidden: knowing the next one is forty points
+   away is the whole reason to collect them. */
+.seg button.off { opacity: .42; }
+
 /* The basket bar, pinned under the menu. It is a button, and it says what it will cost before
    it is pressed. */
 .zubasket {
@@ -10257,6 +10315,18 @@ body.inframe.dark .uisearch {
    number changing at the bottom of the screen is not an acknowledgement of a tap at the top. */
 .row.zuadded { background: var(--app-accent-soft); }
 .row.zuadded .rval { color: var(--app-accent); }
+
+/* One review, read in full. The stars are drawn rather than counted, because "4" and four
+   filled stars are the same fact and only one of them can be read without stopping. */
+.zurevhead { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 2px 0 10px; }
+.zurevstars { display: flex; gap: 3px; }
+.zurevstars i { width: 17px; height: 17px; color: var(--app-label3); }
+.zurevstars i svg { width: 17px; height: 17px; }
+.zurevstars i.on { color: #ffb700; }
+.zurevhead span { font-size: 12.5px; color: var(--app-label2); }
+/* The comment. `mailbody` already wraps and sets a reading measure; this only gives it room. */
+.zurevbody { min-height: 60px; margin-bottom: 12px; }
 
 /* Rating. Big enough to hit with a thumb, which a 14px star is not. */
 .zustars { display: flex; justify-content: center; gap: 8px; padding: 6px 0 14px; }

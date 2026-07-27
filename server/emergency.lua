@@ -87,7 +87,12 @@ local function serves(p, service)
     end
     if not held then return false end
 
-    if service.onDutyOnly ~= false and job.onDuty == false then return false end
+    -- `Bridge.OnDuty` rather than the field: ESX and ox have no duty of their own, and a server
+    -- that tracks it with esx_service answers through the hook there. See bridge/server/framework.
+    if service.onDutyOnly ~= false and Bridge and Bridge.OnDuty
+        and not Bridge.OnDuty(p.source, p) then
+        return false
+    end
     if num(job.grade, 0) < num(service.minGrade, 0) then return false end
     return true
 end

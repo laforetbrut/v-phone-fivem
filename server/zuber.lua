@@ -303,6 +303,9 @@ V.Callback('v-phone:zuber:open', function(src, resolve)
         -- The feature switches, so the page draws only what the operator left on. Sent rather
         -- than read from the config on the page: the config is not the page's to see.
         features = type(CFG.features) == 'table' and CFG.features or {},
+        -- Where a dish's picture lives. Sent rather than read on the page, because the config is
+        -- not the page's to see - the same rule as every other setting here.
+        imageBase = tostring(CFG.imageBase or ''),
         sortByDistance = CFG.sortByDistance == true,
         -- Whether the history came from doc-restaurant, so the app can say where it is looking.
         historyFromDoc = fromDoc,
@@ -417,7 +420,7 @@ V.Callback('v-phone:zuber:order', function(src, resolve, data)
             local op = other and Core.GetPlayer(other)
             local job = op and op.job
             if type(job) == 'table' and tostring(job.name) == tostring(r.job)
-                and job.onDuty ~= false then
+                and (not (Bridge and Bridge.OnDuty) or Bridge.OnDuty(other, op)) then
                 pcall(function()
                     self:Notify(other, 'zuber', LP(other, 'ph.zuber_staff_title'),
                         (LP(other, 'ph.zuber_staff_body') or '%s'):format(tostring(count)))

@@ -71,6 +71,8 @@ client_scripts {
     -- Zuber's doc-restaurant side. A QB server callback is reachable from any client and from
     -- no server, so the integration lives here rather than in server/zuber.lua.
     'client/zuber.lua',
+    -- The Taxi app's doc-taxijob side, for the same reason.
+    'client/taxi.lua',
     -- Payphones: finds the call box props already on the map, and holds the player to one.
     'client/booth.lua',
     -- The vehicle remote: finds a car by plate and applies what the server allowed.
@@ -128,6 +130,9 @@ server_scripts {
     -- Zuber: the config provider's menu, orders and money. doc-restaurant's own side is driven
     -- from client/zuber.lua; nothing here touches it.
     'server/zuber.lua',
+    -- Taxi: the config provider's ride queue, fares and ratings. doc-taxijob's own side is
+    -- driven from client/taxi.lua and is not touched here either.
+    'server/taxi.lua',
     -- Standing in for qb-phone on a qb-core server. After api.lua: it is built on SendMail,
     -- SendServiceMessage and Notify.
     'bridge/server/qb-phone.lua',
