@@ -97,6 +97,20 @@ function PlugOk(src, source)
         end
     end
     if not plugRequired(source) then return true end
+
+    -- **A flat phone plugs itself in.**
+    --
+    -- The switch lives in FruitCharge, and a phone at 0% does not open - so the one battery
+    -- level that has to be recoverable was the one level that could not be. The player was
+    -- standing on a charger holding a phone that refused to charge because the way to say
+    -- "charge" was inside the thing that would not turn on.
+    --
+    -- Consent is for topping up a phone somebody is using. There is nothing to consent to when
+    -- the handset is dead: plugging it in is the only thing anybody would ever want, and the
+    -- switch reappears the moment there is enough charge to open the app and throw it.
+    local self = exports[GetCurrentResourceName()]
+    if (self:GetBattery(src) or 0) <= 0 then return true end
+
     return p ~= nil
 end
 
@@ -436,6 +450,41 @@ V.Callback('v-phone:charge:pay', function(src, resolve)
 
     resolve(doPay(src, charger))
 end)
+
+--- Pay for a stop without the screen: `/chargephone`.
+---
+--- **The one command a dead phone needs.** A paid charger is accepted from FruitCharge, and a
+--- phone at 0% does not open - so the player stood on the charger with no way to say yes,
+--- holding the one thing that could have said it. Money must still be consented to, which is
+--- why this is a command and not an automatic payment.
+---
+--- Everything is re-read here exactly as the button's path re-reads it: which charger they are
+--- standing at, what it costs, and whether they hold the app. `doPay` is the single money path
+--- and this does not become a second one.
+RegisterCommand('chargephone', function(src)
+    src = tonumber(src) or 0
+    if src <= 0 then return end
+
+    local function say(msg)
+        TriggerClientEvent('chat:addMessage', src, { args = { 'iFruit', msg } })
+    end
+
+    if not paidOn() then say(LP(src, 'ph.charge_cmd_off')) return end
+
+    local ped = GetPlayerPed(src)
+    local charger = (ped and ped ~= 0) and chargerAt(GetEntityCoords(ped)) or nil
+    if not charger then say(LP(src, 'ph.charge_cmd_nowhere')) return end
+
+    if Session[src] == charger.id then say(LP(src, 'ph.charge_cmd_already')) return end
+    if priceOf(charger) > 0 and not hasApp(src) then say(LP(src, 'ph.charge_cmd_needapp')) return end
+
+    local res = doPay(src, charger)
+    if res and res.ok then
+        say(LP(src, 'ph.charge_cmd_paid'):gsub('{price}', tostring(priceOf(charger))))
+    else
+        say(LP(src, 'ph.err_' .. tostring((res and res.error) or 'x')))
+    end
+end, false)
 
 -- ══════════════════════════════════════════════════════════════
 -- The FruitCharge app

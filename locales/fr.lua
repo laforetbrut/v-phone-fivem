@@ -335,6 +335,11 @@ local T = {
     ['ph.err_busy_them'] = 'La ligne est occupée',
     ['ph.err_offline']  = 'Son téléphone est éteint',
     ['ph.err_dnd']      = 'Cette personne ne prend pas les appels',
+    ['ph.charge_cmd_off'] = 'La recharge payante est désactivée sur ce serveur.',
+    ['ph.charge_cmd_nowhere'] = "Vous n'êtes pas à une borne de recharge.",
+    ['ph.charge_cmd_already'] = 'Vous avez déjà payé ce passage.',
+    ['ph.charge_cmd_needapp'] = 'Cette borne est payante, et payer nécessite FruitCharge.',
+    ['ph.charge_cmd_paid'] = '{price} $ payés. Le téléphone se recharge.',
     -- Appels de groupe.
     ['ph.err_nogroup']   = 'Les appels de groupe sont désactivés ici',
     ['ph.err_nothost']   = "Seule la personne qui a lancé l'appel peut y ajouter quelqu'un",

@@ -97,6 +97,27 @@ function AdminViewClose(src)
     V.Log(('admin view: %s released %s (%s)')
         :format(GetPlayerName(src) or '?', v.name or '?', v.cid))
     TriggerClientEvent('v-phone:client:adminView', src, false)
+
+    -- **Give the character their own routing back.**
+    --
+    -- Nothing should have taken it - `ensureNumber` refuses to bind a number to a viewer now -
+    -- but a session opened before that fix left the target's number pointing at the staff
+    -- member, and a session repaired only at the next reconnect is a player who spends the rest
+    -- of the evening not receiving their own messages. Rebinding on release costs one loop and
+    -- repairs it whatever caused it.
+    local phone = exports[GetCurrentResourceName()]
+    local number = phone:GetNumber(v.cid)
+    if number and number ~= '' then
+        for _, raw in ipairs(GetPlayers()) do
+            local other = tonumber(raw)
+            local op = other and (Core.GetPlayerReal and Core.GetPlayerReal(other)
+                                  or Core.GetPlayer(other))
+            if op and tostring(op.citizenid) == tostring(v.cid) then
+                if PhoneSetOnline then PhoneSetOnline(number, other) end
+                break
+            end
+        end
+    end
     return true
 end
 

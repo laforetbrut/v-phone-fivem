@@ -1997,6 +1997,23 @@ function enterApp(a, tile) {
   openApp = a; thread = null;
   threadGroup = null;
   navBackAction = null;
+
+  // **Opening an app clears its notifications.**
+  //
+  // Every notification already carries the app it belongs to - that is how tapping one knows
+  // where to go - and nothing was using it to do the obvious. A message read half an hour ago
+  // was still sitting on the lock screen, and no phone behaves that way: reading the thing IS
+  // dismissing the notice about it.
+  //
+  // Done here rather than in Messages, because the complaint is not about Messages. Any app
+  // that can raise a notification can leave one behind, so the rule belongs where every app
+  // goes through.
+  const before = notifs.length;
+  notifs = notifs.filter((n) => n.app !== a.id);
+  if (notifs.length !== before) {
+    paintNotifs();
+    if (byId('shade').classList.contains('on')) renderShade();
+  }
   // Most recent first, no duplicates. This is the switcher's whole model.
   recents = [a.id].concat(recents.filter((id) => id !== a.id)).slice(0, 8);
   const app = byId('app');
@@ -14365,7 +14382,10 @@ async function hushMatches() {
       '<span class="rs">' + esc(m.bio || '') + '</span></span>' +
       (Number(m.unread) > 0
         ? '<span class="socunread">' + esc(String(m.unread)) + '</span>' : '') +
-      svg('chevron') +
+      // Wrapped, like every other row in the phone. The size and the colour live on `.rchev`,
+      // so a bare `<svg>` here inherited neither: it stretched to the height of the row and
+      // took the row's text colour, which drew a giant black arrow over each match.
+      '<span class="rchev">' + svg('chevron') + '</span>' +
     '</button>').join('')) : UI.empty(L('ph.hush_no_matches'), 'hush'));
 
   rows('.hushmatch', (b) => b.addEventListener('click', () => {
@@ -14396,7 +14416,12 @@ async function hushChat(match) {
     body('<div class="thread hushthread" id="hushthread">' +
       (messages.length
         ? messages.map((x) =>
-            '<div class="bubble ' + (x.mine ? 'me' : 'them') + '"' +
+            // **`bub`, not `bubble`.** This was the one thread in the phone using a class
+            // name that appears nowhere in the stylesheet, so every Hush message rendered as
+            // unstyled text - no bubble, no colour, no alignment, everything flat against the
+            // left edge. The rest of the phone has always drawn `.bub.me` / `.bub.them`, and
+            // using it brings the line breaks and the tint along with the shape.
+            '<div class="bub ' + (x.mine ? 'me' : 'them') + '"' +
               (x.id ? ' data-id="' + esc(String(x.id)) + '"' : '') + '>' +
               (x.image ? photoImg(x.image, 'mimg') : '') +
               (x.body ? '<span>' + esc(x.body) + '</span>' : '') +

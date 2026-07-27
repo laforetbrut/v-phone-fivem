@@ -333,6 +333,11 @@ local T = {
     ['ph.err_busy_them'] = 'The line is busy',
     ['ph.err_offline']  = 'Their phone is off',
     ['ph.err_dnd']      = 'They are not taking calls',
+    ['ph.charge_cmd_off'] = 'Paid charging is switched off on this server.',
+    ['ph.charge_cmd_nowhere'] = 'You are not standing at a charger.',
+    ['ph.charge_cmd_already'] = 'You have already paid for this stop.',
+    ['ph.charge_cmd_needapp'] = 'This charger is paid, and paying for it needs FruitCharge.',
+    ['ph.charge_cmd_paid'] = 'Paid ${price}. The phone is charging.',
     -- Group calls.
     ['ph.err_nogroup']   = 'Group calls are switched off here',
     ['ph.err_nothost']   = 'Only the person who placed the call can add to it',

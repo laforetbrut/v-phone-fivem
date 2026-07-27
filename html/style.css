@@ -11687,3 +11687,17 @@ body.inframe.dark .uisearch {
 .screen.callaside .navbar { padding-top: 104px; }
 .screen.callaside .home { top: 104px; }
 .screen.callaside .lock { padding-top: 104px; }
+
+/* ── A floor under any bare icon in a row ──────────────────────
+   `.rchev` carries the size and the colour of a disclosure arrow, and a row that emitted the
+   chevron without that wrapper got neither: the SVG stretched to the full height of the row
+   and inherited the row's text colour. One row in the phone did that and drew a giant black
+   arrow over every Hush match. Fixed at the source too, but stated here so the next one
+   cannot look like that - an unsized SVG is the kind of mistake that is invisible in review
+   and unmissable on screen. */
+.row > svg {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 13px;
+  color: var(--app-label3);
+}

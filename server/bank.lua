@@ -101,7 +101,10 @@ local function ownHistory(citizenid)
     for _, r in ipairs(rows) do
         out[#out + 1] = {
             amount = math.floor(num(r.amount, 0)),
-            label = tostring(r.label or ''),
+            -- On the way OUT as well as on the way in: rows written before the line above was
+            -- fixed still hold the literal word, and a statement is read long after it is
+            -- written. Blanking on read repairs the history without touching the table.
+            label = placeholder(tostring(r.label or '')),
             kind = tostring(r.kind or ''),
             with = tostring(r.counterparty or ''),
             ts = math.floor(num(r.ts, 0)),
@@ -617,7 +620,14 @@ local function moneyMoved(src, amount, incoming, reason, kind)
     amount = math.floor(math.abs(num(amount, 0)))
     if not src or amount < notifyMin() or amount <= 0 then return end
 
-    reason = tostring(reason or '')
+    -- **The word "unknown" was reaching the screen from here.**
+    --
+    -- `placeholder` was written for exactly this and then applied to one path out of three, so
+    -- a salary paid by a job script - qb-core writes `reason or 'unknown'` on every movement -
+    -- arrived as the banner "+250 - unknown". Blanked rather than translated: with no label the
+    -- line reads as a plain deposit, which is true and useful, and a placeholder should never
+    -- outrank the amount's own sign.
+    reason = placeholder(tostring(reason or ''))
     if reason:lower():find('^v%-phone') then return end
     if not incoming and NOTIFY.outgoing ~= true then return end
 

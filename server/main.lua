@@ -298,9 +298,23 @@ local function ensureNumber(src, p)
         Numbers[p.citizenid] = fromFramework
     end
 
+    -- **Never bind a number to somebody who is only LOOKING at this character.**
+    --
+    -- `Core.GetPlayer` is redirected while a staff member holds a phone, so the boot callback
+    -- runs with the TARGET's player object and a source id that belongs to the admin. Writing
+    -- the online map from that pair pointed the player's own number at the staff member: every
+    -- message and call for that character was delivered to the admin, the owner stopped
+    -- receiving their own, and closing the session did not undo it because nothing rewrote the
+    -- map. It survived the release of the phone and lasted until one of them reconnected.
+    --
+    -- A viewer needs the number - it is drawn on the screen they are looking at - so the value
+    -- is still returned. Only the routing is withheld.
+    local viewing = AdminViewTarget and AdminViewTarget(src)
+    local looking = viewing ~= nil and tostring(viewing) == tostring(p.citizenid)
+
     local existing = numberOfCid(p.citizenid)
     if existing then
-        Online[existing] = src
+        if not looking then Online[existing] = src end
         return existing
     end
     local n = newNumber()
@@ -313,7 +327,7 @@ local function ensureNumber(src, p)
     -- qb or ox agrees with the phone rather than contradicting it.
     Bridge.Numbers.Set(p.citizenid, n)
     Numbers[p.citizenid] = n
-    Online[n] = src
+    if not looking then Online[n] = src end
     return n
 end
 

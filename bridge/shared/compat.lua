@@ -268,13 +268,31 @@ STUBS['v-voice'] = {
     ---
     --- Only pma-voice exposes calls this way. On saltychat or with no voice script at all the
     --- broadcast is silent, and the phone says so rather than pretending it went out.
+    --- Join or leave the broadcast channel.
+    ---
+    --- **Leaving is checked BEFORE the channel number, and this is the whole function.**
+    ---
+    --- The guard below rejects a channel of zero, which is right for joining - there is no
+    --- channel zero to join, and a bad number would have put the speaker somewhere nobody was
+    --- listening. But `vbRelease` leaves by calling this with channel 0, the way pma-voice
+    --- itself spells "leave the call", so every release hit that guard and returned false
+    --- without ever reaching `setCallChannel`.
+    ---
+    --- A broadcast channel is MUTUAL. Nobody left it: stopping the broadcast released the
+    --- volume overrides, so the speaker went quiet, and left every listener joined to a shared
+    --- call channel with an open microphone. The whole server could hear each other, and
+    --- `/phoneadmin voice stop` made no difference because stopping was the broken half. It
+    --- lasted until each player reconnected.
+    ---
+    --- So: if we are leaving, leave. A number is only needed to arrive somewhere.
     VoiceBroadcast = function(_, channel, on)
         if isServer or voiceResource() ~= 'pma-voice' then return false end
+        if not on then
+            return pcall(function() exports['pma-voice']:setCallChannel(0) end)
+        end
         local n = math.floor(tonumber(channel) or 0)
         if n <= 0 then return false end
-        return pcall(function()
-            exports['pma-voice']:setCallChannel(on and n or 0)
-        end)
+        return pcall(function() exports['pma-voice']:setCallChannel(n) end)
     end,
 }
 
