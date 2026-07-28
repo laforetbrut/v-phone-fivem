@@ -5,6 +5,52 @@ one coming back.
 
 ---
 
+## [2026-07-29 04:20] — the right measurement, taken of the wrong thing
+
+**Context:** 1.5.5 grew the emoji picker from four categories to ten. The tab strip no longer fit,
+so it was made to scroll sideways. Shipped. A player reported that the other categories could not
+be reached.
+
+**Error:** none. Every tab existed, every tab switched when clicked, and the strip scrolled.
+
+**Root cause:** two, and only the first is about emoji.
+
+The bug itself: this is a NUI page and the player has a MOUSE CURSOR. A horizontal scroller has no
+gesture behind it - no flick, no trackpad axis, and nothing in the page was listening - so the last
+categories were simply off the right edge with nothing able to bring them back. The same fault was
+already in six other strips: the store's categories, the gallery's albums, the camera's filters and
+crops, Zuber's tiers, the social trends. One of them had been noticed and worked around locally,
+which is what a bug looks like when it is fixed one instance at a time instead of once.
+
+The reason it shipped: I verified it, and the verification was of the wrong property. I measured
+`tabsScrollable: true` and recorded that as a success. Scrolling was the SYMPTOM I had introduced,
+not the outcome anybody wanted. The question a player asks is "can I get to the tenth tab", and
+nothing I ran asked it.
+
+**Fix:** the tabs shrink to fit instead - ten of them, on the narrowest phone, no scrolling at all.
+And every sideways strip in the phone now answers the two gestures a cursor actually has: the wheel
+turned sideways, and a press-and-drag with a threshold so a tap is still a tap. Added once, at the
+screen, so a strip written next month inherits it.
+
+`tools/probe.js` asks the question directly: for every control on every screen, could a cursor
+click it? Off the screen, zero-sized, covered, or only arrivable by scrolling sideways all count as
+no. It found the store's categories on its first run.
+
+**Prevention:** measure the OUTCOME, not the mechanism. "The container scrolls" is a fact about the
+implementation; "the player can reach the tenth tab" is the requirement, and the two are only
+related if a gesture exists. When a fix introduces a mechanism, the test must exercise the mechanism
+end to end - through the input device the user actually has - rather than confirm the mechanism is
+present.
+
+Second, smaller rule from the same day: a probe that hit-tests elements must skip anything merely
+scrolled out of view, and must test the scroller before the bezel. Getting that order wrong reported
+four working store chips as lost, and reported a button as "covered by the home bar" while it was
+two thousand pixels above the viewport. Three separate fixes were attempted on that reading before
+the measurement was questioned. **When three fixes in a row fail to move a symptom, the reading is
+the thing to doubt, not the fix.**
+
+---
+
 ## [2026-07-29 02:10] — a callback shipped with no handler, caught by a checker written the same hour
 
 **Context:** adding "leave a group". The server callback, the sheet, the confirmation and the

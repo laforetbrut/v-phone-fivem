@@ -1432,16 +1432,19 @@ input { font: inherit; }
 /* A grabber, so it reads as a sheet you can dismiss, like the rest of the phone. */
 .emojipanel::before { content: ''; display: block; width: 38px; height: 5px; margin: 4px auto 8px;
   border-radius: 99px; background: rgba(255,255,255,.28); }
-/* Ten categories do not fit across a phone, so the strip scrolls sideways rather than crushing
-   every tab to a sliver. `flex-shrink: 0` is what makes it scroll instead of shrink; the tabs
-   still stretch to fill when there are few enough of them to fit. */
-.emojitabs { display: flex; gap: 6px; padding: 0 2px 8px; margin-bottom: 6px;
-  border-bottom: .5px solid rgba(255,255,255,.08);
-  overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
-  overscroll-behavior-x: contain; }
-.emojitabs::-webkit-scrollbar { width: 0; height: 0; display: none; }
-.emojitabs button { flex: 1 0 auto; min-width: 34px; padding: 7px 0; border-radius: 12px;
-  font-size: 19px; line-height: 1;
+/* Ten categories, all reachable without scrolling anything.
+   The first attempt let the strip scroll sideways when the tabs did not fit. That reads fine on
+   a touchscreen and is unusable here: this is a NUI page and the player has a MOUSE CURSOR, so a
+   horizontal scroller has no gesture behind it - the last two categories were simply off the
+   right edge with no way to reach them. "It scrolls" was measured and called a success, which is
+   why the bug shipped.
+   So they SHRINK instead: `flex: 1 1 0` with a floor small enough that ten fit across the
+   narrowest phone. Nothing is ever out of reach, and `overflow: hidden` makes a future eleventh
+   category fail visibly here rather than silently on somebody's screen. */
+.emojitabs { display: flex; gap: 3px; padding: 0 2px 8px; margin-bottom: 6px;
+  border-bottom: .5px solid rgba(255,255,255,.08); overflow: hidden; }
+.emojitabs button { flex: 1 1 0; min-width: 0; padding: 7px 0; border-radius: 12px;
+  font-size: 18px; line-height: 1;
   opacity: .5; transition: background .16s ease, opacity .16s ease; }
 .emojitabs button.on { background: rgba(255,255,255,.16); opacity: 1; }
 .emojigrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;

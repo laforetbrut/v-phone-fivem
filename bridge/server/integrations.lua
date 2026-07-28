@@ -770,8 +770,30 @@ function Bridge.Banking.Savings(src)
             return MySQL.scalar.await('SELECT balance FROM bank_savings WHERE citizenid = ?', { cid })
         end)
         if ok and value ~= nil then return tonumber(value) end
+        -- Said out loud, once, because the alternative is a card that never appears and no way
+        -- to tell WHY. Three answers look identical from the app - no savings account, a table
+        -- that is not there, and a read that failed - and only one of them is normal.
+        if not SavingsSaid then
+            SavingsSaid = true
+            if ok then
+                print('[v-phone] savings: doc-banking is running and this character has no row in ' ..
+                      'bank_savings. That is what an unopened savings account looks like; the card ' ..
+                      'stays hidden until they open one at the bank.')
+            else
+                print(('[v-phone] savings: reading bank_savings failed (%s). The card will stay ' ..
+                       'hidden. If your savings live elsewhere, point Config.Compat.hooks.savings ' ..
+                       'at them.'):format(tostring(value)))
+            end
+        end
+        return nil
     end
 
+    if not SavingsSaid then
+        SavingsSaid = true
+        print(('[v-phone] savings: no way to read a savings balance from "%s". Nothing is broken - ' ..
+               'most banking scripts have no such account. Set Config.Compat.hooks.savings if ' ..
+               'yours does.'):format(tostring(bank)))
+    end
     return nil
 end
 

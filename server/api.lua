@@ -331,6 +331,46 @@ exports('SendSMS', function(who, label, body)
     return PhoneServiceMessage(who, label, body)
 end)
 
+--- What was said in one conversation, oldest first.
+---
+---     for _, m in ipairs(exports['v-phone']:GetMessages(cid, '5550142', 20)) do
+---         print(m.mine and 'them' or 'you', m.body)
+---     end
+---
+--- Each row is `{ id, mine, body, kind, attachment, at, seen }`. `mine` is from the point of
+--- view of the citizen id you asked about. Reading does NOT mark the thread read: a script
+--- asking what was said has not read it on the player's behalf.
+exports('GetMessages', function(citizenid, otherNumber, limit)
+    return PhoneConversation(citizenid, otherNumber, limit)
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Calls
+-- ══════════════════════════════════════════════════════════════
+
+--- Ring somebody, as though this player had dialled it themselves.
+---
+---     exports['v-phone']:Call(source, '5550142')
+---     exports['v-phone']:Call(source, '5550142', { anonymous = true })
+---
+--- Goes through the phone's own dialler, so every rule a player meets applies here too: the
+--- caller needs a phone and a signal, the other end must be connected and not already on a call,
+--- Do Not Disturb is honoured, and anybody standing near the ringing phone hears it.
+---
+--- Returns `true, callId`, or `false` plus an error key: `busy`, `busy_them`, `offline`, `dnd`,
+--- `nonumber`, `nophone`, `unreachable`, `self`, `noplayer`.
+exports('Call', function(src, toNumber, opts)
+    return PhoneStartCall(src, toNumber, opts)
+end)
+
+--- Hang up whatever this player is on. Works from either end, and on a conference it removes
+--- this one person rather than ending it for everybody.
+---
+---     exports['v-phone']:EndCall(source)
+exports('EndCall', function(src, reason)
+    return PhoneEndCall(src, reason)
+end)
+
 --- Everything unread, as a count per app. For a HUD that wants a badge without opening
 --- the phone.
 exports('UnreadCount', function(citizenid)

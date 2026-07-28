@@ -5688,10 +5688,14 @@ RENDER.settings = () => {
       value: p.actionApp === a.id ? L('ph.on') : '', data: { act: a.id },
     })), { header: L('ph.action_button'), footer: L('ph.action_hint') }) +
     // About, where a phone puts it: the last thing in Settings.
+    //
+    // The row IS the attribution the licence requires, and it stays. The footer line under it
+    // said the same thing a second time in a sentence, which is a credit repeated rather than a
+    // credit given.
     UI.group([
       UI.row({ icon: 'phone', tint: '#8E8E93', title: L('ph.about_device'), value: 'iFruit' }),
       UI.row({ icon: 'id', tint: '#8E8E93', title: L('ph.about_dev'), value: 'vyrriox' }),
-    ], { header: L('ph.about_title'), footer: L('ph.about_foot') })
+    ], { header: L('ph.about_title') })
   );
   const wa = byId('wapply');
   if (wa) wa.addEventListener('click', async () => {
@@ -15432,7 +15436,13 @@ byId('emojiscrim').addEventListener('click', emojiClose);
 let emojiDragY = null;
 byId('emojipanel').addEventListener('pointerdown', (e) => {
   const r = byId('emojipanel').getBoundingClientRect();
-  emojiDragY = e.clientY < r.top + 60 ? e.clientY : null;
+  // The grab handle and the title row, and nothing below them. Sixty pixels reached to within
+  // ONE pixel of the category tabs - measured at 61 - so a phone whose panel sat a couple of
+  // pixels higher armed a swipe-to-dismiss on every tab the player pressed. A drag zone has to
+  // stop where the controls start, with room to spare, not wherever the number happened to land.
+  const controlsStart = (byId('emojipanel').querySelector('.emojitabs') || {}).offsetTop;
+  const limit = typeof controlsStart === 'number' && controlsStart > 0 ? controlsStart - 6 : 44;
+  emojiDragY = e.clientY < r.top + limit ? e.clientY : null;
 });
 byId('emojipanel').addEventListener('pointerup', (e) => {
   if (emojiDragY != null && e.clientY - emojiDragY > 38) emojiClose();
@@ -15441,6 +15451,80 @@ byId('emojipanel').addEventListener('pointerup', (e) => {
 byId('emojipanel').addEventListener('pointercancel', () => {
   emojiDragY = null;
 });
+
+// ══ Strips that scroll sideways ════════════════════════════════
+// **A horizontal scroller has no gesture behind it here.**
+//
+// This is a NUI page and the player has a MOUSE CURSOR. On a touchscreen a chip strip wider than
+// the screen is fine - you flick it. With a cursor there is nothing to flick with: the wheel
+// scrolls vertically, there is no trackpad axis, and nothing in the page was listening. So every
+// chip past the right edge was simply unreachable, and `.seg.scroll` is used seven times - the
+// store's categories, the gallery's albums, the camera's filters and crops, Zuber's tiers, the
+// social trends. The store's "Work", "On duty", "Entertainment", "Health" and "Essentials" could
+// not be selected at all. One of these had already been noticed and worked around locally, which
+// is the shape of a bug that needed fixing once rather than six more times.
+//
+// Two gestures a cursor actually has, added once for every strip that will ever exist:
+//   * the wheel, turned sideways when the strip has no vertical scrolling of its own;
+//   * a press and drag, with a threshold so a tap is still a tap.
+//
+// Scoped to the phone screen and only engaged on an element that IS inside an overflowing
+// horizontal scroller, so none of the other drag gestures - the home grid, a message swipe, the
+// emoji sheet - ever sees these handlers.
+(() => {
+  const screen = byId('screen');
+  if (!screen) return;
+
+  const stripOf = (el) => {
+    let n = el;
+    while (n && n !== screen.parentElement) {
+      if (n.nodeType === 1) {
+        const cs = getComputedStyle(n);
+        if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && n.scrollWidth > n.clientWidth + 1) {
+          return n;
+        }
+      }
+      n = n.parentElement;
+    }
+    return null;
+  };
+
+  screen.addEventListener('wheel', (e) => {
+    const s = stripOf(e.target);
+    // A strip that also scrolls vertically keeps the wheel for that: turning it sideways there
+    // would take away the gesture that already worked.
+    if (!s || s.scrollHeight > s.clientHeight + 1) return;
+    const before = s.scrollLeft;
+    s.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (s.scrollLeft !== before) e.preventDefault();
+  }, { passive: false });
+
+  let drag = null;
+  screen.addEventListener('pointerdown', (e) => {
+    const s = stripOf(e.target);
+    if (!s) return;
+    drag = { el: s, x: e.clientX, from: s.scrollLeft, moved: false };
+  });
+  screen.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) < 6) return;
+    drag.moved = true;
+    drag.el.scrollLeft = drag.from - dx;
+  });
+  const endDragStrip = () => {
+    if (drag && drag.moved) {
+      // A drag must not also press the chip it started on. One capture listener, spent
+      // immediately, so nothing is left behind to swallow the next real click.
+      const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+      screen.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => screen.removeEventListener('click', swallow, true), 0);
+    }
+    drag = null;
+  };
+  screen.addEventListener('pointerup', endDragStrip);
+  screen.addEventListener('pointercancel', endDragStrip);
+})();
 
 // ══ Sheet, toast, banner ═══════════════════════════════════════
 let sheetReturn = null;

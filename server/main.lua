@@ -1828,6 +1828,68 @@ end
 -- server/booth.lua owns the box, the card and the credit; these three functions are the
 -- whole surface it drives, so the call machinery stays in one file.
 
+-- ══ For another resource ═══════════════════════════════════════
+-- The call machinery is file-local on purpose: every rule about who may ring whom lives in
+-- `startCall`, and a second way in would be a second place for those rules to be forgotten.
+-- These three go THROUGH it rather than around it, so an export gets exactly the call a player
+-- would have got - the same busy checks, the same Do Not Disturb, the same ring in the room.
+
+--- Place a call from a player, as though they had dialled it themselves.
+---
+--- Returns `true, callId`, or `false` plus the same error key the dialler shows: `busy`,
+--- `offline`, `dnd`, `nonumber`, `nophone`, `unreachable`, `self`.
+function PhoneStartCall(src, toNumber, opts)
+    src = tonumber(src)
+    local p = src and Core.GetPlayer(src)
+    if not p then return false, 'noplayer' end
+    opts = type(opts) == 'table' and opts or {}
+    local id, err = startCall(src, p, tostring(toNumber or ''),
+        opts.anonymous == true, opts.video == true)
+    if not id then return false, err or 'x' end
+    return true, id
+end
+
+--- Hang up whatever this player is on, from either end of it.
+function PhoneEndCall(src, reason)
+    src = tonumber(src)
+    local id = src and CallOf[src]
+    if not id then return false, 'nocall' end
+    callPartOrEnd(id, src, tostring(reason or 'api'))
+    return true
+end
+
+--- One conversation, oldest first.
+---
+--- Deliberately NOT `conversation()`, which is what the app calls: that one also marks the thread
+--- read, because opening a thread on a screen means you read it. A script asking what was said
+--- has not read anything on the player's behalf, and an export that quietly cleared somebody's
+--- unread badge would be a side effect nobody asked for and nobody could see.
+---
+--- Messages this character deleted from their own copy are excluded, exactly as they are on the
+--- screen: returning them would be a way to read past the delete button.
+function PhoneConversation(citizenid, otherNumber, limit)
+    citizenid = tostring(citizenid or '')
+    local otherCid = cidOfNumber(tostring(otherNumber or '')) or tostring(otherNumber or '')
+    if citizenid == '' or otherCid == '' then return {} end
+    limit = math.max(1, math.min(200, math.floor(tonumber(limit) or 50)))
+
+    local rows = MySQL.query.await([[
+        SELECT id, from_cid, body, kind, attachment, at, seen FROM vphone_messages
+        WHERE ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
+          AND group_id IS NULL
+          AND id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)
+        ORDER BY at DESC, id DESC LIMIT ?
+    ]], { citizenid, otherCid, otherCid, citizenid, citizenid, limit }) or {}
+
+    local out = {}
+    for i = #rows, 1, -1 do
+        local r = rows[i]
+        out[#out + 1] = { id = r.id, mine = (r.from_cid == citizenid), body = r.body,
+            kind = r.kind, attachment = r.attachment, at = r.at, seen = r.seen == 1 }
+    end
+    return out
+end
+
 --- Place a call from `boothNumber` on behalf of the player standing at it.
 function BoothCall(src, boothNumber, toNumber)
     if CallOf[src] then return nil, 'busy' end

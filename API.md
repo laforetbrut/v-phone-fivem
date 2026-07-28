@@ -37,11 +37,51 @@ phone:SetNumber(citizenid, number)      --> true | false, 'taken' | 'args'
 -- From one character to a number, exactly as if they had typed it.
 phone:SendMessage(fromCitizenid, toNumber, body)      --> true | false, reason
 
--- From a NAME rather than a number: a shop, a dispatch, a bank. Nobody can call back
--- a service that cannot answer.
-phone:SendServiceMessage(toCitizenid, 'LS Customs', 'Your car is ready.')
+-- From a NAME rather than a number: a shop, a dispatch, a fixer handing out work.
+-- Nobody can call back a service that cannot answer.
+--
+-- `who` is whichever identifier you happen to hold - a source id, a phone number or a
+-- citizen id. All three work, so you never have to convert one into another first.
+phone:SendServiceMessage(who, 'LS Customs', 'Your car is ready.')
+phone:SendSMS(who, 'Unknown', 'Bring the package to the docks.')   -- the same call
+
+-- It lands in the thread, raises the badge, buzzes the phone, plays that app's tone and
+-- is heard by anybody standing next to them. The sender name is capped at twelve
+-- characters, which is what the column holds; a longer one is shortened and the console
+-- says so once so you find out from a log line rather than from a player.
+
+-- What was said, oldest first. Each row is
+--   { id, mine, body, kind, attachment, at, seen }
+-- `mine` is from the point of view of the citizen id you asked about.
+--
+-- Reading does NOT mark the thread read. A script asking what was said has not read it
+-- on the player's behalf, and quietly clearing somebody's unread badge would be a side
+-- effect nobody asked for and nobody could see.
+phone:GetMessages(citizenid, otherNumber, limit)      --> { ... }
 
 phone:UnreadCount(citizenid)            --> number
+```
+
+### Calls
+
+```lua
+-- Ring somebody, as though this player had dialled it themselves.
+phone:Call(source, '5550142')                          --> true, callId | false, reason
+phone:Call(source, '5550142', { anonymous = true })    -- withhold the number
+phone:Call(source, '5550142', { video = true })
+
+-- This goes THROUGH the phone's own dialler rather than around it, so every rule a
+-- player meets applies: the caller needs a phone and a signal, the other end must be
+-- connected and not already on a call, Do Not Disturb is honoured, and anybody standing
+-- near the ringing phone hears it ring.
+--
+-- Errors: busy, busy_them, offline, dnd, nonumber, nophone, unreachable, self, noplayer.
+
+-- Hang up. From either end, and on a conference this removes one person rather than
+-- ending it for everybody.
+phone:EndCall(source)                                  --> true | false, 'nocall'
+
+phone:IsOnCall(source)                                 --> boolean
 ```
 
 ### Contacts
@@ -590,11 +630,52 @@ phone:SetNumber(citizenid, number)      --> true | false, 'taken' | 'args'
 -- D'un personnage vers un numero, exactement comme s'il l'avait tape.
 phone:SendMessage(fromCitizenid, toNumber, body)      --> true | false, raison
 
--- Depuis un NOM plutot qu'un numero : une boutique, un dispatch, une banque. Personne
--- ne peut rappeler un service incapable de repondre.
-phone:SendServiceMessage(toCitizenid, 'LS Customs', 'Votre voiture est prete.')
+-- Depuis un NOM plutot qu'un numero : une boutique, un dispatch, un contact qui
+-- distribue du travail. Personne ne peut rappeler un service incapable de repondre.
+--
+-- `who` est l'identifiant que vous avez sous la main : identifiant de source, numero de
+-- telephone ou citizen id. Les trois marchent, aucune conversion prealable.
+phone:SendServiceMessage(who, 'LS Customs', 'Votre voiture est prete.')
+phone:SendSMS(who, 'Inconnu', 'Apporte le colis aux docks.')       -- le meme appel
+
+-- Le message arrive dans le fil, leve la pastille, fait vibrer le telephone, joue la
+-- tonalite de cette application et s'entend a cote du joueur. Le nom d'expediteur est
+-- limite a douze caracteres, ce que tient la colonne ; un nom plus long est raccourci et
+-- la console le dit une fois, pour que vous l'appreniez d'une ligne de log et non d'un
+-- joueur.
+
+-- Ce qui a ete dit, du plus ancien au plus recent. Chaque ligne est
+--   { id, mine, body, kind, attachment, at, seen }
+-- `mine` est du point de vue du citizen id demande.
+--
+-- La lecture ne marque PAS le fil comme lu. Un script qui demande ce qui a ete dit ne
+-- l'a pas lu a la place du joueur, et effacer sa pastille en silence serait un effet de
+-- bord que personne n'a demande et que personne ne peut voir.
+phone:GetMessages(citizenid, otherNumber, limit)      --> { ... }
 
 phone:UnreadCount(citizenid)            --> nombre
+```
+
+### Appels
+
+```lua
+-- Faire sonner quelqu'un, comme si ce joueur avait compose le numero lui-meme.
+phone:Call(source, '5550142')                          --> true, callId | false, raison
+phone:Call(source, '5550142', { anonymous = true })    -- masquer le numero
+phone:Call(source, '5550142', { video = true })
+
+-- Cela passe PAR le composeur du telephone plutot qu'a cote, donc toutes les regles que
+-- rencontre un joueur s'appliquent : l'appelant a besoin d'un telephone et de reseau, le
+-- destinataire doit etre connecte et pas deja en ligne, Ne pas deranger est respecte, et
+-- qui se tient a cote du telephone qui sonne l'entend sonner.
+--
+-- Erreurs : busy, busy_them, offline, dnd, nonumber, nophone, unreachable, self, noplayer.
+
+-- Raccrocher. Des deux cotes, et sur une conference cela retire une personne plutot que
+-- de terminer l'appel pour tout le monde.
+phone:EndCall(source)                                  --> true | false, 'nocall'
+
+phone:IsOnCall(source)                                 --> booleen
 ```
 
 ### Contacts
