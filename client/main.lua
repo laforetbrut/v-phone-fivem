@@ -737,18 +737,49 @@ local function ringOutSound(who, ped)
     PlaySoundFromEntity(id, name, ped, set, false, 0)
 end
 
---- `phonedebug ringout` - does that sound work on this build at all?
+--- One tone on a ped, for something that arrived rather than something that is ringing.
+---
+--- The ring above loops until the call is answered. This does not: a message is one tone, so it
+--- is played once and there is nothing to stop. The id is still tracked rather than left to its
+--- timer, because "released on a timer" is precisely what let a sound outlive the code that owned
+--- it in 1.5.2. Here the timer only tidies up after a sound that has already finished on its own,
+--- and the resource stopping tidies up whatever the timers had not reached yet.
+local pendingTones = {}
+
+local function roomAlertSound(ped, kind)
+    local sounds = (Config.RingOut or {}).sounds or {}
+    local pair = sounds[kind] or sounds.message or {}
+    local name = tostring(pair[1] or 'Text_Arrive_Tone')
+    local set = tostring(pair[2] or 'Phone_SoundSet_Default')
+
+    local id = GetSoundId()
+    pendingTones[id] = true
+    PlaySoundFromEntity(id, name, ped, set, false, 0)
+    SetTimeout(3000, function()
+        if not pendingTones[id] then return end
+        pendingTones[id] = nil
+        StopSound(id)
+        ReleaseSoundId(id)
+    end)
+end
+
+--- `phonedebug ringout` - do those sounds work on this build at all?
 ---
 --- Hearing nothing has two very different causes: the event is not arriving, or the sound is
 --- inaudible. Testing it needed a second player and an incoming call, which is why it stayed a
---- guess. This plays it on your OWN ped, so the answer takes five seconds.
-V.Sub('phonedebug', 'ringout', 'play the nearby-phone ring on yourself', function()
+--- guess. This plays both on your OWN ped, so the answer takes five seconds.
+V.Sub('phonedebug', 'ringout', 'play the nearby-phone sounds on yourself', function()
     local cfg = Config.RingOut or {}
-    print(('[v-phone] ring-out: enabled=%s sound=%s set=%s range=%s')
-        :format(tostring(cfg.enabled ~= false), tostring(cfg.sound or 'Remote_Ring'),
-                tostring(cfg.soundSet or 'Phone_SoundSet_Michael'), tostring(cfg.range or 12.0)))
-    print('[v-phone] playing it three times on your own ped - if you hear nothing, the sound is')
-    print('[v-phone] the problem and not the event. Try another pair in Config.RingOut.')
+    local msg = (cfg.sounds or {}).message or {}
+    print(('[v-phone] ring-out: enabled=%s range=%s')
+        :format(tostring(cfg.enabled ~= false), tostring(cfg.range or 12.0)))
+    print(('[v-phone]   call ring:    sound=%s set=%s')
+        :format(tostring(cfg.sound or 'Remote_Ring'), tostring(cfg.soundSet or 'Phone_SoundSet_Michael')))
+    print(('[v-phone]   message tone: enabled=%s sound=%s set=%s')
+        :format(tostring(cfg.messages ~= false), tostring(msg[1] or 'Text_Arrive_Tone'),
+                tostring(msg[2] or 'Phone_SoundSet_Default')))
+    print('[v-phone] playing the ring three times, then the message tone - if you hear nothing,')
+    print('[v-phone] the sound is the problem and not the event. Try another pair in Config.RingOut.')
     CreateThread(function()
         -- Keyed on 0, which is not a server id, so a real ring-out for somebody nearby cannot
         -- be stopped by this test and this test cannot be stopped by theirs.
@@ -757,6 +788,8 @@ V.Sub('phonedebug', 'ringout', 'play the nearby-phone ring on yourself', functio
             Wait(1500)
         end
         ringOutStop(0)
+        Wait(600)
+        roomAlertSound(PlayerPedId(), 'message')
     end)
 end)
 
@@ -792,6 +825,26 @@ RegisterNetEvent('v-phone:client:ringOut', function(who, on)
         -- it. This is the line whose absence let a looping ring outlive its own loop.
         ringOutStop(who)
     end)
+end)
+
+--- Somebody else's phone, heard from where they are standing.
+RegisterNetEvent('v-phone:client:roomAlert', function(who, kind)
+    who = tonumber(who)
+    if not who then return end
+    local other = GetPlayerFromServerId(who)
+    local ped = other ~= -1 and GetPlayerPed(other) or 0
+    if not ped or ped == 0 or not DoesEntityExist(ped) then return end
+    roomAlertSound(ped, tostring(kind or 'message'))
+end)
+
+AddEventHandler('onResourceStop', function(res)
+    if res ~= GetCurrentResourceName() then return end
+    for id in pairs(pendingTones) do
+        StopSound(id)
+        ReleaseSoundId(id)
+    end
+    pendingTones = {}
+    for who in pairs(ringOutIds) do ringOutStop(who) end
 end)
 
 --- A city-wide alert.

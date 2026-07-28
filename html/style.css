@@ -1148,6 +1148,19 @@ input { font: inherit; }
 .bub .mimg,
 .bub .bubimg { display: block; max-width: 100%; border-radius: 14px; }
 .bub.imgb { padding: 4px; background: none; }
+/* A picture is the message, so nothing is drawn behind it.
+   `.bub.imgb` above says that already and LOST: the tint on `.bub.me` is declared further down
+   this file, both selectors weigh the same, and at equal specificity the later rule wins. A
+   picture you SENT therefore kept the green bubble behind its 4px of padding and arrived framed
+   in green, while the same picture received drew correctly - because `.bub.them` happens to be
+   declared ABOVE the rule that was meant to override it. Order is not a design decision; naming
+   both classes is, and it holds wherever either rule moves to. */
+.bub.imgb.me,
+.bub.imgb.them { background: none; box-shadow: none; }
+/* A captioned picture keeps its bubble, so the caption keeps the colour it was written for. The
+   padding closes to the picture's own, and the caption is inset instead. */
+.bub.imgcap { padding: 4px; }
+.bub.imgcap .mcap { padding: 6px 7px 3px; }
 .bub .mcap { padding: 6px 8px 2px; font-size: 13px; }
 .gsender { font-size: 11px; color: var(--app-label2); margin: 2px 6px 1px; }
 .locbtn { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600;
@@ -1419,9 +1432,16 @@ input { font: inherit; }
 /* A grabber, so it reads as a sheet you can dismiss, like the rest of the phone. */
 .emojipanel::before { content: ''; display: block; width: 38px; height: 5px; margin: 4px auto 8px;
   border-radius: 99px; background: rgba(255,255,255,.28); }
+/* Ten categories do not fit across a phone, so the strip scrolls sideways rather than crushing
+   every tab to a sliver. `flex-shrink: 0` is what makes it scroll instead of shrink; the tabs
+   still stretch to fill when there are few enough of them to fit. */
 .emojitabs { display: flex; gap: 6px; padding: 0 2px 8px; margin-bottom: 6px;
-  border-bottom: .5px solid rgba(255,255,255,.08); }
-.emojitabs button { flex: 1; padding: 7px 0; border-radius: 12px; font-size: 19px; line-height: 1;
+  border-bottom: .5px solid rgba(255,255,255,.08);
+  overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+  overscroll-behavior-x: contain; }
+.emojitabs::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.emojitabs button { flex: 1 0 auto; min-width: 34px; padding: 7px 0; border-radius: 12px;
+  font-size: 19px; line-height: 1;
   opacity: .5; transition: background .16s ease, opacity .16s ease; }
 .emojitabs button.on { background: rgba(255,255,255,.16); opacity: 1; }
 .emojigrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;

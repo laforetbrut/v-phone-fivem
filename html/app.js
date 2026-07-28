@@ -1183,7 +1183,7 @@ function paintPages(items) {
       if (arrSwallowClick) { arrSwallowClick = false; return; }
       if (editing) return;   // a tap in arrange mode never launches
       const gi = itemsIndexOfTileEl(t);
-      if (t.classList.contains('isfolder')) { if (gi >= 0) openFolder(gi); return; }
+      if (t.classList.contains('isfolder')) { openFolder(gi, t.dataset.fkey); return; }
       const a = (state.apps || []).find((x) => x.id === t.dataset.app);
       if (a) enterApp(a, t);
     });
@@ -1236,12 +1236,43 @@ function saveLayout(items) {
 
 function appById(id) { return (state.apps || []).find((a) => a.id === id); }
 
+// What a folder IS, rather than where it happens to sit.
+//
+// **A position is not an identity, and this is the bug that keeps coming back.** Every folder
+// action took an index into `layoutItems()`, a list that is re-derived from scratch on each call:
+// it drops folders whose apps are all uninstalled, de-duplicates ids, and normalises page breaks.
+// So an index taken when the tile was drawn can name something else - or nothing - by the time
+// the player's finger comes off it, and the sheet then says "that folder is no longer there"
+// about a folder that is plainly on the screen. The index has already been got wrong in three
+// separate places for the same reason.
+//
+// The key travels on the tile and survives any re-derivation that leaves the folder intact.
+function folderKey(it) {
+  return String(it.name || '') + ' ' + (it.apps || []).join(',');
+}
+
+// The index of a folder, by key first and by position only as a fallback.
+//
+// Order matters: the key is the answer when the list has shifted, and the index is the answer
+// when two folders are genuinely identical - same name, same apps - because then the key cannot
+// tell them apart and the position is the only thing that can.
+function folderIndexOf(i, key) {
+  const list = layoutItems();
+  if (key) {
+    const at = list.findIndex((it) => it && it.t === 'folder' && folderKey(it) === key);
+    if (at >= 0 && !(i >= 0 && list[i] && list[i].t === 'folder' && folderKey(list[i]) === key)) return at;
+    if (at >= 0) return i;
+  }
+  return (i >= 0 && list[i] && list[i].t === 'folder') ? i : -1;
+}
+
 function folderTile(it, i) {
   const four = it.apps.slice(0, 4).map((id) => {
     const a = appById(id);
     return '<span>' + (a ? appTile(a) : '') + '</span>';
   }).join('');
-  return '<button class="tile isfolder" type="button" data-folder="1" style="--i:' + i + '">' +
+  return '<button class="tile isfolder" type="button" data-folder="1" data-fkey="' +
+    esc(folderKey(it)) + '" style="--i:' + i + '">' +
     '<span class="wrap"><span class="folder glass">' + four + '</span></span>' +
     '<span class="nm">' + esc(it.name) + '</span></button>';
 }
@@ -1253,9 +1284,10 @@ function folderTile(it, i) {
 // inside, and tapping it lifts that app back onto the home screen. Deliberately the same idiom
 // as removing an app from the home screen, rather than a drag: dragging out of a modal sheet
 // onto a grid behind it is a lot of machinery, and this is the thing that was actually missing.
-function openFolder(i) {
-  const it = layoutItems()[i];
-  if (!it || it.t !== 'folder') return;
+function openFolder(i, key) {
+  i = folderIndexOf(i, key);
+  const it = i >= 0 ? layoutItems()[i] : null;
+  if (!it || it.t !== 'folder') { toast(L('ph.folder_gone')); return; }
 
   // Every element read here is checked for, and the folder still opens without any one of
   // them. Not defensiveness for its own sake: a player whose page is a build behind - the
@@ -1290,19 +1322,19 @@ function openFolder(i) {
   const manage = byId('foldermanage');
   if (manage) {
     manage.textContent = L('ph.folder_manage');
-    manage.onclick = () => { leave(); folderManageSheet(i); };
+    manage.onclick = () => { leave(); folderManageSheet(i, folderKey(it)); };
   }
 
   const rename = byId('folderrename');
   if (rename) {
     rename.textContent = L('ph.folder_rename');
-    rename.onclick = () => { leave(); folderRenameSheet(i); };
+    rename.onclick = () => { leave(); folderRenameSheet(i, folderKey(it)); };
   }
 
   // And the title itself, which is where a phone puts this. The button above is what makes it
   // reachable; this is the gesture people will try first.
   const title = byId('foldername');
-  if (title) title.onclick = () => { leave(); folderRenameSheet(i); };
+  if (title) title.onclick = () => { leave(); folderRenameSheet(i, folderKey(it)); };
 
   // Out of the folder, onto the home screen, in the position the folder occupies.
   const takeOut = (id) => {
@@ -1362,7 +1394,8 @@ function openFolder(i) {
 // three folders had three called "Folder". The name lives on the layout item, so this is one
 // field and a save - and clearing the field is a reset, because `layoutItems` falls back to the
 // default name for a folder that has none.
-function folderRenameSheet(i) {
+function folderRenameSheet(i, key) {
+  i = folderIndexOf(i, key);
   const it = (i >= 0) ? layoutItems()[i] : null;
   if (!it || it.t !== 'folder') { toast(L('ph.folder_gone')); return; }
 
@@ -1397,7 +1430,8 @@ function folderRenameSheet(i) {
     });
 }
 
-function folderManageSheet(i) {
+function folderManageSheet(i, key) {
+  i = folderIndexOf(i, key);
   const it = (i >= 0) ? layoutItems()[i] : null;
   // Says so rather than doing nothing. Four reports of "nothing happens" is the argument for
   // never letting a path end in a silent return where a player is watching.
@@ -1835,7 +1869,7 @@ function initArrange() {
         // report. One flag, cleared by the click it suppresses.
         arrSwallowClick = true;
         ui('folder');
-        folderManageSheet(itemsIndexOfTileEl(tile));
+        folderManageSheet(itemsIndexOfTileEl(tile), tile.dataset.fkey);
         return;
       }
       enterArrange();
@@ -3866,8 +3900,13 @@ function bubbleHtml(m) {
     ? '<button class="codecopy" type="button" data-code="' + esc(code) + '">' +
         svg('copy') + esc(L('ph.copy_code')) + '</button>'
     : '';
-  return sender + '<div class="bub ' + (m.mine ? 'me' : 'them') +
-    (m.kind === 'image' ? ' imgb' : '') + '">' + inner + '</div>' + copy;
+  // A picture ALONE is the message and wants no bubble behind it. A picture WITH a caption
+  // keeps one, because the caption has to sit on something: `.bub.me` colours its text white
+  // for the tint behind it, and stripping the background left white words on the app's own
+  // background - readable in dark, invisible in light.
+  const imgClass = m.kind !== 'image' ? '' : (m.body ? ' imgcap' : ' imgb');
+  return sender + '<div class="bub ' + (m.mine ? 'me' : 'them') + imgClass + '">' +
+    inner + '</div>' + copy;
 }
 
 function wireLocButtons() {
@@ -4351,6 +4390,14 @@ RENDER.bank = async () => {
       value: money(d.bank),
       subtitle: `${L('ph.cash')} ${money(d.cash)}`,
     }) +
+    // A savings account, when the banking script has one and will say what is in it. Drawn and
+    // nothing more: the phone does not move money it cannot verify moved, so there is no button
+    // here. `undefined` and `null` both mean "no such account", and neither draws a row - a
+    // savings balance of zero is a real answer and looks identical to a missing one otherwise.
+    (d.savings == null ? '' : UI.group([UI.row({
+      icon: 'bank', tint: '#30D158', title: L('ph.bank_savings'),
+      value: money(d.savings), mono: true,
+    })], { footer: L('ph.bank_savings_hint') })) +
     (d.transfers ? UI.button(L('ph.bank_transfer'), 'bxfer', 'tinted') : '') +
     // Only drawn when there is something to say: a server with no fee and no daily limit
     // gets no row about either.
@@ -4848,11 +4895,21 @@ RENDER.bankpro = async () => {
 
   const again = () => RENDER.bankpro();
 
+  // Where the money leaves from, in each direction. A deposit is the boss's own bank account
+  // going into the company; a withdrawal is the company's going out. The company figure is only
+  // offered when it can actually be read - `readable` false means the banking script would not
+  // say, and showing a confident zero there would be a lie.
+  const mineFrom = { title: L('ph.bankpro_from_me'), amount: Math.floor((d.mine && d.mine.bank) || 0), icon: 'bank' };
+  const coFrom = d.readable === false ? null
+    : { title: L('ph.bankpro_from_company'), amount: Math.floor(d.balance || 0), icon: 'bank', tint: '#5E5CE6' };
+
   if (byId('bpdep')) byId('bpdep').addEventListener('click', () => bankproAmountSheet({
     title: L('ph.bankpro_deposit'), limits, action: 'bankproDeposit', after: again,
+    from: mineFrom,
   }));
   if (byId('bpwd')) byId('bpwd').addEventListener('click', () => bankproAmountSheet({
     title: L('ph.bankpro_withdraw'), limits, action: 'bankproWithdraw', after: again,
+    from: coFrom,
   }));
   if (byId('bppay')) byId('bppay').addEventListener('click', () => bankproPaySheet(d, again));
   if (byId('bpxfer')) byId('bpxfer').addEventListener('click', () => bankproTransferSheet(d, again));
@@ -4860,8 +4917,22 @@ RENDER.bankpro = async () => {
 
 /// One amount sheet for deposit, withdrawal and payment. Bank accounts only - there is no
 /// cash choice, because Bank Pro never moves money in or out of a pocket.
+///
+/// Every one of them shows WHERE THE MONEY COMES FROM and how much is there. A deposit spends
+/// the boss's own bank account and a withdrawal spends the company's, and the figure was in the
+/// other app in both cases - so the only way to answer "can I afford this" was to leave, look,
+/// come back and hope you remembered. The server already sends both numbers; this just stops
+/// hiding them. It is a reading, not a permission: the server re-checks the balance when the
+/// button is pressed, exactly as it did before.
 function bankproAmountSheet(o) {
+  const from = (o.from && o.from.amount != null)
+    ? UI.group([UI.row({
+        icon: o.from.icon || 'bank', tint: o.from.tint || '#30D158',
+        title: o.from.title, value: money(o.from.amount), mono: true,
+      })], { header: L('ph.bankpro_from') })
+    : '';
   sheet(o.title,
+    from +
     UI.field('bpamount', L('ph.bank_amount'), '', 'type="number" inputmode="numeric" min="' +
       (o.limits.min || 1) + '"' + (o.limits.max > 0 ? ' max="' + o.limits.max + '"' : '')) +
     UI.field('bpnote', L('ph.bank_note'), '', 'maxlength="40"') +
@@ -4946,6 +5017,10 @@ async function bankproPickSheet(d, after, o) {
           action: 'bankproPay',
           after,
           to,
+          // Payroll and transfers both spend the company account, never the boss's own.
+          from: d.readable === false ? null
+            : { title: L('ph.bankpro_from_company'), amount: Math.floor(d.balance || 0),
+                icon: 'bank', tint: '#5E5CE6' },
         });
       }));
   };
@@ -15094,14 +15169,48 @@ function archivePeek(kind, data) {
 // A picker any composer can raise - Messages and the social apps both point it at their
 // own input. Emoji are ordinary text, so they travel and store like the rest of a message.
 const EMOJI = {
-  faces: ['😀','😃','😄','😁','😅','😂','🤣','🙂','😉','😊','😇','🥰','😍','😘','😗','😋','😜','🤪','🤨','😎','🥳','😏','😒','😌','😔','😴','😪','😜','🤗','🤭','🤫','🤔','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','😌','😛','😳','🥺','😢','😭','😤','😠','😡','🤬','🤯','😱','😨','😰','😥','😓','🤥','🥴','🤢','🤮','🤧','😷'],
-  gestures: ['👍','👎','👌','🤌','✌️','🤞','🤟','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','💪','👏','🙌','👐','🤲','✊','👊','🤛','🤜','💅','👀','👁️','🧠','🫶'],
-  hearts: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️'],
-  things: ['🔥','⭐','🌟','✨','💫','🎉','🎊','💯','✅','❌','❓','❗','💤','💢','💥','💦','💨','🕳️','💣','💬','🗨️','👑','💎','🔔','🎵','🎶','🚗','🏠','💰','💵','💊','🍺','🍻','🥂','🍔','🍕','☕','⚽','🎧','📱','💻','⏰','📅','☀️','🌧️','⛈️','❄️','🌙','⚡','🌈','🎁'],
+  faces: ['😀','😃','😄','😁','😆','😅','😂','🤣','🥲','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥳','😏','😒','😞','😔','😟','😕','🙁','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙈','🙉','🙊'],
+  gestures: ['👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👋','🤚','🖐️','✋','🖖','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦵','🦿','🦶','👣','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄','🫂','👶','🧒','👦','👧','🧑','👨','👩','🧓','👴','👵','🙍','🙎','🙅','🙆','💁','🙋','🧏','🙇','🤦','🤷','👮','🕵️','💂','👷','🤴','👸','👳','👲','🧕','🤵','👰','🤰','🎅','🤶','🦸','🦹','🧙','🧚','🧛','🧜','🧝','🧟','💆','💇','🚶','🧍','🧎','🏃','💃','🕺','👯','🧖','🧗','👫','👬','👭','💏','💑','👪'],
+  animals: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🦂','🕷️','🕸️','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🐓','🦃','🦚','🦜','🦢','🕊️','🐇','🦝','🦨','🦡','🦦','🦥','🐁','🐀','🐿️','🦔','🐾','🌵','🎄','🌲','🌳','🌴','🌱','🌿','☘️','🍀','🎍','🍃','🍂','🍁','🍄','🌾','💐','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌚','🌙','⭐','🌟','✨','⚡','☄️','💥','🔥','🌪️','🌈','☀️','🌤️','⛅','🌥️','☁️','🌦️','🌧️','⛈️','🌩️','🌨️','❄️','☃️','⛄','💨','💧','💦','🌊'],
+  food: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊','🥄','🍴','🍽️','🥣','🥡','🥢','🧂'],
+  activity: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','⛹️','🤺','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🪕','🎻','🎲','♟️','🎯','🎳','🎮','🎰','🧩'],
+  travel: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🦯','🦽','🦼','🛴','🚲','🛵','🏍️','🛺','🚨','🚔','🚍','🚘','🚖','🚡','🚠','🚟','🚃','🚋','🚞','🚝','🚄','🚅','🚈','🚂','🚆','🚇','🚊','🚉','✈️','🛫','🛬','🛩️','💺','🛰️','🚀','🛸','🚁','🛶','⛵','🚤','🛥️','🛳️','⛴️','🚢','⚓','⛽','🚧','🚦','🚥','🗺️','🗿','🗽','🗼','🏰','🏯','🏟️','🎡','🎢','🎠','⛲','⛱️','🏖️','🏝️','🏜️','🌋','⛰️','🏔️','🗻','🏕️','⛺','🛖','🏠','🏡','🏘️','🏚️','🏗️','🏭','🏢','🏬','🏣','🏤','🏥','🏦','🏨','🏪','🏫','🏩','💒','🏛️','⛪','🕌','🕍','🛕','🕋','⛩️','🌁','🌃','🏙️','🌄','🌅','🌆','🌇','🌉','🎆','🎇','🌌'],
+  things: ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯️','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🔧','🔨','⚒️','🛠️','⛏️','🔩','⚙️','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🪥','🪒','🧽','🧴','🛎️','🔑','🗝️','🚪','🪑','🛋️','🛏️','🧸','🖼️','🛍️','🛒','🎁','🎈','🎏','🎀','🎊','🎉','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','🧾','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','🗞️','📰','📓','📔','📒','📕','📗','📘','📙','📚','📖','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✒️','🖌️','🖍️','📝','✏️','🔍','🔎','🔏','🔐','🔒','🔓'],
+  hearts: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💌','💒','💍','💐','🌹','😍','🥰','😘','😻','💋','👩‍❤️‍👨','💏','💑','🫀','💘'],
+  symbols: ['💯','✅','❌','⭕','❗','❓','❕','❔','‼️','⁉️','⚠️','🚫','🔞','📵','🚭','🈲','💢','💤','💬','🗨️','🗯️','💭','🔥','⭐','🌟','✨','⚡','🎵','🎶','➕','➖','➗','✖️','🟰','♾️','💲','💱','™️','©️','®️','〰️','➰','➿','🔚','🔙','🔛','🔝','🔜','✔️','☑️','🔘','🔴','🟠','🟡','🟢','🔵','🟣','🟤','⚫','⚪','🟥','🟧','🟨','🟩','🟦','🟪','🟫','⬛','⬜','◼️','◻️','▪️','▫️','🔶','🔷','🔸','🔹','🔺','🔻','💠','🔳','🔲','♠️','♥️','♦️','♣️','🃏','🀄','🎴','🔇','🔈','🔉','🔊','📢','📣','📯','🔔','🔕','🎼','🔀','🔁','🔂','▶️','⏸️','⏹️','⏺️','⏭️','⏮️','⏯️','🔅','🔆','📶','📳','📴','♻️','⚜️','🔱','📛','🔰','⚕️','☢️','☣️','🆔','🆕','🆖','🆗','🆘','🆙','🆚','🈁','🅰️','🅱️','🅾️','🅿️','🈶','🈚','🈸','🈺','🉑','㊗️','㊙️','🈴'],
 };
-const EMOJI_TABS = [['recent','🕘'],['faces','😀'],['gestures','👍'],['hearts','❤️'],['things','🔥']];
+const EMOJI_TABS = [['recent','🕘'],['faces','😀'],['gestures','👍'],['animals','🐶'],['food','🍔'],['activity','⚽'],['travel','🚗'],['things','💡'],['hearts','❤️'],['symbols','🔣']];
 let emojiTarget = null, emojiCat = 'faces';
-let emojiRecent = [];
+
+// Recent emoji, kept where the page can find them again.
+//
+// **This is why Recent looked broken.** The list was a plain variable, so it was correct for
+// exactly as long as the page lived and empty again after every `restart v-phone`, every
+// reconnect and every client restart - which on a live server is most of the time. A row that is
+// empty whenever anybody looks at it is a row that does not work, whatever the code does in
+// between. It belongs on the device rather than in the character's stored preferences: this is
+// a keyboard habit, like a real phone's, and writing to the database on every emoji tap would
+// be a query per keystroke.
+const EMOJI_RECENT_KEY = 'vphone.emoji.recent';
+const EMOJI_RECENT_MAX = 28;
+
+function emojiLoadRecent() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EMOJI_RECENT_KEY) || '[]');
+    // Whatever is in storage was written by an older build, or by hand. Anything that is not a
+    // short string is dropped rather than trusted into the grid.
+    return Array.isArray(raw)
+      ? raw.filter((e) => typeof e === 'string' && e.length > 0 && e.length <= 16).slice(0, EMOJI_RECENT_MAX)
+      : [];
+  } catch { return []; }
+}
+
+let emojiRecent = emojiLoadRecent();
+
+function emojiRemember(glyph) {
+  emojiRecent = [glyph].concat(emojiRecent.filter((e) => e !== glyph)).slice(0, EMOJI_RECENT_MAX);
+  try { localStorage.setItem(EMOJI_RECENT_KEY, JSON.stringify(emojiRecent)); } catch { /* storage unavailable */ }
+}
 
 function paintEmoji() {
   const pan = byId('emojipanel');
@@ -15141,14 +15250,20 @@ function paintEmoji() {
       const at = (inp.selectionStart != null) ? inp.selectionStart : inp.value.length;
       inp.value = inp.value.slice(0, at) + b.dataset.e + inp.value.slice(at);
       const pos = at + b.dataset.e.length;
-      emojiRecent = [b.dataset.e].concat(emojiRecent.filter((emoji) => emoji !== b.dataset.e)).slice(0, 28);
+      emojiRemember(b.dataset.e);
+      // Repaint when the player is LOOKING at Recent, so the emoji they just picked moves to the
+      // front under their finger rather than after the next open. Repainting on any other tab
+      // would rebuild the grid under a finger that is still tapping.
+      if (emojiCat === 'recent') paintEmoji();
       try { inp.setSelectionRange(pos, pos); } catch {}
       inp.focus();
     }));
 }
 function emojiOpen(inputId) {
   if (emojiTarget === inputId && byId('emojipanel').classList.contains('on')) { emojiClose(); return; }
-  emojiTarget = inputId; emojiCat = 'faces'; paintEmoji();
+  // Open on what you actually use. Recent is the first tab and it is where a keyboard should
+  // land once there is anything in it; a fresh phone has nothing there, so it opens on faces.
+  emojiTarget = inputId; emojiCat = emojiRecent.length ? 'recent' : 'faces'; paintEmoji();
   byId('emojiscrim').classList.add('on');
   byId('emojipanel').classList.add('on');
 }
@@ -16571,8 +16686,11 @@ window.addEventListener('message', (e) => {
     } else {
       const groupId = m.group;
       const groupName = m.groupName || L('ph.groups');
+      // A service message is sent by a NAME, not a number, so it carries its own label. Without
+      // this the banner ran the raw `svc:Dispatch` through the number formatter and announced
+      // the message as coming from something that is not a phone number.
       banner({ app: 'messages', icon: 'messages',
-        title: groupId ? groupName : nameOfNumber(m.from), body: m.body || L('ph.attach'),
+        title: groupId ? groupName : (m.service || nameOfNumber(m.from)), body: m.body || L('ph.attach'),
         onClick: () => {
           const a = (state.apps || []).find((x) => x.id === 'messages');
           if (!a) return;

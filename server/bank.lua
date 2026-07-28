@@ -79,6 +79,67 @@ local function placeholder(label)
     return PLACEHOLDER[label:lower():gsub('^%s+', ''):gsub('%s+$', '')] and '' or label
 end
 
+--- The reason a movement happened, in words rather than in code.
+---
+--- **This is where `shop-sell` came from.** The framework hands over whatever the resource that
+--- moved the money wrote, and plenty of them write an identifier: doc-shop selling produce fires
+--- `QBCore:Server:OnMoneyChange` with the reason `shop-sell` while writing "Vente produits (SA
+--- International)" into its own statement table. The phone read the first for its banner and the
+--- second for its history, so one movement was described twice, in two different registers, one
+--- of them not a language at all.
+---
+--- Three steps, in order:
+---   1. a placeholder is still nothing, and stays blanked by the function above;
+---   2. a code the phone recognises is TRANSLATED, so `shop-sell` reads as a sale in the reader's
+---      own language. `Config.Bank.reasonLabels` adds a server's own without a code edit;
+---   3. anything else that still LOOKS like a code has its separators turned into spaces and its
+---      first letter raised, so `car_wash` reads "Car wash". Not a translation, but a great deal
+---      better than printing an identifier at somebody.
+---
+--- A reason that is already a sentence - anything containing a space - is somebody's own note and
+--- is returned exactly as it was written. That rule is what keeps "Vente produits (SA
+--- International)" intact, and it is the reason step 3 is safe to apply to everything else.
+local function reasonSlug(reason)
+    return (reason:lower()
+        :gsub('[%s%-%.:/\\]+', '_')
+        :gsub('[^%w_]', '')
+        :gsub('_+', '_')
+        :gsub('^_+', '')
+        :gsub('_+$', ''))
+end
+
+--- A machine's word, or a person's? One word with a separator in it, or one lowercase word.
+--- Anything with a space in it is a sentence and none of this function's business.
+local function codeShaped(reason)
+    if reason:find('%s') then return false end
+    if reason:find('[%-_%.]') then return true end
+    return reason == reason:lower()
+end
+
+local function reasonLabel(src, reason)
+    reason = placeholder(tostring(reason or ''))
+    if reason == '' or not codeShaped(reason) then return reason end
+
+    local slug = reasonSlug(reason)
+    if slug == '' then return reason end
+
+    -- A server's own map wins: it is the only one that can know what a private script's codes
+    -- mean, and it is a plain string so it needs no locale file.
+    local own = BANK.reasonLabels
+    if type(own) == 'table' then
+        local mine = own[slug] or own[reason] or own[reason:lower()]
+        if type(mine) == 'string' and mine ~= '' then return mine end
+    end
+
+    -- Then the phone's own. `LP` returns the KEY when there is no translation, which would put
+    -- `ph.txreason_shop_sell` on the screen - worse than the code it replaced - so the English
+    -- table is asked first whether the string exists at all.
+    local key = 'ph.txreason_' .. slug
+    if Locales and Locales.en and Locales.en[key] then return LP(src, key) end
+
+    return (reason:gsub('[%-_%.]+', ' '):gsub('%s+', ' '):gsub('^%l', string.upper))
+end
+
 local function record(citizenid, amount, label, kind, counterparty)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return end
@@ -92,7 +153,7 @@ local function record(citizenid, amount, label, kind, counterparty)
 end
 
 --- The phone's lines, newest first, already shaped the way the app draws them.
-local function ownHistory(citizenid)
+local function ownHistory(src, citizenid)
     local rows = MySQL.query.await([[SELECT amount, label, kind, counterparty,
             UNIX_TIMESTAMP(at) AS ts
         FROM vphone_bank_tx WHERE citizenid = ? ORDER BY id DESC LIMIT ?]],
@@ -103,8 +164,9 @@ local function ownHistory(citizenid)
             amount = math.floor(num(r.amount, 0)),
             -- On the way OUT as well as on the way in: rows written before the line above was
             -- fixed still hold the literal word, and a statement is read long after it is
-            -- written. Blanking on read repairs the history without touching the table.
-            label = placeholder(tostring(r.label or '')),
+            -- written. Resolving on read repairs the history without touching the table, which
+            -- is also what turns every `shop-sell` already stored into a readable line.
+            label = reasonLabel(src, r.label),
             kind = tostring(r.kind or ''),
             with = tostring(r.counterparty or ''),
             ts = math.floor(num(r.ts, 0)),
@@ -133,7 +195,7 @@ local function frameworkHistory(src, citizenid)
             -- Every banking script names these differently, and an amount is sometimes a
             -- string. Whatever arrives is coerced here so the page never has to guess.
             local amount = math.floor(num(r.amount or r.value or 0, 0))
-            local label = placeholder(tostring(r.label or r.reason or r.message or r.type or ''))
+            local label = reasonLabel(src, r.label or r.reason or r.message or r.type or '')
             local at = r.at or r.date or r.time
             -- **Seconds or milliseconds?** Both arrive here and they cannot be told apart by
             -- type: qb-banking and doc-banking both store `date` as `os.time() * 1000`, while a
@@ -164,7 +226,7 @@ end
 --- banking script that only hands back a preformatted date keeps its own order after them,
 --- because inventing a sort key for it would put lines in the wrong place with confidence.
 local function statement(src, citizenid)
-    local mine = ownHistory(citizenid)
+    local mine = ownHistory(src, citizenid)
     local theirs = frameworkHistory(src, citizenid)
 
     local dated, undated = {}, {}
@@ -339,6 +401,15 @@ V.Callback('v-phone:bank:data', function(src, resolve)
         ok = true,
         bank = math.floor(num(balances.bank, 0)),
         cash = math.floor(num(balances.cash, 0)),
+        -- A savings account, when the banking script has one and will say what is in it. nil
+        -- means it has neither, and the app draws no row at all rather than a zero.
+        savings = (function()
+            local ok, value = pcall(function()
+                return Bridge.Banking and Bridge.Banking.Savings and Bridge.Banking.Savings(acting)
+            end)
+            if not ok or value == nil then return nil end
+            return math.floor(num(value, 0))
+        end)(),
         number = Bridge.Numbers.Get(p.citizenid) or '',
         name = p.name or '',
         transfers = transfersOn(),
@@ -627,8 +698,13 @@ local function moneyMoved(src, amount, incoming, reason, kind)
     -- arrived as the banner "+250 - unknown". Blanked rather than translated: with no label the
     -- line reads as a plain deposit, which is true and useful, and a placeholder should never
     -- outrank the amount's own sign.
-    reason = placeholder(tostring(reason or ''))
-    if reason:lower():find('^v%-phone') then return end
+    -- The phone's own movements are recognised on the RAW string, before anything reshapes it.
+    -- `reasonLabel` turns a separator into a space, so testing the pretty version for the prefix
+    -- would let `v-phone-store` through as "V phone store" and announce the phone's own purchase
+    -- back to the buyer.
+    local raw = tostring(reason or '')
+    if raw:lower():find('^v%-phone') then return end
+    reason = reasonLabel(src, raw)
     if not incoming and NOTIFY.outgoing ~= true then return end
 
     local p = Core.GetPlayer(src)
@@ -644,7 +720,11 @@ local function moneyMoved(src, amount, incoming, reason, kind)
     end)
 
     if shouldRecord() then
-        record(p.citizenid, incoming and amount or -amount, reason, kind or 'account', '')
+        -- The RAW code is stored, not the sentence just built from it. A line is read long after
+        -- it is written, sometimes by a server that has changed language since, and `ownHistory`
+        -- resolves on the way out - so storing the code keeps one meaning and lets the reading
+        -- decide the words. It also means today's map improves yesterday's statement.
+        record(p.citizenid, incoming and amount or -amount, raw, kind or 'account', '')
     end
 end
 

@@ -5,6 +5,100 @@ one coming back.
 
 ---
 
+## [2026-07-28 22:40] — a position used as an identity, in a list rebuilt on every read
+
+**Context:** a player reported that tapping a folder answered "that folder is no longer there"
+about a folder plainly on the screen.
+
+**Error:** no message. The toast fired and the folder did not open.
+
+**Root cause:** every folder action took an INDEX into `layoutItems()`, and that function does not
+return a stored list: it rebuilds one on each call from the saved arrangement and the installed
+apps, dropping folders whose apps are all gone, de-duplicating ids and normalising page breaks.
+Two calls agree only while nothing underneath has moved. The index was captured when the tile was
+drawn and spent when a finger came off it, and anything in between - a refresh landing, an app
+arriving, a repaint from a different array - shifted what it named. The code's own comment said
+the index had already been got wrong in three separate places, which was the evidence that the
+index was the fault and not any of the three sites.
+
+**Fix:** a folder carries its identity on the tile - its name and its apps - and every action
+resolves by that first. The position survives only as the tiebreak for two folders that are
+genuinely identical, where the key cannot tell them apart and nothing else can either. Verified by
+building a deliberately stale grid in the real page: the old path resolved the wrong item, the new
+one opens the right folder, and no toast fires.
+
+**Prevention:** an index into a list that is DERIVED rather than stored is a bug waiting for the
+list to change. When a handler will be spent later than it was made - a timer, a sheet, a
+pointerup, an await - it must carry what the thing IS, not where it was. The tell is a function
+that recomputes its list from source on every call and hands out positions into it.
+
+---
+
+## [2026-07-28 21:10] — two readers of one table disagreeing about what is in it
+
+**Context:** deleting a conversation left the contact and the last message in the Messages list.
+
+**Error:** no message. Opening the thread showed nothing; the list went on naming the person.
+
+**Root cause:** clearing a thread hides every message in it, one row per message in
+`vphone_message_hidden`. `conversation` - the thread view - filtered on that table. `conversations`
+- the list - did not, and neither did the unread count beside it. So the deletion happened, and
+half the app was told.
+
+**Fix:** the same filter in both queries, and inside the grouped subquery rather than around it so
+the newest VISIBLE message is what names the thread. A counterpart whose every message is hidden
+produces no group and no row. `UnreadCount`, which a HUD outside the phone reads, was closed the
+same way so the two cannot contradict each other.
+
+**Prevention:** when a filter defines what a reader may see, every reader of that table needs it.
+A filter on the detail and not on the summary is a deletion that half happened. Grep the table
+name, not the function you changed.
+
+---
+
+## [2026-07-28 20:15] — half a feature, because only calls were wired
+
+**Context:** https://github.com/laforetbrut/v-phone-fivem/issues/6 - nobody nearby hears anything.
+
+**Error:** no message. The reporter's own reproduction is a message, not a call.
+
+**Root cause:** ring-out shipped for CALLS. A phone receiving a text made no sound in the room at
+all, so half of "a phone is a sound in the room" had never been built. Time went into asking
+whether the call ring was audible, which was the half that already worked.
+
+**Fix:** an arrival makes one tone, sent to whoever is in earshot by the same rules the ring uses.
+It does not loop, so nothing can outlive it. `phonedebug ringout` now plays both sounds so the two
+possible causes of "I hear nothing" can be told apart in five seconds rather than guessed at.
+
+**Prevention:** when a report and a feature disagree about which case is broken, read the
+reproduction rather than the feature. And a feature described as "X is a sound in the room" should
+be checked against every X, not the one that prompted it.
+
+---
+
+## [2026-07-28 19:30] — equal specificity, so the later rule won
+
+**Context:** a screenshot of a photograph in a message framed in green.
+
+**Error:** no message. A sent picture kept the bubble tint behind its padding; the same picture
+received drew correctly.
+
+**Root cause:** `.bub.imgb` clears the background behind a picture and `.bub.me` paints the sent
+bubble. Both weigh 0,2,0, and `.bub.me` is written 1,800 lines further down, so at equal
+specificity source order decided it and the override lost. The received case only looked right by
+accident: `.bub.them` happens to be declared ABOVE the rule meant to beat it. That asymmetry is
+what made this read as a picture bug rather than an ordering one.
+
+**Fix:** both classes named in one selector, which outweighs either rule wherever they move to.
+Measured in the real page with the new rule switched off and on: tint plus gradient without it,
+transparent with it.
+
+**Prevention:** an override that relies on being further down the file is not an override. When a
+rule exists to beat another, say so in its selector. And check both sides of a symmetric pair -
+one of them working is not evidence, it can be a coincidence of ordering.
+
+---
+
 ## [2026-07-28 15:05] — a looping sound with a lost id rang until the player reconnected
 
 **Context:** 1.5.2 made the nearby-phone ring configurable, because "nobody around me hears my

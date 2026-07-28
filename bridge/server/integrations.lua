@@ -713,6 +713,51 @@ function Bridge.Banking.Balances(src)
     return nil
 end
 
+--- A savings account, when the server has one. READ ONLY.
+---
+--- Not every banking script has the idea and the ones that do do not agree on what to call it,
+--- so this reads a number and offers no way to move it: the bank app draws the figure and the
+--- transfers stay where they were. Moving money the phone cannot verify it moved is how a
+--- balance and an ATM start disagreeing.
+---
+--- **nil is a real answer** and it means "there is no such account here, or it cannot be read".
+--- The app then shows nothing, rather than a confident zero for an account somebody may have
+--- money in. Only a method whose NAME is about savings is tried, never a guessed account key
+--- through the generic balance API: that one answers 0 for an account it has never heard of,
+--- which is exactly the false zero this is avoiding.
+---
+--- If your banking script keeps savings somewhere else, name it once:
+---     Config.Compat.hooks.savings = function(src) return exports['your-bank']:Savings(src) end
+function Bridge.Banking.Savings(src)
+    local custom = Config.Compat.hooks.savings
+    if custom then
+        local ok, result = pcall(custom, src)
+        return ok and tonumber(result) or nil
+    end
+
+    local bank = choose('banking', BANKS)
+    if not bank then return nil end
+
+    local p = Core.GetPlayer(src)
+    local cid = p and p.citizenid
+    if not cid then return nil end
+
+    -- `callExport` checks the resource is running and swallows a missing method, so an unknown
+    -- build costs a failed lookup and nothing else.
+    for _, method in ipairs({ 'GetSavingsBalance', 'getSavingsBalance', 'GetSavings', 'getSavings' }) do
+        local value = callExport(bank, method, cid)
+        if value ~= nil then
+            -- Some return the number, some return the row it lives in.
+            if type(value) == 'table' then
+                value = value.amount or value.balance or value.savings
+            end
+            local n = tonumber(value)
+            if n then return n end
+        end
+    end
+    return nil
+end
+
 --- The banking scripts whose own history this bridge can actually READ.
 ---
 --- Detecting a script is not the same as being able to read it, and conflating the two cost

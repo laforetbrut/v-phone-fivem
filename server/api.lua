@@ -301,28 +301,34 @@ end)
 -- Messages
 -- ══════════════════════════════════════════════════════════════
 
---- A message from a name rather than from a number: a shop confirming an order, a
---- dispatch, a bank. It lands in the conversation list like any other, and the sender is
---- shown as the label you gave.
+--- Text somebody from a NAME rather than from a number: a dispatch, a shop confirming an
+--- order, a fixer handing out a job. It lands in the conversation list like any other
+--- message, raises the badge, makes the phone buzz, and cannot be replied to - there is no
+--- number behind it.
 ---
----     exports['v-phone']:SendServiceMessage(cid, 'LS Customs', 'Your car is ready.')
-exports('SendServiceMessage', function(toCitizenid, label, body)
-    toCitizenid = tostring(toCitizenid or '')
-    if toCitizenid == '' then return false, 'args' end
-    body = tostring(body or '')
-    if body:gsub('%s', '') == '' then return false, 'empty' end
-    label = tostring(label or 'iFruit'):sub(1, 40)
+--- `who` is whichever identifier your script happens to hold: a source id, a phone number,
+--- or a citizen id. All three work.
+---
+---     exports['v-phone']:SendServiceMessage(source, 'LS Customs', 'Your car is ready.')
+---     exports['v-phone']:SendServiceMessage('5550142', 'Dispatch', 'Meet at the docks.')
+---     exports['v-phone']:SendServiceMessage(citizenid, 'Unknown', 'Bring the package.')
+---
+--- Returns `true`, or `false` plus one of `nonumber` (nobody by that identifier) or `empty`
+--- (nothing to send). The sender name is capped at twelve characters, which is what the
+--- column holds; longer ones are shortened and the console says so once.
+---
+--- **The delivery is the phone's own**, not an INSERT of its own: this used to write the row
+--- and stop, so the message existed in the table and appeared only on the app's next cold
+--- open. Everything about arriving - the live thread, the badge, the tone, the buzz, and the
+--- sound anybody standing next to the player hears - now happens because it goes through the
+--- same path a real message does.
+exports('SendServiceMessage', function(who, label, body)
+    return PhoneServiceMessage(who, label, body)
+end)
 
-    local target = Core.GetPlayerByCitizenId(toCitizenid)
-    if target and target.source then
-        exports[GetCurrentResourceName()]:Notify(target.source, 'messages', label, body)
-    end
-
-    -- Stored so it survives a reconnect. The sender id is the label rather than a
-    -- number, so nobody calls back a service that cannot answer.
-    MySQL.insert.await('INSERT INTO vphone_messages (from_cid, to_cid, body) VALUES (?,?,?)',
-        { ('svc:%s'):format(label):sub(1, 16), toCitizenid, body:sub(1, 500) })
-    return true
+--- The same thing, under the name a script author looks for first.
+exports('SendSMS', function(who, label, body)
+    return PhoneServiceMessage(who, label, body)
 end)
 
 --- Everything unread, as a count per app. For a HUD that wants a badge without opening
@@ -330,8 +336,13 @@ end)
 exports('UnreadCount', function(citizenid)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return 0 end
-    return num(MySQL.scalar.await(
-        'SELECT COUNT(*) FROM vphone_messages WHERE to_cid = ? AND seen = 0', { citizenid }), 0)
+    -- Deleted messages are not unread ones. A HUD reading this and a phone reading its own list
+    -- must arrive at the same number, or the badge outside the phone contradicts the badge in it.
+    return num(MySQL.scalar.await([[
+        SELECT COUNT(*) FROM vphone_messages
+        WHERE to_cid = ? AND seen = 0
+          AND id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)]],
+        { citizenid, citizenid }), 0)
 end)
 
 -- ══════════════════════════════════════════════════════════════

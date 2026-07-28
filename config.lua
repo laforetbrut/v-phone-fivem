@@ -373,6 +373,15 @@ Config.Compat = {
         -- the app says something different for each.
         societyBalance = nil, -- (account) -> number or nil
         societyRemove = nil,  -- (account, amount, reason) -> boolean
+        -- A SAVINGS balance, if your banking script keeps one. Read only: the bank app draws
+        -- the figure and never offers to move it, because the phone cannot verify a movement
+        -- it did not make.
+        --
+        -- The bridge tries the obvious method names on the detected banking script first, so
+        -- this is only needed when yours is called something else - or when it is escrowed and
+        -- its exports cannot be guessed. Return nil for "there is no such account", which is
+        -- what makes the card disappear instead of showing a zero somebody does not have.
+        savings = nil,        -- (src) -> number or nil
     },
 
     -- Print what the phone decided at boot, and log every social/phone write. Useful
@@ -3070,6 +3079,25 @@ Config.RingOut = {
     -- Repeat interval in milliseconds. The sound is about a second and a half long; a gap much
     -- longer than that reads as a phone that rang once rather than one that is ringing.
     everyMs = 1400,
+
+    -- A message is a sound in the room too.
+    --
+    -- Ring-out shipped for CALLS only, so standing next to somebody whose phone buzzed with a
+    -- text gave nothing away - which is the half of "a phone is a sound in the room" that was
+    -- missing, and what issue #6 was actually reporting: the reporter's own reproduction is a
+    -- message, not a call.
+    --
+    -- Unlike the ring this does not loop. One arrival, one tone.
+    messages = true,
+
+    -- The tone per kind of arrival. `message` is the fallback for any kind with no entry, so
+    -- adding a kind here is optional and leaving one out is not a mistake.
+    --
+    -- `Text_Arrive_Tone` in the default set is GTA's own text sound and it is louder than
+    -- `Remote_Ring`, which is the one nobody can hear. Each entry is { sound, soundSet }.
+    sounds = {
+        message = { 'Text_Arrive_Tone', 'Phone_SoundSet_Default' },
+    },
 }
 
 -- ══════════════════════════════════════════════════════════════
@@ -3484,6 +3512,25 @@ Config.Bank = {
     -- How many statement lines the app shows, and how long the phone keeps its own.
     historyLimit = 50,
     retentionDays = 60,       -- 0 keeps them for ever
+
+    -- ── What a movement is called ──────────────────────────────
+    -- The framework passes on whatever the resource that moved the money wrote, and plenty of
+    -- them write an identifier rather than a sentence: doc-shop sells produce with the reason
+    -- `shop-sell`, so the banner read "+836 - shop-sell" while the bank's own history for the
+    -- same movement read "Vente produits". One movement, described twice, once in a language
+    -- and once not.
+    --
+    -- The phone already translates the codes it knows, and tidies the ones it does not into
+    -- words - `car_wash` reads "Car wash" rather than `car_wash`. This is for the rest: the
+    -- codes only YOUR scripts use. The key is the reason with its separators normalised to
+    -- underscores and its case dropped, so one entry covers `shop-sell`, `SHOP_SELL` and
+    -- `Shop.Sell`. The value is the finished string, in whatever language your server runs.
+    --
+    --     reasonLabels = {
+    --         ['weed_sale']   = 'Vente de rue',
+    --         ['laundry_out'] = 'Blanchiment',
+    --     },
+    reasonLabels = {},
 }
 
 -- ══════════════════════════════════════════════════════════════

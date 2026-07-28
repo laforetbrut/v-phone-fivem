@@ -38,6 +38,10 @@ local phoneReachable
 local phoneUsable
 local speakerOff
 local prefsOf
+-- `sendMessage` is 120 lines above the earshot helpers and cannot move: it sits with the rest
+-- of the message code. Claiming the name here is what stops it resolving to a nil global, which
+-- is the shape that broke every call the first time ring-out shipped.
+local roomAlert
 
 local function num(v, d) return tonumber(v) or d or 0 end
 
@@ -961,10 +965,24 @@ exports('PhoneHasApp', function(src, id) return PhoneHasApp(src, id) end)
 -- ══════════════════════════════════════════════════════════════
 --- Conversations, newest first: for each counterpart, the last message and how many are
 --- unread. Filtered to this citizen id in SQL, so a client cannot ask for somebody else's.
+---
+--- **Deleted messages are excluded here as well as in the thread**, and the absence of that was
+--- the whole of "deleting a conversation does not delete it". Clearing a thread hides every
+--- message in it, one row per message in `vphone_message_hidden`; `conversation` below honoured
+--- that and this did not, so the thread opened empty while the LIST went on showing the
+--- counterpart and the last thing they had said. Two readers of one table have to agree about
+--- what is in it - a filter applied to the detail and not to the summary is a deletion that
+--- half happened.
 local function conversations(cid)
     -- One grouped read fetches both the last message and the counterpart's number.
     -- This avoids the former N+1 pattern (one extra SELECT per conversation) while
     -- staying compatible with MariaDB versions that predate window functions.
+    --
+    -- The hidden filter goes inside the grouped subquery rather than around it: MAX(id) has to
+    -- be the newest message this reader can still see, or a thread whose last message was
+    -- deleted would name a row that is then filtered out and vanish along with the rest of the
+    -- conversation. A counterpart whose every message is hidden produces no group and no row,
+    -- which is exactly what clearing a conversation should leave behind.
     local last = MySQL.query.await([[
         SELECT m.id AS last_id, m.body, m.at,
                IF(m.from_cid = ?, m.to_cid, m.from_cid) AS other,
@@ -974,6 +992,7 @@ local function conversations(cid)
             SELECT MAX(id) AS id
             FROM vphone_messages
             WHERE (from_cid = ? OR to_cid = ?) AND group_id IS NULL
+              AND id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)
             GROUP BY IF(from_cid = ?, to_cid, from_cid)
             ORDER BY id DESC
             LIMIT 100
@@ -981,13 +1000,18 @@ local function conversations(cid)
         LEFT JOIN vphone_characters c
           ON c.citizenid = IF(m.from_cid = ?, m.to_cid, m.from_cid)
         ORDER BY m.id DESC
-    ]], { cid, cid, cid, cid, cid }) or {}
+    ]], { cid, cid, cid, cid, cid, cid }) or {}
     if #last == 0 then return {} end
 
+    -- And the unread count, for the same reason: an unread message that has been deleted must
+    -- not go on colouring a badge for a conversation the reader can no longer open.
     local unread = {}
-    for _, r in ipairs(MySQL.query.await(
-        'SELECT from_cid AS other, COUNT(*) AS n FROM vphone_messages WHERE to_cid = ? AND seen = 0 AND group_id IS NULL GROUP BY from_cid',
-        { cid }) or {}) do
+    for _, r in ipairs(MySQL.query.await([[
+        SELECT from_cid AS other, COUNT(*) AS n FROM vphone_messages
+        WHERE to_cid = ? AND seen = 0 AND group_id IS NULL
+          AND id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)
+        GROUP BY from_cid]],
+        { cid, cid }) or {}) do
         unread[r.other] = num(r.n, 0)
     end
 
@@ -1176,6 +1200,7 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
             from = numberOfCid(fromCid), fromCid = fromCid, body = body, id = id,
             kind = kind, attachment = attachment, hasItem = requireItem(target),
         })
+        roomAlert(target, 'message')
     end
 
     -- Announced for anything integrating with the phone: a dispatch mirror, a log, a
@@ -1217,6 +1242,7 @@ local function sendGroup(p, groupId, body, kind, attachment)
                     kind = kind, attachment = attachment,
                     group = groupId, groupName = gname, hasItem = requireItem(target),
                 })
+                roomAlert(target, 'message')
             end
         end
     end
@@ -1227,6 +1253,86 @@ exports('SendMessage', function(fromCid, toNumber, body)
     local row, err = sendMessage(tostring(fromCid or ''), tostring(toNumber or ''), body)
     return row ~= nil, err
 end)
+
+--- Whoever a script means by "this player": a source id, a phone number, or a citizen id.
+---
+--- A script that wants to text somebody knows ONE of those three and it is rarely the same one
+--- twice - a job script has the source, a dispatch has the number, a database job has the id.
+--- Making the caller convert first is how an export ends up unused.
+---
+--- Order matters. A source is a small integer and a citizen id is not, so sources are recognised
+--- first and only when the player is actually connected; a number is checked before a citizen id
+--- because the number FORMAT is the narrower of the two.
+function PhoneWhoIs(target)
+    if target == nil then return nil end
+
+    local asNumber = tonumber(target)
+    if asNumber and asNumber > 0 and asNumber < 1024 and math.floor(asNumber) == asNumber then
+        local p = Core.GetPlayer(math.floor(asNumber))
+        if p then return p.citizenid end
+    end
+
+    local text = tostring(target)
+    local cid = cidOfNumber(text)
+    if cid then return cid end
+
+    -- A citizen id, then: confirmed against the phone's own character table rather than taken on
+    -- trust, so a typo becomes "no such player" instead of a message written to a row nobody owns.
+    if numberOfCid(text) then return text end
+    return nil
+end
+
+--- A message from a NAME rather than from a number: a dispatch, a shop confirming an order, a
+--- fixer with a job. It lands in the conversation list like any other and cannot be replied to,
+--- because there is no number behind it.
+---
+--- **This lives here rather than in server/api.lua, and that is the fix.** The export there did
+--- its own INSERT and stopped: the row was written and the open phone was never told, so the
+--- thread did not move, the badge did not change and nothing made a sound. The message appeared
+--- the next time the app was opened from scratch, which for the player is "it never arrived".
+--- Delivery belongs with the rest of the message code, where the live path already exists.
+---
+--- The label is capped at twelve characters because `from_cid` is VARCHAR(16) and carries the
+--- `svc:` prefix. Longer names are cut rather than refused - a message that arrives with a
+--- shortened name beats one that does not arrive - and the console says so once per label so the
+--- script's author finds out from a log line instead of from a player.
+local ServiceLabelWarned = {}
+
+function PhoneServiceMessage(target, label, body)
+    local toCid = PhoneWhoIs(target)
+    if not toCid then return false, 'nonumber' end
+
+    local raw = tostring(label or 'iFruit'):gsub('[%c]', ''):gsub('^%s+', ''):gsub('%s+$', '')
+    if raw == '' then raw = 'iFruit' end
+    label = raw:sub(1, 12)
+    if label ~= raw and not ServiceLabelWarned[raw] then
+        ServiceLabelWarned[raw] = true
+        print(('[v-phone] SendServiceMessage: the sender name "%s" is longer than twelve ' ..
+               'characters and was sent as "%s".'):format(raw, label))
+    end
+
+    body = cleanBody(tostring(body or ''))
+        :sub(1, math.max(1, math.floor(num(S('maxLength', Config.Messages.maxLength), 250))))
+    if body:gsub('%s', '') == '' then return false, 'empty' end
+
+    local from = ('svc:%s'):format(label)
+    local id = MySQL.insert.await(
+        'INSERT INTO vphone_messages (from_cid, to_cid, body) VALUES (?,?,?)', { from, toCid, body })
+
+    -- Delivered live only if they are on, exactly as a real message is: an offline character
+    -- reads it next time they open the app, which is what the row is for.
+    local online = Online[numberOfCid(toCid) or '']
+    if online and phoneReachable(online) then
+        TriggerClientEvent('v-phone:client:message', online, {
+            from = from, fromCid = from, service = label, body = body, id = id,
+            kind = 'text', attachment = '', hasItem = requireItem(online),
+        })
+        roomAlert(online, 'message')
+    end
+
+    TriggerEvent('v-phone:messageSent', from, toCid, body, 'text')
+    return true, id
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- Calls
@@ -1270,32 +1376,64 @@ end
 ---
 --- Sent only to players in earshot rather than broadcast: the sound is positional and would be
 --- inaudible anyway, and a call on a full server should not be an event to two hundred clients.
-local function ringOut(who, on)
-    local cfg = Config.RingOut or {}
-    if cfg.enabled == false then return end
-
-    -- A silenced phone stays silent to the room as well. Anything else would make Do Not
-    -- Disturb a setting that hides a call from its owner and announces it to everybody else.
-    if on and cfg.respectSilent ~= false then
-        local p = Core.GetPlayer(who)
-        local prefs = p and prefsOf(p)
-        if not prefs then return end
-        if prefs.dnd == true then return end
-        if (tonumber(prefs.ringVolume) or 0.7) <= 0 then return end
-    end
-
+--- Everybody standing close enough to `who` to hear their phone. Empty if they have no ped.
+local function earshot(who, range)
     local at = coordsOf(who)
-    if not at then return end
-    local range = math.max(2.0, math.min(80.0, tonumber(cfg.range) or 12.0))
+    if not at then return {} end
+    range = math.max(2.0, math.min(80.0, tonumber(range) or 12.0))
 
+    local near = {}
     for _, raw in ipairs(GetPlayers()) do
         local other = tonumber(raw)
         if other and other ~= who then
             local theirs = coordsOf(other)
-            if theirs and #(at - theirs) <= range then
-                TriggerClientEvent('v-phone:client:ringOut', other, who, on and true or false)
-            end
+            if theirs and #(at - theirs) <= range then near[#near + 1] = other end
         end
+    end
+    return near
+end
+
+--- Whether this phone makes any sound at all right now.
+---
+--- A silenced phone stays silent to the room as well. Anything else would make Do Not Disturb a
+--- setting that hides a call from its owner and announces it to everybody else.
+local function phoneAudible(who)
+    if (Config.RingOut or {}).respectSilent == false then return true end
+    local p = Core.GetPlayer(who)
+    local prefs = p and prefsOf(p)
+    if not prefs then return false end
+    if prefs.dnd == true then return false end
+    return (tonumber(prefs.ringVolume) or 0.7) > 0
+end
+
+local function ringOut(who, on)
+    local cfg = Config.RingOut or {}
+    if cfg.enabled == false then return end
+    if on and not phoneAudible(who) then return end
+
+    for _, other in ipairs(earshot(who, cfg.range)) do
+        TriggerClientEvent('v-phone:client:ringOut', other, who, on and true or false)
+    end
+end
+
+--- A phone that just received something makes one sound, and the room hears that too.
+---
+--- The ring above LOOPS until the call is answered; this does not. A message, a mail or an alert
+--- is one tone, so it is sent once and the client plays it once - there is nothing to stop and
+--- nothing that can outlive it.
+---
+--- This is the half of "a phone is a sound in the room" that was never built: ring-out shipped
+--- for calls only, so standing next to somebody whose phone buzzed with a message gave nothing
+--- away. Reported as https://github.com/laforetbrut/v-phone-fivem/issues/6, where the reporter's
+--- own repro is a message rather than a call.
+function roomAlert(who, kind)
+    local cfg = Config.RingOut or {}
+    if cfg.enabled == false or cfg.messages == false then return end
+    if not phoneAudible(who) then return end
+
+    kind = tostring(kind or 'message')
+    for _, other in ipairs(earshot(who, cfg.range)) do
+        TriggerClientEvent('v-phone:client:roomAlert', other, who, kind)
     end
 end
 
