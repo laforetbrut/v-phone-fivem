@@ -5,6 +5,162 @@ one coming back.
 
 ---
 
+## [2026-07-28 15:05] — a looping sound with a lost id rang until the player reconnected
+
+**Context:** 1.5.2 made the nearby-phone ring configurable, because "nobody around me hears my
+phone" had two possible causes and no way to tell them apart. Two versions later, players
+reported the opposite: a caller standing next to the phone being rung heard the tone for ever.
+
+**Error:** no message. `Remote_Ring` kept playing on the caller's client with nothing able to
+stop it, through answering, hanging up and walking away.
+
+**Root cause:** mine, and introduced by that same 1.5.2 change. The original loop was
+`PlaySoundFromEntity(id, ...)`, `Wait(1400)`, `StopSound(id)`, `ReleaseSoundId(id)`, so the
+stop was in the same iteration as the start and could not be missed. I replaced it with a
+`SetTimeout(1500, ...)` and a local `id`, which broke the link between the sound and the loop
+that owned it. `Remote_Ring` LOOPS: it plays until `StopSound` is called on its id. Clearing
+`ringingPeds[who]` ended the loop and left whatever was playing to a timer, and any id whose
+timer had already fired while the loop went round was unreachable. An unreachable id on a
+looping sound is a sound that plays until the client restarts.
+
+**Fix:** `ringOutIds[who]` holds the live id per player. `ringOutStop(who)` is called before
+each new pass so ids cannot pile up whatever the repeat interval is set to, when the loop ends
+however it ends, and by the event that says the ringing is over rather than at the loop's next
+turn (that loop sits inside a Wait of up to a second and a half).
+
+**Prevention:** when a resource is acquired and released in one iteration, moving the release
+onto a timer changes an invariant, not just a schedule. Ask what happens if the loop exits
+between the two. And a looping game sound needs its id reachable from whatever ends it, so
+store it where the stopper can see it rather than in the closure that started it.
+
+---
+
+## [2026-07-28 14:40] — a passcode that cleared itself, from a view written back over the record
+
+**Context:** players reported that the six-digit code and Face ID cleared themselves "often,
+and at every reboot". Two symptoms in one sentence, which turned out to be two separate bugs.
+
+**Error:** no message. `securityEnabled` came back false and the phone opened with no lock.
+
+**Root cause:** two, and both had to go.
+
+The "often" half: `prefsOf` is a VIEW of the stored record. It applies defaults, clamps values,
+and leaves `passcodeHash` out unless the caller passes `includeSecrets`. The app-store install
+path read that view and wrote it straight back over the record, so the digest went with it. The
+next read computes "is security on" from the digest being non-empty, so the code and the Face ID
+vanished together, on every install and every removal.
+
+The "every reboot" half: the write was `SetMetadata`, which fires the query and returns. An
+un-awaited query dies in the queue when the process tears down. The bridge already carried a
+comment saying exactly this, written when the same failure was fixed for the battery and again
+for photographs. The preferences had been left on the async write.
+
+**Fix:** one function, `savePhonePrefs`, is the only thing that writes that record. It re-reads
+the stored digest and merges it back in whatever the caller hands it, then waits for the row to
+land. The health record, the Zuber favourites and the charging preferences were moved to the
+waited write too. The step counter was deliberately left async: it runs on a timer while
+somebody walks, and losing a few paces to a restart is not something anybody can notice.
+
+**Prevention:** never write a sanitised view back over the record it was read from. A view
+exists to drop things, so writing it back drops them from storage. Either read the raw record,
+modify the fields you own and write that (which is what the public API exports already did
+correctly), or funnel every write through one function that reconciles what the view omits.
+And when a report contains two adverbs of frequency, treat it as two bugs until proven
+otherwise.
+
+---
+
+## [2026-07-27 23:05] — a guard meant for joining also rejected every leave
+
+**Context:** the staff voice broadcast. A player reported that after `/phoneadmin voice stop`
+everyone on the server could still hear each other talking.
+
+**Error:** no message. The broadcast stopped, the speaker went quiet, and every listener stayed
+audible to every other listener until they reconnected.
+
+**Root cause:** the voice shim was one expression with one guard:
+
+    local n = math.floor(tonumber(channel) or 0)
+    if n <= 0 then return false end
+    return pcall(function() exports['pma-voice']:setCallChannel(on and n or 0) end)
+
+The guard is right for joining, since there is no channel zero to join. But `vbRelease` leaves
+by calling this with channel 0, which is how pma-voice itself spells "leave the call", so every
+release hit the guard and returned false without ever reaching `setCallChannel`. The volume
+overrides were handed back correctly, which is why the speaker went quiet and the failure
+looked like it had worked. A broadcast channel is MUTUAL, so nobody leaving it meant a server
+full of open microphones.
+
+**Fix:** leaving is decided before the channel number is looked at. A number is only needed to
+arrive somewhere. Verified in real Lua across five cases including "joining channel 0 is still
+refused".
+
+**Prevention:** a validation guard on a parameter must be scoped to the operations that use
+that parameter. When one function does two jobs and only one of them needs an argument,
+validate inside the branch, not at the top. Watch for the shape `on and X or Y`: it hides the
+fact that the two paths have different preconditions.
+
+---
+
+## [2026-07-27 22:50] — a redirected GetPlayer bound the wrong source to a phone number
+
+**Context:** staff can hold a player's phone and act as them. A player reported that after the
+admin released it, the admin kept receiving their notifications.
+
+**Error:** no message. Worse than reported: the owner stopped receiving their own messages and
+calls entirely, and releasing the phone did not undo it.
+
+**Root cause:** `Core.GetPlayer` is redirected while a phone is held, so the phone's boot
+callback ran with the TARGET's player object and the ADMIN's source id. `ensureNumber` writes
+`Online[number] = src` from that pair, which pointed the player's own number at the staff
+member. Nothing rewrote the map on release, so it survived the session and lasted until one of
+them reconnected.
+
+**Fix:** `ensureNumber` asks `AdminViewTarget(src)` and refuses to bind a number when the
+source is only looking at that character. The number is still returned, because it is drawn on
+the screen they are looking at; only the routing is withheld. Releasing a session also rebinds
+the character to their real source, which repairs a binding taken before the fix rather than
+waiting for a reconnect.
+
+**Prevention:** where a framework accessor is deliberately redirected for impersonation, every
+write keyed on `source` is suspect. Redirection changes who the object describes but not whose
+machine the id belongs to, so any code pairing the two is writing a relationship that is half
+one player and half another. Audit for `X[fromPlayerObject] = src` whenever an impersonation
+layer exists.
+
+---
+
+## [2026-07-27 22:20] — a const read above its own declaration, invisible to every check
+
+**Context:** the player crashed in FiveM and asked whether the phone had caused it. The crash
+itself was an early-exit trap with nothing tying it to this resource, but the client log carried
+a real error from the phone, eleven times over.
+
+**Error:**
+
+    Uncaught ReferenceError: Cannot access 'chosen' before initialization
+    (@v-phone/html/app.js:11553)
+
+**Root cause:** `zuberCheckout` computed the loyalty discount twenty-five lines above the
+`const chosen` it reads. `const` is hoisted but unreachable until its declaration runs, which is
+the temporal dead zone. The Zuber basket therefore threw before drawing anything, every time,
+and had done since 1.4.4. Nothing caught it: it is not a syntax error, so `node --check` passed,
+and every test in the suite passed because they all assert on source text rather than running
+the page.
+
+**Fix:** the loyalty block moved above the money block, which had no dependency on it. A static
+check for the whole class of mistake now runs with the rest of the suite and was verified
+against the version that had the bug, where it reports both `points` and `chosen`.
+
+**Prevention:** `node --check` proves a file parses, not that a line can run. For a page nobody
+loads in CI, add checks for the failure modes that parse cleanly: a name read above its own
+`const`/`let`, and a function called but defined nowhere. Write them against a version that has
+the bug before trusting them, and delete a checker that produces false positives rather than
+keeping one that teaches you to ignore it (my first attempt at the second check produced
+thirteen and zero real, so it was dropped).
+
+---
+
 ## [2026-07-26 10:30] — One nil call, five wrong fixes, and a probe that lied
 
 **Context:** the Camera app showed no preview, and after taking a photograph the player was
