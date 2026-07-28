@@ -559,7 +559,9 @@ V.Callback('v-phone:charging:prefs', function(src, resolve, data)
     local hard = math.max(0, math.floor(num(cfg().autoAcceptMax, 0)))
     if hard > 0 and (autoMax == 0 or autoMax > hard) then autoMax = hard end
 
-    p.SetMetadata('chargePrefs', { autoAccept = autoAccept, autoMax = autoMax })
+    -- Waited on: an auto-accept ceiling is a decision about money, and it has to survive a
+    -- restart or the next paid charger asks again.
+    p.SetMetadataSync('chargePrefs', { autoAccept = autoAccept, autoMax = autoMax })
     resolve({ ok = true, autoAccept = autoAccept, autoMax = autoMax })
 end)
 

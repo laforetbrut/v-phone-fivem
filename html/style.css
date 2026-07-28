@@ -8345,7 +8345,17 @@ body.inframe.dark .uisearch {
 }
 
 .comform button svg { width: 18px; height: 18px; }
-.dmform { margin: 0; padding: 6px 4px 2px; }
+/* The social DM bar, given the room every other composer in this phone has.
+   
+   `padding: 6px 4px 2px` put the field hard against the left bezel and the send button under
+   the rounded corner on the right, with nothing between the row and the home indicator - the
+   Messages composer has 12px at the sides and 26px at the foot for exactly those two reasons,
+   and this bar had been left on the numbers it was first drafted with. */
+.dmform {
+  margin: 0;
+  padding: 8px 12px 26px;
+  background: var(--app-bg);
+}
 
 /* ── Search and people rows ──────────────────────────────────── */
 .socsearch {
@@ -11700,4 +11710,23 @@ body.inframe.dark .uisearch {
   width: 8px;
   height: 13px;
   color: var(--app-label3);
+}
+
+/* A row avatar that is a photograph rather than an initial. The circle and the size come from
+   `.rav`; this only says what fills it. */
+.row .rav.ravimg {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: transparent;
+}
+
+/* The call screen avatar, when the contact has a photograph. The gradient underneath is the
+   fallback for everybody else and has to be turned off, or it shows through a picture with
+   any transparency in it. */
+.callav.hasphoto {
+  background-color: transparent;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }

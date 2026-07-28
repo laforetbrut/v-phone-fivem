@@ -149,7 +149,10 @@ def build():
             'previews': True, 'peek': True, 'size': 1, 'side': 'right',
         },
         'contacts': [
-            {'id': 1, 'name': 'Mara Ortiz', 'number': '555-0188', 'favourite': 1},
+            # One contact with a picture, so the avatar that draws a photograph is
+            # exercised alongside the two that fall back to an initial.
+            {'id': 1, 'name': 'Mara Ortiz', 'number': '555-0188', 'favourite': 1,
+             'photo': 'https://picsum.photos/seed/mara/160'},
             {'id': 2, 'name': 'Deputy Vance', 'number': '555-0110'},
             {'id': 3, 'name': 'Ray (Garage)', 'number': '555-0164'},
         ],

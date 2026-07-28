@@ -206,7 +206,21 @@
         ? UI.appIcon(o.appicon, 'appx')
         : o.icon
           ? '<span class="ricon"' + (o.tint ? ' style="background:' + esc(o.tint) + '"' : '') + '>' + svg(o.icon) + '</span>'
-          : (o.avatar ? '<span class="rav">' + esc(String(o.avatar).slice(0, 1).toUpperCase()) + '</span>' : '');
+          : (o.avatar
+              // A real picture when there is one, and the initial when there is not.
+              //
+              // A contact's photo was stored, sent to the page and drawn on exactly one screen -
+              // the contact card - because this was the only avatar the kit could draw and it
+              // only ever knew how to draw a letter. Every list of people in the phone went
+              // through here, so every one of them showed initials.
+              //
+              // `photo` is a URL the server has already host-gated, and it is set as a
+              // background rather than an <img> so it crops to the circle without a second rule.
+              ? (o.photo
+                  ? '<span class="rav ravimg" style="background-image:url(&quot;' +
+                    esc(String(o.photo)) + '&quot;)"></span>'
+                  : '<span class="rav">' + esc(String(o.avatar).slice(0, 1).toUpperCase()) + '</span>')
+              : '');
       const tail =
         (o.badge ? '<span class="rbadge">' + esc(o.badge) + '</span>' : '') +
         (o.time ? '<span class="rtime">' + esc(o.time) + '</span>' : '') +

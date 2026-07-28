@@ -706,19 +706,35 @@ local ringingPeds = {}
 --- in Michael's phone set is what every script that does this reaches for, and GTA meant it for
 --- your own ear rather than for a room - so when somebody reports hearing nothing, the first
 --- thing worth trying is a different pair, and that should not need a code edit.
-local function ringOutSound(ped)
+--- The sound currently ringing for one player, so it can always be stopped.
+---
+--- **`Remote_Ring` LOOPS.** It plays until something calls `StopSound` on its id, which is why
+--- the id has to outlive the call that started it and be reachable from the code that ends the
+--- ring. 1.5.2 replaced a synchronous stop with a fixed 1500ms timer, so the sound was no
+--- longer tied to the loop at all: clearing `ringingPeds` ended the loop and left whatever was
+--- playing to a timer, and any id whose timer had already fired while the loop kept going was
+--- simply lost. A looping sound with a lost id rings until the player reconnects, which is the
+--- "tuu tuu tuu that never stops" the caller standing next to the phone was hearing.
+local ringOutIds = {}
+
+local function ringOutStop(who)
+    local id = ringOutIds[who]
+    if not id then return end
+    ringOutIds[who] = nil
+    StopSound(id)
+    ReleaseSoundId(id)
+end
+
+local function ringOutSound(who, ped)
     local cfg = Config.RingOut or {}
     local name = tostring(cfg.sound or 'Remote_Ring')
     local set = tostring(cfg.soundSet or 'Phone_SoundSet_Michael')
+    -- One at a time per player: the previous pass is stopped before the next begins, so ids
+    -- can never pile up whatever the repeat interval is set to.
+    ringOutStop(who)
     local id = GetSoundId()
+    ringOutIds[who] = id
     PlaySoundFromEntity(id, name, ped, set, false, 0)
-    -- Released on its own timer rather than after a Wait in the caller: the caller's loop paces
-    -- the repeats, and holding the id across that Wait meant one leaked every time the ped went
-    -- out of scope mid-ring.
-    SetTimeout(1500, function()
-        StopSound(id)
-        ReleaseSoundId(id)
-    end)
 end
 
 --- `phonedebug ringout` - does that sound work on this build at all?
@@ -734,10 +750,13 @@ V.Sub('phonedebug', 'ringout', 'play the nearby-phone ring on yourself', functio
     print('[v-phone] playing it three times on your own ped - if you hear nothing, the sound is')
     print('[v-phone] the problem and not the event. Try another pair in Config.RingOut.')
     CreateThread(function()
+        -- Keyed on 0, which is not a server id, so a real ring-out for somebody nearby cannot
+        -- be stopped by this test and this test cannot be stopped by theirs.
         for _ = 1, 3 do
-            ringOutSound(PlayerPedId())
+            ringOutSound(0, PlayerPedId())
             Wait(1500)
         end
+        ringOutStop(0)
     end)
 end)
 
@@ -747,6 +766,10 @@ RegisterNetEvent('v-phone:client:ringOut', function(who, on)
 
     if not on then
         ringingPeds[who] = nil
+        -- At once, rather than waiting for the loop to come round: the loop is inside a Wait of
+        -- up to a second and a half, and a ring that carries on after the call was answered is
+        -- exactly what the caller hears as it never stopping.
+        ringOutStop(who)
         return
     end
     if ringingPeds[who] then return end
@@ -762,9 +785,12 @@ RegisterNetEvent('v-phone:client:ringOut', function(who, on)
                 ringingPeds[who] = nil
                 break
             end
-            ringOutSound(ped)
+            ringOutSound(who, ped)
             Wait(math.max(400, math.floor(tonumber((Config.RingOut or {}).everyMs) or 1400)))
         end
+        -- However the loop ended - told to stop, ped gone, player left - the sound ends with
+        -- it. This is the line whose absence let a looping ring outlive its own loop.
+        ringOutStop(who)
     end)
 end)
 

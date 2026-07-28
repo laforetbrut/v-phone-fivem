@@ -844,6 +844,28 @@ prefsOf = function(p, includeSecrets)
     return prefs
 end
 
+--- The only place the `phone` record is written.
+---
+--- Two things it guarantees, both of which were learnt the hard way.
+---
+--- **The digest survives.** `prefsOf` is a view and drops `passcodeHash` unless the caller asks
+--- for it, so any caller that read the view and wrote it back erased the passcode - and with it
+--- the Face ID, which is computed from the digest being present. Re-read and merged here rather
+--- than trusted from the caller: a rule that lives in every call site is a rule that holds until
+--- somebody adds the next one.
+---
+--- **The write is waited on.** An un-awaited query dies in the queue if the process tears down
+--- first, which is why a code set shortly before a restart was gone afterwards.
+local function savePhonePrefs(p, prefs)
+    if type(prefs) ~= 'table' then return end
+    if tostring(prefs.passcodeHash or '') == '' then
+        local stored = p.GetMetadata('phone')
+        local kept = (type(stored) == 'table') and tostring(stored.passcodeHash or '') or ''
+        if kept ~= '' then prefs.passcodeHash = kept end
+    end
+    p.SetMetadataSync('phone', prefs)
+end
+
 local function contactsOf(p)
     local required, requiredNumbers = {}, {}
     for index, raw in ipairs(Config.RequiredContacts or {}) do
@@ -3062,7 +3084,18 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
             prefs.glass = math.max(0, math.min(100, math.floor(num(data.glass, Config.DefaultGlass))))
         end
     end
-    p.SetMetadata('phone', prefs)
+    -- **Waited on, because this is where the passcode lives.**
+    --
+    -- `SetMetadata` fires the query and returns. That is right for something the cache can
+    -- answer for until the next tick, and wrong for anything a player would notice losing: an
+    -- un-awaited write dies in the queue if the process tears down first. Setting a six-digit
+    -- code and a Face ID and finding them gone after a restart is that, and it was reported as
+    -- "it clears itself and I have to set it again every reboot" - which is exactly what a
+    -- write that lands only if the server happens to stay up looks like from the outside.
+    --
+    -- One awaited query per settings change costs nothing. The sliders commit once when the
+    -- finger lifts rather than on every frame, so this is not a hot path.
+    savePhonePrefs(p, prefs)
     if networkWasOn and (prefs.airplane or prefs.cellular == false) then
         local id = CallOf[src]
         if id then endCall(id, 'nosignal') end
@@ -3726,7 +3759,15 @@ V.Callback('v-phone:install', function(src, resolve, data)
     --- of them. It also means the version stamp and the list update cannot drift apart: they
     --- happen together or not at all.
     local function grant()
-        local fresh = prefsOf(p)
+        -- **`includeSecrets`, and this is the second half of the passcode bug.**
+        --
+        -- `prefsOf` is a VIEW: it applies defaults, clamps, and drops the digest unless it is
+        -- asked for. Writing that view back over the stored record therefore erased
+        -- `passcodeHash` - and the next read computes `securityEnabled` from the digest being
+        -- non-empty, so the code AND the Face ID both vanished. It happened on every install
+        -- and every removal from the store, which is the "it clears itself often" half of the
+        -- report; the restart half was the un-awaited write below.
+        local fresh = prefsOf(p, true)
         local list = {}
         for _, rid in ipairs(fresh[key] or {}) do
             if rid ~= id then list[#list + 1] = rid end
@@ -3745,7 +3786,9 @@ V.Callback('v-phone:install', function(src, resolve, data)
         end
         fresh.versions = versions
 
-        p.SetMetadata('phone', fresh)
+        -- Same reason as the settings write: an app bought and installed a minute before a
+        -- restart came back uninstalled, with the money gone.
+        savePhonePrefs(p, fresh)
     end
 
     -- Removing one is instant. There is nothing to fetch, and making somebody watch a progress
@@ -4449,13 +4492,18 @@ V.Callback('v-phone:health', function(src, resolve, data)
         if data.meds     ~= nil then rec.meds     = tostring(data.meds):sub(1, 300) end
         if data.donor    ~= nil then rec.donor    = data.donor == true end
         if data.ice      ~= nil then rec.ice      = tostring(data.ice):sub(1, 60) end
-        p.SetMetadata('healthrec', rec)
+        -- Typed by hand, a field at a time: a blood group and an allergy list are not something
+        -- to ask somebody to enter twice.
+        p.SetMetadataSync('healthrec', rec)
     elseif op == 'steps' then
         -- The client reports distance walked; the record keeps the day's total.
         local add = math.max(0, math.floor(num(data and data.steps, 0)))
         local day = os.date('%Y-%m-%d')
         if rec.stepDay ~= day then rec.stepDay = day rec.steps = 0 end
         rec.steps = math.min(200000, (tonumber(rec.steps) or 0) + add)
+        -- **Not** the sync write. This one runs every couple of seconds from a walking player,
+        -- and losing a few paces to a restart is not something anybody can notice - which is
+        -- the whole test for which of the two writes to use.
         p.SetMetadata('healthrec', rec)
     end
 

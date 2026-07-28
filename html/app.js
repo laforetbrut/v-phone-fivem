@@ -2551,7 +2551,8 @@ RENDER.phone = () => {
     const list = (state.contacts || []).filter((c) => phoneTab === 'contacts' || Number(c.favourite) === 1);
     body(list.length
       ? UI.group(list.map((c) => UI.row({
-          avatar: c.name, title: c.name, subtitle: maskNum(c.number), chevron: true, data: { n: c.number },
+          avatar: c.name, photo: c.photo || null,
+          title: c.name, subtitle: maskNum(c.number), chevron: true, data: { n: c.number },
         })))
       : UI.empty(L(phoneTab === 'contacts' ? 'ph.no_contacts' : 'ph.no_favourites'), 'contacts'));
     rows('.row[data-n]', (r) => r.addEventListener('click', () => placeCall(r.dataset.n)));
@@ -3602,6 +3603,16 @@ function maskNum(value) {
   return text.replace(/\d/g, '•');
 }
 
+/// The photograph saved against a number, or nothing.
+///
+/// A contact's photo was stored, sent to the page, and drawn on the contact card alone. Every
+/// other list of people asked the kit for an avatar, and the kit only knew how to draw an
+/// initial - so the picture existed everywhere and appeared in one place.
+function photoOfNumber(number) {
+  const c = (state.contacts || []).find((x) => x.number === number);
+  return (c && c.photo) ? c.photo : null;
+}
+
 function nameOfNumber(number) {
   const c = (state.contacts || []).find((x) => x.number === number);
   // A contact's NAME is not masked: "Bob" is not a phone number, and hiding it would make the
@@ -3646,7 +3657,11 @@ RENDER.messages = async () => {
       return UI.row({
         // Flattened for the list: a message written over four lines is still one row here,
         // and a raw newline in a row subtitle drops the rest of it onto the next line.
-        avatar: title, title, subtitle: String(c.body || '').replace(/\s*\n+\s*/g, ' '),
+        avatar: title,
+        // A service thread has a label rather than a number, so there is nobody to have
+        // a photograph of.
+        photo: c.service ? null : photoOfNumber(c.number),
+        title, subtitle: String(c.body || '').replace(/\s*\n+\s*/g, ' '),
         badge: c.unread > 0 ? c.unread : null, chevron: true,
         data: { n: c.service ? c.other : c.number },
       });
@@ -4100,7 +4115,8 @@ RENDER.contacts = () => {
     const list = q ? all.filter((c) => (c.name + ' ' + c.number).toLowerCase().includes(q)) : all;
     byId('clist').innerHTML = list.length
       ? UI.group(list.map((c) => UI.row({
-          avatar: c.name, title: c.name, subtitle: maskNum(c.number), chevron: true,
+          avatar: c.name, photo: c.photo || null,
+          title: c.name, subtitle: maskNum(c.number), chevron: true,
           value: c.system ? L('ph.required_contact') : '',
           data: { id: c.id, n: c.number },
         })))
@@ -15531,7 +15547,13 @@ function renderCall() {
   const name = conference ? L('ph.call_group') : one;
   ui.classList.toggle('conference', conference);
 
-  byId('callav').textContent = (conference ? String(others.length + 1) : name.slice(0, 1).toUpperCase());
+  // The caller's own photograph on the call screen, which is the one place a phone always
+  // shows it. A conference has no single face, so it keeps the headcount.
+  const av = byId('callav');
+  const avPhoto = (!conference && call.number) ? photoOfNumber(call.number) : null;
+  av.classList.toggle('hasphoto', !!avPhoto);
+  av.style.backgroundImage = avPhoto ? 'url("' + avPhoto + '")' : '';
+  av.textContent = avPhoto ? '' : (conference ? String(others.length + 1) : name.slice(0, 1).toUpperCase());
   byId('callnum').textContent = name;
   byId('callstate').textContent = call.video
     ? L('ph.facetime_video')

@@ -170,7 +170,9 @@ end
 local function saveFavourites(p, list)
     local cap = math.max(1, math.floor(num(CFG.favourites, 20)))
     while #list > cap do table.remove(list) end
-    p.SetMetadata('zuber', { favourites = list })
+    -- Waited on: a favourite is a deliberate tap, and losing one to a restart is the kind
+    -- of small disappearance nobody reports and everybody notices.
+    p.SetMetadataSync('zuber', { favourites = list })
 end
 
 local function historyLimit()
