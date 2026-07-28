@@ -2444,6 +2444,12 @@ input { font: inherit; }
   white-space: nowrap;
 }
 
+/* The title needs the room. `fitNavTitle` measures the two and sets this when they cannot both
+   fit: the back LABEL goes and the chevron stays, so the control survives and only the courtesy
+   word is spent. The inset then only has to clear the chevron and the action button. */
+.navbar.tightnav #navbacktxt { display: none; }
+.navbar.tightnav .navtitle-sm { padding: 0 52px; }
+
 .navback,
 .navact {
   min-height: var(--ph-touch);

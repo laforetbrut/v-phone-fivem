@@ -845,6 +845,11 @@ AddEventHandler('onResourceStop', function(res)
     end
     pendingTones = {}
     for who in pairs(ringOutIds) do ringOutStop(who) end
+    -- The phone's OWN ring, for a call that was still ringing when the resource went down.
+    -- `Remote_Ring` loops until something stops it, and a restart is not something: the sound
+    -- would have carried on until the player reconnected. On a live server this is the common
+    -- case, not the rare one - `restart v-phone` happens far more often than a call is missed.
+    stopRinging()
 end)
 
 --- A city-wide alert.
@@ -1556,6 +1561,7 @@ RegisterNUICallback('contactSave',   relay('v-phone:contactSave'))
 RegisterNUICallback('contactDelete', relay('v-phone:contactDelete'))
 RegisterNUICallback('groupCreate',   relay('v-phone:groupCreate'))
 RegisterNUICallback('groupMembers',  relay('v-phone:groupMembers'))
+RegisterNUICallback('groupLeave',    relay('v-phone:groupLeave'))
 RegisterNUICallback('calls',         relay('v-phone:calls'))
 RegisterNUICallback('airdropScan',    relay('v-phone:airdropScan'))
 RegisterNUICallback('airdropSend',    relay('v-phone:airdropSend'))
@@ -3402,6 +3408,21 @@ end)
 RegisterNetEvent('v-phone:client:socialRefresh', function(app)
     if not isOpen then return end
     SendNUIMessage({ action = 'socialRefresh', app = tostring(app or '') })
+end)
+
+--- Redraw one app, because what it is showing has stopped being true.
+---
+--- The social apps already had this. Everything else was drawn once when the app was opened and
+--- then left alone, which is right for a list of contacts and wrong for a balance: money moved by
+--- a shop, a job or an ATM changed the number the player was looking at, and the phone went on
+--- showing the old one until they backed out and came in again. "It takes ages to show up" is
+--- what a screen that never refreshes looks like from the outside.
+---
+--- Same shape as the social one, and the same restraint: it does nothing unless the phone is open
+--- AND that app is the one on screen, so it is a redraw the player is watching or nothing at all.
+RegisterNetEvent('v-phone:client:appRefresh', function(app)
+    if not isOpen then return end
+    SendNUIMessage({ action = 'appRefresh', app = tostring(app or '') })
 end)
 
 RegisterNetEvent('v-phone:client:banner', function(b)

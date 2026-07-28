@@ -1248,7 +1248,7 @@ function appById(id) { return (state.apps || []).find((a) => a.id === id); }
 //
 // The key travels on the tile and survives any re-derivation that leaves the folder intact.
 function folderKey(it) {
-  return String(it.name || '') + ' ' + (it.apps || []).join(',');
+  return JSON.stringify([String(it.name || ''), it.apps || []]);
 }
 
 // The index of a folder, by key first and by position only as a fallback.
@@ -2259,6 +2259,49 @@ function setNav(title, backLabel, action, onBack) {
     act.onclick = null;
   }
   byId('navbar').classList.remove('collapsed');
+  fitNavTitle();
+}
+
+/// Keep the collapsed title clear of the back button.
+///
+/// The small title is absolutely positioned and centred across the WHOLE bar, which is right - a
+/// title centred on the space left over is not centred - and it was kept clear of the back label
+/// by a fixed inset on one and a fixed max-width on the other. Two numbers chosen separately do
+/// not add up: measured in the real page, "< Messages" ends at 110px and "James Thompson" begins
+/// at 107, so a perfectly ordinary contact name printed through the back button.
+///
+/// Arithmetic is what got this wrong twice, so this measures instead. When the name genuinely
+/// cannot share the bar, the back LABEL goes and the chevron stays - which is what iOS does, and
+/// it is the right thing to sacrifice: the chevron is the control, the word beside it is a
+/// courtesy. Only then does the title itself truncate.
+function fitNavTitle() {
+  const bar = byId('navbar');
+  const title = byId('navtitlesm');
+  const back = byId('navback');
+  if (!bar || !title || !back) return;
+
+  bar.classList.remove('tightnav');
+  if (back.classList.contains('hidden')) return;
+  // `setNav` runs before the screen it belongs to has been laid out, so the first measurement can
+  // come back with no bar at all. One retry on the next frame, and no loop: if there is still no
+  // bar then, there is no bar.
+  if (!bar.getBoundingClientRect().width) {
+    if (!fitNavTitle.retrying) {
+      fitNavTitle.retrying = true;
+      requestAnimationFrame(() => { fitNavTitle.retrying = false; fitNavTitle(); });
+    }
+    return;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(title);
+  const text = range.getBoundingClientRect();
+  const label = byId('navbacktxt');
+  const gap = (label ? label.getBoundingClientRect().right : back.getBoundingClientRect().right)
+    - text.left;
+  // A few pixels of air, not zero: two glyphs touching reads as broken just as much as two
+  // glyphs overlapping.
+  if (gap > -6) bar.classList.add('tightnav');
 }
 
 /// The three levels, for one app.
@@ -3755,8 +3798,31 @@ async function groupMembersSheet(id, name) {
           value: m.owner ? L('ph.group_owner') : '',
         });
       }), { header: L('ph.group_members').replace('{n}', String(list.length)) })
-      : '<div class="groupfoot">' + esc(L('ph.group_empty')) + '</div>'),
-    () => {});
+      : '<div class="groupfoot">' + esc(L('ph.group_empty')) + '</div>') +
+    // The way out, which did not exist: a group could be created and joined and never left, so
+    // somebody added to a conversation they wanted no part of could delete the messages and
+    // watch the thread come back with the next one.
+    UI.button(L('ph.group_leave'), 'gleave', 'destructive') +
+    '<div class="groupfoot">' + esc(L('ph.group_leave_hint')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      byId('gleave').addEventListener('click', () => {
+        // Asked first. Leaving cannot be undone from here - getting back in means somebody
+        // still inside making a new group - so it gets the same confirmation deleting does.
+        confirmSheet(L('ph.group_leave_confirm'), L('ph.group_leave'), async () => {
+          const res = await post('groupLeave', { group: id });
+          if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+          closeSheet(false, epoch);
+          // Out of the thread as well as out of the group: staying in a conversation you are no
+          // longer part of would leave a composer that can only fail.
+          threadGroup = null;
+          foot('');
+          toast(L('ph.group_left'));
+          await refresh();
+          RENDER.messages();
+        });
+      });
+    });
 }
 
 async function openGroup(id, name) {
@@ -14789,6 +14855,42 @@ const TONES = {
   ping:    [[1568, 0, .18], [2093, .07, .22]],
   pop:     [[880, 0, .09], [1320, .05, .12]],
   tick:    [[1200, 0, .05]],
+  // `note` shipped as a FILE and never had a score, so a server without the sounds folder fell
+  // through `TONES[name] || TONES.classic` and answered a notification with the four-note call
+  // ringtone. Every name offered anywhere needs an entry here.
+  note:    [[1046, 0, .14], [1568, .09, .2]],
+  // The per-app alerts below. Each is under a quarter of a second and shaped differently enough
+  // to be told apart without being learned: rising for money, two quick highs for social, a low
+  // pair for work, an alternating pair for anything urgent.
+  coin:    [[1568, 0, .07], [2093, .05, .1], [2637, .1, .16]],
+  chirp:   [[2093, 0, .06], [2637, .04, .1]],
+  knock:   [[440, 0, .07], [330, .06, .13]],
+  bloop:   [[784, 0, .09], [1046, .06, .13]],
+  siren:   [[880, 0, .11], [1175, .09, .11], [880, .18, .16]],
+  glass:   [[2349, 0, .05], [3136, .03, .09]],
+  hum:     [[523, 0, .12], [392, .1, .18]],
+};
+
+// Which alert belongs to which app.
+//
+// One tone for everything means a phone that tells you something happened and nothing about
+// what. These are shapes, not melodies: the point is that money, a message and a dispatch are
+// distinguishable from a pocket without being looked at.
+//
+// An app with no entry falls back to the player's own alert tone, so a drop-in app is not
+// silent and does not need a line here. A player who has set a custom sound file overrides all
+// of it - an explicit choice outranks a default, always.
+const APP_TONES = {
+  messages: 'ping',
+  phone: 'pop',
+  mail: 'note',
+  bank: 'coin', bankpro: 'coin', wallet: 'coin', lottery: 'coin',
+  bleeter: 'chirp', snap: 'chirp', hush: 'chirp',
+  zuber: 'bloop', taxi: 'bloop', garage: 'bloop', repair: 'bloop',
+  alerts: 'siren', emergency: 'siren', police: 'siren', mdt: 'siren',
+  jobs: 'knock', property: 'knock',
+  health: 'hum', doctor: 'hum',
+  store: 'glass', music: 'glass', notes: 'glass', reminders: 'glass',
 };
 
 let ringEl = null;      // the <audio> for a custom link, so it can be stopped
@@ -14801,7 +14903,22 @@ const TONE_PREVIEW_MS = 5000;
 let previewEl = null;
 let previewTimer = null;
 
+/// What the ring is currently playing, or null when it is not ringing.
+///
+/// **The ring restarted on every repaint.** `renderCall` asks for the ringtone whenever the call
+/// is inbound, and it runs on every push the server makes about that call - the roster, the
+/// signal bars, the state, the timer. `playRingtone` opened with `stopTone()`, so each of those
+/// tore the sound down and started it again from the beginning. With a player's own MP3 the track
+/// never got past its first second; with the built-in, the 1600ms interval was reset before it
+/// could come round. From the player's seat that is not "it restarts" - it is "sometimes it rings
+/// and sometimes it does not".
+///
+/// So the ring is asked for by DESCRIPTION and started only if that description changed. Calling
+/// `playRingtone` ten times in a row now plays one ringtone.
+let ringingWith = null;
+
 function stopTone() {
+  ringingWith = null;
   if (ringEl) { try { ringEl.pause(); } catch {} ringEl = null; }
   if (previewEl) { try { previewEl.pause(); } catch {} previewEl = null; }
   clearTimeout(previewTimer); previewTimer = null;
@@ -14888,9 +15005,14 @@ function playTone(name, url, vol, loop) {
 // A call rings until it is answered or gives up.
 function playRingtone() {
   const p = state.prefs || {};
-  stopTone();
-  if (p.dnd) return;
+  if (p.dnd) { stopTone(); return; }
   const name = p.ringtone || 'classic', url = p.ringUrl || null;
+  // The description of what should be ringing. If that is already what IS ringing, the correct
+  // action is none: tearing it down and starting it again is what made a ringtone stutter.
+  const want = String(name) + '|' + String(url || '');
+  if (ringingWith === want) return;
+  stopTone();
+  ringingWith = want;
   playTone(name, url, p.ringVolume, true);
   if (!url) {
     playTone(name, null, p.ringVolume, false);
@@ -14899,11 +15021,28 @@ function playRingtone() {
 }
 function stopRingtone() { stopTone(); }
 
+/// A ring that outlives the call it belongs to.
+///
+/// Everything that starts the ring also stops it, and every one of those paths has been checked.
+/// This is here anyway, because "the ringtone will not stop" is the single worst thing this phone
+/// can do to somebody - it follows them until they reconnect - and the cost of being sure is one
+/// comparison every two seconds. If the page is ringing and there is no inbound call to ring for,
+/// the ring is over whatever the reason, including a reason nobody has found yet.
+setInterval(() => {
+  if (!ringingWith) return;
+  if (call && call.state === 'in' && !(state.prefs || {}).dnd) return;
+  stopTone();
+}, 2000);
+
 // Everything that is not a call: a message, a mail, a notification.
-function playAlert() {
+function playAlert(app) {
   const p = state.prefs || {};
   if (p.dnd) return;
-  playTone(p.alertTone || 'ping', p.alertUrl || null, p.ringVolume, false);
+  // A custom file is an explicit choice and outranks the per-app default. Otherwise the app's
+  // own tone, and the player's alert tone for any app that has none.
+  const tone = p.alertUrl ? (p.alertTone || 'ping')
+    : (APP_TONES[app] || p.alertTone || 'ping');
+  playTone(tone, p.alertUrl || null, p.ringVolume, false);
 }
 
 // ── Interface sounds ───────────────────────────────────────────
@@ -15163,6 +15302,22 @@ function archivePeek(kind, data) {
   });
   notifs = notifs.slice(0, 40);
   paintNotifs();
+
+  // **And it makes a sound.**
+  //
+  // github.com/laforetbrut/v-phone-fivem/issues/7 - a phone in a pocket never made one. The only
+  // thing in the page that plays an alert is `banner`, and `banner` is only reached while the
+  // phone is OPEN: a closed phone was sent `archive` and `peek`, one of which files a card and
+  // the other of which lifts the handset and shakes the pad. Both silent. So the phone rang when
+  // you happened to be looking at it and never when it was away, which from the player's seat is
+  // not "closed phones are silent" - it is "the ringtone works sometimes".
+  //
+  // This is the archive rather than the peek on purpose. The peek is optional - a player who does
+  // not want the handset rising in public turns it off - and turning off an animation should
+  // never take the sound with it. `playAlert` applies Do Not Disturb and the ring volume itself,
+  // which matters here because the client sends the archive even under DND so the centre keeps
+  // the content.
+  playAlert(app);
 }
 
 // ══ Emoji ══════════════════════════════════════════════════════
@@ -15453,7 +15608,7 @@ function banner(b) {
   if (byId('setup').classList.contains('on')) return;
   // Focus keeps a quiet history in Notification Centre without lighting the island.
   if ((state.prefs || {}).dnd) return;
-  playAlert();
+  playAlert(app);
   islandNotify(n);
 }
 
@@ -16706,6 +16861,10 @@ window.addEventListener('message', (e) => {
     applyPower(d.power);
   } else if (d.action === 'banner') {
     banner(d.banner || {});
+  } else if (d.action === 'appRefresh') {
+    // Only the app on screen, and only if it knows how to draw itself. Redrawing something the
+    // player is not looking at throws away wherever they had scrolled to for nothing.
+    if (openApp && openApp.id === d.app && typeof RENDER[d.app] === 'function') RENDER[d.app]();
   } else if (d.action === 'socialRefresh') {
     // Only if that app is what is on screen. Redrawing a social view the player is not
     // looking at would throw away wherever they had scrolled to for nothing.

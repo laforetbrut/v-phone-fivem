@@ -5,6 +5,102 @@ one coming back.
 
 ---
 
+## [2026-07-29 02:10] — a callback shipped with no handler, caught by a checker written the same hour
+
+**Context:** adding "leave a group". The server callback, the sheet, the confirmation and the
+strings were all written and all correct.
+
+**Error:** none, and that is the point. `python tools/check.py` reported
+`groupLeave (the screen would wait for ever)`.
+
+**Root cause:** `post('groupLeave')` on the page is an HTTP call to the resource, which FiveM
+delivers to `RegisterNUICallback('groupLeave')` on the CLIENT. I wrote the page half and the
+server half and never wrote the one-line relay between them. Nothing would have said so: the page
+awaits a reply that nobody sends, so the sheet sits there and the player taps again.
+
+**Fix:** one line beside the other group relay. Then re-ran the checker.
+
+**Prevention:** the class is "two halves of a contract, written in different files, joined by a
+string". It cannot be caught by reading, because reading is what missed it. It is trivially caught
+by comparing the two lists mechanically, which is now `tools/check.py`. The wider rule: when a
+name has to match across a boundary, write the checker before the second half - it costs less than
+finding out from a player.
+
+---
+
+## [2026-07-29 01:30] — a checker that reported nine things and was wrong about all nine
+
+**Context:** building a check for "a class the page writes with no rule behind it", a bug this
+repo has hit at least twice.
+
+**Error:** it reported nine classes. Every one was fine.
+
+**Root cause:** the project uses a class as a CLICK HANDLE as often as a style hook.
+`class="row lead socfind"` is `.row` and `.lead` for the look and `socfind` for the listener, and
+`.boothdial` is a bare wrapper whose children carry all thirteen rules. A checker that does not
+know that reports the entire idiom.
+
+**Fix:** only a class that is the ONLY one on its element is a finding; one sitting beside styled
+classes is reported as a note and nothing more. That took nine to one, and the one is a wrapper
+confirmed by hand and named in the source so a NEW unstyled class stands out against it.
+
+**Prevention:** a checker's first output is not a bug list, it is a measurement of the checker.
+Triage every hit by hand before trusting any of them, and tighten until the noise is gone - a
+checker that cries wolf is worse than no checker, because the next real hit is scrolled past.
+This is the second time that lesson has been paid for here; the first was the called-but-undefined
+sweep that produced thirteen false positives and was deleted.
+
+---
+
+## [2026-07-29 00:45] — the only thing that plays a notification is only reachable when the phone is open
+
+**Context:** https://github.com/laforetbrut/v-phone-fivem/issues/7 - no notification sound with the
+phone closed. Filed separately from "sometimes the ringtones work and sometimes they do not",
+which turned out to be the same thing seen from the other side.
+
+**Error:** no message, no log. Silence.
+
+**Root cause:** `playAlert` is called from exactly one place, `banner`, and `banner` is only
+reached while the phone is OPEN. A closed phone is sent `archive` (file the card) and `peek` (lift
+the handset and shake the pad), and neither makes a sound. So the alert tone worked when the
+player happened to be looking at the screen and never when the phone was away - which nobody
+reports as "closed phones are silent", they report it as "the ringtone works sometimes".
+
+**Fix:** the archive plays it. The archive rather than the peek deliberately: the peek is optional
+and turning off an animation must not take the sound with it.
+
+**Prevention:** when a report says "sometimes", find the condition rather than the intermittency -
+there usually is not one. And a function with exactly one caller is a function whose reachability
+IS its caller's: ask what cannot reach it before assuming everything can.
+
+---
+
+## [2026-07-29 00:10] — a ringtone restarted by the thing that was supposed to keep it playing
+
+**Context:** "sometimes the ringing works, sometimes it does not, sometimes it stays stuck".
+
+**Error:** no message. A ringtone that stutters, and an MP3 that never gets past its first second.
+
+**Root cause:** `renderCall` asks for the ringtone whenever the call is inbound, and it runs on
+every push the server makes about that call - the roster, the signal bars, the state, the timer.
+`playRingtone` opened with `stopTone()`, so each of those tore the sound down and started it
+again. The built-in tone reset its 1600ms interval before the interval could come round; a
+player's own file restarted from zero several times a second.
+
+**Fix:** the ring is asked for by DESCRIPTION - the tone and the URL - and started only if that
+description is not already what is playing. Ten calls in a row now play one ringtone. Plus a
+two-second check that stops a ring with no call behind it, whatever the reason, and a release of
+the game-side ring when the resource stops, which `Remote_Ring` needed because it loops until
+something stops it and a restart was not something.
+
+**Prevention:** an idempotent operation and a repeated one are different functions. "Make it so"
+must not be written as "tear it down and do it": anything called from a render path will be
+called far more often than its author is picturing, and a render path is the normal place to ask
+for state. When the answer is a resource with a lifetime - a sound, a timer, a socket - compare
+before acting.
+
+---
+
 ## [2026-07-28 22:40] — a position used as an identity, in a list rebuilt on every read
 
 **Context:** a player reported that tapping a folder answered "that folder is no longer there"

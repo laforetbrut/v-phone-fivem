@@ -686,10 +686,32 @@ end
 --- moving money - a transfer, or a purchase in the store - and those already report back
 --- through their own path, so announcing them here would say everything twice.
 local function moneyMoved(src, amount, incoming, reason, kind)
-    if not notifyOn() then return end
     src = tonumber(src)
     amount = math.floor(math.abs(num(amount, 0)))
-    if not src or amount < notifyMin() or amount <= 0 then return end
+    if not src or amount <= 0 then return end
+
+    -- **The screen catches up first, before any preference is consulted.**
+    --
+    -- A balance was read when the app was opened and never again, so money taken by a shop or
+    -- paid by a job left the phone showing a number that had stopped being true for as long as
+    -- the player stayed on that screen. Reported as "it takes ages to appear", which is what a
+    -- screen that never refreshes looks like from the outside.
+    --
+    -- This sits ABOVE the notification guards deliberately. Announcing a movement and redrawing
+    -- a screen are different questions: `notify.outgoing` is off by default, so a PURCHASE - the
+    -- exact case reported - returns before any of the code below runs, and a refresh placed down
+    -- there would have been dead for the movement that prompted it. `notify.minAmount` is the
+    -- same trap: a small purchase is still a purchase and still changes the number on screen.
+    --
+    -- Both apps, because both read that account: Bank draws it as the balance, Bank Pro as what
+    -- a deposit has to come out of. Each redraws only if it is the app on screen, so a movement
+    -- costs one redraw at most and usually none.
+    for _, app in ipairs({ 'bank', 'bankpro' }) do
+        TriggerClientEvent('v-phone:client:appRefresh', src, app)
+    end
+
+    if not notifyOn() then return end
+    if amount < notifyMin() then return end
 
     -- **The word "unknown" was reaching the screen from here.**
     --

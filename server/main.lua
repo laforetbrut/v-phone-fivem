@@ -3056,6 +3056,48 @@ V.Callback('v-phone:groupMembers', function(src, resolve, data)
     resolve({ ok = true, name = tostring(row.name or ''), members = out })
 end)
 
+--- Leave a group.
+---
+--- **There was no way out of one.** A group could be created and joined and never left, so a
+--- player added to a conversation they wanted no part of had a thread they could delete the
+--- messages of and a membership they could not end - the thread came back with the next message.
+---
+--- Leaving is a membership row going away and nothing else. The messages stay: they are what the
+--- people still in the group said to each other, and a leaver is not entitled to take that with
+--- them any more than a recipient may delete somebody else's copy of a message.
+---
+--- An emptied group is deleted, because a group with nobody in it can never be reached again and
+--- keeping the row would only leak the name into a future id collision.
+V.Callback('v-phone:groupLeave', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local groupId = math.floor(num(data and data.group, 0))
+    if groupId <= 0 then resolve({ error = 'nogroup' }) return end
+
+    -- The same check `groupMembers` makes, and for the same reason: being in it is what entitles
+    -- you to act on it. Without this, guessing an id would remove somebody else from their group.
+    local mine = MySQL.scalar.await(
+        'SELECT 1 FROM vphone_group_members WHERE group_id = ? AND citizenid = ? LIMIT 1',
+        { groupId, p.citizenid })
+    -- `nogroup` already means "group calls are switched off here". Reusing it would answer a
+    -- membership question with a sentence about a feature nobody asked about.
+    if not mine then resolve({ error = 'notmember' }) return end
+
+    MySQL.update.await('DELETE FROM vphone_group_members WHERE group_id = ? AND citizenid = ?',
+        { groupId, p.citizenid })
+
+    local left = tonumber(MySQL.scalar.await(
+        'SELECT COUNT(*) FROM vphone_group_members WHERE group_id = ?', { groupId })) or 0
+    if left <= 0 then
+        MySQL.update.await('DELETE FROM vphone_groups WHERE id = ?', { groupId })
+    end
+
+    Core.Log('messages', ('%s left group %d (%d left)'):format(p.citizenid, groupId, left),
+        nil, p.citizenid)
+    resolve({ ok = true, empty = left <= 0 })
+end)
+
+
 V.Callback('v-phone:contactSave', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end

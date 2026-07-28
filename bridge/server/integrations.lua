@@ -755,6 +755,23 @@ function Bridge.Banking.Savings(src)
             if n then return n end
         end
     end
+
+    -- doc-banking keeps a savings account and publishes NO export for it: the balance reaches its
+    -- own interface through an internal callback and nowhere else, so there is no method here to
+    -- call. Checked against the shipped resource rather than guessed - a guessed export name is
+    -- how you get a feature that silently never works.
+    --
+    -- So the table is read. A READ of another resource's table, never a write: the phone shows
+    -- the number and offers no way to change it, and doc-banking remains the only thing that
+    -- moves that money. `pcall`, because the table only exists on a server running that script,
+    -- and a missing table must be "no savings account" rather than an error.
+    if bank == 'doc-banking' then
+        local ok, value = pcall(function()
+            return MySQL.scalar.await('SELECT balance FROM bank_savings WHERE citizenid = ?', { cid })
+        end)
+        if ok and value ~= nil then return tonumber(value) end
+    end
+
     return nil
 end
 
