@@ -970,11 +970,57 @@ function canRemove(a) {
   return a.optional === true;
 }
 
+/// What the badge on one app's tile should say right now.
+function badgeCount(id) {
+  if (id === 'messages') return unreadTotal();
+  if (id === 'phone') return Number(state.vmUnread || 0);
+  if (id === 'cipher') return Number(state.cipherUnread || 0);
+  const a = (state.apps || []).find((x) => x.id === id);
+  return Number((a && a.badge) || 0);
+}
+
+/// Repaint the counts on the tiles without redrawing the home screen.
+///
+/// **The badge was painted once and never looked at again.** Reading a conversation zeroes its
+/// count in `state`, and the tile went on showing the number it was built with - the home
+/// screen is only rendered when the phone opens, and closing an app does not repaint it. So a
+/// message read half a minute ago still had a bubble on the icon, which is
+/// github.com/laforetbrut/v-phone-fivem/issues/5.
+///
+/// In place rather than `renderHome()`: a full repaint on every app close throws away the
+/// arrange state, restarts the tile animations and costs a layout of the whole grid to change
+/// two characters.
+function paintBadges() {
+  // **The dock as well as the pages.** Messages, Phone and Contacts are the three apps that
+  // carry a count, and all three ship in the dock - so walking `#pages` alone reached every
+  // tile except the ones this is for. Found by watching the badge not move in the real page;
+  // the check that the function exists says nothing about what it touches.
+  const tiles = [];
+  ['pages', 'dock'].forEach((id) => {
+    const host = byId(id);
+    if (host) tiles.push(...host.querySelectorAll('.tile[data-app]'));
+  });
+  tiles.forEach((tile) => {
+    const n = badgeCount(tile.dataset.app);
+    let el = tile.querySelector('.badge');
+    if (n > 0) {
+      const text = n > 99 ? '99+' : String(n);
+      if (el) { if (el.textContent !== text) el.textContent = text; return; }
+      const wrap = tile.querySelector('.wrap');
+      if (!wrap) return;
+      el = document.createElement('span');
+      el.className = 'badge';
+      el.textContent = text;
+      // Before the remove badge, so the two keep the order the markup gives them.
+      wrap.insertBefore(el, wrap.querySelector('.rmbadge'));
+    } else if (el) {
+      el.remove();
+    }
+  });
+}
+
 function tileHTML(a, i) {
-  const badge = a.id === 'messages' ? unreadTotal()
-    : a.id === 'phone' ? Number(state.vmUnread || 0)
-    : a.id === 'cipher' ? Number(state.cipherUnread || 0)
-    : (a.badge || 0);
+  const badge = badgeCount(a.id);
   return `<button class="tile" type="button" data-app="${esc(a.id)}" style="--i:${i}" ` +
     `aria-label="${esc(L(a.label))}">` +
     `<span class="wrap">${appTile(a)}` +
@@ -2147,8 +2193,16 @@ function closeApp(instant) {
 
 function setNav(title, backLabel, action, onBack) {
   navBackAction = typeof onBack === 'function' ? onBack : null;
-  byId('navtitle').textContent = title || '';
-  byId('navtitlesm').textContent = title || '';
+  // The title is a plain label again on every screen. A group thread makes it tappable, and
+  // `setNav` only rewrites the TEXT - so without this the handler and the pointer cursor would
+  // survive onto whatever was opened next.
+  ['navtitle', 'navtitlesm'].forEach((elId) => {
+    const el = byId(elId);
+    if (!el) return;
+    el.textContent = title || '';
+    el.onclick = null;
+    el.style.cursor = '';
+  });
   const backText = backLabel || L('ph.home');
   byId('navbacktxt').textContent = backText;
   byId('navback').setAttribute('aria-label', backText);
@@ -3622,20 +3676,68 @@ RENDER.messages = async () => {
     openGroup(Number(r.dataset.g), r.dataset.gn)));
 };
 
+/// Who is in this group.
+///
+/// github.com/laforetbrut/v-phone-fivem/issues/4 - the thread named the group and there was no
+/// way to find out who was in it.
+///
+/// Each row is drawn the way every other list of people in this phone is drawn: a saved
+/// contact's name, or the masked number if they are not in your contacts. The server sends
+/// numbers and nothing else, so this adds no way to learn anything about somebody that being
+/// in a group with them did not already tell you.
+async function groupMembersSheet(id, name) {
+  const r = await post('groupMembers', { group: id });
+  if (!r || r.error) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+  const list = farr(r.members);
+  sheet(r.name || name,
+    (list.length
+      ? UI.group(list.map((m) => {
+        const who = m.me ? L('ph.group_you') : nameOfNumber(m.number);
+        return UI.row({
+          // The initial comes from the name SHOWN, not from the number: your own number is not
+          // in your own contacts, so it came out as the first digit of it.
+          avatar: who,
+          // `ph.you` is "You:" - a prefix for a message line. Reading "You:" as a name in a
+          // member list is that string being used for something it was not written for.
+          title: who,
+          subtitle: maskNum(m.number),
+          // The person who made it, marked. On a group nobody can leave or be removed from,
+          // that is the only thing worth saying about one member over another.
+          value: m.owner ? L('ph.group_owner') : '',
+        });
+      }), { header: L('ph.group_members').replace('{n}', String(list.length)) })
+      : '<div class="groupfoot">' + esc(L('ph.group_empty')) + '</div>'),
+    () => {});
+}
+
 async function openGroup(id, name) {
   if (!openApp || openApp.id !== 'messages') return;
   beginView();
   thread = null;
   threadGroup = { id, name };
-  setNav(name, L('app.messages'), null, () => {
-    threadGroup = null;
-    foot('');
-    RENDER.messages();
-  });
+  // The title is the way in, which is where a phone puts it: tapping the name of a group
+  // conversation is how you find out who is in one.
+  setNav(name, L('app.messages'),
+    { icon: 'contacts', label: L('ph.group_members').replace('{n}', ''),
+      onClick: () => groupMembersSheet(id, name) },
+    () => {
+      threadGroup = null;
+      foot('');
+      RENDER.messages();
+    });
   loading();
   const res = await post('conversation', { group: id });
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
   paintThread(res.messages || []);
+  // The large title is a button too, for anybody who reaches for the name rather than the
+  // corner. Wired after the body is drawn, because `setNav` writes the title element.
+  ['navtitle', 'navtitlesm'].forEach((elId) => {
+    const el = byId(elId);
+    if (el) { el.style.cursor = 'pointer'; el.onclick = () => groupMembersSheet(id, name); };
+  });
+  // No unread to clear: a group row carries an id and a name and nothing else, so group
+  // messages have never counted towards the badge on the icon. Worth having, and a bigger
+  // change than this - it needs the count in the query that builds the list.
 }
 
 // Write to a number from ANYWHERE: a contact card, a notification, another app.
@@ -3680,7 +3782,7 @@ async function openThread(number, draft) {
   // Match on `other` as well: a service row's `number` is its label, while the key used to
   // open it is `svc:Label`, so matching on number alone never cleared the badge.
   const c = (state.conversations || []).find((x) => x.number === number || x.other === number);
-  if (c) c.unread = 0;
+  if (c) { c.unread = 0; paintBadges(); }
 }
 
 // ══════════════════════════════════════════════════════════════

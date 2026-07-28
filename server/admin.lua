@@ -202,6 +202,15 @@ if ADMIN.commands ~= false then
             reply(src, ('@%s is %s verified on %s.')
                 :format(result, on and 'now' or 'no longer', app))
 
+        elseif sub == 'unverifyall' and actionOn('verify') then
+            -- The sweep for a server that ran a build where registering granted the badge.
+            -- Typed in full and never a default: it takes a tick off every account there is.
+            local app = ((args[2] or ''):lower() == 'snap') and 'snap'
+                or (((args[2] or ''):lower() == 'bleeter') and 'bleeter' or nil)
+            local n = self:ClearVerified(app)
+            reply(src, ('Took the badge off %d account(s) on %s.')
+                :format(n, app or 'both apps'))
+
         elseif sub == 'verified' and actionOn('verify') then
             local app = ((args[2] or ''):lower() == 'snap') and 'snap' or 'bleeter'
             local list = self:VerifiedHandles(app)
@@ -460,7 +469,7 @@ if ADMIN.commands ~= false then
         else
             reply(src, 'phoneadmin: info | who | number | renumber | contacts | apps | open | ' ..
                        'battery | batteryall | message | notify | announce | alert | app | ' ..
-                       'outage | outages | brick | unbrick | bricked | verify | verified | wipe')
+                       'outage | outages | brick | unbrick | bricked | verify | verified | unverifyall | wipe')
         end
     end
 
@@ -535,6 +544,7 @@ if ADMIN.commands ~= false then
         { 'view', "Hold their phone on YOUR screen, as them", { { 'id|cid|number', 'the target, online' } } },
         { 'unview', 'Give it back and return to your own', {} },
         { 'verify', 'Grant or revoke the verified badge', { { '@handle', 'the account' }, { 'off', 'to revoke' }, { 'snap', 'Snapmatic instead of Bleeter' } } },
+        { 'unverifyall', 'Take the badge off EVERY account', { { 'bleeter|snap', 'one app, or leave blank for both' } } },
         { 'verified', 'Who holds a badge', { { 'snap', 'Snapmatic instead of Bleeter' } } },
         { 'wipe', 'DELETE everything on a phone. Irreversible', { { 'id|cid', 'the target' }, { 'confirm', 'required' } } },
     }

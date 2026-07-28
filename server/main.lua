@@ -2850,6 +2850,52 @@ V.Callback('v-phone:groupCreate', function(src, resolve, data)
     resolve({ ok = true, id = id, name = name })
 end)
 
+--- Who is in a group.
+---
+--- github.com/laforetbrut/v-phone-fivem/issues/4 - a group thread named the group and gave no
+--- way to find out who was in it.
+---
+--- **Only for a member.** The check is the same one `sendGroup` makes before it will deliver:
+--- being in the group is what entitles you to know who else is. Without it this would be a way
+--- to read the membership of any group on the server by guessing an id.
+---
+--- Numbers rather than names, because that is what the phone resolves everywhere else: the page
+--- shows a saved contact's name and the masked number otherwise, which is the same rule the
+--- thread list and the call screen use. Nothing is disclosed that being in the group did not
+--- already disclose - these people can all message each other in it.
+V.Callback('v-phone:groupMembers', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local groupId = math.floor(num(data and data.group, 0))
+    if groupId <= 0 then resolve({ error = 'nogroup' }) return end
+
+    local mine = MySQL.scalar.await(
+        'SELECT 1 FROM vphone_group_members WHERE group_id = ? AND citizenid = ? LIMIT 1',
+        { groupId, p.citizenid })
+    if not mine then resolve({ error = 'nogroup' }) return end
+
+    local row = MySQL.single.await(
+        'SELECT name, owner_cid FROM vphone_groups WHERE id = ?', { groupId })
+    if not row then resolve({ error = 'nogroup' }) return end
+
+    local out = {}
+    for _, m in ipairs(MySQL.query.await(
+        'SELECT citizenid FROM vphone_group_members WHERE group_id = ?', { groupId }) or {}) do
+        local number = numberOfCid(m.citizenid)
+        if number then
+            out[#out + 1] = {
+                number = number,
+                -- So the page can mark them without a second lookup, and without being told
+                -- anybody's citizen id.
+                me = m.citizenid == p.citizenid,
+                owner = m.citizenid == row.owner_cid,
+            }
+        end
+    end
+
+    resolve({ ok = true, name = tostring(row.name or ''), members = out })
+end)
+
 V.Callback('v-phone:contactSave', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -4755,6 +4801,66 @@ V.Callback('v-phone:hangup', function(src, resolve)
     resolve({ ok = true })
 end)
 
+--- Somebody's torch went on or off, relayed to the people who could see it.
+---
+--- github.com/laforetbrut/v-phone-fivem/issues/3. The same shape as the ring heard by the room:
+--- the client that owns the phone says what it is doing, and the server decides who is close
+--- enough to be told. Broadcasting to everybody would be a light nobody can see costing an
+--- event to two hundred clients.
+---
+--- The range is generous compared with the light itself - a lit patch of ground is visible from
+--- further away than the six metres the light reaches - and it is a state, not an action, so
+--- somebody walking into range while a torch is already on is handled by the tick below rather
+--- than by this event.
+local TorchOn = {}
+local TORCH_RANGE = 45.0
+
+RegisterNetEvent('v-phone:torch', function(on)
+    local src = source
+    on = on and true or false
+    if TorchOn[src] == on then return end
+    if on then TorchOn[src] = true else TorchOn[src] = nil end
+
+    local at = coordsOf(src)
+    if not at then return end
+    for _, raw in ipairs(GetPlayers()) do
+        local other = tonumber(raw)
+        if other and other ~= src then
+            local theirs = coordsOf(other)
+            if theirs and #(at - theirs) <= TORCH_RANGE then
+                TriggerClientEvent('v-phone:client:peerTorch', other, src, on)
+            end
+        end
+    end
+end)
+
+--- Torches already lit, for somebody who has just walked into range.
+---
+--- A state that is only sent when it CHANGES is a state you miss by arriving late: walking up to
+--- somebody already holding a lit phone showed nothing until they switched it off and on again.
+--- Two seconds is slow enough to cost nothing and fast enough that nobody notices the delay.
+CreateThread(function()
+    while true do
+        Wait(2000)
+        if next(TorchOn) ~= nil then
+            for lit in pairs(TorchOn) do
+                local at = coordsOf(lit)
+                if at then
+                    for _, raw in ipairs(GetPlayers()) do
+                        local other = tonumber(raw)
+                        if other and other ~= lit then
+                            local theirs = coordsOf(other)
+                            if theirs and #(at - theirs) <= TORCH_RANGE then
+                                TriggerClientEvent('v-phone:client:peerTorch', other, lit, true)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 --- A call that failed on a bad line.
 ---
 --- The client decides WHEN, because it is the side watching its own signal tick by tick, but it
@@ -5086,6 +5192,9 @@ AddEventHandler('playerDropped', function()
     for offerId, offer in pairs(AirOffers) do
         if offer.from == src or offer.to == src then AirOffers[offerId] = nil end
     end
+    -- A player who left is not shining a torch at anybody.
+    TorchOn[src] = nil
+
     local id = CallOf[src]
     -- Somebody losing their connection is somebody hanging up badly. On a conference the
     -- others keep talking, which is what would happen if they had put the phone down.

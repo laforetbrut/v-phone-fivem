@@ -1476,6 +1476,7 @@ RegisterNUICallback('conversation',  relay('v-phone:conversation'))
 RegisterNUICallback('contactSave',   relay('v-phone:contactSave'))
 RegisterNUICallback('contactDelete', relay('v-phone:contactDelete'))
 RegisterNUICallback('groupCreate',   relay('v-phone:groupCreate'))
+RegisterNUICallback('groupMembers',  relay('v-phone:groupMembers'))
 RegisterNUICallback('calls',         relay('v-phone:calls'))
 RegisterNUICallback('airdropScan',    relay('v-phone:airdropScan'))
 RegisterNUICallback('airdropSend',    relay('v-phone:airdropSend'))
@@ -3424,13 +3425,61 @@ end
 AddEventHandler('v-ui:client:themeChanged', function() pushTheme() end)
 -- The flashlight: a white light at the player while the phone is out and the control
 -- centre torch is on. It costs a draw call only while lit.
+--- Everyone else's torch, by server id.
+---
+--- github.com/laforetbrut/v-phone-fivem/issues/3 - the light was only ever visible to the
+--- person holding the phone. `DrawLightWithRange` is a DRAW CALL: it exists for one frame on
+--- one machine, so a torch nobody relayed is a torch nobody else can see. Standing in the dark
+--- next to somebody using theirs showed nothing at all.
+local peerTorch = {}
+
+--- Tell the server whether this phone is currently lighting anything.
+---
+--- The effective state, not the switch: the light is drawn while the torch is ON and the phone
+--- is OUT, so putting the handset away has to turn it off for everybody else too. Sent only when
+--- it CHANGES - this is called from a watcher, and a phone out in the dark would otherwise be an
+--- event every frame.
+local torchSent = nil
+local function pushTorch()
+    local lit = (phoneTorch and isOpen) and true or false
+    if lit == torchSent then return end
+    torchSent = lit
+    TriggerServerEvent('v-phone:torch', lit)
+end
+
+--- Somebody near us switched theirs on or off.
+RegisterNetEvent('v-phone:client:peerTorch', function(who, on)
+    who = tonumber(who)
+    if not who then return end
+    peerTorch[who] = on and true or nil
+end)
+
+--- Draw one torch at one ped.
+local function drawTorch(ped)
+    if not ped or ped == 0 then return end
+    local c = GetEntityCoords(ped)
+    local fwd = GetEntityForwardVector(ped)
+    DrawLightWithRange(c.x + fwd.x, c.y + fwd.y, c.z + 0.2, 255, 255, 240, 6.0, 3.0)
+end
+
 CreateThread(function()
     while true do
-        if phoneTorch and isOpen then
-            local ped = PlayerPedId()
-            local c = GetEntityCoords(ped)
-            local fwd = GetEntityForwardVector(ped)
-            DrawLightWithRange(c.x + fwd.x, c.y + fwd.y, c.z + 0.2, 255, 255, 240, 6.0, 3.0)
+        -- The watcher: one place that notices the torch or the phone changing, rather than a
+        -- call to remember at each of the six places that set either.
+        pushTorch()
+
+        local mine = phoneTorch and isOpen
+        local anyone = next(peerTorch) ~= nil
+        if mine or anyone then
+            if mine then drawTorch(PlayerPedId()) end
+            for id in pairs(peerTorch) do
+                local other = GetPlayerFromServerId(id)
+                local ped = other ~= -1 and GetPlayerPed(other) or 0
+                -- Out of scope or gone: forget them rather than looking every frame for
+                -- somebody on the far side of the map.
+                if ped and ped ~= 0 and DoesEntityExist(ped) then drawTorch(ped)
+                else peerTorch[id] = nil end
+            end
             Wait(0)
         else
             Wait(300)

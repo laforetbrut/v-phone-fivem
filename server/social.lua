@@ -319,9 +319,17 @@ V.Callback('v-phone:soc:register', function(src, resolve, data)
         'SELECT 1 FROM vphone_social_accounts WHERE app = ? AND handle = ? LIMIT 1', { app, handle })
     if taken then resolve({ error = 'taken' }) return end
 
+    -- **`verified` is 0, and the literal 1 that used to be here is the bug.**
+    --
+    -- Two different things share that word. Signing up VERIFIES YOUR NUMBER - the code texted
+    -- to the phone, which is `pend.verified` a few lines above and is the gate on reaching this
+    -- statement at all. The `verified` COLUMN is the blue tick, granted by staff with
+    -- `/phoneadmin verify @handle` and by nothing else. Writing the first into the column of the
+    -- second gave every account that ever registered a badge, which is the same as no badge:
+    -- the one thing it is for is telling accounts apart.
     MySQL.query.await([[INSERT INTO vphone_social_accounts
         (citizenid, app, handle, displayname, avatar, bio, phone, password, verified)
-        VALUES (?,?,?,?,?,?,?,?,1)]],
+        VALUES (?,?,?,?,?,?,?,?,0)]],
         { p.citizenid, app, handle, displayname, avatar, bio, pend.number, hashPw(pw) })
 
     Pending[src][app] = nil
@@ -1680,6 +1688,44 @@ end)
 ---     exports['v-phone']:SetVerified('bleeter', 'somehandle', true)
 ---
 --- Returns ok, and the handle as it is actually stored, so a caller can echo it back.
+--- Take the badge off every account on one app, or on both.
+---
+--- **For the servers that ran a build where registering granted it.** Every account created
+--- before that was fixed carries a tick, which makes the tick meaningless - the one thing it is
+--- for is telling accounts apart. Undoing that one handle at a time is not realistic on a
+--- server with two hundred characters.
+---
+---     exports['v-phone']:ClearVerified()          -- both apps
+---     exports['v-phone']:ClearVerified('bleeter') -- one of them
+---
+--- Returns how many accounts it changed. Deliberately NOT run by an update: it is somebody
+--- else's database and somebody else's decision, and a server that granted those badges on
+--- purpose would lose them without being asked.
+exports('ClearVerified', function(app)
+    local one = tostring(app or ''):lower()
+    one = (one == 'snap' or one == 'bleeter') and one or nil
+
+    local changed
+    if one then
+        changed = MySQL.update.await(
+            'UPDATE vphone_social_accounts SET verified = 0 WHERE app = ? AND verified <> 0', { one })
+    else
+        changed = MySQL.update.await(
+            'UPDATE vphone_social_accounts SET verified = 0 WHERE verified <> 0')
+    end
+    changed = tonumber(changed) or 0
+
+    -- Every phone that is open is showing the old badge until something makes it look again.
+    for _, raw in ipairs(GetPlayers()) do
+        local other = tonumber(raw)
+        if other then
+            TriggerClientEvent('v-phone:client:socialRefresh', other, one or 'bleeter')
+            if not one then TriggerClientEvent('v-phone:client:socialRefresh', other, 'snap') end
+        end
+    end
+    return changed
+end)
+
 exports('SetVerified', function(app, handle, on)
     app = (tostring(app or ''):lower() == 'snap') and 'snap' or 'bleeter'
     handle = tostring(handle or ''):gsub('^@', ''):gsub('%s', '')

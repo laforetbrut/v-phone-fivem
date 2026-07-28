@@ -400,6 +400,18 @@ const HANDLERS = {
   // ── Messages and contacts ─────────────────────────────────────────────────
   conversation: (b) => ({ ok: true, messages: DB.threads[b.number] || [] }),
 
+  // Who is in a group. Enough to draw the sheet: the page shows a contact's name when it has
+  // one and the masked number when it does not, so both cases want to be in here.
+  groupMembers: (b) => ({
+    ok: true,
+    name: 'Braquage',
+    members: [
+      { number: PREVIEW.refresh.number, me: true, owner: true },
+      { number: '555-0188', me: false, owner: false },
+      { number: '555-0164', me: false, owner: false },
+    ],
+  }),
+
   send: (b) => {
     const to = String(b.number || '').trim();
     if (!to) return { error: 'nonumber' };
