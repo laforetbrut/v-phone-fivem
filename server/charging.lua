@@ -387,11 +387,13 @@ CreateThread(function()
                         -- Paid, charging, nothing to say.
                     elseif not offerAlive(src, charger.id)
                         and not refusedRecently(src, charger.id)
-                        -- `batteryOf` lives in main.lua, which loads after this file. It is a
-                        -- global and this thread only ever runs long after both are loaded, but
-                        -- the guard costs nothing and the failure mode would be an error every
-                        -- four seconds for every player on the server.
-                        and (batteryOf and batteryOf(src) or 0) < skipAbove then
+                        -- **`batteryOf` is NOT a global**, whatever the comment that used to
+                        -- sit here said. It is `local batteryOf` at server/main.lua:35,
+                        -- assigned further down - so from this file the name was always nil,
+                        -- `batteryOf and ... or 0` was always 0, and `0 < skipAbove` was always
+                        -- true. The skip this line exists for never skipped anybody, and the
+                        -- guard that was supposed to make it safe is what hid that.
+                        and PhoneBattery(src) < skipAbove then
                         -- A nearly-full phone is not a customer, and asking anyway is noise.
                         if not hasApp(src) then
                             -- No app, so nothing to accept an offer WITH: point them at the

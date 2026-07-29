@@ -23,7 +23,9 @@ the side is how you turn those on and drive everything else.
 
 import json
 import os
+import shutil
 import re
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -112,7 +114,15 @@ def catalogue(cfg):
 def build():
     lua = lua_world()
     cfg = plain(lua.globals().Config)
-    S = plain(lua.globals().Locales.en)
+    # Which language the preview speaks.
+    #
+    #     python tools/make-preview.py --lang fr
+    #
+    # English by default because that is what the tools read when they check a screen. The
+    # README's screenshots are French, and retaking one in the wrong language is a picture that
+    # does not match the nine beside it - which is why this is a flag rather than an edit.
+    lang = 'fr' if '--lang' in sys.argv and sys.argv[sys.argv.index('--lang') + 1] == 'fr' else 'en'
+    S = plain(getattr(lua.globals().Locales, lang))
 
     apps = catalogue(cfg)
     installed = [a for a in apps if not a.get('optional')]
@@ -122,7 +132,7 @@ def build():
     remote = cfg.get('VehicleRemote', {})
 
     boot = {
-        'ok': True, 'number': '555-0142', 'locale': 'en', 'name': 'Alex Mercer',
+        'ok': True, 'number': '555-0142', 'locale': lang, 'name': 'Alex Mercer',
         'power': {'battery': 76, 'charging': False, 'signal': 4},
         'strings': S,
         'apps': installed,
@@ -169,9 +179,33 @@ def build():
         'job': {'name': 'mechanic', 'label': 'Mechanic', 'grade': 2, 'gradeLabel': 'Senior'},
     }
 
+    # **Fixture images are placeholders on purpose.** A URL on a real media host carries the
+    # account or bucket identifier of whoever uploaded it, and this file is published. Use
+    # picsum.photos, example.invalid or your-cdn.tld - never a bucket that belongs to somebody.
     replies = {
         'refresh': dict(boot, ok=True),
         'ambient': {'ok': True, 'hours': 21, 'minutes': 40, 'weather': 'CLEAR'},
+        # The widget strip. `w` carries the server-backed tiles; the rest of them are drawn
+        # from what the page already holds and are not in here on purpose - a fixture for one
+        # of those would be testing the fixture rather than the widget.
+        'widgets': {'ok': True, 'at': 1785000000,
+                    'ambient': {'hours': 21, 'minutes': 40, 'weather': 'CLEAR'},
+                    'w': {
+                        'bank': {'ok': True, 'masked': True},
+                        'vitals': {'ok': True, 'hunger': 62, 'thirst': 48, 'stress': 14},
+                        'garage': {'ok': True, 'n': 4, 'out': 1,
+                                   'first': {'name': 'Sultan RS', 'plate': 'V-PHONE',
+                                             'live': True}},
+                        'reminders': {'ok': True, 'due': 1, 'someday': 2,
+                                      'text': 'Passer au garage', 'list': 'personal',
+                                      'dueAt': 1785001800},
+                        'export': {'ok': True, 'market': 'export', 'moved': 3,
+                                   'shop': 'Export', 'item': 'Or', 'price': 1240,
+                                   'percent': 12.4},
+                        'alerts': {'ok': True, 'n': 2, 'category': 'road',
+                                   'title': 'Pont de Del Perro ferme',
+                                   'emitter': 'LSPD', 'expiresAt': 1785003600},
+                    }},
         'calls': {'ok': True, 'calls': boot['calls']},
         'conversation': {'ok': True, 'messages': [
             {'body': 'Are you around tonight?', 'outgoing': False, 'at': '2026-07-25 21:31'},
@@ -181,6 +215,95 @@ def build():
         'app:bank': {'ok': True, 'cash': 1240, 'bank': 18650, 'transactions': [
             {'label': 'Tuner Shop', 'amount': -450, 'at': '2026-07-25 20:10'},
             {'label': 'Wages', 'amount': 2200, 'at': '2026-07-25 12:00'}]},
+        'app:fruitee': {'ok': True,
+            'limits': {'minGift': 1, 'maxGift': 100000, 'goalMax': 1000000, 'maxTiers': 4,
+                       'payoutMin': 1,
+                       'taxes': [{'key': 'platform', 'percent': 5},
+                                 {'key': 'government', 'percent': 25}],
+                       'taxTotal': 30,
+                       'messages': True, 'anonymous': True,
+                       'categories': ['community', 'medical', 'business', 'memorial',
+                                      'event', 'other']},
+            'page': {'id': 1, 'slug': 'pierrepair', 'title': 'Rebuild the pier stall',
+                     'blurb': 'The storm took the roof off. We are putting it back up before '
+                              'the weekend market.',
+                     'cover': 'https://picsum.photos/seed/cover1/480/270',
+                     'avatar': 'https://picsum.photos/seed/avatar1/480/270',
+                     'category': 'community', 'goal': 12000, 'raised': 7400, 'gifts': 23,
+                     'tiers': [{'amount': 25, 'label': 'A plank'},
+                               {'amount': 100, 'label': 'A beam'},
+                               {'amount': 500, 'label': 'The roof'}],
+                     'anon': True, 'msgs': True, 'closed': False,
+                     'owner': 'Alex Mercer', 'mine': True, 'ts': 1753900000},
+            'balance': 6660,
+            'gifts': [
+                {'id': 3, 'amount': 500, 'body': 'For the roof. Good luck.',
+                 'anon': False, 'name': 'Mara Ortiz', 'ts': 1753900000},
+                {'id': 2, 'amount': 100, 'body': '', 'anon': True, 'ts': 1753890000},
+                {'id': 1, 'amount': 25, 'body': 'A plank from me.',
+                 'anon': False, 'name': 'Ray Boone', 'ts': 1753880000},
+            ],
+            'discover': [
+                {'id': 1, 'slug': 'pierrepair', 'title': 'Rebuild the pier stall',
+                 'blurb': 'The storm took the roof off.',
+                 'cover': 'https://picsum.photos/seed/cover2/480/270', 'avatar': '',
+                 'category': 'community', 'goal': 12000, 'raised': 7400, 'gifts': 23,
+                 'tiers': [], 'anon': True, 'msgs': True, 'closed': False,
+                 'owner': 'Alex Mercer', 'mine': True},
+                {'id': 2, 'slug': 'inesmeds', 'title': "Ines's hospital bill",
+                 'blurb': 'Three weeks in Pillbox and counting.',
+                 'cover': 'https://picsum.photos/seed/cover3/480/270', 'avatar': '',
+                 'category': 'medical', 'goal': 30000, 'raised': 8100, 'gifts': 41,
+                 'tiers': [], 'anon': True, 'msgs': True, 'closed': False,
+                 'owner': 'Ines Fontaine', 'mine': False},
+                {'id': 3, 'slug': 'tunerclub', 'title': 'Track day for the club',
+                 'blurb': 'Hiring the strip for a Sunday.',
+                 'cover': 'https://picsum.photos/seed/cover4/480/270', 'avatar': '',
+                 'category': 'event', 'goal': 0, 'raised': 2250, 'gifts': 9,
+                 'tiers': [], 'anon': True, 'msgs': True, 'closed': False,
+                 'owner': 'Ray Boone', 'mine': False},
+            ],
+            'given': [
+                {'title': "Ines's hospital bill", 'slug': 'inesmeds', 'amount': 250,
+                 'body': 'Get well.', 'at': '2026-07-27 18:20'},
+            ]},
+        'app:onlyfruits': {'ok': True,
+            'limits': {'maxPrice': 5000, 'maxSubPrice': 10000, 'maxTip': 10000,
+                       'subDays': 30, 'fee': 10},
+            'me': {'handle': 'alexlens', 'name': 'Alex', 'bio': 'Photos of the city at night.',
+                   'followers': 128, 'subscribers': 14, 'posts': 3, 'subPrice': 750, 'me': True},
+            'balance': 4320,
+            'feed': [
+                {'id': 11, 'handle': 'mara', 'name': 'Mara Ortiz', 'caption': 'Vinewood, 3am.',
+                 'price': 0, 'ts': 1753900000,
+                 'image': 'https://i.imgur.com/8Km9tLL.jpg'},
+                {'id': 12, 'handle': 'mara', 'name': 'Mara Ortiz', 'caption': 'Behind the sign.',
+                 'price': 250, 'ts': 1753890000, 'locked': True},
+                {'id': 13, 'handle': 'ray', 'name': 'Ray', 'caption': 'Subscribers only.',
+                 'price': 0, 'subsOnly': True, 'ts': 1753880000, 'locked': True},
+            ],
+            'discover': [
+                {'handle': 'mara', 'name': 'Mara Ortiz', 'bio': 'Night photography',
+                 'followers': 940, 'subPrice': 500,
+                 'avatar': 'https://i.imgur.com/8Km9tLL.jpg',
+                 'cover': 'https://i.imgur.com/6PLzOQI.jpg'},
+                {'handle': 'ray', 'name': 'Ray', 'bio': 'Cars, mostly',
+                 'followers': 210, 'subPrice': 0,
+                 'avatar': 'https://i.imgur.com/HkQrJdb.jpg',
+                 'cover': 'https://i.imgur.com/kFTZbDl.jpg'},
+            ],
+            'posts': [
+                {'id': 1, 'caption': 'Free one.', 'price': 0, 'sold': 0, 'ts': 1753870000,
+                 'image': 'https://i.imgur.com/8Km9tLL.jpg'},
+                {'id': 2, 'caption': 'For sale.', 'price': 300, 'sold': 7, 'ts': 1753860000,
+                 'image': 'https://i.imgur.com/8Km9tLL.jpg'},
+            ],
+            'earnings': [
+                {'kind': 'sale', 'amount': 270, 'ts': 1753860000},
+                {'kind': 'sub', 'amount': 675, 'ts': 1753850000},
+                {'kind': 'tip', 'amount': 90, 'ts': 1753840000},
+                {'kind': 'payout', 'amount': -1200, 'ts': 1753830000},
+            ]},
         'app:garage': {'ok': True, 'vehicles': [
             {'plate': 'MERC 01', 'model': 'Sultan RS', 'garage': 'Legion Square', 'live': True},
             {'plate': 'RAY 447', 'model': 'Futo GTX', 'garage': 'Mission Row', 'live': False}]},
@@ -202,6 +325,68 @@ def build():
         'vehicleControl': {'ok': True},
         'notes': {'ok': True, 'notes': [{'id': 1, 'title': 'Shift notes', 'body': 'Order brake pads.',
                                          'at': '2026-07-25 18:00'}]},
+        # One Fruitee page, opened. The sheet asks for this by slug; the harness answers with
+        # the same page whatever is asked, which is enough to walk the giving flow.
+        'fundPage': {'ok': True,
+            'page': {'id': 2, 'slug': 'inesmeds', 'title': "Ines's hospital bill",
+                     'blurb': 'Three weeks in Pillbox and counting. Her family is covering '
+                              'what they can and the rest is on us.',
+                     'cover': 'https://picsum.photos/seed/cover5/480/270',
+                     'avatar': 'https://picsum.photos/seed/avatar2/480/270',
+                     'category': 'medical', 'goal': 30000, 'raised': 8100, 'gifts': 41,
+                     'tiers': [{'amount': 50, 'label': 'An hour of care'},
+                               {'amount': 250, 'label': 'A day'},
+                               {'amount': 1000, 'label': 'A week'}],
+                     'anon': True, 'msgs': True, 'closed': False,
+                     'owner': 'Ines Fontaine', 'mine': False},
+            'supporters': [
+                {'id': 9, 'amount': 250, 'body': 'Get well soon.', 'anon': False,
+                 'name': 'Mara Ortiz', 'ts': 1753900000},
+                {'id': 8, 'amount': 1000, 'body': '', 'anon': True, 'ts': 1753890000},
+                {'id': 7, 'amount': 50, 'body': 'From all of us at the garage.',
+                 'anon': False, 'name': 'Ray Boone', 'ts': 1753880000},
+            ],
+            'limits': {'minGift': 1, 'maxGift': 100000, 'goalMax': 1000000, 'maxTiers': 4,
+                       'payoutMin': 1,
+                       'taxes': [{'key': 'platform', 'percent': 5},
+                                 {'key': 'government', 'percent': 25}],
+                       'taxTotal': 30,
+                       'messages': True, 'anonymous': True,
+                       'categories': ['community', 'medical', 'business', 'memorial',
+                                      'event', 'other']}},
+        'app:brawl': {'ok': True,
+            'stats': {'wins': 7, 'losses': 4, 'streak': 2, 'best': 5},
+            'match': None, 'invite': None, 'queued': False,
+            'stakes': {'on': True, 'max': 100},
+            'board': [
+                {'rank': 1, 'name': 'Mara Ortiz', 'wins': 31, 'losses': 9, 'best': 12},
+                {'rank': 2, 'name': 'Ray Boone', 'wins': 22, 'losses': 14, 'best': 6},
+                {'rank': 3, 'name': 'Alex Mercer', 'wins': 7, 'losses': 4, 'best': 5},
+            ],
+            'rules': {'health': 100, 'stamina': 6, 'start': 4, 'roundSeconds': 10,
+                      'regain': 2,
+                      'cost': {'jab': 1, 'heavy': 3, 'block': 0, 'grab': 2}}},
+        'brawlPick': {'ok': True, 'picked': 'jab'},
+        'brawlSolo': {'ok': True, 'match': {
+            'id': 9, 'round': 1, 'endsAt': 0,
+            'me':   {'hp': 100, 'stamina': 4, 'name': 'Alex Mercer', 'picked': False},
+            'them': {'hp': 100, 'stamina': 4, 'name': 'Club Fighter', 'picked': False},
+            'history': []}},
+        'brawlQueue': {'ok': True, 'queued': True},
+        'app:flappy': {'ok': True, 'game': 'flappy', 'nick': 'ALEX', 'best': 27, 'plays': 41,
+            'rank': 4,
+            'board': [
+                {'rank': 1, 'nick': 'MARA', 'score': 63, 'mine': False},
+                {'rank': 2, 'nick': 'xX_RAY_Xx', 'score': 48, 'mine': False},
+                {'rank': 3, 'nick': 'Ines', 'score': 31, 'mine': False},
+                {'rank': 4, 'nick': 'ALEX', 'score': 27, 'mine': True},
+                {'rank': 5, 'nick': '', 'score': 12, 'mine': False},
+            ],
+            'limits': {'nickMin': 2, 'nickMax': 12, 'boardSize': 25, 'maxScore': 9999}},
+        'arcadeScore': {'ok': True, 'best': 27, 'beaten': False, 'rank': 4, 'board': []},
+        'arcadeNick': {'ok': True, 'nick': 'ALEX'},
+        'fundSlug': {'ok': True, 'free': True, 'slug': 'mypage'},
+        'fundGive': {'ok': True, 'amount': 250},
         'lookup': {'ok': True},
         'places': {'ok': True, 'places': []},
         'airdropScan': {'ok': True, 'devices': []},
@@ -341,6 +526,62 @@ const HANDLERS = {
     }
     return PREVIEW['app:' + b.app] || { error: 'off' };
   },
+
+  // The store's ratings. Kept in a little table so posting one moves the average on screen,
+  // which is the behaviour worth exercising rather than a canned reply.
+  storeReviews: (b) => {
+    const db = (window.__STREV__ = window.__STREV__ || {});
+    const list = db[b.app] || (db[b.app] = [
+      { name: 'Mara O.', stars: 5, body: 'Does exactly what it says.', ts: 1753900000 },
+      { name: 'Ray B.', stars: 4, body: 'Good, drains the battery a bit.', ts: 1753880000 },
+      { name: 'Sofia D.', stars: 5, body: '', ts: 1753860000 },
+    ]);
+    const spread = [0, 0, 0, 0, 0];
+    list.forEach((r) => { spread[r.stars - 1] += 1; });
+    const total = list.length;
+    const avg = total ? list.reduce((n, r) => n + r.stars, 0) / total : 0;
+    const mine = list.find((r) => r.mine) || null;
+    return { ok: true, average: Math.round(avg * 10) / 10, count: total, spread,
+             reviews: list, mine, canReview: true, maxLength: 300 };
+  },
+  storeReview: (b) => {
+    const db = (window.__STREV__ = window.__STREV__ || {});
+    const list = db[b.app] || (db[b.app] = []);
+    const at = list.findIndex((r) => r.mine);
+    const row = { stars: b.stars, body: b.body, ts: Math.floor(Date.now() / 1000), mine: true };
+    if (at >= 0) list[at] = row; else list.unshift(row);
+    return { ok: true };
+  },
+  storeReviewDelete: (b) => {
+    const db = (window.__STREV__ = window.__STREV__ || {});
+    const list = db[b.app] || [];
+    const at = list.findIndex((r) => r.mine);
+    if (at >= 0) list.splice(at, 1);
+    return { ok: at >= 0, error: at >= 0 ? undefined : 'gone' };
+  },
+
+  fanHandle: (b) => ({ ok: true, handle: String(b.handle || '').toLowerCase(),
+    free: String(b.handle || '').length >= 3 && String(b.handle || '').toLowerCase() !== 'mara',
+    why: String(b.handle || '').length < 3 ? 'short' : (String(b.handle || '').toLowerCase() === 'mara' ? 'taken' : undefined) }),
+  fanSetup: () => ({ ok: true }),
+  fanPost: () => ({ ok: true, id: 99 }),
+  fanDelete: () => ({ ok: true }),
+  fanFollow: (b) => ({ ok: true, following: b.on !== false }),
+  fanSubscribe: () => ({ ok: true }),
+  fanTip: () => ({ ok: true }),
+  fanPayout: () => ({ ok: true, amount: 4320 }),
+  // The bought picture comes back WITH its url, which is what the real one does: the server
+  // sends it only once it has been paid for.
+  fanUnlock: () => ({ ok: true, image: 'https://i.imgur.com/8Km9tLL.jpg' }),
+  fanCreator: (b) => ({ ok: true,
+    creator: { handle: b.handle, name: b.handle === 'mara' ? 'Mara Ortiz' : 'Ray',
+               bio: 'Night photography', followers: 940, subscribers: 61,
+               posts: 2, subPrice: b.handle === 'mara' ? 500 : 0, following: false },
+    posts: [
+      { id: 21, caption: 'Free sample.', price: 0, ts: 1753900000,
+        image: 'https://i.imgur.com/8Km9tLL.jpg' },
+      { id: 22, caption: 'Locked.', price: 250, ts: 1753890000, locked: true },
+    ] }),
 
   appStorage: (b) => {
     const key = b.app + ':' + b.key;
@@ -638,6 +879,19 @@ window.PV = {
     path = os.path.join(OUT, 'index.html')
     with open(path, 'w', encoding='utf-8') as f:
         f.write(page)
+
+    # The store previews, beside the page rather than inlined.
+    #
+    # Everything else here is folded into one file, which cannot work for these: they are a
+    # manifest the page fetches and the media it names, and a `fetch` of `previews/index.json`
+    # resolves next to `preview/index.html`. Without the copy the store falls back to its drawn
+    # mock-ups and the preview quietly stops showing what the resource actually ships - which
+    # is the one thing this tool exists to avoid.
+    src = os.path.join(ROOT, 'html', 'previews')
+    if os.path.isdir(src):
+        dst = os.path.join(OUT, 'previews')
+        shutil.rmtree(dst, ignore_errors=True)
+        shutil.copytree(src, dst)
 
     hidden = [a['id'] for a in cfg.get('Apps', []) if a not in apps]
     print('preview written: %s' % path)

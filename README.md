@@ -34,14 +34,29 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 
 <img src="docs/images/07-control-centre.png" alt="Control centre" width="300">
 
+### The home screen, arranged
+
+| Widgets | Arranging them | The gallery |
+| --- | --- | --- |
+| ![Widgets](docs/images/40-widgets.png) | ![Arranging](docs/images/41-widgets-edit.png) | ![The widget gallery](docs/images/42-widgets-pick.png) |
+
+### Hush
+
+| The deck | Premium | Who liked you | Your profile |
+| --- | --- | --- | --- |
+| ![Hush](docs/images/43-hush.png) | ![Hush Premium](docs/images/44-hush-premium.png) | ![Liked you](docs/images/45-hush-liked.png) | ![Profile](docs/images/46-hush-profile.png) |
+
+
 ## Features
 
 ### The phone
 - **iOS 27 interface**: Clear Glass materials, a Dynamic Island that reacts to calls, notifications, locking and Face ID, a control centre, a notification shade and a Spotlight search.
 - **First run setup**: name, appearance, wallpaper, transparency, a six digit passcode and optional Face ID. The passcode never reaches the page: the server keeps a character salted SHA-256 digest and blocks for thirty seconds after five failures.
 - **Configurable home screen**: choose the dock, which apps ship installed, their order, which cannot be removed and which are hidden, all in one table.
+- **Home screen widgets**: twelve of them, arranged from the phone. Hold the home screen, then the minus removes one, the plus opens the gallery, and dragging reorders. Weather, Calendar, Messages, Music, Battery, iFruit Store, Bank, Health, Garage, Reminders, Market and Alerts. Six never touch the server at all and the other six share one request, made only when one of them is on the strip - a phone left as it ships costs nothing extra. `Config.Widgets` turns any of them off, and a widget only appears for a player who has its app. The Messages tile shows who texted and never what they said; the Bank tile is masked until its owner unmasks it, and the figure does not leave the server while it is off.
+- **An update check in the console**: the server asks GitHub once at start-up whether a newer release exists and prints one block if so. Nothing is downloaded, and nothing is told to a player - the version a server runs is not something to hand out. `Config.UpdateCheck`.
 - **Grid sizes** from 3x3 to 6x7, chosen by the player in Settings.
-- **Sound**: sixteen audio files ship with the phone, five ringtones, four alerts, five interface sounds and the payphone's two struck-metal key clicks. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
+- **Sound**: twenty-four audio files ship with the phone: eight ringtones, seven alerts, five interface sounds, two emergency signals and the payphone's two struck-metal key clicks. They are generated rather than sampled, so a melody is a table in `tools/make-sounds.py` and nothing is taken from anywhere.
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
 - **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning. Charging in a vehicle and in a property are each a switch.
 - **Paid charging points**: give a charger a price and the phone asks before it charges. One payment buys the whole stop - charge as long as you like, and pay again only after leaving the zone. The money goes to a job or society account you name, per charger. See [Paid charging points](#paid-charging-points).
@@ -62,7 +77,7 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus ten downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, **Export**, FruitCharge and the Lottery.
+Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, **Bank Pro**, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore, Settings, plus fourteen downloads: Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, **Export**, FruitCharge, the Lottery, OnlyFruits, FruitBrawl, FlappyFruit and Fruitee. Four of those are paid apps bought from the store.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players, and group calls of up to five. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -119,7 +134,7 @@ Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Mus
 - **Drop-in apps**: an app is a folder in `apps/`. No edit to the phone, no build step, no JavaScript framework. See [DEVELOPERS.md](DEVELOPERS.md).
 - **App SDK**: the same Clear Glass components the native apps use.
 - **Integration hooks**: point any app at your own script in one function rather than forking the resource.
-- **A documented API**: thirty two server exports, five client exports, three events and seven hooks. See [API.md](API.md).
+- **A documented API**: over a hundred server exports, five client exports, three events and seven hooks. See [API.md](API.md).
 
 ## Compatibility
 
@@ -219,14 +234,16 @@ bar), `RingOut`, `Booth` (payphones), `Airdrop` (sharing between two phones in t
 `RequiredContacts` (numbers in every phone - 911 is one, and calling it opens the app).
 
 **Money and work**
-`Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
+`Bank`, `BankPro`, `Licences`, `Property`, `Garages`, `Hospitals`, `HealthRecord`.
 
 **The paid and the optional**
-`Charging`, `PaidCharging` (public chargers) and `PlugIn` (charging on purpose), `Zuber`, `Taxi`, `Repair`, `Export`, `Lottery`, `Alerts`, `Media` (photo and
-video hosting), `Music`, `Vehicle`, `Police` (the forensics terminal), `Social`, `Store`.
+`Battery`, `Chargers`, `PaidCharging` (public chargers) and `PlugIn` (charging on purpose), `Zuber`,
+`Taxi`, `Repair`, `Export`, `Lottery`, `Alerts`, `Media` (photo and video hosting), `Music`,
+`Police` (the forensics terminal), `Social`, `Store`, `Widgets` (the home screen strip),
+`UpdateCheck`.
 
 **Staff**
-`Admin`, `Commands` (the three command groups), `Outage`.
+`Admin`, `Commands` (the three command groups). Outages are not configured: they are set at runtime with `/phoneadmin outage` and nothing about them is persisted.
 
 ## Installation
 
@@ -645,7 +662,7 @@ By handle rather than by character, because a badge belongs to an account and a 
 
 ```
 /refreshphone      reset your own stuck phone: prop, animation, NUI focus, control guard
-/phonediag         staff only, and only with debug on: what each callback and provider answers
+/phonedebug doctor staff only: what each callback, provider and seam actually answers
 ```
 
 Every refused staff command is printed to the server console with who tried it.
@@ -721,8 +738,10 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **Interface iOS 27** : matériaux Clear Glass, Dynamic Island qui réagit aux appels, aux notifications, au verrouillage et au Face ID, centre de contrôle, volet de notifications et recherche Spotlight.
 - **Configuration au premier démarrage** : nom, apparence, fond d'écran, transparence, code à six chiffres et Face ID optionnel. Le code n'atteint jamais la page : le serveur garde une empreinte SHA-256 salée par personnage et bloque trente secondes après cinq échecs.
 - **Écran d'accueil configurable** : le dock, les applications livrées, leur ordre, celles qu'on ne peut pas supprimer et celles qui sont masquées, le tout dans une seule table.
+- **Widgets sur l'écran d'accueil** : douze, organisés depuis le téléphone. Maintenez l'écran d'accueil : le moins en retire un, le plus ouvre la galerie, le glissement réordonne. Six ne touchent jamais au serveur et les six autres partagent une seule requête. `Config.Widgets` désactive ce que vous voulez. La tuile Messages affiche qui a écrit, jamais ce qui a été écrit ; la tuile Banque est masquée tant que son propriétaire ne l'affiche pas, et le montant ne quitte pas le serveur.
+- **Vérification de mise à jour en console** : le serveur demande une fois à GitHub au démarrage si une release plus récente existe. Rien n'est téléchargé et rien n'est dit à un joueur. `Config.UpdateCheck`.
 - **Grilles** de 3x3 à 6x7, choisies par le joueur dans les Réglages.
-- **Son** : seize fichiers audio sont livrés avec le téléphone, cinq sonneries, quatre alertes, cinq sons d'interface et les deux clics de touche en métal frappé de la cabine. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
+- **Son** : vingt-quatre fichiers audio sont livrés avec le téléphone, huit sonneries, sept alertes, cinq sons d'interface et les deux clics de touche en métal frappé de la cabine. Ils sont générés plutôt qu'échantillonnés : une mélodie est une table dans `tools/make-sounds.py` et rien n'est repris de nulle part.
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
 - **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible. La recharge en véhicule et en logement sont chacune une option.
 - **Bornes de recharge payantes** : donnez un prix à une borne et le téléphone demande avant de recharger. Un seul paiement couvre tout le passage - rechargez autant que vous voulez, et ne repayez qu'après avoir quitté la zone. L'argent va sur le compte de métier ou de société que vous désignez, borne par borne. Voir [Bornes de recharge payantes](#bornes-de-recharge-payantes).
@@ -743,7 +762,7 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus dix téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, **Export**, FruitCharge et la Loterie.
+Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, **Bank Pro**, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore, Réglages, plus quatorze téléchargements : Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, **Export**, FruitCharge et la Loterie.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour, et appels de groupe jusqu'à cinq. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
@@ -803,7 +822,7 @@ Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil pho
 - **Applications déposables** : une application est un dossier dans `apps/`. Aucune modification du téléphone, aucune étape de build, aucun framework JavaScript. Voir [DEVELOPERS.md](DEVELOPERS.md).
 - **SDK** : les mêmes composants Clear Glass que les applications natives.
 - **Points d'accroche** : branchez n'importe quelle application sur votre propre script en une fonction plutôt qu'en forkant la ressource.
-- **Une API documentée** : trente-deux exports serveur, cinq exports client, trois événements et sept hooks. Voir [API.md](API.md).
+- **Une API documentée** : plus de cent exports serveur, cinq exports client, trois événements et sept hooks. Voir [API.md](API.md).
 
 ## Compatibilité
 
@@ -901,14 +920,14 @@ joueur peut coller une image), `DefaultGlass`, `Clock`.
 ouvre l'application).
 
 **Argent et travail**
-`Bank`, `BankPro`, `Jobs`, `Licences`, `Property`, `Garages`, `Hospitals`, `Health`.
+`Bank`, `BankPro`, `Licences`, `Property`, `Garages`, `Hospitals`, `HealthRecord`.
 
 **Payantes et optionnelles**
 `Charging`, `PaidCharging` (bornes publiques) et `PlugIn` (charge volontaire), `Zuber`, `Taxi`, `Repair`, `Export`, `Lottery`, `Alerts`, `Media` (hébergement
 photo et vidéo), `Music`, `Vehicle`, `Police` (terminal scientifique), `Social`, `Store`.
 
 **Staff**
-`Admin`, `Commands` (les trois groupes de commandes), `Outage`.
+`Admin`, `Commands` (les trois groupes de commandes). Les coupures ne se configurent pas : elles se posent à l'exécution avec `/phoneadmin outage` et rien n'en est conservé.
 
 ## Installation
 

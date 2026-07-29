@@ -123,7 +123,9 @@ local function play(src, url, volume, mode, distance)
 end
 
 V.Callback('v-phone:music:play', function(src, resolve, data)
-    if not requireItem or requireItem(src) then
+    -- `PhoneRequiresItem`, not `requireItem`: the second is a file-local in server/main.lua
+    -- and was nil here, so `not requireItem` was always true and this check never ran.
+    if PhoneRequiresItem(src) then
         resolve(play(src, data and data.url, data and data.volume,
                      data and data.mode, data and data.distance))
         return

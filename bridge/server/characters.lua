@@ -67,6 +67,9 @@ end
 function Bridge.SyncCharacter(src, citizenid)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return end
+    -- A name is remembered across calls in integrations.lua. This is the one moment it could
+    -- have gone stale - a rename made outside the phone, followed by a reload.
+    if Bridge.ForgetCharacterName then Bridge.ForgetCharacterName(citizenid) end
     local first, last, dob = identityOf(src, citizenid)
     MySQL.query([[INSERT INTO vphone_characters (citizenid, firstname, lastname, dob)
                   VALUES (?,?,?,?)

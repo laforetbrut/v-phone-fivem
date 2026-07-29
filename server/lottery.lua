@@ -345,7 +345,34 @@ end
 -- ══════════════════════════════════════════════════════════════
 
 --- One line. Every rule is re-checked here.
+--- Characters with a ticket purchase in flight.
+---
+--- Same shape and same reason as `TransferBusy` in server/bank.lua: `myTickets` is a query, the
+--- debit after it is another yield, and the row that would make the count go up is written last.
+--- Two buys in the same tick both counted the same lines and both passed a cap only one of them
+--- should have.
+local BuyBusy = {}
+
+--- Declared here and assigned below, so `buy` can call it while staying a file-local. Nothing
+--- outside this file has any business with it.
+local buyLocked
+
 local function buy(src, p, data)
+    if BuyBusy[p.citizenid] then return { error = 'busy' } end
+    BuyBusy[p.citizenid] = true
+    -- The real body returns from a dozen places. Wrapping it is the only way to release the
+    -- lock on every one of them without threading a release through each, and the pcall means
+    -- an error in there cannot leave the lock set for the rest of the session.
+    local ok, res = pcall(buyLocked, src, p, data)
+    BuyBusy[p.citizenid] = nil
+    if not ok then
+        print(('[v-phone] lottery: buy failed: %s'):format(tostring(res)))
+        return { error = 'x' }
+    end
+    return res
+end
+
+buyLocked = function(src, p, data)
     local session = refreshLabel(ensureSession())
     if not session then return { error = 'nosession' } end
     -- The draw is under way: the pot has been counted and the numbers may already be picked, so a

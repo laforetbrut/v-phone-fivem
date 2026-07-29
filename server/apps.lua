@@ -439,3 +439,69 @@ CreateThread(function()
             return Bridge.Licences.Held(nil, '__probe__') end),
         state('jobs', function() return Bridge.Jobs.All() end)))
 end)
+
+-- ══════════════════════════════════════════════════════════════
+-- The home screen widgets
+-- ══════════════════════════════════════════════════════════════
+
+--- Vitals, as three rings.
+---
+--- Framework metadata, no query. Fields are OMITTED rather than sent as zero when the framework
+--- has no answer: on ESX the vitals live on the client and this returns almost nothing, and a
+--- ring drawn at 0% would say "starving" about a character who is fine.
+WidgetSource('vitals', 'health', function(src)
+    local st = safely('vitals', function()
+        local who = PhoneActingSource and PhoneActingSource(src) or src
+        return Bridge.Status and Bridge.Status.Get and Bridge.Status.Get(who)
+    end)
+    if type(st) ~= 'table' then return { ok = true } end
+    return {
+        ok = true,
+        hunger = tonumber(st.hunger),
+        thirst = tonumber(st.thirst),
+        stress = tonumber(st.stress),
+        armour = tonumber(st.armour),
+        dead = st.dead == true or nil,
+    }
+end)
+
+--- The garage, as a count and one name.
+---
+--- **`LocatePlate` is not called here, and that is the whole reason this is not the app's own
+--- callback.** `v-phone:garage:data` locates every vehicle that is out, and locating one walks
+--- `GetAllVehicles()` looking for the plate - so a player with four cars on the street costs
+--- four full entity sweeps to draw a tile that says "4 vehicles". The widget counts and names;
+--- finding one on the map is what opening the app is for.
+WidgetSource('garage', 'garage', function(src, p)
+    if not appOn('garage') then return nil end
+    local rows = safely('garage', function()
+        return Bridge.Vehicles and Bridge.Vehicles.Owned
+            and Bridge.Vehicles.Owned(p.citizenid, src)
+    end)
+    if type(rows) ~= 'table' then return { ok = false } end
+
+    -- One pass. `vehicleRow` normalises a row per framework and is not free, so it is called
+    -- once per vehicle and never twice.
+    local total, outside, first = 0, 0, nil
+    for _, v in ipairs(rows) do
+        local row = vehicleRow(v)
+        if row and row.plate ~= '' then
+            total = total + 1
+            local live = row.live == true
+            if live then outside = outside + 1 end
+            -- The one the tile names: whichever is OUT, because a car left somewhere is the
+            -- one worth being reminded about. Falls back to the first stored one.
+            if not first or (live and not first.live) then
+                first = { name = WidgetText(row.label or row.model or '', 24),
+                          plate = WidgetText(row.plate, 12), live = live }
+                if row.garage and not live then
+                    local info = Bridge.Garages and Bridge.Garages.Info
+                        and Bridge.Garages.Info(row.garage)
+                    if info and info.label then first.at = WidgetText(info.label, 24) end
+                end
+            end
+        end
+    end
+
+    return { ok = true, n = total, out = outside, first = first }
+end)

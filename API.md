@@ -14,6 +14,64 @@ Three rules hold throughout:
 3. **Every call returns something checkable.** Failure is `false, reason`, never a
    silent nil.
 
+
+## Resolving somebody, and reaching them
+
+### `WhoIs(target)`
+
+```lua
+local cid = exports['v-phone']:WhoIs(source)        --> 'ABC12345' or nil
+local cid = exports['v-phone']:WhoIs('555-0142')
+local cid = exports['v-phone']:WhoIs('ABC12345')
+```
+
+A source id, a phone number or a citizen id, resolved to a citizen id. Every other export here
+takes a citizen id, and this is the resolution the phone uses internally - so nothing has to
+guess which of the three it is holding.
+
+### `SendServiceMedia(who, label, body, imageUrl)`
+
+```lua
+exports['v-phone']:SendServiceMedia(cid, 'Benny s',
+    'Your car is ready.', 'https://i.imgur.com/abc.png')
+```
+
+`SendServiceMessage` with a picture attached. Answers `true, id` or `false, reason`. The URL goes
+through the same host gate a player's own picture does; a host the operator has not allowed loses
+the attachment and keeps the text.
+
+### `LeaveVoicemail(toNumber, fromNumber, body)`
+
+```lua
+exports['v-phone']:LeaveVoicemail('555-0142', '555-0100', 'Call me back.')
+```
+
+Answers `true`, or `false` and one of `'off'`, `'nonumber'`, `'empty'`. The recipient is bannered
+if they are connected and reads it in the app if they are not, exactly as a voicemail left by a
+player behaves.
+
+### `AddReminder(citizenid, atEpoch, text, note)`
+
+```lua
+exports['v-phone']:AddReminder(cid, os.time() + 7200,
+    'Impound fee due', 'Bay 3, Davis')
+```
+
+Answers the row id, or `false` and a reason. It goes off through the phone's own sweep, so it
+survives a restart and arrives whether or not the app is open. Bounded by the same caps a
+player's own reminder is.
+
+### `RefreshApp(source, appId)`
+
+```lua
+exports['v-phone']:RefreshApp(source, 'my_dispatch')
+```
+
+Tells a player's open app to redraw itself. A dropped-in app lives in an iframe and receives this
+through the SDK's `refresh` event - `Phone.on('refresh', ...)`. Answers true if the player was
+told; it does nothing if that app is not the one on screen.
+
+
 ## Server exports
 
 ### People and numbers

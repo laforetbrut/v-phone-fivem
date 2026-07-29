@@ -441,6 +441,14 @@ V.Callback('v-phone:bankpro:pay', function(src, resolve, data)
         -- that matters there is simply that they exist right now, because paying an offline
         -- character means writing behind their back and every framework does that differently.
         if not target then resolve({ error = 'nostaff' }) return end
+        -- **Paying yourself is a withdrawal wearing a payslip.**
+        --
+        -- A boss naming their own citizen id as the payee moved company money into their own
+        -- account through the wages path - which has no daily ceiling, does not check
+        -- `allowWithdraw`, and is logged as a payment rather than as a withdrawal. The
+        -- `account` branch below has always refused a self-target (`who:lower() == account`);
+        -- this branch never did, and it is the one that moves money to a person.
+        if who == p.citizenid then resolve({ error = 'self' }) return end
         if kind == 'staff' and (not theirs or theirs.name ~= job.name) then
             resolve({ error = 'nostaff' })
             return

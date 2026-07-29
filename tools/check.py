@@ -70,8 +70,50 @@ def strip_line_comments(line, lua):
 
 
 def strip_comments(src, lua):
-    src = re.sub(r'--\[\[.*?\]\]' if lua else r'/\*.*?\*/', ' ', src, flags=re.S)
-    return '\n'.join(strip_line_comments(l, lua) for l in src.split('\n'))
+    """Remove comments, leaving strings alone.
+
+    **This was `re.sub(r'/\\*.*?\\*/', ...)` and it was quietly deleting a tenth of app.js.**
+    That file contains the string `'/*.lua are in fxmanifest.lua shared_scripts'` - advice
+    printed to a server owner. The regex has no idea it is inside quotes, so the `/*` opened a
+    block comment that ran to the next real `*/` three and a half thousand lines later, and
+    every check downstream was reading a file with a hole in it. Nothing failed; the checks just
+    passed, on less than they were shown.
+
+    So the delimiters are found by walking the text and tracking whether we are inside a string.
+    Quotes, escapes, and JavaScript template literals are all it needs to know about - this is
+    not a parser, it is enough of one to tell a comment from a comment-shaped substring.
+    """
+    open_tok, close_tok = ('--[[', ']]') if lua else ('/*', '*/')
+    out, i, n = [], 0, len(src)
+    quote = None
+    while i < n:
+        c = src[i]
+        if quote:
+            out.append(c)
+            if c == '\\' and i + 1 < n:
+                out.append(src[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in '"\'' or (not lua and c == '`'):
+            quote = c
+            out.append(c)
+            i += 1
+            continue
+        if src.startswith(open_tok, i):
+            end = src.find(close_tok, i + len(open_tok))
+            if end < 0:
+                break                                  # unterminated: the rest is comment
+            # Newlines are kept so every later line number still matches the real file.
+            out.append('\n' * src.count('\n', i, end + len(close_tok)))
+            i = end + len(close_tok)
+            continue
+        out.append(c)
+        i += 1
+    return '\n'.join(strip_line_comments(l, lua) for l in ''.join(out).split('\n'))
 
 
 # ══ 1. Every post() the page makes has a handler ═══════════════════════════
@@ -111,6 +153,49 @@ def locale_tables():
         lua.execute(read(os.path.join(ROOT, 'locales', '%s.lua' % name)))
     g = lua.globals()
     return {str(k) for k in list(g.Locales.en)}, {str(k) for k in list(g.Locales.fr)}
+
+
+def check_social_ops(report):
+    """Every `op` the page sends to the social layer, against the two gates it has to pass.
+
+    The page does not talk to `v-phone:soc:<op>` directly. It posts to ONE `social` callback,
+    which checks the name against an allowlist in client/main.lua and only then forwards it.
+    So a new operation needs three things - the page asking, the allowlist letting it, and the
+    server answering - and missing either of the last two is silent: the sheet spins, or comes
+    back `forbidden`, and nothing in any log says which.
+
+    `check_callbacks` cannot see this. It matches `post('social')` against
+    `RegisterNUICallback('social')` and stops there, so every op inside is invisible to it.
+    Both `likers` and `follows` shipped past it with no allowlist entry.
+    """
+    src = read(os.path.join(ROOT, 'html', 'app.js'))
+    # `post('social', { op: 'x' ... })` - the op may sit anywhere in the object literal, so the
+    # window is bounded rather than anchored to the first field.
+    asked = set()
+    for m in re.finditer(r"post\(\s*'social'\s*,\s*\{", src):
+        window = src[m.end():m.end() + 260]
+        found = re.search(r"\bop\s*:\s*'([A-Za-z0-9_]+)'", window)
+        if found:
+            asked.add(found.group(1))
+
+    client = read(os.path.join(ROOT, 'client', 'main.lua'))
+    block = re.search(r'SOCIAL_OPS\s*=\s*\{(.*?)\n\}', client, re.S)
+    allowed = set(re.findall(r'(\w+)\s*=\s*true', block.group(1))) if block else set()
+
+    server = read(os.path.join(ROOT, 'server', 'social.lua'))
+    answered = set(re.findall(r"V\.Callback\(\s*'v-phone:soc:(\w+)'", server))
+
+    problems = []
+    for op in sorted(asked - allowed):
+        problems.append("%s  (not in SOCIAL_OPS - the relay answers 'forbidden')" % op)
+    for op in sorted(asked - answered):
+        problems.append('%s  (no v-phone:soc:%s on the server)' % (op, op))
+    for op in sorted(allowed - answered):
+        problems.append('%s  (allowed through, but the server has no handler)' % op)
+
+    report('social ops', '%d asked, %d allowed, %d answered'
+           % (len(asked), len(allowed), len(answered)), problems)
+    return not problems
 
 
 def check_keys(report):
@@ -238,7 +323,18 @@ def check_sounds(report):
     cfg_rings = set(re.findall(r"'([A-Za-z0-9_]+)'", m.group(1))) if m else set()
     m = re.search(r'alerts\s*=\s*\{([^}]*)\}', cfg)
     cfg_alerts = set(re.findall(r"'([A-Za-z0-9_]+)'", m.group(1))) if m else set()
-    ui_calls = set(re.findall(r"\bui\(\s*'([A-Za-z0-9_]+)'", app))
+    # Every quoted name inside a `ui(...)` call, not only one sitting immediately after the
+    # bracket. `ui(ok ? 'toggleon' : 'toggleoff')` is two sounds, and the earlier pattern - which
+    # demanded a quote as the first thing in the call - saw neither of them. A ui() call naming a
+    # sound that does not exist is silent, so nothing else would ever have reported it.
+    ui_calls = set()
+    for args in re.findall(r"\bui\(([^()\n]*)\)", app):
+        # The comparison in `ui(state === 'closed' ? 'received' : 'success')` names a state, not
+        # a sound. Both sides of any equality operator are removed before the names are read,
+        # so a condition cannot be mistaken for something to play.
+        args = re.sub(r"[!=]==?\s*'[^']*'", '', args)
+        args = re.sub(r"'[^']*'\s*[!=]==?", '', args)
+        ui_calls.update(re.findall(r"'([A-Za-z0-9_]+)'", args))
 
     problems = []
     for label, names, playable in (
@@ -319,14 +415,195 @@ def check_sql(report):
     return not problems
 
 
+# ══ 6. Every icon the page asks for exists ═════════════════════════════════
+# An icon name that is not in the set draws NOTHING. No error, no console line, no gap in the
+# layout worth noticing - just a button with no picture on it, which is exactly how `svg('x')`
+# and `icon: 'flag'` both shipped. The names live in v-ui, outside this repository, so they are
+# read out of the built preview, which inlines the whole set.
+
+def check_icons(report):
+    preview = os.path.join(ROOT, 'preview', 'index.html')
+    if not os.path.exists(preview):
+        report('icons', 'no preview built - run tools/make-preview.py', [])
+        return True
+
+    built = read(preview)
+    m = re.search(r'(?:ICONS|icons)\s*=\s*\{', built)
+    if not m:
+        report('icons', 'no icon table in the built preview', [])
+        return True
+    i, depth, j = m.end(), 1, m.end()
+    while j < len(built) and depth:
+        if built[j] == '{':
+            depth += 1
+        elif built[j] == '}':
+            depth -= 1
+        j += 1
+    known = set(re.findall(r"(?m)[\{,\s]([a-z][a-z0-9_]*)\s*:\s*['\"`]", built[i:j]))
+    if not known:
+        report('icons', 'the icon table read as empty', [])
+        return True
+
+    app = read(os.path.join(ROOT, 'html', 'app.js'))
+    asked = {}
+    for name in re.findall(r"svg\('([a-z0-9_]+)'\)", app):
+        asked.setdefault(name, "svg('%s')" % name)
+    for name in re.findall(r"icon: '([a-z0-9_]+)'", app):
+        asked.setdefault(name, "icon: '%s'" % name)
+    # `appIcon` takes an APP id, not an icon name, and those are drawn from a different table.
+    for name in re.findall(r"UI\.appIcon\('([a-z0-9_]+)'\)", app):
+        asked.pop(name, None)
+
+    problems = ['%s draws nothing - no such icon' % asked[n]
+                for n in sorted(set(asked) - known)]
+    report('icons', '%d icons available, %d asked for' % (len(known), len(asked)), problems)
+    return not problems
+
+
 # ══ The runner ═════════════════════════════════════════════════════════════
+
+def check_shot_backticks(report):
+    """A backtick inside a shot script CLOSES the template literal that holds it.
+
+    Every shot in tools/make-shots.js is written as script: followed by a template literal, and
+    the natural way to write a comment about a function is to put its name in backticks - which
+    ends the literal mid-script and turns the rest of the shot into JavaScript that happens to
+    look like prose. It is always a syntax error, it is always found by running into it, and it
+    cost six round trips in one session. node --check catches it too; this catches it a step
+    earlier and says which line did it.
+    """
+    path = os.path.join(ROOT, 'tools', 'make-shots.js')
+    if not os.path.exists(path):
+        report('shot scripts', 'no make-shots.js', [])
+        return True
+
+    src = read(path)
+    problems = []
+    scripts = 0
+    marker = 'script: ' + chr(96)
+    closer = chr(96) + ',' + chr(10)
+    i = 0
+    while True:
+        at = src.find(marker, i)
+        if at < 0:
+            break
+        begin = at + len(marker)
+        end = src.find(closer, begin)
+        if end < 0:
+            break
+        scripts += 1
+        body = src[begin:end]
+        if chr(96) in body:
+            line = src.count(chr(10), 0, begin + body.index(chr(96))) + 1
+            problems.append('line %d: a backtick here closes the shot script it sits inside'
+                            % line)
+        i = end + 1
+
+    report('shot scripts', '%d script(s)' % scripts, problems)
+    return not problems
+
+
+def check_cross_file_locals(report):
+    """A file calling a name that is another file's TOP-LEVEL local.
+
+    Lua has no module system here: every file in `server_scripts` shares one environment, so a
+    name is reachable from another file only if it was written as a true global. A name declared
+    `local X` at the top of a file and assigned later as `X = function(...)` reads like a global
+    definition and is not - and calling it from elsewhere is nil at RUNTIME, inside whatever
+    pcall happens to be around it. It compiles, it lints, and it fails silently on a live server.
+
+    Three real bugs came out of this check the first time it ran:
+
+      * `prefsOf` called from server/widgets.lua and server/bank.lua, which made every
+        server-backed home-screen widget read "unavailable" with nothing on screen to say why
+      * `requireItem` called from server/music.lua, guarded as `if not requireItem or ...` -
+        always true, so music never checked that the player is carrying a phone
+      * the same in server/reminders.lua, where a banner always claimed they were
+
+    The last two are the shape to watch for: a name that is always nil, guarded with `or`, is a
+    branch that is always taken, and the guard is what hides it.
+
+    Only TOP-LEVEL locals count as owned; a caller with any binding of its own is not reported;
+    comments and long-bracket strings are stripped; and client files are never compared against
+    server files, because those are different Lua states.
+    """
+    import glob
+
+    NAME = '[A-Za-z_][A-Za-z0-9_]*'
+    LONG = re.compile(r'\[=*\[.*?\]=*\]', re.S)
+    COMMENT = re.compile(r'(?m)--.*$')
+    # `"ALTER TABLE ... PRIMARY KEY (...)"` is SQL, and reading it as Lua reported KEY() as a call.
+    QUOTED = re.compile('"[^"]*"' + "|" + "'[^']*'")
+
+    def realm(path):
+        rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+        if rel.startswith('server/') or rel.startswith('bridge/server/'):
+            return 'server'
+        if rel.startswith('client/') or rel.startswith('bridge/client/'):
+            return 'client'
+        return 'shared'
+
+    files = sorted(glob.glob(os.path.join(ROOT, 'server', '*.lua')) +
+                   glob.glob(os.path.join(ROOT, 'client', '*.lua')) +
+                   glob.glob(os.path.join(ROOT, 'bridge', '*', '*.lua')))
+
+    owned, bound, code = {}, {}, {}
+    real_globals = set()
+
+    for path in files:
+        src = read(path)
+        # **Comments first.** An apostrophe in a comment - "don t" written properly - pairs
+        # with the next real string quote and eats everything between them, which deleted whole
+        # blocks of declarations and reported them as missing.
+        clean = QUOTED.sub(chr(32), LONG.sub(chr(32), COMMENT.sub(chr(32), src)))
+        code[path] = clean
+
+        owned[path] = (set(re.findall('(?m)^local function (' + NAME + ')', clean))
+                       | set(re.findall('(?m)^local (' + NAME + r')\s*$', clean))
+                       | set(re.findall('(?m)^local (' + NAME + r')\s*=', clean)))
+
+        mine = set()
+        for group in re.findall(r'(?m)\blocal\s+([^=\n]+)', clean):
+            mine |= set(re.findall(NAME, group))
+        for group in re.findall(r'function\s*(?:' + NAME + r')?\s*\(([^)]*)\)', clean):
+            mine |= set(re.findall(NAME, group))
+        for group in re.findall(r'(?m)\bfor\s+([^=\n]+?)\s+(?:=|in)\b', clean):
+            mine |= set(re.findall(NAME, group))
+        bound[path] = mine
+
+        real_globals |= set(re.findall('(?m)^function (' + NAME + r')\s*\(', clean))
+
+    problems = []
+    for path in files:
+        here = realm(path)
+        clean = code[path]
+        called = set(re.findall(r'(?<![\w.:])(' + NAME + r')\s*\(', clean))
+        for name in sorted(called - bound[path] - real_globals):
+            owners = [p for p in files
+                      if p != path and name in owned[p]
+                      and realm(p) in (here, 'shared')]
+            if not owners:
+                continue
+            hit = re.search(r'(?<![\w.:])' + re.escape(name) + r'\s*\(', clean)
+            line = clean.count(chr(10), 0, hit.start()) + 1 if hit else 0
+            problems.append('%s:~%d calls %s(), a top-level local in %s - nil from here'
+                            % (os.path.relpath(path, ROOT).replace(os.sep, '/'), line, name,
+                               os.path.relpath(owners[0], ROOT).replace(os.sep, '/')))
+
+    report('cross-file locals', '%d lua file(s)' % len(files), problems)
+    return not problems
+
 
 CHECKS = [
     ('callbacks', check_callbacks),
+    ('social ops', check_social_ops),
     ('locale keys', check_keys),
     ('css classes', check_css),
+    ('icons', check_icons),
     ('sounds', check_sounds),
     ('sql parameters', check_sql),
+    ('shot scripts', check_shot_backticks),
+    ('cross-file locals', check_cross_file_locals),
 ]
 
 

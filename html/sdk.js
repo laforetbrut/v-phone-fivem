@@ -42,6 +42,25 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  // A URL on its way into a CSS `url("...")`.
+  //
+  // `esc` is not enough on its own here, and the reason is worth stating: the `&quot;` it
+  // produces is turned back into a real quote by the HTML parser before the CSS parser ever
+  // sees the value - so the very character that was meant to be neutralised is the one that
+  // closes the url() token. Control characters go too, because a newline inside a style
+  // attribute ends the declaration.
+  //
+  // Deliberately a copy of the one in app.js rather than a shared import: the sdk is meant to
+  // be readable on its own by somebody writing their first app, and it has no module system.
+  const cssUrl = (url) => Array.from(String(url || ''))
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+
   // ══ Icons ══════════════════════════════════════════════════
   const ICONS = {
     // The iFruit mark: a fruit with a stem and one leaf. It used to be a ball with a
@@ -218,7 +237,7 @@
               // background rather than an <img> so it crops to the circle without a second rule.
               ? (o.photo
                   ? '<span class="rav ravimg" style="background-image:url(&quot;' +
-                    esc(String(o.photo)) + '&quot;)"></span>'
+                    esc(cssUrl(String(o.photo))) + '&quot;)"></span>'
                   : '<span class="rav">' + esc(String(o.avatar).slice(0, 1).toUpperCase()) + '</span>')
               : '');
       const tail =
@@ -445,6 +464,17 @@
     charging: { bg: 'linear-gradient(180deg,#5EE68A,#0FB94E)',
       d: 'M6 4h9a2 2 0 0 1 2 2v1h1.6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H17v1a2 2 0 0 1-2 2H6a2 2 0 0'
        + ' 1-2-2V6a2 2 0 0 1 2-2zm5.4 3-3 5h2.2l-.6 3.2L13.6 10h-2.2L11.4 7z' },
+    // OnlyFruits. Its own tile, because without one it fell through to the generic grey square
+    // - the app whose whole subject is pictures was the only icon in the store with no colour
+    // at all. Magenta into violet: adjacent to Hush's red without being it, so the two social
+    // apps are not the same tile at a glance.
+    // The path is written out rather than taken from the icon table: that table is `ICONS`,
+    // which is drawn with a STROKE, and `G` - the one these tiles fill - has no sparkle in it.
+    // `G.sparkles` is undefined, and an undefined `d` is a tile with nothing on it.
+    onlyfruits: { bg: 'linear-gradient(180deg,#FF54A8,#8A2BE2)', fill: '#FFFFFF',
+      d: 'M12 2.4l1.65 5.35L19 9.4l-5.35 1.65L12 16.4l-1.65-5.35L5 9.4l5.35-1.65L12 2.4Z'
+       + 'M18.6 13.4l.85 2.55L22 16.8l-2.55.85L18.6 20.2l-.85-2.55L15.2 16.8l2.55-.85L18.6 13.4Z'
+       + 'M5.9 12.9l.8 2.4L9 16.1l-2.3.8L5.9 19.3l-.8-2.4L2.8 16.1l2.3-.8L5.9 12.9Z' },
     garage: { bg: 'linear-gradient(180deg,#54B9FF,#0A63D6)', d: G.garage },
     wallet: { bg: 'linear-gradient(180deg,#3A3A3C,#141416)', d: G.wallet },
     jobs: { bg: 'linear-gradient(180deg,#7D7AFF,#4B48D6)', d: G.jobs },
@@ -491,6 +521,15 @@
       d: 'M21 6.2c-.7.3-1.4.5-2.1.6.8-.5 1.3-1.2 1.6-2-.7.4-1.5.7-2.3.9A3.3 3.3 0 0 0 12.6 8.3c-2.6-.1-5-1.4-6.6-3.4-.9 1.5-.5 3.4 1 4.4-.6 0-1.1-.2-1.6-.4 0 1.6 1.1 3 2.7 3.3-.5.1-1 .2-1.5.1.4 1.3 1.7 2.3 3.1 2.3-1.4 1.1-3.2 1.6-5 1.4 1.5 1 3.3 1.5 5.2 1.5 6.3 0 9.8-5.3 9.6-10 .7-.5 1.2-1.1 1.6-1.8z' },
     snap: { bg: 'linear-gradient(180deg,#63D2FF,#0A84D6)', d: G.camera },
     hush: { bg: 'linear-gradient(180deg,#FF5E9C,#FF2D55)', d: G.heart },
+    // Fruitee. A hand holding a heart: giving, not liking. Teal into green rather than the
+    // pink Hush wears, because the two would otherwise be the same tile with the same glyph -
+    // and green is what money looks like everywhere else in this phone.
+    fruitee: { bg: 'linear-gradient(180deg,#3ED9A4,#0FA36B)', fill: '#FFFFFF',
+      d: 'M12 12.9c-2.6-1.9-4.5-3.6-4.5-5.6 0-1.4 1.1-2.5 2.4-2.5.8 0 1.6.4 2.1 1.1.5-.7 1.3-1.1'
+       + ' 2.1-1.1 1.3 0 2.4 1.1 2.4 2.5 0 2-1.9 3.7-4.5 5.6Z'
+       + 'M4.2 14.1a1.2 1.2 0 0 1 1.6-.4l2.6 1.5h3.2a1.1 1.1 0 0 1 0 2.2H9.3a.6.6 0 0 0 0 1.2h2.5'
+       + 'c.6 0 1.2-.2 1.7-.5l4-2.4a1.3 1.3 0 0 1 1.7.4 1.3 1.3 0 0 1-.4 1.8l-4.1 2.5c-.9.6-1.9.9-3'
+       + ' .9H6.1a1.2 1.2 0 0 1-1-.6l-1.3-2.3a1.2 1.2 0 0 1 .4-1.6Z' },
     cipher: { bg: 'radial-gradient(circle at 28% 16%,#7CF7D4 0%,#14B89A 28%,#073B46 72%,#04161D 100%)', d: G.cipher },
     mail: { bg: 'linear-gradient(180deg,#5AC8FA,#0A63D6)', d: G.mail, fill: '#fff' },
     images: { bg: 'linear-gradient(135deg,#FF3B30 0%,#FF9500 20%,#FFCC00 40%,#34C759 60%,#0A84FF 80%,#5E5CE6 100%)', d: G.images, fill: '#fff' },

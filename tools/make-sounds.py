@@ -40,6 +40,26 @@ RINGTONES = {
     # One that is not in the built-in set: a low two note pattern for somebody who wants
     # a phone that does not sound like a phone.
     'signal':  [(392, 0.00, .26), (330, .28, .40), (392, .90, .26), (330, 1.18, .50)],
+
+    # ── The soft ones ──────────────────────────────────────────
+    # Written for the renderer above rather than for the old one: long notes that overlap, a
+    # pentatonic set so no two of them can clash however they land, and no note below 500 Hz -
+    # a phone speaker cannot reproduce the low ones and only rattles trying.
+
+    # Rising, unresolved, and it never lands on the note it is heading for. The most
+    # answerable ringtone here: it asks a question rather than making a demand.
+    'drift':   [(587, 0.00, .60), (784, .30, .60), (880, .60, .60), (1175, .90, .90),
+                (587, 1.60, .60), (784, 1.90, .60), (880, 2.20, .60), (1319, 2.50, 1.10)],
+    # Two notes a fifth apart, sounded together and left to ring. Nothing else. This is the
+    # one to choose for a phone that should be noticed without being answered in a panic.
+    'still':   [(659, 0.00, 1.20), (988, 0.06, 1.20),
+                (659, 1.70, 1.20), (988, 1.76, 1.40)],
+    # A falling pentatonic run. Fast enough to read as a phone ringing, soft enough that the
+    # notes blur into each other rather than arriving as five separate events.
+    'cascade': [(1319, 0.00, .34), (1175, .16, .34), (988, .32, .34), (784, .48, .34),
+                (659, .64, .70),
+                (1319, 1.40, .34), (1175, 1.56, .34), (988, 1.72, .34), (784, 1.88, .34),
+                (659, 2.04, .80)],
 }
 
 ALERTS = {
@@ -47,6 +67,18 @@ ALERTS = {
     'pop':  [(880, 0.00, .09), (1320, .05, .14)],
     'tick': [(1200, 0.00, .05)],
     'note': [(1046, 0.00, .12), (1568, .09, .20)],
+
+    # ── The soft ones ──────────────────────────────────────────
+    # One event, two notes at most, and both of them left ringing. An alert is heard dozens of
+    # times an evening and it is the sound that decides whether a phone is pleasant to carry.
+
+    # A rising fourth, quiet and open. The default anybody should be happy leaving alone.
+    'breeze': [(1175, 0.00, .26), (1568, .10, .44)],
+    # A single note with its octave under it, which is as close to "a nudge" as a tone gets.
+    'hush':   [(1568, 0.00, .34), (784, 0.00, .30)],
+    # Down rather than up: a falling interval reads as "something arrived" where a rising one
+    # reads as "something needs you".
+    'soften': [(1568, 0.00, .20), (1319, .08, .40)],
 }
 
 # ── The emergency alert ────────────────────────────────────────────────────────
@@ -170,20 +202,64 @@ def render_click(spec):
 
 
 def envelope(pos, length):
-    """Attack, then an exponential tail. A note that stops dead clicks."""
-    attack = min(0.008, length * 0.25)
+    """A soft attack, then a long exponential tail.
+
+    **The attack is a raised cosine, not a ramp.** A linear ramp reaches full amplitude with a
+    corner in it, and a corner is a click - which is what every note on this phone started
+    with. `(1 - cos(pi x)) / 2` leaves and arrives with zero slope, so the note fades in
+    instead of switching on. Eighteen milliseconds: long enough to hear as soft, short enough
+    that the note still lands on the beat.
+
+    The decay is gentler too. `exp(-4.2 x)` is down 65 dB at the end of the note, which reads
+    as a pluck; `exp(-3.0 x)` leaves the tail audible into the note that follows, and notes
+    that overlap are most of what makes a phone tone sound expensive.
+    """
+    attack = min(0.018, length * 0.35)
     if pos < attack:
-        return pos / attack
+        return (1.0 - math.cos(math.pi * pos / attack)) * 0.5
     remaining = (pos - attack) / max(1e-6, length - attack)
-    return math.exp(-4.2 * remaining)
+    return math.exp(-3.0 * remaining)
 
 
-def render(score, tail=0.25):
-    """A score to a list of samples, harmonics included.
+def space(buffer, amount=0.16, delay=0.055, taps=4):
+    """A small room around the tone.
 
-    The second and third harmonics at a fifth and a sixth of the level turn a sine into
-    something with a body to it, which is the whole difference between a tone and a
-    ringtone.
+    Not a reverb in any serious sense - four feedback taps, each quieter and later than the
+    last. That is enough to stop a note sounding like it was recorded pressed against a wall,
+    and it is what separates an iOS tone from a beep more than any amount of tuning does.
+
+    In place would be wrong: a tap must read the DRY signal, or each one feeds the next and the
+    tail turns to mush.
+    """
+    if amount <= 0:
+        return buffer
+    out = list(buffer)
+    step = int(delay * RATE)
+    if step <= 0:
+        return out
+    for tap in range(1, taps + 1):
+        gain = amount * (0.55 ** (tap - 1))
+        offset = step * tap
+        for i in range(len(buffer) - offset):
+            out[i + offset] += buffer[i] * gain
+    return out
+
+
+def render(score, tail=0.25, peak_at=0.82, room=0.16, edge=0.0):
+    """A score to a list of samples.
+
+    **The harmonic stack is what decides whether a tone is soft or sharp**, and the old one was
+    sharp: a second harmonic at 0.20 for body, and a THIRD at 0.08. The third harmonic is the
+    twelfth - an octave and a fifth up - and it is the partial the ear reads as edge. It is
+    gone. What is left is the octave, quieter than before, plus a trace of the double octave,
+    which reads as air rather than as bite.
+
+    `edge` puts some of it back for the two sounds that are supposed to cut through: the
+    wireless emergency signal and the 911 dispatch tone. Softening those would be a bug, not a
+    feature - they are alarms.
+
+    `peak_at` is the ceiling. A notification at the same level as a ringtone is a notification
+    that startles somebody wearing headphones, so the families land at different heights.
     """
     duration = max(start + length for _, start, length in score) + tail
     total = int(duration * RATE)
@@ -191,25 +267,34 @@ def render(score, tail=0.25):
 
     for freq, start, length in score:
         first = int(start * RATE)
-        count = int(length * RATE)
+        # The note is written PAST its nominal length, so its tail decays into what follows
+        # instead of being cut off at the note boundary. That overlap is most of the softness.
+        count = int(min(length * 2.2, length + 0.45) * RATE)
         for i in range(count):
             index = first + i
             if index >= total:
                 break
             t = i / RATE
             amp = envelope(t, length)
+            # Below about a thousandth of full scale nothing is audible and the remaining
+            # samples are pure arithmetic. On a two-second ringtone that is most of them.
+            if t > length and amp < 0.001:
+                break
             sample = (
                 math.sin(2 * math.pi * freq * t)
-                + 0.20 * math.sin(4 * math.pi * freq * t)
-                + 0.08 * math.sin(6 * math.pi * freq * t)
+                + 0.14 * math.sin(4 * math.pi * freq * t)
+                + 0.03 * math.sin(8 * math.pi * freq * t)
+                + edge * math.sin(6 * math.pi * freq * t)
             )
             buffer[index] += sample * amp * 0.32
 
-    # One pass of normalisation, so every file lands at the same loudness and a server
-    # does not have to trim the volume per ringtone.
+    buffer = space(buffer, room)
+
+    # One pass of normalisation per file, so a server does not have to trim the volume per
+    # ringtone - and a per-family ceiling, so an alert is quieter than a ring.
     peak = max((abs(s) for s in buffer), default=0.0)
     if peak > 0:
-        scale = 0.89 / peak
+        scale = peak_at / peak
         buffer = [s * scale for s in buffer]
     return buffer
 
@@ -228,12 +313,23 @@ def write(name, samples):
 def main():
     os.makedirs(OUT, exist_ok=True)
     total = 0
-    for group, tail in ((RINGTONES, 0.45), (ALERTS, 0.20), (UI, 0.18), (EMERGENCY, 0.30)):
+    # tail, peak, room, edge - per family, because they are not the same kind of sound.
+    #
+    #   ringtones  loud, and in a room. They play across a street.
+    #   alerts     QUIETER than a ring by 6 dB. This one arrives while somebody is wearing
+    #              headphones, and it is the sound the phone makes most often.
+    #   interface  quieter still, and almost dry. A tap that echoes is a tap that lags.
+    #   emergency  loudest, driest, and with the edge harmonic put back. It is an alarm.
+    for group, tail, peak, room, edge in (
+            (RINGTONES, 0.70, 0.86, 0.20, 0.0),
+            (ALERTS, 0.40, 0.62, 0.14, 0.0),
+            (UI, 0.28, 0.52, 0.06, 0.0),
+            (EMERGENCY, 0.30, 0.94, 0.02, 0.10)):
         for name, score in group.items():
             prefix = ('ring_' if group is RINGTONES
                       else 'alert_' if group is ALERTS
                       else 'ui_' if group is UI else 'ui_')
-            size = write(prefix + name, render(score, tail))
+            size = write(prefix + name, render(score, tail, peak, room, edge))
             total += size
             print('%-18s %6.1f KB' % (prefix + name + '.wav', size / 1024))
 

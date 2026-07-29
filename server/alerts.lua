@@ -341,6 +341,9 @@ V.Callback('v-phone:alerts:emit', function(src, resolve, data)
     -- did not happen. The phone decides what to do with it - banner, buzz, badge, or silence if
     -- the player muted the app.
     TriggerClientEvent('v-phone:client:alert', -1, payload)
+    -- The home screen widget caches the newest standing alert. This is one of the two moments
+    -- the answer can change, so it is one of the two places the cache is dropped.
+    if AlertsWidgetStale then AlertsWidgetStale() end
 
     V.Log(('alerts: %s (%s) broadcast "%s" for %d minute(s)')
         :format(name, tostring(job.name or '?'), title, minutes))
@@ -374,6 +377,7 @@ V.Callback('v-phone:alerts:delete', function(src, resolve, data)
     -- Withdrawn everywhere, not only for whoever pressed it: an alert that has been taken down
     -- is one that must stop being on people's phones.
     TriggerClientEvent('v-phone:client:alertGone', -1, id)
+    if AlertsWidgetStale then AlertsWidgetStale() end
 
     V.Log(('alerts: %s withdrew alert #%d'):format(p.citizenid, id))
     resolve({ ok = true })
@@ -450,6 +454,59 @@ exports('RaiseAlert', function(data)
         at = now, until_ = now + (minutes * 60), active = true,
     }
     TriggerClientEvent('v-phone:client:alert', -1, payload)
+    -- The same cache drop the player path does. An alert raised by a script is standing over
+    -- the city in exactly the same way, and the home screen widget was told about one and not
+    -- the other - so a scripted alert stayed invisible on the strip until the cache expired
+    -- by other means, which it does not.
+    if AlertsWidgetStale then AlertsWidgetStale() end
     V.Log(('alerts: a script broadcast "%s" for %d minute(s)'):format(title, minutes))
     return payload
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- The home screen widget
+-- ══════════════════════════════════════════════════════════════
+-- What is standing over the city right now, as one line.
+--
+-- **Cached, and invalidated by the two events that can change the answer** - a broadcast and a
+-- withdrawal - rather than re-read per home paint. At steady state this tile costs nothing at
+-- all: one query per server start, and one more each time an alert goes up or comes down.
+local WNewest = nil       -- { at, row } or false for "asked, nothing standing"
+
+function AlertsWidgetStale() WNewest = nil end
+
+WidgetSource('alerts', 'alerts', function()
+    -- Under doc-civilalerte the alerts are ITS rows. Reading our own table would answer
+    -- confidently about a table nothing writes to, which is worse than not offering the tile.
+    if not enabled() or docMode() or not ready then return { ok = false } end
+
+    local now = os.time()
+    -- A cached row can expire while it sits here, which is the one way the cache can be wrong
+    -- without an event firing. Cheap to check, and it re-reads rather than showing a dead alert.
+    if WNewest ~= nil and (WNewest == false or (WNewest.row and WNewest.row.expires_at > now)) then
+        if WNewest == false then return { ok = true, n = 0 } end
+    else
+        local rows = MySQL.query.await([[SELECT id, category, title, emitter_label, expires_at
+            FROM vphone_alerts WHERE expires_at > ? ORDER BY created_at DESC LIMIT 1]], { now })
+        local row = rows and rows[1]
+        if not row then
+            WNewest = false
+            return { ok = true, n = 0 }
+        end
+        local n = MySQL.scalar.await(
+            'SELECT COUNT(*) FROM vphone_alerts WHERE expires_at > ?', { now }) or 1
+        WNewest = { row = row, n = math.floor(tonumber(n) or 1) }
+    end
+
+    local r = WNewest.row
+    return {
+        ok = true,
+        n = WNewest.n,
+        category = tostring(r.category or ''),
+        title = WidgetText(r.title, 56),
+        -- The label, never `emitter_cid`. That column identifies the character who raised the
+        -- alert and has no business on anybody else's home screen.
+        emitter = WidgetText(r.emitter_label, 24),
+        expiresAt = math.floor(tonumber(r.expires_at) or 0),
+    }
 end)

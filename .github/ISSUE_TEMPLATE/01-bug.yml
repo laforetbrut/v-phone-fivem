@@ -29,7 +29,7 @@ body:
     attributes:
       label: v-phone version
       description: The `version` line in `fxmanifest.lua`. / La ligne `version` dans `fxmanifest.lua`.
-      placeholder: "1.1.3"
+      placeholder: "1.6.0"
     validations:
       required: true
 

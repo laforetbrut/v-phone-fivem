@@ -39,10 +39,19 @@ end
 
 --- Read a config choice: `auto` scans the list, a name is taken at its word, `off`
 --- disables the integration entirely.
+--- Which resource provides `key`: the one the operator named, or the first candidate running.
+---
+--- **The operator's string is returned VERBATIM.** It used to be lower-cased on the way out,
+--- and every consumer compares the answer against exact-case constants - `Renewed-Banking`,
+--- `okokBanking`, `okokGarage`. So an operator who followed the config's own instructions and
+--- named one of those got `renewed-banking` back, matched no branch, and the integration was
+--- silently dead while the resource was plainly running. Lower case is for deciding whether the
+--- value is one of the two sentinels, and for nothing else.
 local function choose(key, candidates)
-    local wanted = tostring(Config.Compat[key] or 'auto'):lower()
+    local raw = tostring(Config.Compat[key] or 'auto')
+    local wanted = raw:lower()
     if wanted == 'off' then return nil end
-    if wanted ~= 'auto' then return started(wanted) and wanted or nil end
+    if wanted ~= 'auto' then return started(raw) and raw or nil end
     return firstStarted(candidates)
 end
 
@@ -124,6 +133,19 @@ function Bridge.Numbers.Owner(number)
     number = tostring(number or '')
     if number == '' then return nil end
 
+    -- The phone's own column first. `vphone_characters.phone` carries a UNIQUE key, it is
+    -- written for every character on every load, and it is already what routes every message
+    -- and call. The two below it read tables with no index on the column being matched: the
+    -- kv store is a clustered scan over every photo, preference and layout on the server, and
+    -- the framework fallback decodes a JSON document per row.
+    --
+    -- It also closes a real miss. When a character ADOPTS a framework number, the phone
+    -- writes `vphone_characters.phone` directly and never calls `Numbers.Set` - so that
+    -- character has no kv row at all, and the old first query could never find them.
+    local own = MySQL.scalar.await(
+        'SELECT citizenid FROM vphone_characters WHERE phone = ?', { number })
+    if own then return own end
+
     local own = MySQL.scalar.await("SELECT citizenid FROM vphone_kv WHERE `key` = 'number' AND value = ?",
         { json.encode(number) })
     if own then return own end
@@ -137,21 +159,55 @@ function Bridge.Numbers.Owner(number)
     return nil
 end
 
+--- Character names, remembered.
+---
+--- A name does not change while a character is loaded, and one screen asks for forty of them
+--- in a row - the Fruitee discover page reads forty pages, names the owner of each, then
+--- names the giver of every gift on the open one. On qb each of those is a whole charinfo
+--- document read and JSON-decoded to take two fields off it.
+---
+--- `false` is stored for a miss on purpose. `nil` would be indistinguishable from "not asked"
+--- and would re-query on every call for the frameworks where the answer is permanently nil,
+--- which is ESX and standalone - exactly the servers that would gain nothing and pay twice.
+local NameCache = {}
+
 --- The character's display name, for somebody who is not connected.
+---
+--- The first miss runs the framework branch unchanged, so every server returns exactly the
+--- string it returned before, `nil` included. This remembers the answer; it does not change
+--- where the answer comes from - reading the phone's own projection instead would start
+--- returning names on ESX and standalone, where the fallback is the FiveM display name, and
+--- put people's Steam names on public pages.
 function Bridge.CharacterName(citizenid)
     citizenid = tostring(citizenid or '')
     if citizenid == '' then return nil end
+
+    local hit = NameCache[citizenid]
+    if hit ~= nil then
+        if hit == false then return nil end
+        return hit
+    end
+
+    local name = nil
     if Bridge.framework == 'qb' then
         local raw = MySQL.scalar.await('SELECT charinfo FROM players WHERE citizenid = ?', { citizenid })
         local ok, info = pcall(json.decode, raw or '{}')
         if ok and info then
-            return ((info.firstname or '') .. ' ' .. (info.lastname or '')):gsub('^%s+', '')
+            name = ((info.firstname or '') .. ' ' .. (info.lastname or '')):gsub('^%s+', '')
         end
     elseif Bridge.framework == 'ox' then
         local row = MySQL.single.await('SELECT firstName, lastName FROM characters WHERE charId = ?', { citizenid })
-        if row then return ((row.firstName or '') .. ' ' .. (row.lastName or '')):gsub('^%s+', '') end
+        if row then name = ((row.firstName or '') .. ' ' .. (row.lastName or '')):gsub('^%s+', '') end
     end
-    return nil
+
+    NameCache[citizenid] = name or false
+    return name
+end
+
+--- Drop one remembered name. Called when a character loads, which is the moment a rename
+--- made out of band becomes visible.
+function Bridge.ForgetCharacterName(citizenid)
+    NameCache[tostring(citizenid or '')] = nil
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -360,11 +416,36 @@ function Bridge.RemoveMoney(src, amount, account, reason)
         return true
 
     elseif Bridge.framework == 'ox' then
-        -- ox keeps money as an inventory item rather than a column, so the inventory is
-        -- what has to be asked.
-        local item = (account == 'cash') and 'money' or 'money'
-        if Bridge.ItemCount(src, item) < amount then return false end
-        return Bridge.RemoveItem(src, item, amount)
+        -- **Cash is an inventory item; the bank is an account.** They are two different pots
+        -- and this used to debit the item for both - `(account == 'cash') and 'money' or
+        -- 'money'`, whose two arms are the same string. `Bridge.AddMoney` credits the ACCOUNT
+        -- for 'bank', so a charge and a refund went to different places.
+        if account == 'cash' then
+            if Bridge.ItemCount(src, 'money') < amount then return false end
+            return Bridge.RemoveItem(src, 'money', amount)
+        end
+
+        -- The account, the same one `Bridge.AddMoney` and `Bridge.Banking.Balances` use.
+        local ok, player = pcall(function() return exports.ox_core:GetPlayer(src) end)
+        if not ok or not player or not player.charId then return false end
+        local gotAcc, acc = pcall(function()
+            return exports.ox_core:GetCharacterAccount(player.charId)
+        end)
+        if not gotAcc or type(acc) ~= 'table' then return false end
+
+        -- ox has shipped both shapes. Whichever exists is asked, and a refusal from either is
+        -- a refusal - this fails CLOSED, so a debit that cannot be confirmed grants nothing.
+        local removed = false
+        if acc.removeBalance then
+            local fine = pcall(function() removed = acc:removeBalance(amount) ~= false end)
+            if not fine then removed = false end
+        elseif acc.id and exports.ox_core.RemoveAccountBalance then
+            local fine = pcall(function()
+                removed = exports.ox_core:RemoveAccountBalance(acc.id, amount) ~= false
+            end)
+            if not fine then removed = false end
+        end
+        return removed == true
     end
 
     -- Standalone, or a framework with no money to take. Refuse rather than give it away.
@@ -458,6 +539,29 @@ local BANKS = { 'doc-banking', 'Renewed-Banking', 'qb-banking', 'okokBanking', '
                 'esx_banking' }
 
 Bridge.Banking = {}
+
+--- Does this table really have this column?
+---
+--- Two different scripts keep a table called `bank_statements` and they do not agree on its
+--- shape. Writing one query for both means naming a column that is there on one server and
+--- absent on the next, and the failure is silent: the `pcall` around the query swallows it and
+--- the caller falls through to whatever it does when there is no history at all.
+---
+--- Answered once per column per boot. `information_schema` is not free and the answer cannot
+--- change while the server is up.
+local columnSeen = {}
+local function hasColumn(tbl, col)
+    local key = tbl .. '.' .. col
+    if columnSeen[key] == nil then
+        local ok, n = pcall(function()
+            return MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+                LIMIT 1]], { tbl, col })
+        end)
+        columnSeen[key] = (ok and n ~= nil) or false
+    end
+    return columnSeen[key]
+end
 
 --- Which dedicated banking script is running, or nil for none.
 ---
@@ -598,6 +702,36 @@ end
 ---   * esx_addonaccount the shared-account event, which is how every ESX script does this
 --- okokBanking is escrowed and has no source to read, so its call is a best-effort attempt at
 --- the signature its documentation gives. A server it does not work on fills the hook.
+--- A cut of something, into an account the operator named.
+---
+--- Two features want this and they want it identically: a tax on what creators earn, and the
+--- money spent in the app store going somewhere rather than leaving the economy. One function,
+--- so a server configures "where the money goes" once and both obey the same rules.
+---
+--- `cfg` is `{ account = 'government', percent = 10 }`. No account, or no percentage, means no
+--- cut - which is the default and is why nothing changes for a server that ignores this.
+---
+--- **Rounded DOWN, always.** The house never rounds up: a 10% cut of 15 is 1, not 2.
+---
+--- Returns the amount actually taken, which is 0 when there was nothing to take OR when the
+--- credit failed. The caller decides what a failure means: the store keeps the sale either way,
+--- because refusing to sell an app because a society account was misspelled would punish the
+--- player for the operator's typo.
+function Bridge.Revenue(cfg, amount, reason)
+    if type(cfg) ~= 'table' then return 0 end
+    local account = tostring(cfg.account or ''):gsub('%s', '')
+    local pct = tonumber(cfg.percent) or 0
+    if account == '' or pct <= 0 then return 0 end
+
+    amount = math.floor(tonumber(amount) or 0)
+    if amount <= 0 then return 0 end
+
+    local cut = math.floor(amount * math.min(100, pct) / 100)
+    if cut <= 0 then return 0 end
+
+    return Bridge.AddSociety(account, cut, reason or 'v-phone') and cut or 0
+end
+
 function Bridge.AddSociety(account, amount, reason)
     account = tostring(account or ''):gsub('%s', '')
     amount = math.floor(tonumber(amount) or 0)
@@ -652,6 +786,29 @@ function Bridge.AddSociety(account, amount, reason)
 end
 
 --- Cash and bank, as two plain numbers. Anything richer is that script's own UI.
+--- What the FRAMEWORK says this character is carrying.
+---
+--- A banking script answers for the bank and knows nothing about pockets, so every branch of
+--- `Balances` that reads a bank figure from one still has to ask the framework for the cash.
+--- Two branches did; one returned a hardcoded 0, which is how a whole class of server came to
+--- show every player as carrying nothing. One function, so the next branch cannot forget.
+local function frameworkCash(src)
+    if Bridge.framework == 'qb' then
+        local player = Bridge.QBGetPlayer(src)
+        return player and (tonumber((player.PlayerData.money or {}).cash) or 0) or 0
+    end
+    if Bridge.framework == 'esx' then
+        local ok, ESX = pcall(function() return exports['es_extended']:getSharedObject() end)
+        if not ok or not ESX then return 0 end
+        local xPlayer = ESX.GetPlayerFromId(src)
+        return xPlayer and (tonumber(xPlayer.getMoney and xPlayer.getMoney()) or 0) or 0
+    end
+    if Bridge.framework == 'ox' then
+        return tonumber(Bridge.ItemCount(src, 'money')) or 0
+    end
+    return 0
+end
+
 function Bridge.Banking.Balances(src)
     local custom = Config.Compat.hooks.balances
     if custom then
@@ -666,18 +823,17 @@ function Bridge.Banking.Balances(src)
         local p = Core.GetPlayer(src)
         local balance = p and callExport(bank, 'GetAccountBalance', p.citizenid)
         if balance ~= nil then
-            local cash = 0
-            if Bridge.framework == 'qb' then
-                local player = Bridge.QBGetPlayer(src)
-                cash = player and (tonumber((player.PlayerData.money or {}).cash) or 0) or 0
-            end
-            return { cash = cash, bank = tonumber(balance) or 0 }
+            return { cash = frameworkCash(src), bank = tonumber(balance) or 0 }
         end
     elseif bank == 'Renewed-Banking' then
         local p = Core.GetPlayer(src)
         local account = p and callExport(bank, 'getAccount', p.citizenid)
         if type(account) == 'table' and account.amount then
-            return { cash = 0, bank = tonumber(account.amount) or 0 }
+            -- **Cash is not Renewed-Banking's to answer, so it is asked of the framework.**
+            -- This branch returned a hardcoded 0, so every phone on a Renewed-Banking server
+            -- said the player had no cash at all - on the Bank app's hero, in the wallet, and
+            -- in the widget. The figure was never zero; it was never read.
+            return { cash = frameworkCash(src), bank = tonumber(account.amount) or 0 }
         end
     end
 
@@ -848,15 +1004,24 @@ function Bridge.Banking.Transactions(src, citizenid, limit)
         -- bank, and everything done at an ATM missing from the phone. qb-banking writes every
         -- movement to `bank_statements` - `statement_type` is 'deposit' or 'withdraw', and the
         -- amount it stores is unsigned - so the sign is put back here rather than showing a
-        -- withdrawal as money arriving. The personal account is `account_type = 'personal'`
-        -- (or the default checking name), which is what tells it apart from a company account
-        -- in the same table.
+        -- withdrawal as money arriving. The personal account is the default `checking` name,
+        -- which is what tells it apart from a company account in the same table: a job account
+        -- lands under `police`, `ambulance` and so on.
+        --
+        -- **`account_type` is only named when the column is really there.** Two different
+        -- scripts keep a table called `bank_statements` and they do not agree on its shape:
+        -- qb-banking has that column, doc-banking has not. Naming it unconditionally made this
+        -- query an error on every doc-banking server - and the `pcall` swallowed it, so the
+        -- history quietly fell through to the phone's own rows. The player saw every transfer
+        -- they made on the phone and nothing they did at an ATM, which looks like it worked.
+        local extra = hasColumn('bank_statements', 'account_type')
+            and " AND (account_type = 'personal' OR account_type IS NULL OR account_type = 'player')"
+            or ''
         local ok, rows = pcall(function()
             return MySQL.query.await([[SELECT reason AS label, amount, statement_type, date AS at
                 FROM bank_statements
                 WHERE citizenid = ?
-                  AND (account_name = 'checking' OR account_name IS NULL)
-                  AND (account_type = 'personal' OR account_type IS NULL OR account_type = 'player')
+                  AND (account_name = 'checking' OR account_name IS NULL)]] .. extra .. [[
                 ORDER BY id DESC LIMIT ?]], { citizenid, limit })
         end)
         if ok and type(rows) == 'table' then

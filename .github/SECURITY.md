@@ -6,8 +6,8 @@ Only the latest release receives fixes. Update before reporting.
 
 | Version | Supported |
 | ------- | --------- |
-| 1.1.x   | Yes       |
-| 1.0.x   | No        |
+| 1.6.x   | Yes       |
+| < 1.6   | No        |
 
 ## Reporting a vulnerability
 
@@ -51,8 +51,8 @@ Seule la dernière version reçoit des correctifs. Mettez à jour avant de signa
 
 | Version | Prise en charge |
 | ------- | --------------- |
-| 1.1.x   | Oui             |
-| 1.0.x   | Non             |
+| 1.6.x   | Oui             |
+| < 1.6   | Non             |
 
 ## Signaler une vulnérabilité
 

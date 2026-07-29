@@ -5,7 +5,7 @@ lua54 'yes'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.5.6'
+version '1.6.0'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -120,6 +120,9 @@ server_scripts {
     -- as outage.lua above.
     'server/charging.lua',
     'server/main.lua',
+    -- Home screen widgets. Straight after main.lua, whose `prefsOf` and `PhoneHasApp` decide
+    -- who is entitled to what, and BEFORE every file that registers a builder with it.
+    'server/widgets.lua',
     -- Payphones: prepaid credit, the card, and the metered call. Loaded after main.lua,
     -- whose call machinery it drives.
     'server/booth.lua',
@@ -134,6 +137,29 @@ server_scripts {
     -- The bank app: statement, transfers, beneficiaries. After api.lua, whose
     -- SendServiceMessage tells a recipient that money arrived.
     'server/bank.lua',
+    -- OnlyFruits: photographs somebody pays to see. After social.lua, whose image host
+    -- gate it shares, and after bank.lua, because every purchase moves real money.
+    'server/creator.lua',
+    -- Fruitee: donation pages. After creator.lua because it borrows the same money shape, and
+    -- before nothing in particular - it owns its own three tables.
+    'server/fundraise.lua',
+    -- FlappyFruit and its shared scoreboard. Owns one table and nothing else's.
+    'server/arcade.lua',
+    -- FruitBrawl: two players, one duel. After main.lua because it looks numbers up through
+    -- the resource's own exports.
+    'server/brawl.lua',
+    -- The GIF shelf, and the search key that never reaches the page. After main.lua, whose
+    -- `PhoneLinkAllowed` decides which hosts a picture may come from.
+    'server/gifs.lua',
+    -- Reminders, and the clock that makes them go off. Its own table and its own sweep; after
+    -- main.lua because it announces through the same banner path everything else uses.
+    'server/reminders.lua',
+    -- Store ratings and reviews. Its own file because it owns its own table, and after
+    -- main.lua whose `PhoneHasApp` decides who is entitled to review what.
+    'server/reviews.lua',
+    -- How long the phone keeps anything, in one place, swept in batches. Last, so every table
+    -- it prunes has been created by the file that owns it.
+    'server/retention.lua',
     -- Garage, Property, Wallet and Jobs: read-only views over the bridge's providers,
     -- which is what those apps needed instead of a companion resource nobody has.
     'server/apps.lua',
@@ -179,6 +205,9 @@ server_scripts {
     -- Music heard by other people: a positioned sound has to be broadcast, and a broadcast
     -- is the server's to make. After main.lua, whose requireItem it checks.
     'server/music.lua',
+    -- Asks GitHub whether a newer release exists and says so in the console. Reads its version
+    -- and its repository out of this file, talks to nothing else, and answers no client.
+    'server/update.lua',
     -- An app folder's optional `server.lua` goes here, one line each.
 }
 
@@ -195,6 +224,22 @@ files {
     -- The app SDK. Served to any resource that ships a phone app, which is why it
     -- is a file rather than a copied snippet.
     'html/sdk.js',
+    -- Store previews: a short silent clip of each app running, plus the manifest that says
+    -- which apps have one. A NUI page cannot list a directory, so the manifest is how the
+    -- store knows without a request per app. tools/make-previews.js rebuilds both.
+    --
+    -- The glob is on the FILE name, not the directory - `apps/*/index.html` is the pattern
+    -- that does not resolve through a junction, and the one below behaves like 'sounds/*.wav'
+    -- directly beneath it.
+    'html/previews/index.json',
+    -- Two of each: `bank.webm` is the dark recording and `bank.light.webm` its light twin,
+    -- because a store showing an app in a theme its owner does not use is showing them
+    -- somebody else's phone. One glob covers both.
+    'html/previews/*.webm',
+    -- One still per clip. The front page can show a dozen apps at once and only the shop
+    -- window at the top moves; a dozen videos decoding behind a running game is a frame-rate
+    -- problem, not a design.
+    'html/previews/*.jpg',
     -- Ringtones, alerts and interface sounds. Generated rather than sampled, so they
     -- are safe to ship: tools/make-sounds.py rebuilds every one of them.
     'sounds/*.wav',

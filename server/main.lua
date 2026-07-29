@@ -38,6 +38,11 @@ local phoneReachable
 local phoneUsable
 local speakerOff
 local prefsOf
+-- Same reason as `prefsOf` below it: `ownsPhoto` sits with the gallery code two thousand lines
+-- down, and the preferences handler needs it long before that to check a card photograph. A
+-- local declared after its call site is a nil GLOBAL at the call site - no error at load, and
+-- `attempt to call a nil value` the first time somebody saves a face on their card.
+local ownsPhoto
 -- `sendMessage` is 120 lines above the earshot helpers and cannot move: it sits with the rest
 -- of the message code. Claiming the name here is what stops it resolving to a nil global, which
 -- is the shape that broke every call the first time ring-out shipped.
@@ -295,11 +300,19 @@ local function ensureNumber(src, p)
     -- A character may already have a number the FRAMEWORK minted - qb writes one into
     -- charinfo when the character is created. Reusing it means every script that already
     -- knows how to reach this player still can.
-    local fromFramework = Bridge.Numbers.Get(p.citizenid)
-    if fromFramework and fromFramework ~= '' and not numberOfCid(p.citizenid) then
-        MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?',
-            { fromFramework, p.citizenid })
-        Numbers[p.citizenid] = fromFramework
+    --
+    -- **The cheap question first.** `Bridge.Numbers.Get` reads and JSON-decodes the whole
+    -- charinfo document on qb, and it is not cached; `numberOfCid` is a local table lookup
+    -- backed by one indexed column. Asked in the old order, every character that already had
+    -- a number - which is everybody after their first connect - paid for a blob read whose
+    -- answer was then thrown away. This runs on every player load AND on every phone open.
+    if not numberOfCid(p.citizenid) then
+        local fromFramework = Bridge.Numbers.Get(p.citizenid)
+        if fromFramework and fromFramework ~= '' then
+            MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?',
+                { fromFramework, p.citizenid })
+            Numbers[p.citizenid] = fromFramework
+        end
     end
 
     -- **Never bind a number to somebody who is only LOOKING at this character.**
@@ -518,6 +531,13 @@ local function appsFor(src, p)
                     and (have[id] ~= nil)
                     and (tostring(have[id]) ~= tostring(a.version)) or nil,
                 downloading = downloads[id] and downloads[id].progress or nil,
+                -- What people actually think of it. Nil when nobody has said, which is what
+                -- lets the store draw "no ratings yet" instead of inventing a score - the page
+                -- used to hash the app's own id into 4.5 stars and a few thousand reviews.
+                rating = PhoneAppRating and PhoneAppRating(id) or nil,
+                -- Real previews, when the operator supplied any: a clip or a screenshot of the
+                -- app running, which beats the abstract shapes the page draws otherwise.
+                previews = a.previews,
             }
         end
     end
@@ -558,6 +578,8 @@ local function appsFor(src, p)
                     update = (a.version ~= nil) and (have[id] ~= nil)
                         and (tostring(have[id]) ~= tostring(a.version)) or nil,
                     downloading = downloads[id] and downloads[id].progress or nil,
+                    rating = PhoneAppRating and PhoneAppRating(id) or nil,
+                    previews = a.previews,
                     custom = true,
                 }
             end
@@ -663,6 +685,17 @@ local function wallpaperAllowed(url)
     return false
 end
 
+--- The same gate, published for the files that need to apply it before a picture is offered
+--- rather than when it is sent.
+---
+--- The GIF shelf is the caller that matters: it filters what a search provider answers with
+--- against this list, so a player is never shown a picture that would be refused the moment
+--- they tapped it. Deliberately THIS list and not `PhoneImageAllowed` from social.lua - those
+--- are two different operator settings, and a message attachment has always passed this one.
+function PhoneLinkAllowed(url)
+    return wallpaperAllowed(url)
+end
+
 local function wallpaperId(value)
     value = tostring(value or '')
     for _, id in ipairs(Config.Wallpapers or {}) do
@@ -733,6 +766,17 @@ end
 
 -- Assigned, not declared: `local prefsOf` is at the top of this file because appsFrom reads
 -- a player's purchased apps long before this point.
+-- The clock faces the lock screen offers. Named here rather than trusted from the page:
+-- this string is written into a class attribute, and a free one is a way to put arbitrary
+-- text into somebody's own markup.
+local LOCK_CLOCKS = {
+    classic = true,     -- the stacked iOS clock
+    slim = true,        -- thin, wide, lower case
+    stack = true,       -- hours over minutes, very large
+    mono = true,        -- typewriter digits, boxed
+    minimal = true,     -- small, quiet, no date
+}
+
 prefsOf = function(p, includeSecrets)
     local m = p.GetMetadata('phone')
     if type(m) ~= 'table' then m = {} end
@@ -763,6 +807,14 @@ prefsOf = function(p, includeSecrets)
         -- roleplay tool. The pref is stored either way, so turning the server setting on
         -- later restores what each player had chosen.
         hideNumber = m.hideNumber == true,
+        -- Tell the people who write to you when you have read them. Absent reads as on, which
+        -- is the phone this one is imitating; turning it off costs you nothing and stops the
+        -- other end learning the moment you opened the thread.
+        receipts   = m.receipts ~= false,
+        -- Which clock the lock screen wears. A closed set, checked on the way in, because
+        -- the value becomes a CSS class name and a page that could choose it freely could
+        -- choose one this stylesheet never wrote.
+        lockClock  = LOCK_CLOCKS[tostring(m.lockClock or '')] and tostring(m.lockClock) or 'classic',
         streamer   = m.streamer == true,
         -- Absent means "never set", which reads as on: it is the default, and a player who has
         -- never opened Settings should still see the id staff will ask them for.
@@ -813,6 +865,14 @@ prefsOf = function(p, includeSecrets)
         -- how big the icons are; rows decide how many fit before a new page starts.
         gridCols = math.max(3, math.min(6, math.floor(tonumber(m.gridCols) or 4))),
         gridRows = math.max(3, math.min(7, math.floor(tonumber(m.gridRows) or 4))),
+        -- The widget strip, in the player's own order. `nil` rather than a default list:
+        -- an absent value has to mean "never chose", so the page can show weather and the
+        -- calendar exactly as every phone did before widgets could be picked at all. An
+        -- empty TABLE means "chose to have none", which is a different thing and is kept.
+        widgets  = m.widgets and stringIdList(m.widgets, 8) or nil,
+        -- Whether the money widget draws the figure or four dots. Off, because the phone is
+        -- held in the street and a balance on a home screen is a reason to be robbed.
+        widgetMoney = m.widgetMoney == true,
         -- Which built-in tone, and the player's own link if they set one. The link wins
         -- when it is there, which is what choosing it means.
         alertTone = tostring(m.alertTone or (Config.Sounds.alerts or {})[1] or 'ping'),
@@ -876,7 +936,13 @@ local function contactsOf(p)
         if type(raw) == 'table' then
             local name = tostring(raw.name or ''):gsub('[%c]', ''):sub(1, 40)
             local number = tostring(raw.number or ''):gsub('[%c]', ''):sub(1, 20)
-            if name ~= '' and number ~= '' and not requiredNumbers[number] then
+            -- `needs` names a resource this contact belongs to. When it is not running the
+            -- entry is left out entirely, because a phone book full of numbers for a script
+            -- the server does not have is worse than a short one: every line in it is a call
+            -- that goes nowhere and the player has no way to tell which.
+            local have = raw.needs == nil
+                or GetResourceState(tostring(raw.needs)) == 'started'
+            if have and name ~= '' and number ~= '' and not requiredNumbers[number] then
                 requiredNumbers[number] = true
                 required[#required + 1] = {
                     id = 'required:' .. index,
@@ -943,6 +1009,42 @@ local function appsFrom(src, p)
         if on then installed[#installed + 1] = a end
     end
     return available, installed
+end
+
+--- How much battery this player's phone has, 0-100.
+---
+--- The third file-local that other files were reaching for. server/charging.lua guarded it with
+--- `batteryOf and batteryOf(src) or 0`, which is always 0 from there - and the comparison that
+--- used it therefore always passed.
+function PhoneBattery(src)
+    if not batteryOf then return 100 end
+    return tonumber(batteryOf(src)) or 100
+end
+
+--- Does this player have to be carrying the phone item, and are they?
+---
+--- **Another file-local that reads as a global.** `local requireItem` is declared at the top of
+--- this file and assigned much further down, so server/music.lua and server/reminders.lua both
+--- called it, both got nil, and both had been written as `if not requireItem or requireItem(x)`
+--- - which is always true when the name is nil. Music never checked for the item at all, and a
+--- reminder banner always claimed the recipient was holding their phone.
+function PhoneRequiresItem(src)
+    if not requireItem then return true end
+    return requireItem(src) == true
+end
+
+--- A character's phone preferences, for the other server files.
+---
+--- **`prefsOf` is a file-local here, not a global.** It is declared at the top of this file so
+--- `appsFrom` can read purchased apps before the definition, and assigned further down - which
+--- looks like a global assignment and is not. server/widgets.lua called it and got
+--- "attempt to call a nil value (global 'prefsOf')" on every home screen paint.
+---
+--- Secrets are never included: this is the shape the page is sent, and a caller outside this
+--- file has no business with a passcode digest.
+function PhonePrefs(p)
+    if not p then return nil end
+    return prefsOf(p)
 end
 
 --- Does this character have a given app installed right now? The same question `appsFrom`
@@ -1074,6 +1176,7 @@ V.Callback('v-phone:messages:delete', function(src, resolve, data)
     if row.from_cid == p.citizenid then
         MySQL.update.await('DELETE FROM vphone_messages WHERE id = ?', { id })
         MySQL.update.await('DELETE FROM vphone_message_hidden WHERE message_id = ?', { id })
+        MySQL.update.await('DELETE FROM vphone_message_reactions WHERE message_id = ?', { id })
         -- The other phone is told, so an open thread loses the bubble now rather than the next
         -- time that conversation happens to be opened.
         local other = Core.GetPlayerByCitizenId and Core.GetPlayerByCitizenId(row.to_cid)
@@ -1090,28 +1193,64 @@ V.Callback('v-phone:messages:delete', function(src, resolve, data)
     resolve({ ok = true, both = false })
 end)
 
-local function conversation(cid, otherCid, limit)
+-- Declared here, assigned further down. They belong with the reaction and reply code, which in
+-- turn needs `isMember` from the group section below this one - but they are CALLED from here,
+-- and a `local` declared after its call site is a nil global at that call site. Lua loads the
+-- file without complaint and crashes the first time somebody quotes a message.
+local visibleMessage, reactionsFor, replyTarget, replyCard
+
+--- One conversation, oldest first, with the reactions and quoted lines that belong to it.
+---
+--- Takes the player rather than a citizen id because opening a thread is also the moment the
+--- other end is told it was read, and whether to tell them is that player's own choice.
+local function conversation(p, otherCid, limit)
+    local cid = p.citizenid
+    -- `m.` on every column and on the hidden-message check: the LEFT JOIN puts a second
+    -- `id` and a second `body` in scope, and an unqualified one is an error rather than a
+    -- guess. The join is to the same table, which is what a reply is - a message naming a
+    -- message.
     local rows = MySQL.query.await([[
-        SELECT id, from_cid, body, kind, attachment, at, seen FROM vphone_messages
-        WHERE ((from_cid = ? AND to_cid = ?) OR (from_cid = ? AND to_cid = ?))
-          AND group_id IS NULL
+        SELECT m.id, m.from_cid, m.body, m.kind, m.attachment, m.at, m.seen, m.reply_to,
+               r.body AS reply_body, r.kind AS reply_kind, r.from_cid AS reply_from
+        FROM vphone_messages m
+        LEFT JOIN vphone_messages r ON r.id = m.reply_to
+        WHERE ((m.from_cid = ? AND m.to_cid = ?) OR (m.from_cid = ? AND m.to_cid = ?))
+          AND m.group_id IS NULL
           -- A message this reader deleted from their own copy. It is still on the sender's
           -- phone, which is the point: removing somebody else's record of what they said is
           -- not something a recipient gets to do.
-          AND id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)
-        ORDER BY at DESC, id DESC LIMIT ?
+          AND m.id NOT IN (SELECT message_id FROM vphone_message_hidden WHERE citizenid = ?)
+        ORDER BY m.at DESC, m.id DESC LIMIT ?
     ]], { cid, otherCid, otherCid, cid, cid, limit }) or {}
 
     -- Read back in ascending order: the query takes the newest N, the reader wants them
     -- oldest first.
-    local out = {}
+    local out, ids = {}, {}
     for i = #rows, 1, -1 do
         local r = rows[i]
+        ids[#ids + 1] = r.id
         out[#out + 1] = { id = r.id, mine = (r.from_cid == cid), body = r.body,
-            kind = r.kind, attachment = r.attachment, at = r.at }
+            kind = r.kind, attachment = r.attachment, at = r.at, seen = r.seen == 1,
+            reply = replyCard(r, cid) }
     end
-    MySQL.update('UPDATE vphone_messages SET seen = 1 WHERE to_cid = ? AND from_cid = ? AND seen = 0',
+
+    local marks = reactionsFor(ids, cid)
+    for _, m in ipairs(out) do m.reactions = marks[tostring(m.id)] end
+
+    -- Opening a thread on a screen means you read it.
+    local marked = MySQL.update.await(
+        'UPDATE vphone_messages SET seen = 1 WHERE to_cid = ? AND from_cid = ? AND seen = 0',
         { cid, otherCid })
+
+    -- And the sender is told, unless this reader turned that off. A read receipt is
+    -- information about YOU that goes to somebody else, so it is a switch and not a fact -
+    -- and turning it off costs nothing but the badge on their side.
+    if marked and marked > 0 and prefsOf(p).receipts ~= false then
+        local target = Online[numberOfCid(otherCid) or '']
+        if target and phoneReachable(target) then
+            TriggerClientEvent('v-phone:client:msgSeen', target, { from = numberOfCid(cid) })
+        end
+    end
     return out
 end
 
@@ -1173,7 +1312,14 @@ local function checkContent(body, kind, attachment)
 end
 
 --- The one write the phone owns. Returns ok plus the stored row, or an error key.
-local function sendMessage(fromCid, toNumber, body, kind, attachment)
+---
+--- `replyTo` is a message id this text answers. It is validated by the caller, which is the only
+--- place that knows both ends of the conversation - see `replyTarget`.
+local function sendMessage(fromCid, toNumber, body, kind, attachment, replyTo)
+    -- A GIF is an image. Deliberately NOT a fourth kind: every reader of this column - the
+    -- conversation list, the export API, forensics - already knows what `image` means, and a
+    -- new kind would have had to be taught to all of them to gain one badge. The page draws
+    -- that badge from the URL instead.
     kind = (kind == 'image' or kind == 'location') and kind or 'text'
     local err
     body, attachment, err = checkContent(body, kind, attachment)
@@ -1188,9 +1334,17 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
     if not toCid then return nil, 'nonumber' end
     if toCid == fromCid then return nil, 'self' end
 
-    local id = MySQL.insert.await(
-        'INSERT INTO vphone_messages (from_cid, to_cid, body, kind, attachment) VALUES (?,?,?,?,?)',
-        { fromCid, toCid, body, kind, attachment })
+    replyTo = replyTarget(fromCid, replyTo, toCid, nil)
+
+    local id = MySQL.insert.await([[INSERT INTO vphone_messages
+        (from_cid, to_cid, body, kind, attachment, reply_to) VALUES (?,?,?,?,?,?)]],
+        { fromCid, toCid, body, kind, attachment, replyTo })
+
+    -- What the quoted line looks like from each side. Built once from what was actually
+    -- stored, so the bubble the sender sees and the one the reader sees come from the same
+    -- row rather than from two guesses.
+    local quoted = replyTo and MySQL.single.await(
+        'SELECT id, body, kind, from_cid FROM vphone_messages WHERE id = ?', { replyTo })
 
     -- Delivered live only if they are on: an offline character reads it next time they
     -- open the app, which is what the table is for.
@@ -1199,6 +1353,11 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
         TriggerClientEvent('v-phone:client:message', target, {
             from = numberOfCid(fromCid), fromCid = fromCid, body = body, id = id,
             kind = kind, attachment = attachment, hasItem = requireItem(target),
+            reply = quoted and {
+                id = quoted.id, kind = quoted.kind,
+                body = quoted.kind == 'text' and quoted.body or '',
+                mine = (quoted.from_cid == toCid),
+            } or nil,
         })
         roomAlert(target, 'message')
     end
@@ -1207,7 +1366,12 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment)
     -- bot. Citizen ids rather than sources, so a listener survives a reconnect.
     TriggerEvent('v-phone:messageSent', fromCid, toCid, body, kind)
 
-    return { id = id, body = body, kind = kind, attachment = attachment }, nil
+    return { id = id, body = body, kind = kind, attachment = attachment,
+             reply = quoted and {
+                 id = quoted.id, kind = quoted.kind,
+                 body = quoted.kind == 'text' and quoted.body or '',
+                 mine = (quoted.from_cid == fromCid),
+             } or nil }, nil
 end
 
 -- ── Groups ─────────────────────────────────────────────────────
@@ -1219,16 +1383,28 @@ end
 
 --- A group message is one row, delivered to every member who is on. The sender is the
 --- server's idea of who called, exactly as in a DM.
-local function sendGroup(p, groupId, body, kind, attachment)
+local function sendGroup(p, groupId, body, kind, attachment, replyTo)
     kind = (kind == 'image' or kind == 'location') and kind or 'text'
     local err
     body, attachment, err = checkContent(body, kind, attachment)
     if err then return nil, err end
     if not isMember(groupId, p.citizenid) then return nil, 'x' end
 
-    local id = MySQL.insert.await(
-        'INSERT INTO vphone_messages (from_cid, to_cid, group_id, body, kind, attachment) VALUES (?,"",?,?,?,?)',
-        { p.citizenid, groupId, body, kind, attachment })
+    replyTo = replyTarget(p.citizenid, replyTo, nil, groupId)
+
+    local id = MySQL.insert.await([[INSERT INTO vphone_messages
+        (from_cid, to_cid, group_id, body, kind, attachment, reply_to) VALUES (?,"",?,?,?,?,?)]],
+        { p.citizenid, groupId, body, kind, attachment, replyTo })
+
+    local quoted = replyTo and MySQL.single.await(
+        'SELECT id, body, kind, from_cid FROM vphone_messages WHERE id = ?', { replyTo })
+    local function quoteFor(readerCid)
+        if not quoted then return nil end
+        return { id = quoted.id, kind = quoted.kind,
+                 body = quoted.kind == 'text' and quoted.body or '',
+                 mine = (quoted.from_cid == readerCid),
+                 from = numberOfCid(quoted.from_cid) }
+    end
 
     local gname = MySQL.scalar.await('SELECT name FROM vphone_groups WHERE id = ?', { groupId })
     local fromNumber = numberOfCid(p.citizenid)
@@ -1241,13 +1417,245 @@ local function sendGroup(p, groupId, body, kind, attachment)
                     from = fromNumber, fromCid = p.citizenid, body = body, id = id,
                     kind = kind, attachment = attachment,
                     group = groupId, groupName = gname, hasItem = requireItem(target),
+                    reply = quoteFor(m.citizenid),
                 })
                 roomAlert(target, 'message')
             end
         end
     end
-    return { id = id, body = body, kind = kind, attachment = attachment }, nil
+    return { id = id, body = body, kind = kind, attachment = attachment,
+             reply = quoteFor(p.citizenid) }, nil
 end
+
+-- ══════════════════════════════════════════════════════════════
+-- Reactions, replies, and knowing somebody is writing
+-- ══════════════════════════════════════════════════════════════
+-- Three separate features that all rest on one question: may this character see that message?
+-- It is asked once, here. A reader who cannot see a message must not be able to react to it,
+-- quote it, or learn that it exists by being told a different error than for one that does not.
+
+--- The message row, if this character is allowed to see it. Nil otherwise.
+---
+--- "No such message" and "not one of yours" return the same nothing on purpose. Ids are small
+--- consecutive integers, so an answer that distinguished the two would let anybody walk the
+--- table and count the conversations they are not part of.
+visibleMessage = function(cid, id)
+    id = math.floor(num(id, 0))
+    if id <= 0 then return nil end
+    local row = MySQL.single.await([[SELECT id, from_cid, to_cid, group_id, body, kind, attachment
+        FROM vphone_messages WHERE id = ?]], { id })
+    if not row then return nil end
+    if row.group_id then
+        if not isMember(row.group_id, cid) then return nil end
+    elseif row.from_cid ~= cid and row.to_cid ~= cid then
+        return nil
+    end
+    -- Hidden from this reader's own copy is, to this reader, gone. Quoting a message you
+    -- deleted would put it back on your own screen, which is not what the button said.
+    if MySQL.scalar.await(
+        'SELECT 1 FROM vphone_message_hidden WHERE message_id = ? AND citizenid = ?',
+        { id, cid }) then return nil end
+    return row
+end
+
+--- Everybody who can see a message, as citizen ids, `me` excluded.
+local function audienceOf(row, me)
+    local out = {}
+    if row.group_id then
+        for _, m in ipairs(MySQL.query.await(
+            'SELECT citizenid FROM vphone_group_members WHERE group_id = ?', { row.group_id }) or {}) do
+            if m.citizenid ~= me then out[#out + 1] = m.citizenid end
+        end
+    else
+        local other = (row.from_cid == me) and row.to_cid or row.from_cid
+        -- A service thread's "sender" is a label, not a character. Nobody is on the other end
+        -- to be told anything, and `svc:Dispatch` is not a citizen id.
+        if other ~= '' and other ~= me and other:sub(1, 4) ~= 'svc:' then out[1] = other end
+    end
+    return out
+end
+
+-- ── Reactions ──────────────────────────────────────────────────
+-- The six an iPhone offers, by key. A closed list rather than an open emoji field: the page
+-- picks the glyph, the server only records which of six was chosen.
+local REACTIONS = {
+    love = true, like = true, dislike = true, haha = true, wow = true, question = true,
+}
+
+--- Every reaction on a set of messages, folded per message, in one query.
+---
+--- One query for the whole thread rather than one per bubble. A thread is fifty messages; fifty
+--- round trips to draw one screen is how a phone app becomes a server's slowest resource.
+reactionsFor = function(ids, cid)
+    if #ids == 0 then return {} end
+    local marks = ('?,'):rep(#ids):sub(1, -2)
+    local rows = MySQL.query.await(
+        'SELECT message_id, citizenid, reaction FROM vphone_message_reactions WHERE message_id IN ('
+        .. marks .. ')', ids) or {}
+    local out = {}
+    for _, r in ipairs(rows) do
+        local key = tostring(r.message_id)
+        local m = out[key]
+        if not m then m = { counts = {}, mine = nil }; out[key] = m end
+        m.counts[r.reaction] = (m.counts[r.reaction] or 0) + 1
+        if r.citizenid == cid then m.mine = r.reaction end
+    end
+    return out
+end
+
+V.Callback('v-phone:msgReact', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    if not requireItem(src) then resolve({ error = 'nophone' }) return end
+    if not hasBars(src) then resolve({ error = 'nosignal' }) return end
+
+    local id = math.floor(num(data and data.id, 0))
+    local pick = tostring((data and data.reaction) or '')
+    if not REACTIONS[pick] then pick = '' end
+
+    local row = visibleMessage(p.citizenid, id)
+    if not row then resolve({ error = 'gone' }) return end
+
+    local had = MySQL.scalar.await(
+        'SELECT reaction FROM vphone_message_reactions WHERE message_id = ? AND citizenid = ?',
+        { id, p.citizenid })
+
+    -- Tapping the one already on the bubble takes it off. That is how the gesture reads on a
+    -- phone, and it is also the only way to remove one without a second control.
+    if pick == '' or had == pick then
+        MySQL.update.await(
+            'DELETE FROM vphone_message_reactions WHERE message_id = ? AND citizenid = ?',
+            { id, p.citizenid })
+        pick = ''
+    else
+        MySQL.query.await([[INSERT INTO vphone_message_reactions (message_id, citizenid, reaction)
+            VALUES (?,?,?)
+            ON DUPLICATE KEY UPDATE reaction = VALUES(reaction), at = CURRENT_TIMESTAMP]],
+            { id, p.citizenid, pick })
+    end
+
+    -- The FOLDED result is pushed, not "this person chose that".
+    --
+    -- A delta cannot be applied by the receiving page: one person holds one reaction, so
+    -- moving from a heart to a laugh has to take the heart off, and the page has no record of
+    -- who was holding which. It would have had to keep a second table in step with this one,
+    -- for ever, to avoid a query that costs one row read.
+    local mine = numberOfCid(p.citizenid)
+    local folded = reactionsFor({ id }, p.citizenid)[tostring(id)]
+    for _, toCid in ipairs(audienceOf(row, p.citizenid)) do
+        local target = Online[numberOfCid(toCid) or '']
+        if target and phoneReachable(target) then
+            -- `mine` is per reader: the same counts, and whichever of them belongs to the
+            -- phone being told. Rebuilt rather than reused, because the field means "yours"
+            -- and the sender's copy already means somebody else's.
+            local theirs = folded and {
+                counts = folded.counts,
+                mine = MySQL.scalar.await(
+                    'SELECT reaction FROM vphone_message_reactions WHERE message_id = ? AND citizenid = ?',
+                    { id, toCid }),
+            } or nil
+            TriggerClientEvent('v-phone:client:msgReact', target, {
+                id = id, from = mine, group = row.group_id, reactions = theirs,
+            })
+        end
+    end
+    resolve({ ok = true, reaction = pick, reactions = folded })
+end)
+
+-- ── Replies ────────────────────────────────────────────────────
+
+--- The id a reply may legitimately name, or nil.
+---
+--- Being allowed to SEE a message is not enough: it must also belong to the conversation the
+--- reply is being written into. Without that check, quoting is a way to copy a line out of one
+--- thread and paste it, attributed, into another - including a group the original sender is
+--- not in.
+replyTarget = function(cid, replyTo, otherCid, groupId)
+    if replyTo == nil or replyTo == '' then return nil end
+    local row = visibleMessage(cid, replyTo)
+    if not row then return nil end
+    if groupId then
+        if tonumber(row.group_id) ~= tonumber(groupId) then return nil end
+    else
+        if row.group_id then return nil end
+        local pair = (row.from_cid == cid and row.to_cid == otherCid)
+                  or (row.from_cid == otherCid and row.to_cid == cid)
+        if not pair then return nil end
+    end
+    return row.id
+end
+
+--- What a quoted message looks like on the screen: a line of text, and who said it.
+--- Never the attachment - a reply to a photograph shows "Photo", not the photograph again.
+replyCard = function(row, cid)
+    if not row or not row.reply_to then return nil end
+    return {
+        id = row.reply_to,
+        kind = row.reply_kind or 'text',
+        body = (row.reply_kind == 'text' or row.reply_kind == nil) and (row.reply_body or '') or '',
+        mine = (row.reply_from == cid),
+        from = row.reply_from and numberOfCid(row.reply_from) or nil,
+    }
+end
+
+-- ── Typing ─────────────────────────────────────────────────────
+-- Fire and forget, with no answer of any kind. A callback here would be a way to ask "is this a
+-- real number" as fast as a loop can run, and there is nothing worth saying back: either the
+-- other phone is on and shows three dots, or nothing happens.
+
+local TypingLast = {}
+local TYPING_EVERY = 1100     -- ms the server will forward one source's pings at, at most
+local TYPING_STOP_EVERY = 350 -- a "they stopped" is small and wants to arrive promptly
+
+RegisterNetEvent('v-phone:typing', function(data)
+    local src = source
+    local stop = (data and data.stop) == true
+    local now = GetGameTimer()
+    local floor = stop and TYPING_STOP_EVERY or TYPING_EVERY
+    if TypingLast[src] and now - TypingLast[src] < floor then return end
+    TypingLast[src] = now
+
+    local p = Core.GetPlayer(src)
+    if not p then return end
+    -- The same three gates a message passes. Typing from a phone that could not send the
+    -- message anyway is a promise the network will not keep.
+    if not requireItem(src) or not hasBars(src) then return end
+    if V.SettingBool('battery', true) and batteryOf(src) <= 0 then return end
+
+    local mine = numberOfCid(p.citizenid)
+    if not mine then return end
+
+    local groupId = tonumber(data and data.group)
+    if groupId then
+        groupId = math.floor(groupId)
+        if not isMember(groupId, p.citizenid) then return end
+        for _, m in ipairs(MySQL.query.await(
+            'SELECT citizenid FROM vphone_group_members WHERE group_id = ?', { groupId }) or {}) do
+            if m.citizenid ~= p.citizenid then
+                local target = Online[numberOfCid(m.citizenid) or '']
+                if target and phoneReachable(target) then
+                    TriggerClientEvent('v-phone:client:typing', target,
+                        { from = mine, group = groupId, stop = stop })
+                end
+            end
+        end
+        return
+    end
+
+    -- `Online` is keyed by NUMBER, and a number is what the page sent. Resolving it to a
+    -- citizen id and straight back into a number was a database probe per keystroke ping for
+    -- a value we had been handed - and at one ping per person per second or so, thirty people
+    -- texting is a dozen pointless queries a second.
+    --
+    -- The self-check is TIGHTER this way, not looser: `to == mine` also holds while a staff
+    -- member is admin-viewing, where the `Online` write is deliberately withheld.
+    local to = tostring((data and data.number) or '')
+    if to == '' or to == mine then return end
+    local target = Online[to]
+    if target and phoneReachable(target) then
+        TriggerClientEvent('v-phone:client:typing', target, { from = mine, stop = stop })
+    end
+end)
 
 exports('SendMessage', function(fromCid, toNumber, body)
     local row, err = sendMessage(tostring(fromCid or ''), tostring(toNumber or ''), body)
@@ -1298,7 +1706,7 @@ end
 --- script's author finds out from a log line instead of from a player.
 local ServiceLabelWarned = {}
 
-function PhoneServiceMessage(target, label, body)
+function PhoneServiceMessage(target, label, body, imageUrl)
     local toCid = PhoneWhoIs(target)
     if not toCid then return false, 'nonumber' end
 
@@ -1315,9 +1723,24 @@ function PhoneServiceMessage(target, label, body)
         :sub(1, math.max(1, math.floor(num(S('maxLength', Config.Messages.maxLength), 250))))
     if body:gsub('%s', '') == '' then return false, 'empty' end
 
+    -- **An image from another resource is still a URL a client will fetch**, so it goes
+    -- through the same host gate a player's own picture does. A refused host loses the
+    -- attachment and keeps the text: a mechanic's "your car is ready" is worth delivering
+    -- even when the photograph of it is not.
+    local attachment = ''
+    local kind = 'text'
+    if imageUrl and imageUrl ~= '' then
+        local url = tostring(imageUrl):sub(1, 400)
+        if PhoneLinkAllowed(url) then
+            attachment = url
+            kind = 'image'
+        end
+    end
+
     local from = ('svc:%s'):format(label)
     local id = MySQL.insert.await(
-        'INSERT INTO vphone_messages (from_cid, to_cid, body) VALUES (?,?,?)', { from, toCid, body })
+        'INSERT INTO vphone_messages (from_cid, to_cid, body, kind, attachment) VALUES (?,?,?,?,?)',
+        { from, toCid, body, kind, attachment })
 
     -- Delivered live only if they are on, exactly as a real message is: an offline character
     -- reads it next time they open the app, which is what the row is for.
@@ -1325,12 +1748,12 @@ function PhoneServiceMessage(target, label, body)
     if online and phoneReachable(online) then
         TriggerClientEvent('v-phone:client:message', online, {
             from = from, fromCid = from, service = label, body = body, id = id,
-            kind = 'text', attachment = '', hasItem = requireItem(online),
+            kind = kind, attachment = attachment, hasItem = requireItem(online),
         })
         roomAlert(online, 'message')
     end
 
-    TriggerEvent('v-phone:messageSent', from, toCid, body, 'text')
+    TriggerEvent('v-phone:messageSent', from, toCid, body, kind)
     return true, id
 end
 
@@ -2581,6 +3004,21 @@ V.Callback('v-phone:open', function(src, resolve)
             WHERE m.citizenid = ? ORDER BY g.id DESC]], { p.citizenid }) or {},
         wallpapers = Config.Wallpapers,
         sounds = Config.Sounds,
+        -- The widget strip's operator settings. What a phone that has never been arranged
+        -- shows, and which widgets the operator turned off - the page needs the second one so
+        -- the picker does not offer a tile the server would refuse to build, which would read
+        -- as "I added it and nothing happened".
+        widgetCfg = {
+            default = (Config.Widgets and Config.Widgets.default) or { 'weather', 'calendar' },
+            off = (function()
+                local off = {}
+                for k, v in pairs(Config.Widgets or {}) do
+                    if v == false and k ~= 'enabled' then off[k] = true end
+                end
+                if Config.Widgets and Config.Widgets.enabled == false then off.all = true end
+                return off
+            end)(),
+        },
         -- Whether the page should reach for the shipped WAV files or synthesise. It
         -- falls back on its own if a file will not load, so this is a preference and
         -- not a promise.
@@ -2984,22 +3422,28 @@ V.Callback('v-phone:conversation', function(src, resolve, data)
         groupId = math.floor(groupId)
         if not isMember(groupId, p.citizenid) then resolve({ error = 'x' }) return end
         local rows = MySQL.query.await([[
-            SELECT m.id, m.from_cid, m.body, m.kind, m.attachment, m.at,
-                   c.phone AS from_num
+            SELECT m.id, m.from_cid, m.body, m.kind, m.attachment, m.at, m.reply_to,
+                   c.phone AS from_num,
+                   r.body AS reply_body, r.kind AS reply_kind, r.from_cid AS reply_from
             FROM vphone_messages m
             LEFT JOIN vphone_characters c ON c.citizenid = m.from_cid
+            LEFT JOIN vphone_messages r ON r.id = m.reply_to
             WHERE m.group_id = ? ORDER BY m.at DESC, m.id DESC LIMIT ?
         ]], { groupId, Config.Messages.pageSize }) or {}
-        local out = {}
+        local out, ids = {}, {}
         for i = #rows, 1, -1 do
             local r = rows[i]
+            ids[#ids + 1] = r.id
             out[#out + 1] = {
                 id = r.id, mine = (r.from_cid == p.citizenid), body = r.body,
                 kind = r.kind, attachment = r.attachment, at = r.at,
                 from = r.from_num or r.from_cid,
+                reply = replyCard(r, p.citizenid),
             }
             if r.from_num and r.from_num ~= '' then Numbers[r.from_cid] = r.from_num end
         end
+        local marks = reactionsFor(ids, p.citizenid)
+        for _, m in ipairs(out) do m.reactions = marks[tostring(m.id)] end
         resolve({ ok = true, messages = out })
         return
     end
@@ -3012,7 +3456,7 @@ V.Callback('v-phone:conversation', function(src, resolve, data)
     local other = key:sub(1, 4) == 'svc:' and key or cidOfNumber(key)
     if not other then resolve({ error = 'nonumber' }) return end
     resolve({ ok = true, service = key:sub(1, 4) == 'svc:' or nil,
-              messages = conversation(p.citizenid, other, Config.Messages.pageSize) })
+              messages = conversation(p, other, Config.Messages.pageSize) })
 end)
 
 V.Callback('v-phone:send', function(src, resolve, data)
@@ -3031,16 +3475,23 @@ V.Callback('v-phone:send', function(src, resolve, data)
     MessageBusy[src] = true
     local row, err
     local groupId = tonumber(data and data.group)
+    -- A reply names a message. An id that is not one this character may quote INTO this
+    -- conversation is dropped rather than refused: the text they wrote still goes, without
+    -- the quote, which beats losing a typed message to a stale bubble id.
+    local replyTo = data and data.reply
     if groupId then
         row, err = sendGroup(p, math.floor(groupId), data and data.body,
-            data and data.kind, data and data.attachment)
+            data and data.kind, data and data.attachment, replyTo)
     else
         row, err = sendMessage(p.citizenid, tostring((data and data.number) or ''),
-            data and data.body, data and data.kind, data and data.attachment)
+            data and data.body, data and data.kind, data and data.attachment, replyTo)
     end
     MessageBusy[src] = nil
     if not row then resolve({ error = err }) return end
-    resolve({ ok = true, id = row.id, body = row.body, kind = row.kind, attachment = row.attachment })
+    -- `reply` goes back too. Without it the bubble you have just sent carries no quote until
+    -- the thread is next opened - the row in the database has one, the screen does not.
+    resolve({ ok = true, id = row.id, body = row.body, kind = row.kind,
+              attachment = row.attachment, reply = row.reply })
 end)
 
 --- Create a group from contact numbers. The creator is a member by construction; every
@@ -3249,6 +3700,12 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         if data.ringtone  then prefs.ringtone  = tostring(data.ringtone) end
         if data.gridCols ~= nil then prefs.gridCols = math.max(3, math.min(6, math.floor(num(data.gridCols, 4)))) end
         if data.gridRows ~= nil then prefs.gridRows = math.max(3, math.min(7, math.floor(num(data.gridRows, 4)))) end
+        -- The widget strip. `stringIdList` is the same filter the installed-app lists go
+        -- through: ids only, deduplicated, capped. Whether an id names a widget that exists
+        -- is decided where the widgets are built, not here - this list is a preference, and a
+        -- preference naming something that was removed is stale rather than hostile.
+        if data.widgets ~= nil then prefs.widgets = stringIdList(data.widgets, 8) end
+        if data.widgetMoney ~= nil then prefs.widgetMoney = data.widgetMoney == true end
         if data.alertTone then prefs.alertTone = tostring(data.alertTone) end
         -- A tone link is a URL a client will fetch, so it goes through the same host gate
         -- as a wallpaper. An empty string clears it back to the built-in.
@@ -3273,10 +3730,41 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
             -- Keep the boolean in step so nothing that reads `dark` goes stale.
             if prefs.darkMode ~= 'auto' then prefs.dark = (prefs.darkMode == 'dark') end
         end
+        -- ── My card ────────────────────────────────────────
+        -- What a player chooses to say about themselves: the extra lines that go out with
+        -- their number when they hand somebody their whole card.
+        --
+        -- Free text, trimmed and stripped of control characters, and nothing more - these are
+        -- displayed on somebody else's screen as TEXT. The name is not here: it is
+        -- `ownerName`, set at setup, and the server keeps naming you rather than letting a page
+        -- choose what it is called in a stranger's phone book.
+        for _, k in ipairs({ 'cardAddress', 'cardBirthday', 'cardNote', 'cardJob' }) do
+            if data[k] ~= nil then
+                local v = tostring(data[k]):gsub('%c', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+                prefs[k] = (v ~= '') and v:sub(1, 120) or nil
+            end
+        end
+        -- The face. Held to the same rule as a wallpaper AND to one more: it has to be a
+        -- photograph this character actually took, because a card photo is a picture that ends
+        -- up on a stranger's phone and a URL to anywhere is a URL to anything.
+        if data.cardPhoto ~= nil then
+            local url = tostring(data.cardPhoto):sub(1, 400)
+            if url ~= '' then
+                if not wallpaperAllowed(url) then resolve({ error = 'badhost' }) return end
+                if not ownsPhoto(p, url) then resolve({ error = 'notyours' }) return end
+            end
+            prefs.cardPhoto = (url ~= '') and url or nil
+        end
+
         if data.vibrate ~= nil then prefs.vibrate = data.vibrate == true end
         if data.ringVolume ~= nil then prefs.ringVolume = math.max(0, math.min(1, num(data.ringVolume, 0.7))) end
         if data.dnd ~= nil then prefs.dnd = data.dnd == true end
         if data.hideNumber ~= nil then prefs.hideNumber = data.hideNumber == true end
+        if data.receipts ~= nil then prefs.receipts = data.receipts == true end
+        if data.lockClock ~= nil then
+            local want = tostring(data.lockClock)
+            if LOCK_CLOCKS[want] then prefs.lockClock = want end
+        end
         -- Streamer mode: purely a display choice, so it changes nothing the server does. It
         -- is stored per character because a streamer wants it on every time they log in.
         if data.streamer ~= nil then prefs.streamer = data.streamer == true end
@@ -3394,9 +3882,30 @@ V.Callback('v-phone:unlock', function(src, resolve, data)
     })
 end)
 
+--- When each source was last allowed a lookup. Cleared on disconnect with the rest, because
+--- source ids are handed to the next player to connect.
+local LookupLast = {}
+
 V.Callback('v-phone:lookup', function(src, resolve, data)
     -- Who a number belongs to, answered only as a name the caller could have learned
     -- anyway. It never returns a citizen id.
+    --
+    -- **It had no gate of any kind.** No player object, no phone, no signal, no floor - it
+    -- answered anything that could fire a net event, fast enough to walk the whole number
+    -- space, and it distinguished an unassigned number from an assigned one, so it enumerated
+    -- which numbers exist as well as who holds them. The same question is already treated as
+    -- privileged elsewhere in this resource: the MDT lookup checks the caller is an officer
+    -- and floors it at one a second.
+    --
+    -- The checks come BEFORE `cidOfNumber`, or the floor still pays for the enumeration.
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    if not requireItem(src) then resolve({ error = 'nophone' }) return end
+    if not hasBars(src) then resolve({ error = 'nosignal' }) return end
+    local now = GetGameTimer()
+    if LookupLast[src] and (now - LookupLast[src]) < 1000 then resolve({ error = 'rate' }) return end
+    LookupLast[src] = now
+
     local cid = cidOfNumber(tostring((data and data.number) or ''))
     if not cid then resolve({ error = 'nonumber' }) return end
     local row = MySQL.single.await('SELECT firstname, lastname FROM vphone_characters WHERE citizenid = ?', { cid })
@@ -3489,9 +3998,23 @@ V.Callback('v-phone:notes', function(src, resolve, data)
     local op = tostring((data and data.op) or 'list')
 
     if op == 'list' then
-        resolve({ ok = true, notes = MySQL.query.await(
-            'SELECT id, title, body, at FROM vphone_notes WHERE citizenid = ? ORDER BY id DESC LIMIT 100',
+        -- Pinned first, then most recently touched. `updated` rather than `at`: a note you
+        -- edited this morning belongs above one you wrote last week and have not opened since,
+        -- and sorting by when it was CREATED buries exactly the note somebody is working on.
+        resolve({ ok = true, notes = MySQL.query.await([[
+            SELECT id, title, body, pinned, at, updated
+            FROM vphone_notes WHERE citizenid = ?
+            ORDER BY pinned DESC, COALESCE(updated, at) DESC, id DESC LIMIT 200]],
             { p.citizenid }) or {} })
+        return
+    end
+
+    if op == 'pin' then
+        local id = math.floor(num(data and data.id, 0))
+        MySQL.update.await(
+            'UPDATE vphone_notes SET pinned = ? WHERE id = ? AND citizenid = ?',
+            { (data and data.pinned) == true and 1 or 0, id, p.citizenid })
+        resolve({ ok = true })
         return
     end
     if op == 'save' then
@@ -3501,7 +4024,8 @@ V.Callback('v-phone:notes', function(src, resolve, data)
         if title == '' then title = bodyTxt:sub(1, 40) end
         local id = math.floor(num(data and data.id, 0))
         if id > 0 then
-            MySQL.update.await('UPDATE vphone_notes SET title = ?, body = ? WHERE id = ? AND citizenid = ?',
+            MySQL.update.await(
+                'UPDATE vphone_notes SET title = ?, body = ?, updated = NOW() WHERE id = ? AND citizenid = ?',
                 { title, bodyTxt, id, p.citizenid })
         else
             id = MySQL.insert.await('INSERT INTO vphone_notes (citizenid, title, body) VALUES (?,?,?)',
@@ -3518,6 +4042,98 @@ V.Callback('v-phone:notes', function(src, resolve, data)
     end
     resolve({ error = 'x' })
 end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Where a photograph was taken
+-- ══════════════════════════════════════════════════════════════
+-- The gallery files pictures by place, and the place comes from the ped's own position at
+-- the moment the shutter went - not from the page. The position is already read on this side
+-- for half a dozen other things, the page has no way to know it without being told, and a
+-- client that names its own coordinates is a client that can name anybody's.
+--
+-- **A server has no zone natives.** `GetNameOfZone` and `GetLabelText` are client calls, so
+-- the name cannot simply be asked for. Two sources instead, in order:
+--
+--   1. The operator's own `Config.Places` - real for THIS server, and already labelled.
+--   2. The district table below, when nothing configured is close enough.
+--
+-- **The table is approximate, and deliberately so.** These are the middles of well-known
+-- districts, not their borders, and a photograph is filed under whichever is nearest. Getting
+-- one wrong puts a picture in the neighbouring album - a wrong caption, not wrong behaviour -
+-- so a coarse list that always answers beats a precise one that often does not. An operator
+-- who wants their own names adds them to `Config.Places`, which wins.
+
+local PHOTO_DISTRICT_RANGE = 900.0   -- how far a district centre will claim a photograph
+local PHOTO_PLACE_RANGE = 120.0      -- how close a configured place must be to claim one
+
+local PHOTO_DISTRICTS = {
+    { 'Vinewood Hills', -1500.0, 350.0 },
+    { 'Downtown Vinewood', 300.0, 200.0 },
+    { 'West Vinewood', -600.0, 250.0 },
+    { 'East Vinewood', 700.0, 150.0 },
+    { 'Rockford Hills', -900.0, -50.0 },
+    { 'Richman', -1400.0, 100.0 },
+    { 'Morningwood', -1250.0, -400.0 },
+    { 'Pacific Bluffs', -2200.0, 350.0 },
+    { 'Del Perro', -1700.0, -800.0 },
+    { 'Vespucci Beach', -1250.0, -1450.0 },
+    { 'Vespucci', -1100.0, -1000.0 },
+    { 'Little Seoul', -700.0, -900.0 },
+    { 'Mission Row', 400.0, -1000.0 },
+    { 'Strawberry', 200.0, -1650.0 },
+    { 'Davis', 100.0, -1900.0 },
+    { 'Chamberlain Hills', -150.0, -1600.0 },
+    { 'La Mesa', 800.0, -1500.0 },
+    { 'Cypress Flats', 850.0, -2100.0 },
+    { 'El Burro Heights', 1350.0, -1600.0 },
+    { 'Murrieta Heights', 1000.0, -1200.0 },
+    { 'Port of Los Santos', 500.0, -2700.0 },
+    { 'Elysian Island', 50.0, -2500.0 },
+    { 'Los Santos Airport', -1050.0, -2700.0 },
+    { 'Chumash', -3200.0, 1050.0 },
+    { 'Banham Canyon', -2400.0, 1300.0 },
+    { 'Tongva Hills', -1600.0, 1700.0 },
+    { 'Great Chaparral', -200.0, 2500.0 },
+    { 'Harmony', 200.0, 2600.0 },
+    { 'Sandy Shores', 1900.0, 3700.0 },
+    { 'Grapeseed', 1700.0, 4800.0 },
+    { 'Paleto Bay', 100.0, 6400.0 },
+    { 'Mount Chiliad', 450.0, 5700.0 },
+    { 'Alamo Sea', 900.0, 4200.0 },
+    { 'Fort Zancudo', -2100.0, 3200.0 },
+}
+
+--- The name of the place nearest a position, or nil when nothing is near enough.
+local function photoPlaceOf(at)
+    if not at then return nil end
+
+    -- The operator's own first, and only when genuinely close: a photograph taken outside a
+    -- shop belongs to that shop; one taken half a mile away does not.
+    local best, bestAway = nil, PHOTO_PLACE_RANGE
+    for _, place in ipairs(Config.Places or {}) do
+        if place.x and place.enabled ~= false and place.enabled ~= 0 then
+            local away = #(at - vector3(place.x + 0.0, place.y + 0.0, (place.z or 0.0) + 0.0))
+            if away < bestAway then
+                bestAway = away
+                best = tostring(place.label or '')
+            end
+        end
+    end
+    if best and best ~= '' and best:sub(1, 3) ~= 'ph.' then return best:sub(1, 40) end
+
+    best, bestAway = nil, PHOTO_DISTRICT_RANGE
+    for _, row in ipairs(PHOTO_DISTRICTS) do
+        -- Flat distance. A photograph on a rooftop and one in the street below it are in the
+        -- same district, and counting height would put them in different ones.
+        local dx, dy = at.x - row[2], at.y - row[3]
+        local away = math.sqrt(dx * dx + dy * dy)
+        if away < bestAway then
+            bestAway = away
+            best = row[1]
+        end
+    end
+    return best
+end
 
 V.Callback('v-phone:photo', function(src, resolve, data)
     local p = Core.GetPlayer(src)
@@ -3541,7 +4157,11 @@ V.Callback('v-phone:photo', function(src, resolve, data)
         local url = tostring((data and data.url) or ''):sub(1, 400)
         if url == '' then resolve({ error = 'x' }) return end
         if not wallpaperAllowed(url) then resolve({ error = 'badhost' }) return end
-        table.insert(shots, 1, { url = url, album = '', filter = '' })
+        -- Where it was taken, decided here. `place` is written once, at the moment the
+        -- picture is filed, and never recomputed: moving the shop afterwards must not
+        -- relabel a photograph somebody took last week.
+        local place = photoPlaceOf(coordsOf(src))
+        table.insert(shots, 1, { url = url, album = '', filter = '', place = place or '' })
         while #shots > 60 do table.remove(shots) end     -- a gallery, not an archive
         changed = true
     elseif op == 'del' then
@@ -3595,7 +4215,9 @@ V.Callback('v-phone:photo', function(src, resolve, data)
     resolve({ ok = true, photos = shots, albums = albums })
 end)
 
-local function ownsPhoto(p, url)
+-- Assigned, not declared: the name is claimed at the top of this file because the preferences
+-- handler checks a card photograph long before the gallery code appears.
+ownsPhoto = function(p, url)
     local shots = p and p.GetMetadata('photos')
     if type(shots) ~= 'table' then return false end
     -- Compared without the edit recipe. The stored row holds the bare URL; what the page hands
@@ -3690,6 +4312,13 @@ V.Callback('v-phone:airdropScan', function(src, resolve)
     resolve({ ok = true, devices = out })
 end)
 
+-- How many pins one character may hold. Declared up here rather than beside the rest of the
+-- pin code further down, because ACCEPTING a shared pin has to honour the same ceiling and
+-- that branch is in the airdrop code below. A `local` is only in scope after the line that
+-- declares it - being in the same file is not enough, and the symptom is a nil global at a
+-- call site that loads perfectly and crashes the first time somebody uses it.
+local PIN_MAX = 40
+
 -- Propose a transfer. Validated at BOTH ends: the receiver has to still be discoverable
 -- and in range, so a stale device list cannot push anything onto a phone that walked off.
 V.Callback('v-phone:airdropSend', function(src, resolve, data)
@@ -3731,6 +4360,32 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
             if mine == '' then mine = tostring(me.name or '') end
             payload.name = mine:sub(1, 40)
         end
+    elseif kind == 'card' then
+        -- **Everything about you, in one row, and every field of it built HERE.**
+        --
+        -- This is the same rule as `number` and `email` above, applied to the whole card: it
+        -- lands in somebody else's contact book, so a page that could fill it in could
+        -- introduce itself as anybody, with any address and any face. The page asks for the
+        -- card to be sent and chooses nothing else.
+        local prefs = prefsOf(me) or {}
+        local who = tostring(prefs.ownerName or ''):gsub('%c', '')
+        if who == '' then who = tostring(me.name or '') end
+
+        local myNumber = numberOfCid(me.citizenid)
+        if not myNumber or myNumber == '' then resolve({ error = 'x' }) return end
+
+        payload = {
+            name = who:sub(1, 40),
+            number = tostring(myNumber):sub(1, 20),
+            -- `data.address` only chooses WHICH of your addresses; `mailPick` checks it
+            -- against the ones you actually hold.
+            email = mailPick(me.citizenid, data and data.address) or nil,
+            photo = prefs.cardPhoto or nil,
+            address = prefs.cardAddress or nil,
+            birthday = prefs.cardBirthday or nil,
+            note = prefs.cardNote or nil,
+            job = prefs.cardJob or nil,
+        }
     elseif kind == 'photo' then
         payload = { url = tostring(pin.url or ''):sub(1, 400) }
         if payload.url == '' or not wallpaperAllowed(payload.url) or not ownsPhoto(me, payload.url) then
@@ -3782,6 +4437,25 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
             resolve({ error = 'badhost' }) return
         end
         if payload.title == '' then payload.title = payload.url:sub(1, 40) end
+    elseif kind == 'place' then
+        -- **One of YOUR pins, looked up by id and citizenid together.**
+        --
+        -- The page sends an id and nothing else. The coordinates come out of the row, which is
+        -- the same rule that governs writing one: a page that could name a position could hand
+        -- somebody a waypoint to a door it has never stood at, and doing it through a share
+        -- would be exactly the hole that saving one carefully avoids.
+        --
+        -- The citizenid in the WHERE is what makes the id safe to accept. Ids are small
+        -- consecutive integers, so without it this would read any pin on the server.
+        local row = MySQL.single.await(
+            'SELECT label, x, y, z, icon FROM vphone_pins WHERE id = ? AND citizenid = ?',
+            { math.floor(num(pin.id, 0)), me.citizenid })
+        if not row then resolve({ error = 'x' }) return end
+        payload = {
+            label = tostring(row.label or ''):sub(1, 60),
+            icon = tostring(row.icon or 'map'):sub(1, 16),
+            x = row.x + 0.0, y = row.y + 0.0, z = (row.z or 0.0) + 0.0,
+        }
     else
         resolve({ error = 'x' }) return
     end
@@ -3808,15 +4482,25 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
         if AirOffers[offerId] == offer then AirOffers[offerId] = nil end
     end)
 
+    -- **Every branch here is a concatenation, and the fallback is reached by anything the
+    -- list above does not name.** A map pin has no `name` and no `number`, so sending one
+    -- threw on `payload.name .. ' - '` and the AirDrop failed every single time - the one kind
+    -- that was added last and never got a line of its own.
+    --
+    -- The fallback is nil-safe now as well, so the next kind added is a missing preview rather
+    -- than a broken feature.
     local preview = (kind == 'photo') and payload.url
         or (kind == 'email') and (payload.name .. ' - ' .. payload.email)
         or (kind == 'health') and payload.name
         or (kind == 'track') and (payload.title or payload.url)
-        or (payload.name ~= '' and (payload.name .. ' - ' .. payload.number) or payload.number)
+        or (kind == 'place') and (payload.label or '')
+        or (((payload.name or '') ~= '')
+            and ((payload.name or '') .. ' - ' .. (payload.number or ''))
+            or (payload.number or ''))
     TriggerClientEvent('v-phone:client:airdrop', to,
         {
             -- The same name the sender's own device shows in a scan, so the two sides agree:
-            -- picking "Jimmy's iFruit" and then being told the offer is from "Jim Halpert" is
+            -- picking "Mara's iFruit" and then being told the offer is from "Jim Halpert" is
             -- two names for one phone.
             offerId = offerId, from = deviceNameOf(me, to), kind = kind, preview = preview,
             ttlMs = math.floor(airOfferTtl() * 1000),
@@ -3894,6 +4578,57 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
         end
         resolve({ ok = true, track = o.payload })
         return
+    elseif o.kind == 'place' then
+        -- Filed as one of theirs, with the same ceiling their own pins have: a share must not
+        -- be a way past a limit, or handing somebody forty pins becomes a way to fill a list
+        -- they cannot then add to.
+        local pay = o.payload
+        local total = MySQL.scalar.await(
+            'SELECT COUNT(*) FROM vphone_pins WHERE citizenid = ?', { rp.citizenid }) or 0
+        if total >= PIN_MAX then resolve({ error = 'full' }) return end
+        MySQL.insert.await([[INSERT INTO vphone_pins
+            (citizenid, label, x, y, z, icon) VALUES (?,?,?,?,?,?)]],
+            { rp.citizenid, pay.label, pay.x, pay.y, pay.z, pay.icon })
+        if o.from and GetPlayerName(o.from) then
+            TriggerClientEvent('v-phone:client:airdropResult', o.from,
+                { ok = true, name = pay.label or '' })
+        end
+        resolve({ ok = true, place = { label = pay.label } })
+        return
+    elseif o.kind == 'card' then
+        -- **Merged onto the number, not added beside it.**
+        --
+        -- Somebody you already have in your phone handing you their card should fill in what
+        -- you were missing - a face, an address, a birthday - rather than leave you with the
+        -- same person twice and no way to tell which one is current. The number is what
+        -- identifies them, because it is the one field that cannot be typed differently by two
+        -- people meaning the same person.
+        --
+        -- Only what was actually sent is written. `COALESCE(NULLIF(?, ''), col)` keeps
+        -- whatever you already had against a field they left blank, so accepting a sparse card
+        -- never erases the notes you made yourself.
+        local pay = o.payload
+        local existing = MySQL.scalar.await(
+            'SELECT id FROM vphone_contacts WHERE citizenid = ? AND number = ? LIMIT 1',
+            { rp.citizenid, pay.number })
+        if existing then
+            MySQL.update.await([[UPDATE vphone_contacts SET
+                    name     = ?,
+                    photo    = COALESCE(NULLIF(?, ''), photo),
+                    email    = COALESCE(NULLIF(?, ''), email),
+                    address  = COALESCE(NULLIF(?, ''), address),
+                    birthday = COALESCE(NULLIF(?, ''), birthday),
+                    note     = COALESCE(NULLIF(?, ''), note)
+                WHERE id = ? AND citizenid = ?]],
+                { pay.name, pay.photo or '', pay.email or '', pay.address or '',
+                  pay.birthday or '', pay.note or '', existing, rp.citizenid })
+        else
+            MySQL.insert.await([[INSERT INTO vphone_contacts
+                (citizenid, name, number, photo, email, address, birthday, note, favourite)
+                VALUES (?,?,?,?,?,?,?,?,0)]],
+                { rp.citizenid, pay.name, pay.number, pay.photo or '', pay.email or '',
+                  pay.address or '', pay.birthday or '', pay.note or '' })
+        end
     elseif o.kind == 'photo' then
         local shots = rp.GetMetadata('photos')
         if type(shots) ~= 'table' then shots = {} end
@@ -3965,6 +4700,17 @@ V.Callback('v-phone:install', function(src, resolve, data)
                                   ('v-phone: %s app'):format(id)) then
             resolve({ error = 'nomoney', price = found.price }) return
         end
+        -- And it arrives somewhere, if the operator said where. Until this existed the money
+        -- was debited and credited to nobody, which is a sink rather than a shop.
+        --
+        -- AFTER the debit and never before: crediting first and then failing to charge would
+        -- pay an account out of nothing. And a failed credit does NOT undo the sale - the
+        -- player has paid and the app is theirs, because a misspelled account name in a config
+        -- file is the operator's mistake to fix, not the player's to be punished for.
+        pcall(function()
+            Bridge.Revenue((Config.Store or {}).revenue, found.price,
+                           ('v-phone: %s app'):format(id))
+        end)
         local owned = {}
         for _, rid in ipairs(prefs.purchased or {}) do
             if rid ~= id then owned[#owned + 1] = rid end
@@ -4215,11 +4961,116 @@ V.Callback('v-phone:places', function(src, resolve)
             end
         end
     end
+    -- How far each one is. Worked out here for the same reason the pins are: this is the only
+    -- side that knows where the player is standing, and a directory that cannot say which
+    -- branch is nearest is a directory somebody reads once and stops using.
+    local at = coordsOf(src)
+    if at then
+        for _, place in ipairs(out) do
+            place.away = math.floor(#(at - vector3(place.x, place.y, place.z or 0.0)))
+        end
+    end
+
     table.sort(out, function(a, b)
         if a.kind ~= b.kind then return a.kind < b.kind end
+        -- Nearest first inside a category. Alphabetical is a filing order, not a useful one:
+        -- three banks called Fleeca tell you nothing about which one to drive to.
+        if a.away and b.away and a.away ~= b.away then return a.away < b.away end
         return tostring(a.label) < tostring(b.label)
     end)
     resolve({ ok = true, places = out })
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Your own pins
+-- ══════════════════════════════════════════════════════════════
+-- The operator's places are a directory: every garage, every hospital, the same for everybody.
+-- These are the other kind - where you left the car, the spot by the water, the lockup nobody
+-- else knows about. One list per character, and nobody else can read it.
+--
+-- **A pin is saved WHERE YOU ARE, and the page never says where that is.** The position is read
+-- off the ped on this side. A page that could name the coordinates could drop a pin on a door it
+-- has never stood in front of, and a saved pin is a waypoint - which makes it a way to be handed
+-- the location of anything somebody can describe.
+
+local PIN_ICONS = {
+    map = true, house = true, garage = true, car = true, star = true, heart = true,
+    fuel = true, cart = true, wrench = true, shield = true, fire = true, wall = true,
+}
+
+local function pinsOf(src, cid)
+    local rows = MySQL.query.await([[SELECT id, label, x, y, z, icon
+        FROM vphone_pins WHERE citizenid = ? ORDER BY id DESC LIMIT ?]], { cid, PIN_MAX }) or {}
+    -- How far away each one is, worked out here because here is the only place that knows
+    -- where the player is standing.
+    local at = coordsOf(src)
+    for _, r in ipairs(rows) do
+        r.x, r.y, r.z = r.x + 0.0, r.y + 0.0, (r.z or 0.0) + 0.0
+        if at then
+            r.away = math.floor(#(at - vector3(r.x, r.y, r.z)))
+        end
+    end
+    return rows
+end
+
+V.Callback('v-phone:pins', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local cid = p.citizenid
+    local op = tostring((data and data.op) or 'list')
+
+    if op == 'list' then
+        resolve({ ok = true, pins = pinsOf(src, cid) })
+        return
+    end
+
+    if op == 'add' then
+        local at = coordsOf(src)
+        if not at then resolve({ error = 'x' }) return end
+
+        local total = MySQL.scalar.await(
+            'SELECT COUNT(*) FROM vphone_pins WHERE citizenid = ?', { cid }) or 0
+        if total >= PIN_MAX then resolve({ error = 'full' }) return end
+
+        local label = tostring((data and data.label) or ''):gsub('[%c]', '')
+            :gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 40)
+        if label == '' then label = LP(src, 'ph.pin_untitled') end
+        local icon = tostring((data and data.icon) or 'map')
+        if not PIN_ICONS[icon] then icon = 'map' end
+
+        local id = MySQL.insert.await([[INSERT INTO vphone_pins
+            (citizenid, label, x, y, z, icon) VALUES (?,?,?,?,?,?)]],
+            { cid, label, at.x, at.y, at.z, icon })
+        resolve({ ok = true, id = id, pins = pinsOf(src, cid) })
+        return
+    end
+
+    if op == 'save' then
+        -- A rename and a change of icon. Deliberately NOT a move: a pin means the place you
+        -- were standing when you made it, and letting the page send a new position would be
+        -- the same hole as letting it send the first one.
+        local id = math.floor(num(data and data.id, 0))
+        local label = tostring((data and data.label) or ''):gsub('[%c]', '')
+            :gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 40)
+        if label == '' then resolve({ error = 'empty' }) return end
+        local icon = tostring((data and data.icon) or 'map')
+        if not PIN_ICONS[icon] then icon = 'map' end
+        local n = MySQL.update.await(
+            'UPDATE vphone_pins SET label = ?, icon = ? WHERE id = ? AND citizenid = ?',
+            { label, icon, id, cid })
+        if not n or n < 1 then resolve({ error = 'gone' }) return end
+        resolve({ ok = true, pins = pinsOf(src, cid) })
+        return
+    end
+
+    if op == 'del' then
+        MySQL.update.await('DELETE FROM vphone_pins WHERE id = ? AND citizenid = ?',
+            { math.floor(num(data and data.id, 0)), cid })
+        resolve({ ok = true, pins = pinsOf(src, cid) })
+        return
+    end
+
+    resolve({ error = 'x' })
 end)
 
 -- The player's recent calls, newest first, capped. The number comes back raw; the app
@@ -4712,6 +5563,38 @@ V.Callback('v-phone:voicemail', function(src, resolve, data)
 
     resolve({ error = 'x' })
 end)
+
+--- Leave a voicemail on somebody's phone.
+---
+--- Returns `true`, or `false` and one of `'off'`, `'nonumber'`, `'empty'`. Lifted out of the
+--- `leave` branch of the voicemail callback, which was the only way to reach it - so a script
+--- that wanted to leave one had to pretend to be a phone.
+---
+--- `fromNumber` is written as-is: a caller may legitimately be a business line, a payphone or a
+--- number that belongs to nobody, and deciding otherwise here would stop all three.
+function PhoneLeaveVoicemail(toNumber, fromNumber, body)
+    if not V.SettingBool('voicemail', true) then return false, 'off' end
+    toNumber = tostring(toNumber or '')
+    local toCid = cidOfNumber(toNumber)
+    if not toCid then return false, 'nonumber' end
+
+    body = tostring(body or ''):gsub('[%z\1-\8\11-\31\127]', '')
+        :sub(1, math.floor(num(S('voicemailMax', 200), 200)))
+    if body:gsub('%s', '') == '' then return false, 'empty' end
+
+    MySQL.insert.await('INSERT INTO vphone_voicemail (citizenid, from_num, body) VALUES (?,?,?)',
+        { toCid, tostring(fromNumber or ''):sub(1, 20), body })
+
+    -- Tell them now if they are on; otherwise it is waiting when they next look.
+    local target = Online[toNumber]
+    if target then
+        TriggerClientEvent('v-phone:client:banner', target, {
+            app = 'phone', title = L(target, 'ph.vm_new'),
+            body = tostring(fromNumber or ''), hasItem = requireItem(target),
+        })
+    end
+    return true
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- Health record
@@ -5329,6 +6212,39 @@ exports('Notify', function(src, app, title, body)
     return true
 end)
 
+--- A framework notification, shown on the handset instead of in the corner of the screen.
+---
+--- **This is the other half of a change you make in qb-core, not something the phone does on
+--- its own.** A resource cannot switch off another resource's notification - handlers belong
+--- to whoever registered them - so the only way to stop being told twice is to route the
+--- framework's own notify here. `Config.Compat` carries the snippet.
+---
+--- Deliberately an event and not a callback: the caller is a one-line replacement inside
+--- somebody else's function and has nothing to wait for.
+---
+--- The text is trusted only as far as it is displayed: it is cut to a banner's length and its
+--- control characters are stripped, because it arrives from a client and a banner is drawn as
+--- text rather than as markup.
+RegisterNetEvent('v-phone:compat:notify', function(text, kind)
+    local src = source
+    if not Core.GetPlayer(src) then return end
+
+    local body = tostring(text or ''):gsub('%c', ' '):sub(1, 140)
+    if body:gsub('%s', '') == '' then return end
+
+    -- `error` and `success` are qb-core's two, and anything else is its default. The app name
+    -- decides the icon and the tone, so an error looks like one.
+    kind = tostring(kind or ''):lower()
+    local app = (kind == 'error') and 'emergency' or 'settings'
+
+    TriggerClientEvent('v-phone:client:banner', src, {
+        app = app,
+        title = LP(src, kind == 'error' and 'ph.notice_problem' or 'ph.notice'),
+        body = body,
+        hasItem = requireItem(src),
+    })
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- Lifecycle
 -- ══════════════════════════════════════════════════════════════
@@ -5475,10 +6391,11 @@ AddEventHandler('playerDropped', function()
     ChargeSource[src] = nil
     FrameLast[src] = nil
     LastBadLine[src] = nil
-    MessageLastSend[src], MessageBusy[src] = nil, nil
+    MessageLastSend[src], MessageBusy[src], TypingLast[src] = nil, nil, nil
     CipherUnlocked[src], CipherAttempts[src], CipherLastSend[src] = nil, nil, nil
     AirLastSend[src] = nil
     UnlockAttempts[src] = nil
+    LookupLast[src] = nil
     for offerId, offer in pairs(AirOffers) do
         if offer.from == src or offer.to == src then AirOffers[offerId] = nil end
     end
@@ -5565,6 +6482,22 @@ CreateThread(function()
         KEY `citizenid` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
+    -- One row per person per message. The primary key is the rule rather than a check in Lua:
+    -- a Tapback is a single choice, and reacting again replaces what you picked instead of
+    -- stacking a second badge on the same bubble.
+    --
+    -- The column holds a KEY - `love`, `haha` - and never the glyph. A page that could write
+    -- the character could write any character, onto a message somebody else sent, and eight
+    -- bytes of free text on another player's bubble is a small billboard.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_message_reactions` (
+        `message_id` INT UNSIGNED NOT NULL,
+        `citizenid`  VARCHAR(16) NOT NULL,
+        `reaction`   VARCHAR(12) NOT NULL,
+        `at`         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`message_id`, `citizenid`),
+        KEY `message_idx` (`message_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_app_data` (
         `citizenid` VARCHAR(16) NOT NULL,
         `app`       VARCHAR(40) NOT NULL,
@@ -5639,11 +6572,29 @@ CreateThread(function()
         if not has then MySQL.query.await('ALTER TABLE `vphone_contacts` ' .. ddl) end
     end
 
+    -- Somebody's own map pins. Coordinates are written by the server from the ped's position
+    -- and never from a request, so a row here is always somewhere that character has stood.
+    MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_pins` (
+        `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        `citizenid` VARCHAR(16)  NOT NULL,
+        `label`     VARCHAR(60)  NOT NULL,
+        `x`         FLOAT NOT NULL,
+        `y`         FLOAT NOT NULL,
+        `z`         FLOAT NOT NULL DEFAULT 0,
+        `icon`      VARCHAR(16)  NOT NULL DEFAULT 'map',
+        `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`), KEY `owner_idx` (`citizenid`, `id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
+
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_notes` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `citizenid` VARCHAR(16) NOT NULL,
         `title`     VARCHAR(120) NOT NULL DEFAULT '',
         `body`      TEXT,
+        `pinned`    TINYINT(1) NOT NULL DEFAULT 0,
+        -- NULL until the note is first edited, so `COALESCE(updated, at)` is the one date the
+        -- list ever needs to sort on.
+        `updated`   TIMESTAMP NULL DEFAULT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), KEY `owner_idx` (`citizenid`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -5765,6 +6716,27 @@ CreateThread(function()
         print('[v-phone] messages migrated: kind, attachment, groups')
     end
 
+    -- Notes grew a pin and a modified date.
+    local hasPin = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_notes'
+          AND COLUMN_NAME = 'pinned' LIMIT 1]])
+    if not hasPin then
+        MySQL.query.await("ALTER TABLE `vphone_notes` ADD COLUMN `pinned` TINYINT(1) NOT NULL DEFAULT 0")
+        MySQL.query.await("ALTER TABLE `vphone_notes` ADD COLUMN `updated` TIMESTAMP NULL DEFAULT NULL")
+        print('[v-phone] notes migrated: pinned, updated')
+    end
+
+    -- A message can now answer another one. Nullable and unindexed on purpose: it is read
+    -- alongside the thread it belongs to, which is already selected by the indexes above, and
+    -- a reply is looked up by the id it names rather than searched for.
+    local hasReply = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_messages'
+          AND COLUMN_NAME = 'reply_to' LIMIT 1]])
+    if not hasReply then
+        MySQL.query.await("ALTER TABLE `vphone_messages` ADD COLUMN `reply_to` INT UNSIGNED NULL DEFAULT NULL")
+        print('[v-phone] messages migrated: replies')
+    end
+
     -- The lawful-intercept column on cipher messages, for a server upgrading from before
     -- it existed. A fresh install already has it from the CREATE.
     local hasIntercept = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
@@ -5797,8 +6769,10 @@ CreateThread(function()
         '`citizenid`,`seen`,`id`')
     ensureIndex('vphone_calls', 'calls_at_idx', '`at`')
 
-    -- A call log is history, not an archive: keep the last while, then let it go.
-    MySQL.query('DELETE FROM vphone_calls WHERE at < DATE_SUB(NOW(), INTERVAL 30 DAY)')
+    -- The call log used to be pruned here, with `INTERVAL 30 DAY` written into the line and
+    -- run once at boot. server/retention.lua owns it now: configurable, on a timer, and
+    -- deleted in batches so a long-running server's first prune does not lock the table.
+
 
     -- The number lives on the character, not in a table of its own: it identifies the
     -- character the same way their name does. Added idempotently so an existing database
@@ -5840,13 +6814,12 @@ CreateThread(function()
         if src then hydratePlayer(src, Core.GetPlayer(src)) end
     end
 
-    -- Retention, once at boot. A prune on a timer would be a second thing to reason about
-    -- for a table that only grows while people are talking.
-    local days = math.floor(num(S('retentionDays', Config.Messages.retentionDays), 30))
-    if days > 0 then
-        local n = MySQL.update.await('DELETE FROM vphone_messages WHERE at < DATE_SUB(NOW(), INTERVAL ? DAY)', { days })
-        if n and n > 0 then print(('[v-phone] pruned %d message(s) older than %d days'):format(n, days)) end
-    end
+    -- Messages were pruned here, once, at boot - so a server that stays up for a month never
+    -- pruned at all. server/retention.lua sweeps them on a timer instead, in batches.
+    --
+    -- The cipher's expiry stays: it is not retention. A disappearing message has an expiry the
+    -- sender CHOSE, and honouring it the moment the server starts is the promise, not
+    -- housekeeping.
     MySQL.update.await([[DELETE FROM vphone_cipher_messages
         WHERE expires_at IS NOT NULL AND expires_at <= NOW()]])
 

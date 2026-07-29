@@ -375,10 +375,17 @@ Config.Home = {
     -- Installées sur un téléphone neuf, dans cet ordre.
     -- Tout ce qui est dans le catalogue et ABSENT d'ici doit être téléchargé
     -- depuis le FruitStore.
-    installed = { 'bank', 'mail', 'maps', 'camera', 'gallery', 'music', 'store' },
+    installed = {
+        'emergency',  -- premiere sur la grille, et `required` : jamais un telechargement
+        'bank', 'mail', 'maps', 'camera', 'gallery', 'music',
+        'garage', 'property', 'wallet', 'jobs', 'health',
+        'notes', 'reminders', 'calc',
+        'mdt',        -- reservee a la police par `job` dans le catalogue
+        'store',
+    },
 
     -- Ne peuvent pas être supprimées par le joueur.
-    required = { 'phone', 'messages', 'contacts', 'store', 'settings' },
+    required = { 'phone', 'messages', 'contacts', 'store', 'settings', 'emergency' },
 
     -- Jamais proposées : ni écran d'accueil, ni magasin, ni recherche.
     hidden = {},

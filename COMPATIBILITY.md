@@ -75,7 +75,9 @@ An external script can also charge the phone - an electric car, a solar pack - w
 ## Admin
 
 Staff actions on a player's phone, gated by `Config.Admin.ace` (default `vphone.admin`).
-qb-core's own admin group and `command` aces are accepted too.
+qb-core's own admin group is accepted too. The bare `command` ace is **not**, unless
+`Config.Admin.aceCommandFallback` is turned on - it ships off, because on many servers
+`command` is granted far more widely than administration is.
 
 ```
 add_ace group.admin vphone.admin allow

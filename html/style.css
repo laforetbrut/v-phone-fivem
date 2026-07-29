@@ -334,6 +334,19 @@ input { font: inherit; }
    on the accent made the pill two-tone for no reason anybody could name. */
 .island.live .iwave i { background: var(--ios-green); }
 
+/* ══ Scrollbars ═══════════════════════════════════════════════ */
+/* A phone has no scrollbars. Chromium draws one on every overflowing element, and this
+   stylesheet was hiding them ONE ELEMENT AT A TIME - fourteen separate rules, each added the
+   day somebody noticed a grey bar in one more place. The photo picker's sheet had never been
+   noticed, so choosing a picture came with a full-width native scrollbar down the side of the
+   phone.
+   One rule for everything inside the three surfaces instead. A scrollbar that appears in a
+   screen written next month is a bug that no longer needs finding. */
+#device *::-webkit-scrollbar,
+#forensic *::-webkit-scrollbar,
+#booth *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+#device *, #forensic *, #booth * { scrollbar-width: none; -ms-overflow-style: none; }
+
 /* ══ Home indicator ═══════════════════════════════════════════ */
 .homebar { position: absolute; left: 50%; bottom: 9px; z-index: 60;
   width: 140px; height: 5px; margin-left: -70px; border-radius: 99px;
@@ -477,7 +490,7 @@ input { font: inherit; }
 .navact { color: var(--app-tint); font-size: 17px; }
 .navact.round { width: 30px; height: 30px; border-radius: 50%; display: flex;
   align-items: center; justify-content: center; background: var(--app-fill); }
-.navact.round svg { width: 16px; height: 16px; }
+.navact.round svg { width: 15px; height: 15px; }
 .navtitle-sm { position: absolute; left: 0; right: 0; top: 58px; text-align: center;
   font-size: 17px; font-weight: 600; opacity: 0; transition: opacity .2s ease;
   pointer-events: none; color: var(--app-label); }
@@ -593,6 +606,394 @@ input { font: inherit; }
 .bub.me { align-self: flex-end; background: var(--app-tint); color: #fff;
   border-bottom-right-radius: 6px; }
 .bub + .bub { margin-top: 0; }
+
+/* ── A run of messages from one person ───────────────────────── */
+/* iOS draws consecutive messages from the same voice as one block: full corners on all but the
+   last, a tail only on the one at the bottom, and barely any gap between them. `joinabove` and
+   `joinbelow` say which neighbour a bubble is glued to, which is what decides both. */
+.bub.joinbelow.them  { border-bottom-left-radius: 20px; }
+.bub.joinbelow.me    { border-bottom-right-radius: 20px; }
+.bub.joinabove.them  { border-top-left-radius: 6px; }
+.bub.joinabove.me    { border-top-right-radius: 6px; }
+.bub:not(.joinabove) { margin-top: 5px; }
+.thread > .gsender + .bub { margin-top: 0; }
+
+/* The day, or the hour after a long enough silence. Centred, small, and quiet: it is a
+   heading over the conversation rather than part of it. */
+.mday { align-self: center; margin: 12px 0 4px; font-size: 11px; color: var(--app-label2);
+  letter-spacing: .01em; }
+.mday b { font-weight: 600; color: var(--app-label2); }
+
+/* ── The end of the thread ───────────────────────────────────── */
+/* Stretched rather than sized to its contents: the receipt sits right, the typing bubble sits
+   left, and both need the full width to align against. */
+.ttail { align-self: stretch; display: flex; flex-direction: column; }
+.mreceipt { align-self: flex-end; margin: 3px 2px 0; font-size: 11px;
+  color: var(--app-label2); letter-spacing: .01em; }
+
+/* Three dots. Sized so the bubble is the height of a one-line message and no taller - a
+   taller one makes the thread jump every time somebody starts and stops writing. */
+.bub.typing { align-self: flex-start; display: flex; align-items: center; gap: 4px;
+  padding: 12px 15px; margin-top: 5px; }
+.bub.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--app-label2);
+  display: block; animation: ph-typing 1.25s ease-in-out infinite; }
+.bub.typing i:nth-child(2) { animation-delay: .18s; }
+.bub.typing i:nth-child(3) { animation-delay: .36s; }
+@keyframes ph-typing {
+  0%, 60%, 100% { opacity: .32; transform: translateY(0); }
+  30%           { opacity: .95; transform: translateY(-3px); }
+}
+
+/* ── Replies ─────────────────────────────────────────────────── */
+/* The quoted line sits above the bubble and inherits its side, so a reply reads top to bottom:
+   what was said, then the answer. Deliberately dimmer and smaller than a real message - it is a
+   citation, and a citation that looked like a bubble would be read as one. */
+/* Tucked half under the bubble it belongs to, the way iOS stacks the two, and narrower than a
+   message so the pair reads as one object. Dimmed with a translucent background rather than
+   `opacity`, which would have taken the text down with it and left it muddy. */
+.mquote { max-width: 62%; padding: 5px 12px 11px; border-radius: 14px 14px 14px 14px;
+  font-size: 12px; line-height: 1.25; background: rgba(127, 127, 127, .16);
+  color: var(--app-label); cursor: pointer; margin: 7px 0 -6px; }
+.mquote.me   { align-self: flex-end; }
+.mquote.them { align-self: flex-start; }
+.mquote .mqwho { display: block; font-weight: 600; font-size: 10.5px; margin-bottom: 1px;
+  color: var(--app-label2); }
+.mquote .mqtext { display: block; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.mquote + .bub { margin-top: 0; }
+
+/* The attach button draws an icon now, so it needs a size: an unsized SVG in a flex box takes
+   whatever the browser feels like giving it. Centring is the flex box's job either way, which
+   is the point of moving off the "+" glyph - a glyph sits above its own em centre and no amount
+   of line-height puts it right. */
+.compose .attach svg { width: 16px; height: 16px; }
+
+/* GIF is a label on a quiet button, not a badge. It opens a picker; the only thing in this row
+   that should carry weight is the one that sends. */
+.compose .gifbtn { width: 30px; height: 30px; margin-bottom: 2px; font-size: 9.5px;
+  font-weight: 700; letter-spacing: .02em; opacity: .75; }
+
+/* Where a quote lands when it is followed. Bright enough to find on a full screen, brief
+   enough not to be an event. */
+.bub.flash { animation: ph-flash 1.1s ease-out; }
+@keyframes ph-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 214, 10, 0); }
+  22%  { box-shadow: 0 0 0 4px rgba(255, 214, 10, .55); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 214, 10, 0); }
+}
+
+/* The bar above the composer while a reply is armed. */
+.replybar { display: none; align-items: center; gap: 8px; padding: 7px 12px 0;
+  background: var(--app-bg); }
+.replybar.on { display: flex; animation: ph-bub .26s var(--spring); }
+.replybar .rbtext { flex: 1 1 auto; min-width: 0; font-size: 12.5px; line-height: 1.3;
+  padding: 6px 11px; border-radius: 13px; background: var(--bub-them);
+  color: var(--bub-them-label); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; border-left: 3px solid var(--app-tint); }
+.replybar .rbtext span { display: block; font-weight: 600; font-size: 11px;
+  color: var(--app-tint); }
+.replybar .rbx { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; color: var(--app-label2); }
+.replybar .rbx svg { width: 14px; height: 14px; }
+
+/* ── Reactions ───────────────────────────────────────────────── */
+/* On the outer top corner of the bubble, the way a Tapback sits: their messages carry it on the
+   right, yours on the left, so it never covers the tail. Absolutely positioned, so a bubble that
+   gains one does not change width; `hasreact` adds the room above it instead. */
+/* It sits ON the bubble's top outer corner, overlapping it, the way a Tapback does - not
+   floating in the gap above, which is what made it read as a separate little object belonging
+   to nothing. Half of it covers the bubble; the rest hangs past the corner. */
+.bub.hasreact { margin-top: 14px; }
+.mreact { position: absolute; top: -12px; display: flex; align-items: center; gap: 1px;
+  min-width: 24px; height: 24px; padding: 0 6px; justify-content: center;
+  border-radius: 12px; background: var(--bub-them); color: var(--bub-them-label);
+  box-shadow: 0 1px 5px rgba(0,0,0,.3); white-space: nowrap; line-height: 1;
+  animation: ph-react .34s var(--spring) backwards; }
+/* On the OUTER corner: their bubbles are on the left of the screen so the mark goes right,
+   yours are on the right so it goes left. Either way it never covers the tail. */
+.bub.them .mreact { right: -10px; }
+.bub.me   .mreact { left: -10px; }
+/* Yours among several, found at a glance rather than counted out. */
+.mreact.own { box-shadow: 0 1px 5px rgba(0,0,0,.3), inset 0 0 0 2px var(--app-tint); }
+.mreact i { font-style: normal; font-size: 13px; line-height: 1; }
+.mreact b { font-size: 10px; font-weight: 700; margin-left: 1px; color: var(--app-label2); }
+@keyframes ph-react { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: none; } }
+
+/* Dragged far enough to mean it. The arrow shows up to the left of the bubble as it moves, so
+   the gesture says what it will do before it is released rather than after. A glyph rather than
+   a masked icon: one character, no data URI, and nothing for CEF to decline. */
+.thread .bub.dragging::before { content: '\21A9'; position: absolute; left: -24px; top: 50%;
+  margin-top: -10px; font-size: 15px; line-height: 1; color: var(--app-label2);
+  opacity: .8; }
+
+/* The six, offered above everything else on a long press. */
+.tapback { display: flex; justify-content: center; gap: 4px; margin: 2px 0 14px; }
+.tapback .tb { width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; background: var(--app-card);
+  transition: transform .16s var(--snap); }
+.tapback .tb:active { transform: scale(.86); }
+.tapback .tb.on { box-shadow: inset 0 0 0 2px var(--app-tint); }
+
+/* ══ Gallery ═══════════════════════════════════════════════════ */
+/* Two halves: every picture, and the albums they fall into. Albums come in two kinds and
+   are drawn the same, because to somebody looking for a photograph the difference between
+   one they named and one the phone filed by place is not interesting. */
+/* == The photo viewer =========================================== */
+/* One picture on the phone, the rest of the roll along the bottom, and four things you can
+   do to it. A tap on a thumbnail lands here rather than in the editor: nine times out of ten
+   somebody tapping a photograph wants to look at it. */
+.pview { display: flex; flex-direction: column; gap: 10px; min-height: 100%; }
+.pviewstage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  min-height: 0; border-radius: 18px; overflow: hidden; background: #000; cursor: pointer; }
+.pviewimg { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+/* Where it was taken, when the server knew. Quiet: it is a caption, not a heading. */
+.pviewwhere { display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px; color: var(--app-label2); }
+.pviewwhere svg { width: 12px; height: 12px; }
+/* The roll. Scrolls sideways because it IS a filmstrip, and unlike a tab bar every frame is
+   reachable without dragging it: the picture itself pages with a drag and the strip follows. */
+.pviewroll { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 2px;
+  scrollbar-width: none; }
+.pviewroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.prollone { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 9px;
+  background-size: cover; background-position: center; opacity: .5;
+  transition: opacity .16s ease, transform .16s var(--snap); }
+.prollone.on { opacity: 1; box-shadow: 0 0 0 2px var(--app-tint); }
+.prollone:active { transform: scale(.92); }
+
+/* Four buttons across the foot. Icon over label: a row of four words is a menu, a row of
+   four glyphs is a toolbar, and this is a toolbar. */
+.pbar { display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 8px 16px;
+  background: var(--app-bg); }
+.pbar button { display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 0; border-radius: 12px; color: var(--app-tint);
+  transition: transform .16s var(--snap); }
+.pbar button svg { width: 20px; height: 20px; }
+.pbar button span { font-size: 10px; color: var(--app-label2); }
+.pbar button:active { transform: scale(.92); }
+.pbar button.neg { color: #FF453A; }
+.galseg { margin-bottom: 12px; }
+.galcards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.galcard { display: flex; flex-direction: column; gap: 5px; text-align: left; }
+.galcardart { display: block; width: 100%; aspect-ratio: 1; border-radius: 14px;
+  background-size: cover; background-position: center; background-color: var(--app-card);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08); transition: transform .16s var(--snap); }
+.galcard:active .galcardart { transform: scale(.96); }
+.galcardname { font-size: 13.5px; font-weight: 600; color: var(--app-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.galcardn { font-size: 11.5px; color: var(--app-label2); margin-top: -4px; }
+
+/* The way back out of an album, carrying its name and how many are in it. */
+.galback { display: flex; align-items: center; gap: 7px; margin-bottom: 12px;
+  font-size: 16px; font-weight: 650; color: var(--app-label); }
+.galback svg { width: 15px; height: 15px; transform: rotate(180deg);
+  color: var(--app-tint); }
+.galback b { font-size: 12px; font-weight: 500; color: var(--app-label2); }
+
+/* The save bar. Hidden until something is actually different from what is stored - a Save
+   button that is always available on a screen where nothing has changed teaches people to
+   ignore it, and then to miss it on the one screen where it matters. */
+.shotsave { display: none; gap: 8px; margin: 12px 0 4px; }
+.shotsave.on { display: flex; animation: ph-bub .24s var(--spring); }
+.shotsave button { flex: 1 1 0; min-height: 42px; border-radius: 13px; font-size: 15px;
+  font-weight: 600; transition: transform .16s var(--snap); }
+.shotsave button:active { transform: scale(.97); }
+.shotrevert { flex: 0 0 38% !important; background: var(--app-card);
+  color: var(--app-label2); }
+.shotkeep { background: var(--app-tint); color: #fff; }
+/* ══ Lock screen clock faces ═══════════════════════════════════ */
+/* Five looks over one set of elements. Each is a `data-clock` on the lock screen, so the date,
+   the time and the line under it move together - and the same attribute drives the little
+   previews in the picker, which is what stops the two drifting apart.
+
+   `.cdh` and `.cdm` are the hours and the minutes. The real clock is one text node, so these
+   only exist in the preview; the rules that matter to the real one are the ones on
+   `.lockclock` itself. */
+
+/* slim: wide and thin, the time spread out rather than stacked. */
+.lock[data-clock="slim"] .lockclock,
+.clockdemo[data-clock="slim"] { font-weight: 200; letter-spacing: .06em; font-size: 64px; }
+.lock[data-clock="slim"] .lockdate { text-transform: lowercase; font-weight: 400;
+  letter-spacing: .04em; }
+
+/* stack: hours over minutes, as large as the width allows. */
+.lock[data-clock="stack"] .lockclock { font-size: 96px; font-weight: 700; line-height: .88;
+  letter-spacing: -.06em; }
+.lock[data-clock="stack"] .lockdate { font-size: 14px; opacity: .8; }
+.clockdemo[data-clock="stack"] { flex-direction: column; font-weight: 700; line-height: .82;
+  letter-spacing: -.05em; }
+
+/* mono: typewriter digits in a box, for somebody who wants it to look like a terminal. */
+.lock[data-clock="mono"] .lockclock,
+.clockdemo[data-clock="mono"] { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-weight: 500; letter-spacing: .02em; font-size: 58px; }
+.lock[data-clock="mono"] .lockclock { padding: 4px 16px; border-radius: 14px;
+  box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.28); display: inline-block; }
+.lock[data-clock="mono"] .lockdate { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* minimal: small and quiet, and the date goes entirely. Somebody using a wallpaper they
+   actually like does not want a clock across the middle of it. */
+.lock[data-clock="minimal"] .lockclock,
+.clockdemo[data-clock="minimal"] { font-size: 40px; font-weight: 300; letter-spacing: 0; }
+.lock[data-clock="minimal"] .lockdate { display: none; }
+.lock[data-clock="minimal"] .lockmeta { opacity: .55; }
+
+/* The picker. Each row draws the time in its own face, because nobody knows what "mono" looks
+   like from the word - and a choice you have to try one at a time to understand is a choice
+   most people leave alone. */
+.clockpick { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.clockopt { display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+  border-radius: 14px; background: var(--app-card); color: var(--app-label);
+  transition: transform .16s var(--snap); }
+.clockopt:active { transform: scale(.98); }
+.clockopt.on { box-shadow: inset 0 0 0 2px var(--app-tint); }
+.clockdemo { flex: 0 0 96px; display: flex; align-items: baseline; justify-content: center;
+  gap: 2px; font-family: var(--ios-num); font-size: 30px; font-weight: 500;
+  letter-spacing: -.03em; line-height: 1; }
+.clockdemo i { font-style: normal; }
+.clockdemo .cdh::after { content: ':'; opacity: .55; }
+/* The minutes carry no rule of their own beyond being the second half of the pair, but
+   they are named so the stacked face can put them on their own line. */
+.clockdemo .cdm { display: inline; }
+.clockdemo[data-clock="stack"] .cdm { display: block; }
+.clockdemo[data-clock="stack"] .cdh::after { content: ''; }
+.clockname { font-size: 15px; }
+
+/* Category chips. They wrap onto as many lines as they need, because the alternative is
+   ten labels sharing one row at two letters each. */
+.mapskinds { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.mapkind { padding: 6px 12px; border-radius: 14px; font-size: 12.5px;
+  background: var(--app-card); color: var(--app-label2);
+  transition: transform .16s var(--snap); }
+.mapkind:active { transform: scale(.94); }
+.mapkind.on { background: var(--app-tint); color: #fff; }
+
+/* The symbol chosen for a pin. A grid rather than a row: twelve of them wrap onto two lines
+   at any device width, and a sideways scroller here would be the emoji-tab bug a third time. */
+.pinicons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin-bottom: 14px; }
+.pinicon { aspect-ratio: 1; border-radius: 12px; display: flex; align-items: center;
+  justify-content: center; background: var(--app-card); color: var(--app-label2);
+  transition: transform .16s var(--snap); }
+.pinicon svg { width: 18px; height: 18px; }
+.pinicon:active { transform: scale(.92); }
+.pinicon.on { background: var(--app-tint); color: #fff; }
+/* The two halves of Maps sit above the category filter, so they need the air between them. */
+.mapsseg { margin-bottom: 10px; }
+
+/* ══ Notes ═════════════════════════════════════════════════════ */
+.notesearch { margin-bottom: 10px; }
+.notesearch .field { margin: 0; border-radius: 12px; }
+.notelist { background: var(--app-card); border-radius: 14px; overflow: hidden;
+  margin-bottom: 14px; }
+.noterow { display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+  box-shadow: inset 0 -0.5px 0 var(--sep); }
+.noterow:last-child { box-shadow: none; }
+.noterow > svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--app-label2);
+  opacity: .5; }
+.notemid { flex: 1 1 auto; min-width: 0; }
+.notetitle { font-size: 15px; font-weight: 600; color: var(--app-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notepin { display: inline-block; width: 11px; height: 11px; margin-right: 5px;
+  color: #FFCC00; vertical-align: -1px; }
+.notepin svg { width: 11px; height: 11px; display: block; }
+/* The date first, then whatever the note says that its title does not. One line, clipped:
+   a preview that wraps turns the list into a wall. */
+.notesub { display: flex; gap: 7px; margin-top: 1px; font-size: 12px; color: var(--app-label2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notesub span { flex: 0 0 auto; opacity: .8; }
+
+.noteedit { background: var(--app-card); border-radius: 14px; padding: 12px;
+  margin-bottom: 14px; }
+.notetitlebox { margin: 0 0 2px; padding: 0; background: none; border-radius: 0;
+  font-size: 19px; font-weight: 700; color: var(--app-label); }
+.notewhen { font-size: 11px; color: var(--app-label2); margin-bottom: 8px; }
+.notebody { display: block; width: 100%; min-height: 200px; resize: none; background: none;
+  border: 0; padding: 0; font: inherit; font-size: 15px; line-height: 1.45;
+  color: var(--app-label); }
+.notebody:focus { outline: none; }
+.notecount { margin-top: 10px; font-size: 11px; color: var(--app-label2); text-align: right;
+  opacity: .7; }
+
+/* ══ Reminders ═════════════════════════════════════════════════ */
+/* Five lists across the top with their counts, then rows that are a tick circle, the thing to
+   do, and whatever is true about it underneath. The colour on a row comes from the list it is
+   in, carried down as a variable so a new list is one entry in two places rather than a new
+   rule here. */
+/* Wraps. It does NOT scroll sideways: this page is driven by a mouse, a horizontal scroller
+   has no gesture behind it, and the last tab simply sits off the right edge with no way to
+   reach it. That is the emoji-tab bug, and it is not being shipped twice. */
+.remtabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 0 10px; }
+.remtab { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; padding: 6px 11px;
+  border-radius: 14px; font-size: 12.5px; background: var(--app-card);
+  color: var(--app-label2); }
+.remtab b { font-size: 11px; font-weight: 700; opacity: .7; }
+.remtab.on { background: var(--app-tint); color: #fff; }
+.remtab.on b { opacity: .85; }
+
+.remlist { background: var(--app-card); border-radius: 14px; overflow: hidden; }
+.remrow { display: flex; align-items: flex-start; gap: 11px; padding: 11px 12px;
+  box-shadow: inset 0 -0.5px 0 var(--sep); }
+.remrow:last-child { box-shadow: none; }
+.remrow.off .remtext { text-decoration: line-through; color: var(--app-label2); }
+
+/* An empty ring until it is ticked, then the list's own colour. A checkbox would be the
+   browser's, and the browser's is not round. */
+.remtick { flex: 0 0 auto; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.6px var(--sep); display: flex; align-items: center;
+  justify-content: center; color: #fff; transition: transform .16s var(--snap); }
+.remtick:active { transform: scale(.86); }
+.remtick svg { width: 13px; height: 13px; }
+.remrow.off .remtick { background: var(--rem-tint); box-shadow: none; }
+
+.remmid { flex: 1 1 auto; min-width: 0; }
+.remtext { font-size: 15px; line-height: 1.3; word-break: break-word; color: var(--app-label); }
+.remflag { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #FF453A; margin-right: 6px; vertical-align: middle; }
+.remsub { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 11.5px;
+  color: var(--app-label2); flex-wrap: wrap; }
+.remwhen { color: var(--app-label2); }
+/* The one thing this app exists to say. Anything else on the row can be missed. */
+.remlate { color: #FF453A; font-weight: 600; }
+.remrep svg { width: 11px; height: 11px; display: block; }
+.remnote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.remopen { flex: 0 0 auto; width: 24px; height: 24px; display: flex; align-items: center;
+  justify-content: center; color: var(--app-label2); opacity: .55; }
+.remopen svg { width: 14px; height: 14px; }
+
+/* The editor: pills for the choices, two native pickers for the date and the time. */
+.rempick, .remquick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.rempill { padding: 7px 12px; border-radius: 14px; font-size: 12.5px; background: var(--app-card);
+  color: var(--app-label2); transition: transform .16s var(--snap); }
+.rempill:active { transform: scale(.94); }
+.rempill.on { background: var(--rem-tint, var(--app-tint)); color: #fff; }
+.remwhenrow { display: flex; gap: 8px; margin-bottom: 10px; }
+.remwhenrow .field { margin: 0; flex: 1 1 0; min-width: 0; }
+.remnotebox { display: block; width: 100%; min-height: 72px; resize: none; margin: 4px 0 12px;
+  font: inherit; font-size: 14px; line-height: 1.4; }
+
+/* ── The GIF shelf ───────────────────────────────────────────── */
+.gifsearch { margin-bottom: 8px; }
+.gifsearch .field { margin: 0; border-radius: 12px; }
+/* Wraps rather than scrolls sideways. A row of eighteen categories behind a horizontal
+   scroller is the emoji-tab bug again: there is a mouse here and no gesture to drive it. */
+.gifstrip { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.gifstrip .giftab { padding: 6px 11px; border-radius: 13px; font-size: 12.5px;
+  background: var(--app-card); color: var(--app-label2); opacity: .85; }
+.gifstrip .giftab.on { background: var(--app-tint); color: #fff; opacity: 1; }
+.gifgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+  max-height: 268px; overflow-y: auto; }
+.gifgrid::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.gifcell { border-radius: 11px; overflow: hidden; background: var(--bub-them);
+  aspect-ratio: 4 / 3; transition: transform .16s var(--snap); }
+.gifcell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gifcell:active { transform: scale(.94); }
+.gifnote { padding: 26px 12px; text-align: center; font-size: 13px; color: var(--app-label2); }
+/* The corner label on a picture that moves. Its own element rather than a border on the image:
+   a full-bleed picture has no padding to put it in. */
+.gifmark { position: absolute; left: 8px; bottom: 8px; padding: 1px 5px; border-radius: 5px;
+  font-size: 9px; font-weight: 700; letter-spacing: .06em; background: rgba(0,0,0,.55);
+  color: #fff; line-height: 1.5; }
 
 .compose { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px;
   padding: 8px 12px 14px; background: var(--app-bg); }
@@ -792,17 +1193,57 @@ input { font: inherit; }
   box-shadow: 0 1px 3px rgba(0,0,0,.18); }
 
 /* ══ Calculator ═══════════════════════════════════════════════ */
-.calcout { text-align: right; padding: 26px 6px 18px; font-family: var(--ios-num);
-  font-size: 54px; font-weight: 300; letter-spacing: -.03em; line-height: 1;
+/* The keypad sits on the bottom edge and the answer fills whatever is left above it. That
+   shape is the app: a number that grows into empty space, and keys your thumb can find
+   without looking. Stacked from the top, as it was, it read as a form with buttons under it. */
+.calcwrap { position: relative; display: flex; flex-direction: column;
+  justify-content: flex-end; min-height: 100%; padding-bottom: 4px; }
+.calcout { text-align: right; padding: 26px 8px 22px; font-family: var(--ios-num);
+  font-size: 68px; font-weight: 300; letter-spacing: -.035em; line-height: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.calcgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
-.ckey { height: 68px; border-radius: 50%; font-family: var(--ios-num); font-size: 27px;
+/* Square cells, so the circles are circles at any device width rather than at one of them. */
+.calcgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.ckey { aspect-ratio: 1; border-radius: 50%; font-family: var(--ios-num); font-size: 30px;
+  font-weight: 400; display: flex; align-items: center; justify-content: center;
   background: #333333; color: #fff;
   transition: filter .1s ease, transform .1s ease; }
-.ckey:active { filter: brightness(1.35); transform: scale(.95); }
-.ckey.fn { background: #A5A5A5; color: #000; }
-.ckey.op { background: var(--ios-orange); color: #fff; font-size: 30px; }
-.ckey.wide { grid-column: span 2; border-radius: 34px; text-align: left; padding-left: 26px; }
+.ckey:active { filter: brightness(1.35); transform: scale(.94); }
+.ckey.fn { background: #A5A5A5; color: #000; font-size: 26px; }
+.ckey.op { background: var(--ios-orange); color: #fff; font-size: 33px; font-weight: 300; }
+/* The wide zero keeps the row's height and takes two columns of width, so it is a stadium and
+   not an ellipse. Its label sits where the other keys' labels sit in their own column. */
+.ckey.wide { grid-column: span 2; aspect-ratio: auto; border-radius: 100px;
+  justify-content: flex-start; padding-left: 30px; }
+
+/* The tape. Slides up over the keypad rather than sharing the screen with it: the keys are used
+   constantly and the history occasionally, so the keys keep the room. */
+/* Bled past the body's own side padding, so it reaches the edges of the screen the way a
+   sheet does rather than sitting in the content column like a card. */
+.calcpanel { position: absolute; left: -16px; right: -16px; bottom: -34px; z-index: 6;
+  background: rgba(24, 24, 26, .97); border-radius: 20px 20px 0 0;
+  padding: 12px 16px 26px; transform: translateY(101%);
+  transition: transform .32s var(--spring); }
+.calcpanel.on { transform: none; }
+.calcpanelhead { display: flex; align-items: center; gap: 10px; font-size: 15px;
+  font-weight: 600; color: #fff; padding-bottom: 8px; }
+.calcclear { margin-left: auto; font-size: 13px; color: var(--ios-orange); }
+.calcx { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; background: rgba(255,255,255,.12); color: #fff; }
+.calcx svg { width: 13px; height: 13px; }
+.calctape { max-height: 244px; overflow-y: auto; }
+.calctape::-webkit-scrollbar { width: 0; }
+/* One sum per line: the question small and dim, the answer large and bright, because the
+   answer is the thing anybody comes back to look at. */
+.calcline { display: block; width: 100%; text-align: right; padding: 9px 2px;
+  box-shadow: inset 0 -0.5px 0 rgba(255,255,255,.08); }
+.calcline:last-child { box-shadow: none; }
+.calcline:active { background: rgba(255,255,255,.06); }
+.calcq { display: block; font-family: var(--ios-num); font-size: 12.5px;
+  color: rgba(235,235,245,.55); }
+.calca { display: block; font-family: var(--ios-num); font-size: 22px; font-weight: 300;
+  color: #fff; letter-spacing: -.02em; }
+.calcempty { padding: 30px 0; text-align: center; font-size: 13px;
+  color: rgba(235,235,245,.5); }
 
 /* ══ App switcher ═════════════════════════════════════════════
    Swipe up from the bottom edge and pause. Cards are the apps you have opened,
@@ -960,18 +1401,20 @@ input { font: inherit; }
    Two, and both show something true: the in-game weather the server is running,
    and the in-game date and time. A widget that showed the player's real clock
    would be the wrong clock. */
-.widgets { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 4px 22px 14px; }
-.widget { border-radius: 20px; padding: 14px; min-height: 108px; display: flex;
-  flex-direction: column; justify-content: space-between; color: #fff; }
+.widgets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+  padding: 4px 22px 14px; align-content: start; }
+.widget { grid-column: span var(--wspan, 2); border-radius: 20px; padding: 14px;
+  min-height: 108px; display: flex; flex-direction: column; justify-content: space-between;
+  color: #fff; position: relative; text-align: left; font: inherit; border: 0; }
 .widget .wtop { display: flex; align-items: center; justify-content: space-between;
   font-size: 13px; font-weight: 600; }
 .widget .wbig { font-family: var(--ios-num); font-size: 34px; font-weight: 500;
   letter-spacing: -.02em; }
 .widget .wsub { font-size: 12px; color: rgba(255,255,255,.8); }
 .widget .wicon svg { width: 20px; height: 20px; }
-.widget.cal .wday { font-size: 12px; font-weight: 700; letter-spacing: .12em;
+.widget.w-calendar .wday { font-size: 12px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ios-red); }
-.widget.cal .wnum { font-family: var(--ios-num); font-size: 40px; font-weight: 500; line-height: 1; }
+.widget.w-calendar .wnum { font-family: var(--ios-num); font-size: 40px; font-weight: 500; line-height: 1; }
 
 /* ══ Search pill above the dock ═══════════════════════════════ */
 .searchpill { display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -1002,6 +1445,29 @@ input { font: inherit; }
 .app.black { background: #000; color: #fff; }
 .app.black .calcout { color: #fff; }
 
+/* An app that blacks out its body has to black out its CHROME as well. It did not: the body
+   went black and the nav bar kept the light glass it wears in a light theme, so the
+   Calculator was a black screen under a pale grey header - two apps in one frame. The dark
+   glass here is the same one `.screen.dark` uses, applied because THIS APP is dark rather
+   than because the phone is. */
+.app.black .navbar {
+  background:
+    radial-gradient(120% 100% at 18% -40%, rgba(255, 255, 255, .07), transparent 55%),
+    linear-gradient(180deg, rgba(14, 14, 16, .94), rgba(10, 10, 12, .84));
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .06);
+}
+.app.black .navbar.collapsed {
+  background:
+    radial-gradient(120% 100% at 18% -40%, rgba(255, 255, 255, .08), transparent 56%),
+    var(--glass-dark-regular);
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, .08),
+    0 10px 25px rgba(0, 0, 0, .34);
+}
+.app.black .navtitle,
+.app.black .navtitle-sm { color: #fff; }
+.app.black .navact.round { background: rgba(255, 255, 255, .12); color: #fff; }
+
 /* The bar carries the charge; the number beside it is noise the real status bar can be
    set to hide, so it is hidden here. */
 .battpct { display: none; }
@@ -1017,11 +1483,11 @@ input { font: inherit; }
 
 /* The widgets show real things, on real surfaces: weather on Weather blue, the
    calendar on the light material with its red weekday. */
-.widget.weather { background: linear-gradient(180deg, #4DA3F8 0%, #1F66CC 100%);
+.widget.w-weather { background: linear-gradient(180deg, #4DA3F8 0%, #1F66CC 100%);
   box-shadow: 0 10px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.3); }
-.widget.cal { background: var(--mat); color: var(--mat-label);
+.widget.w-calendar { background: var(--mat); color: var(--mat-label);
   box-shadow: 0 10px 24px rgba(0,0,0,.28); }
-.widget.cal .wsub { color: var(--mat-label2); }
+.widget.w-calendar .wsub { color: var(--mat-label2); }
 
 /* Hold to arrange: the jiggle is the signal that icons are movable. */
 @keyframes ph-jiggle { from { transform: rotate(-1.7deg); } to { transform: rotate(1.7deg); } }
@@ -1248,8 +1714,13 @@ input { font: inherit; }
 .stdel { padding: 6px 14px; border-radius: 99px; font-size: 14px; font-weight: 600;
   background: var(--app-fill); color: var(--ios-red); }
 .stmeta { display: flex; }
-.stmeta div { flex: 1; text-align: center; padding: 10px 4px; }
-.stmeta div + div { border-left: .5px solid var(--app-sep); }
+/* **Direct children only.** Written as `.stmeta div` this reached the two divs INSIDE each
+   column as well, so `.mk` - which follows `.mv` - matched `div + div` and drew a border of
+   its own. That is the short vertical line beside every label: not a separator between
+   columns at all, but a line inside one, at the wrong height and one too many. Each column
+   was also being padded twice for the same reason. */
+.stmeta > div { flex: 1; text-align: center; padding: 10px 4px; }
+.stmeta > div + div { border-left: .5px solid var(--app-sep); }
 .stmeta .mk { font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
   color: var(--app-label2); }
 .stmeta .mv { font-size: 15px; font-weight: 600; color: var(--app-label); margin-top: 2px; }
@@ -1414,6 +1885,17 @@ input { font: inherit; }
 .dragghost .ic { width: 60px; height: 60px; border-radius: 13.5px; overflow: hidden; }
 .dragghost .ic svg { width: 34px; height: 34px; }
 .dragghost .nm { font-size: 11.5px; color: #fff; }
+/* A FOLDER being carried needs the same rules as a folder sitting still, and it did not have
+   them: every rule that shrinks the four icons into one tile is written `.tile .folder`, and
+   the ghost is not a tile. So a dragged folder rendered its contents at full size, stacked in a
+   column, spilling off the grid. The rules are the same shape as the ones above, deliberately -
+   the ghost is meant to look like the thing it lifted. */
+.dragghost .folder { width: 60px; height: 60px; border-radius: 13.5px; display: grid;
+  grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; }
+.dragghost .folder span { border-radius: 4.5px; overflow: hidden; display: block; }
+.dragghost .folder span .ic { width: 100%; height: 100%; border-radius: 4.5px;
+  box-shadow: none; }
+.dragghost .folder span .ic svg { width: 62%; height: 62%; }
 .tile.ghosted { opacity: 0; pointer-events: none; }
 
 /* A tile that a drop would turn into a folder darkens and rings. */
@@ -1599,11 +2081,22 @@ input { font: inherit; }
   font-size: 12px; font-weight: 600; color: #fff;
   background: rgba(60,60,67,.7); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); }
 .lnotif { position: relative; cursor: pointer; }
-.lnotif .lx { position: absolute; top: 7px; right: 7px; width: 21px; height: 21px;
+/* 28 outright, not 21 with a 28 minimum. The later touch-target pass raises `min-width` and
+   `min-height` to 28 and leaves `width` and `height` at 21, so the box grows in one direction
+   from a smaller declared size and the cross is no longer on the centre of the circle it is
+   drawn in. One size, stated once, and the flex box centres it. */
+/* Centred on the card's height, not pinned 7px from its top. A one-line notification and a
+   two-line one are different heights, so a fixed offset from the top is only centred on
+   one of them - and it was centred on neither, because the card is taller than the button
+   plus its offset. */
+.lnotif .lx { position: absolute; top: 50%; transform: translateY(-50%); right: 8px;
+  width: 28px; height: 28px;
   border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  background: rgba(120,120,128,.75); color: #fff; opacity: .85; }
-.lnotif .lx svg { width: 12px; height: 12px; }
-.lnotif .lx:active { transform: scale(.9); }
+  background: rgba(120,120,128,.75); color: #fff; opacity: .85; padding: 0; }
+/* `block`, because an inline SVG sits on the text baseline and the baseline is not the middle
+   of the line box - which is the other half of the same lopsided cross. */
+.lnotif .lx svg { width: 12px; height: 12px; display: block; }
+.lnotif .lx:active { transform: translateY(-50%) scale(.9); }
 .lnotif .lbody { padding-right: 22px; }
 
 /* A contact photo at the top of the card. */
@@ -2003,6 +2496,11 @@ input { font: inherit; }
 .lockclear {
   min-width: 28px;
   min-height: 28px;
+  /* Both are flex boxes, so the label and the glyph stay on the centre when the minimum above
+     grows the box past its declared size. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background:
     radial-gradient(circle at 30% 10%, rgba(255, 255, 255, .18), transparent 55%),
     rgba(80, 80, 88, .76);
@@ -2076,7 +2574,7 @@ input { font: inherit; }
     0 16px 34px rgba(0, 0, 0, .34);
 }
 
-.widget.weather {
+.widget.w-weather {
   background:
     radial-gradient(110% 95% at var(--glass-x) var(--glass-y),
       rgba(255, 255, 255, var(--sheen-a, .18)), transparent 56%),
@@ -2084,7 +2582,7 @@ input { font: inherit; }
     linear-gradient(155deg, #56b5ff, #1673dc 58%, #174fae);
 }
 
-.widget.cal {
+.widget.w-calendar {
   background:
     radial-gradient(120% 100% at var(--glass-x) var(--glass-y),
       rgba(255, 255, 255, var(--sheen-a, .18)), transparent 56%),
@@ -2092,7 +2590,7 @@ input { font: inherit; }
     var(--glass-light-regular);
 }
 
-.screen.dark .widget.cal {
+.screen.dark .widget.w-calendar {
   background:
     radial-gradient(120% 100% at var(--glass-x) var(--glass-y),
       rgba(255, 255, 255, var(--sheen-a, .18)), transparent 56%),
@@ -2386,7 +2884,9 @@ input { font: inherit; }
 
 .navbar {
   padding-left: 18px;
-  padding-right: 18px;
+  /* A little more on the right than the left. The only thing that ever sits there is a round
+     filled button, and a circle needs more air than a glyph to look equally inset. */
+  padding-right: 20px;
   background:
     radial-gradient(120% 100% at 18% -40%, rgba(255, 255, 255, .34), transparent 55%),
     linear-gradient(180deg, rgba(248, 248, 252, .91), rgba(248, 248, 252, .79));
@@ -2453,6 +2953,25 @@ input { font: inherit; }
 .navbar.tightnav #navbacktxt { display: none; }
 .navbar.tightnav .navtitle-sm { padding: 0 52px; }
 
+/* No big title in a conversation. The name is already in the bar with the face beside it, and
+   printing it a second time at thirty-four pixels spent a third of the screen saying who you
+   are talking to - on the one screen where the content is the point. */
+.navbar.facenav .navtitle { display: none; }
+.navbar.facenav .navtitle-sm { opacity: 1; }
+
+/* A face in front of the name, for a conversation. `.navtitle-sm` is a text line everywhere
+   else, so it becomes a flex row only under `.facenav` - and `setNav` rewrites the element's
+   text on every screen, which is what takes the face away again. */
+.navbar.facenav .navtitle-sm { display: flex; align-items: center; justify-content: center;
+  gap: 7px; }
+.navbar.facenav .navwho { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navface { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--app-tint); background-size: cover; background-position: center;
+  color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  display: flex; align-items: center; justify-content: center; }
+/* The large title above it is the app's name, not the contact's, and it has no face. */
+.navbar.facenav .navtitle .navface { display: none; }
+
 .navback,
 .navact {
   min-height: var(--ph-touch);
@@ -2478,9 +2997,15 @@ input { font: inherit; }
   transform: scale(.94);
 }
 
+/* 36, not the full 44 touch target. A filled circle carries far more visual weight than the
+   thin chevron facing it, so at 44 with 18px of padding it read as jammed against the bezel
+   while the chevron opposite looked comfortable - the two were the same distance out, and only
+   one of them looked it. `min-height` has to come down with it or the box is 36 wide and 44
+   tall, which is an oval rather than a circle. */
 .navact.round {
-  width: var(--ph-touch);
-  height: var(--ph-touch);
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
   border-radius: 50%;
   background:
     radial-gradient(circle at 28% 12%, rgba(255, 255, 255, .34), transparent 56%),
@@ -3618,25 +4143,28 @@ input { font: inherit; }
     0 8px 19px rgba(0, 0, 0, .20);
 }
 
+/* Flat, with one faint highlight along the top edge and no drop shadow. The radial sheen and
+   the shadow this replaces made every key look like wet plastic on a black background - the
+   glass treatment is right for chrome floating over content, and these keys are the content. */
 .ckey {
   background:
-    radial-gradient(circle at 28% 8%, rgba(255, 255, 255, .13), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, .07), transparent 42%),
     #333338;
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .06),
-    0 6px 14px rgba(0, 0, 0, .28);
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .05);
 }
 
 .ckey.fn {
   background:
-    radial-gradient(circle at 28% 8%, rgba(255, 255, 255, .50), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, .22), transparent 42%),
     #a5a5aa;
+  box-shadow: none;
 }
 
 .ckey.op {
   background:
-    radial-gradient(circle at 28% 8%, rgba(255, 255, 255, .30), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, .16), transparent 42%),
     var(--ios-orange);
+  box-shadow: none;
 }
 
 .camui {
@@ -3755,9 +4283,13 @@ input { font: inherit; }
 .plike:focus-visible,
 .field:focus-visible,
 .mailedit:focus-visible,
+.musicvolume input:focus-visible,
 .search input:focus-visible {
   outline: 2px solid var(--ph-accent-300);
   outline-offset: 2px;
+  /* Rounded, so the ring follows the control instead of boxing it. A slider is a bar with
+     round ends and a hard rectangle around it reads as an error state. */
+  border-radius: 10px;
 }
 
 /* Compact viewport guard. The JS user scale still applies on top of this shell. */
@@ -4006,8 +4538,13 @@ input { font: inherit; }
   color: rgba(235, 235, 245, .56);
 }
 
+/* Retimed, not cancelled.
+   `animation: none` takes the name out of the list, so removing `dragging` puts it back - and a
+   returning name is a new animation. A plain tap on the grab bar enters and leaves the drag with
+   no movement at all, which replayed the 440ms entrance spring: the sheet threw itself off the
+   bottom of the screen and sprang back. A zero duration freezes it without ever unsetting it. */
 .sheet.dragging {
-  animation: none;
+  animation-duration: 0s;
   transition: none;
   will-change: transform, opacity;
 }
@@ -4468,10 +5005,18 @@ input { font: inherit; }
 }
 
 /* Volume and one-shot system feedback --------------------------------- */
+/* The resting HUD. `display: flex` here beats the `display: none` on the base rule above -
+   same specificity, later in the file - so the pill is LAID OUT while hidden, and the base
+   rule's `animation: ph-in` is live on it.
+   Dropping `.on` therefore flipped the winning animation-name back to `ph-in`, and a name that
+   re-enters the list is a NEW animation: 1.4 seconds after a volume press the pill faded back
+   in at full opacity, jumped to where `ph-in` puts it, held, and only then vanished.
+   `.hud.on` and the two `.hud.<kind>.on` rules are more specific, so every entrance survives. */
 .hud {
   display: flex;
   opacity: 0;
   pointer-events: none;
+  animation: none;
 }
 
 .hud.on {
@@ -6937,10 +7482,35 @@ input { font: inherit; }
   box-shadow: 0 0 0 9px rgba(255, 255, 255, .025);
 }
 .musicart svg { position: relative; z-index: 1; width: 24%; height: 24%; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .25)); }
+/* The initial standing in for a cover. Large, low contrast and set back, the way a label
+   prints across a sleeve: it tells two tiles apart without competing with the title
+   written underneath. */
+/* A percentage font-size is a percentage of the PARENT'S FONT, not of the box - so `46%`
+   left the initial the same small size on a 286px cover as on a 43px one. Sized per tile
+   instead, the way the play glyph above is sized by width. */
+.musicart em { position: relative; z-index: 1; font-style: normal; font-weight: 800;
+  font-size: 26px; line-height: 1; color: rgba(255, 255, 255, .58);
+  letter-spacing: -.04em; text-shadow: 0 3px 12px rgba(0, 0, 0, .32); }
+.musicart.playerart em { font-size: 104px; }
+.musicart.heroart em  { font-size: 40px; }
+.musicart.cardart em  { font-size: 46px; }
+.musicart.sheetart em { font-size: 36px; }
+.musicart.emptyart em { font-size: 38px; }
+.musicart.rowart em   { font-size: 18px; }
+.musicart.miniart em,
+.musicart.queueart em { font-size: 16px; }
+.musicart.editart em  { font-size: 20px; }
+.musicart.stationart em { font-size: 19px; }
+.musicart.mixart em   { font-size: 15px; }
 .musicart.cardart { width: 126px; height: 126px; border-radius: 17px; }
 .musicart.rowart { width: 46px; height: 46px; border-radius: 11px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.2), 0 5px 13px rgba(20,10,20,.13); }
 .musicart.miniart { width: 43px; height: 43px; border-radius: 10px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18), 0 4px 12px rgba(0,0,0,.16); }
-.musicart.heroart { width: 138px; height: 138px; border-radius: 22px; transform: rotate(-4deg); box-shadow: 0 24px 42px rgba(11, 7, 13, .3); }
+/* 104, not 138, and square to the page rather than tilted. The hero was tall enough on its
+   own to push the first row of card titles off the bottom of the screen - measured at two
+   pixels past the fold - so what anybody actually saw on opening the app was a carousel of
+   coloured squares with no words anywhere near them. */
+.musicart.heroart { width: 104px; height: 104px; border-radius: 20px;
+  box-shadow: 0 16px 30px rgba(11, 7, 13, .3); }
 .musicart.sheetart { width: 96px; height: 96px; border-radius: 19px; }
 .musicart.editart { width: 54px; height: 54px; border-radius: 14px; }
 .musicart.queueart { width: 42px; height: 42px; border-radius: 9px; box-shadow: none; }
@@ -6953,21 +7523,23 @@ input { font: inherit; }
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin: 24px 2px 10px;
+  /* 24 above a section heading is a magazine's spacing, not a phone's. */
+  margin: 16px 2px 8px;
 }
-.musicsection h2 { margin: 0; font-size: 21px; line-height: 1.12; letter-spacing: -.025em; }
+.musicsection h2 { margin: 0; font-size: 19px; line-height: 1.12; letter-spacing: -.025em; }
 .musicsection button { color: var(--music-red); font-size: 13px; }
 
 .musichero {
   position: relative;
   display: grid;
-  min-height: 207px;
-  grid-template-columns: 45% 1fr;
+  /* No forced height. 207 was a reserve for artwork that is now 104 tall, and the card was
+     padding out to it - which cost the first row of card titles its place on the screen. */
+  grid-template-columns: 118px 1fr;
   align-items: center;
   gap: 7px;
   overflow: hidden;
-  margin: 3px 0 5px;
-  padding: 17px 14px;
+  margin: 3px 0 4px;
+  padding: 14px 14px;
   color: #fff;
   border: .5px solid rgba(255, 255, 255, .2);
   border-radius: 27px;
@@ -6992,9 +7564,9 @@ input { font: inherit; }
 .musicherocopy { min-width: 0; padding-left: 5px; }
 .musicherocopy > span,
 .musicfeature > span { font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .72; }
-.musicherocopy h2 { margin: 7px 0 2px; overflow: hidden; font-size: 24px; line-height: 1.02; letter-spacing: -.035em; text-overflow: ellipsis; }
+.musicherocopy h2 { margin: 5px 0 2px; overflow: hidden; font-size: 21px; line-height: 1.02; letter-spacing: -.035em; text-overflow: ellipsis; }
 .musicherocopy p { margin: 0; overflow: hidden; font-size: 11px; opacity: .74; text-overflow: ellipsis; white-space: nowrap; }
-.musicherocopy > div { display: flex; gap: 7px; margin-top: 15px; }
+.musicherocopy > div { display: flex; gap: 7px; margin-top: 11px; }
 .musicherocopy button {
   display: flex;
   min-height: 34px;
@@ -7065,10 +7637,13 @@ input { font: inherit; }
 .musicfoot { position: relative; z-index: 4; }
 .musicmini {
   display: grid;
-  grid-template-columns: 1fr 38px 32px;
+  /* FOUR columns for four children. It declared three - open, play, next - and the stop
+     button was a fourth child with no column to sit in, so it wrapped onto a second row and
+     the bar stood twice as tall as it needed to with an X floating under the title. */
+  grid-template-columns: 1fr 34px 34px 28px;
   align-items: center;
-  gap: 3px;
-  min-height: 59px;
+  gap: 2px;
+  min-height: 52px;
   margin: 0 11px 5px;
   padding: 7px 7px;
   border: .5px solid rgba(255, 255, 255, .32);
@@ -7086,7 +7661,11 @@ input { font: inherit; }
 .musicminiopen small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .musicminiopen b { font-size: 12px; }
 .musicminiopen small { color: var(--app-label2); font-size: 9px; }
-.musicmini > button:not(.musicminiopen) { display: grid; width: 32px; height: 38px; place-items: center; color: var(--app-label); border-radius: 12px; }
+.musicmini > button:not(.musicminiopen) { display: grid; width: 100%; height: 34px;
+  place-items: center; color: var(--app-label); border-radius: 11px; }
+/* The way out is the quietest control on the bar, not an equal of the transport. */
+.musiministop { opacity: .5; }
+.musiministop svg { width: 14px !important; height: 14px !important; }
 .musicmini > button:not(.musicminiopen):active { background: var(--app-fill); transform: scale(.92); }
 .musicmini > button svg { width: 19px; height: 19px; }
 #musicmininext svg { width: 17px; transform: scaleX(.72); }
@@ -7236,12 +7815,19 @@ input { font: inherit; }
 .musicqueue button > em { color: var(--music-red); }
 .musicqueue button > em svg { width: 15px; height: 15px; }
 
-.app[data-app="music"] .navbar:has(+ .appbody .musicplayer) { background: transparent; box-shadow: none; }
+/* Driven by a class on the app, not by `:has()`.
+
+   This stylesheet's own header says CEF safe means no `:has()`, and these two rules broke
+   that. They work in the headless Chrome the previews are shot in and may not work in the
+   browser the game ships - so the now-playing screen could have been rendering with its
+   nav bar still painted and its body still padded, in game, while every screenshot said
+   otherwise. A class the page sets when it opens the player cannot be version-dependent. */
+.app[data-app="music"].nowplaying .navbar { background: transparent; box-shadow: none; }
 /* The full-bleed player: no side padding, because its glow reaches the bezel. But it must
    still SCROLL when it does not fit - `overflow: hidden` here is what clipped the bottom row
    of buttons on a shorter screen, leaving Favourite, Output and Queue half under the home
    indicator and impossible to press. */
-.app[data-app="music"] .appbody:has(.musicplayer) { padding: 0; overflow-y: auto; overflow-x: hidden; }
+.app[data-app="music"].nowplaying .appbody { padding: 0; overflow-y: auto; overflow-x: hidden; }
 .musicplayer {
   --player-y: 0px;
   position: relative;
@@ -7271,9 +7857,13 @@ input { font: inherit; }
   filter: blur(32px) saturate(150%);
 }
 .musicplayerhead { display: grid; width: 100%; flex: 0 0 auto; place-items: center; padding-top: 3px; }
-.musicart.playerart { width: min(286px, 76vw); height: min(286px, 76vw); max-width: 286px; max-height: 286px; border-radius: 30px; box-shadow: inset 0 1px rgba(255,255,255,.25), 0 27px 55px rgba(31,10,28,.31); animation: music-art-breathe 7s ease-in-out infinite; }
+/* 232, not 286. The player clips its own overflow - it has to, or the glow behind the
+   artwork spills past the bezel - so anything that does not fit is not scrolled to, it is
+   simply gone. At 286 the last row (Favourite, Output, Queue) sat under the home
+   indicator with no way to reach it. */
+.musicart.playerart { width: min(232px, 62vw); height: min(232px, 62vw); max-width: 232px; max-height: 232px; border-radius: 30px; box-shadow: inset 0 1px rgba(255,255,255,.25), 0 27px 55px rgba(31,10,28,.31); animation: music-art-breathe 7s ease-in-out infinite; }
 @keyframes music-art-breathe { 50% { transform: scale(.985); box-shadow: inset 0 1px rgba(255,255,255,.25), 0 20px 42px rgba(31,10,28,.25); } }
-.musicplayercopy { width: 100%; margin-top: 23px; text-align: left; }
+.musicplayercopy { width: 100%; margin-top: 16px; text-align: left; }
 .musicplayercopy > span { color: var(--music-red); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .musicplayercopy h1 { margin: 4px 0 1px; overflow: hidden; font-size: 22px; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
 .musicplayercopy p { margin: 0; overflow: hidden; color: var(--app-label2); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
@@ -7350,50 +7940,57 @@ input { font: inherit; }
    reads as two different icons rather than as one scale. */
 .musicvolume { display: grid; width: 100%; grid-template-columns: 18px 1fr 18px; align-items: center; gap: 11px; color: var(--app-label2); }
 .musicvolume > svg:first-child { width: 14px; height: 14px; opacity: .55; }
-.musicvolume > svg:last-child { width: 18px; height: 18px; }
-/* A 4px track is a 4px target. The visible line stays thin, but the input itself is tall
-   enough to put a finger on - which is the difference between a slider that works and one
-   that looks like it should. */
-.musicvolume input { width: 100%; height: 22px; margin: 0; accent-color: var(--music-red);
-  background: transparent; cursor: pointer; }
-.musicvolume input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+.musicvolume > svg:last-child { width: 17px; height: 17px; opacity: .55; }
+/* The visible rail is 7px; the input itself is 24 tall, so there is something to put a finger
+   on. That gap is the difference between a slider that works and one that looks like it
+   should. */
+.musicvolume input { width: 100%; height: 24px; margin: 0; accent-color: var(--music-red);
+  background: transparent; cursor: pointer; outline: none; }
+/* Seven, not four. A four-pixel rail under a fourteen-pixel bead reads as a bead on a wire;
+   the slider iOS uses is a bar you can see the level of at a glance without the handle. */
+.musicvolume input::-webkit-slider-runnable-track { height: 7px; border-radius: 4px;
   background: linear-gradient(90deg, var(--music-red) var(--volume, 50%),
-    rgba(120, 120, 128, .2) var(--volume, 50%)); }
+    rgba(120, 120, 128, .22) var(--volume, 50%)); }
 .musicvolume input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
-  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
-  background: var(--music-red); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
-/* Favourite, output, queue. One surface split into three rather than three cards with three
-   shadows: the player already has an artwork, a glow and a play button competing for the eye,
-   and a fourth raised object under them was the screen looking busy. */
+  width: 15px; height: 15px; margin-top: -4px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .3), inset 0 0 0 1px rgba(0,0,0,.06); }
+/* Favourite, output, queue: three controls on the background, with no slab behind them and
+   no hairlines between. The screen already carries an artwork, a glow and a play button;
+   a grey box split into thirds under all of that was a settings form pasted onto a record
+   sleeve. The glyphs carry the weight and the labels stay small underneath. */
 .musicplayeractions {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(3, 1fr);
-  overflow: hidden;
-  margin-top: 20px;
-  border-radius: 16px;
-  background: var(--app-fill);
+  margin-top: 16px;
 }
 .musicplayeractions button {
   display: flex;
-  position: relative;
-  min-height: 58px;
+  min-height: 52px;
   align-items: center;
   flex-direction: column;
   justify-content: center;
-  gap: 5px;
-  color: var(--music-red);
+  gap: 6px;
+  color: var(--app-label2);
+  transition: transform .16s var(--snap), color .16s ease;
 }
-/* Hairlines between, drawn by the buttons themselves so the container needs no children. */
-.musicplayeractions button + button::before {
-  position: absolute;
-  top: 22%;
-  bottom: 22%;
-  left: 0;
-  width: .5px;
-  content: "";
-  background: var(--app-sep);
+.musicplayeractions button svg { width: 21px; height: 21px; }
+.musicplayeractions button span { font-size: 10px; letter-spacing: .01em; }
+.musicplayeractions button:active { transform: scale(.9); }
+/* Only the one that is ON takes the accent. Three red glyphs in a row said nothing about
+   which of them was actually true of this track. */
+.musicplayeractions button.on { color: var(--music-red); }
+
+/* The way out, and the quietest thing on the screen. */
+.musicplayerstop {
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--app-label2);
+  opacity: .75;
 }
+.musicplayerstop:active { opacity: 1; transform: scale(.97); }
 .musicplayeractions button:active { background: var(--app-fill); }
 .musicplayeractions button svg { width: 19px; height: 19px; }
 .musicplayeractions button span { color: var(--app-label2); font-size: 11px; font-weight: 500; }
@@ -11759,3 +12356,1067 @@ body.inframe.dark .uisearch {
   background-position: center;
   background-repeat: no-repeat;
 }
+
+/* ══ OnlyFruits ═══════════════════════════════════════════════ */
+/* A photography app. The picture is the content and everything else is chrome around it, so the
+   chrome is quiet: no borders, no boxes inside boxes, and one accent - the price. */
+
+.fanbody { display: block; }
+
+/* ── A card ──────────────────────────────────────────────────── */
+/* A card, like every other feed in this phone.
+   The first version let the photograph float and dropped the caption straight onto the app
+   background - so the one app whose content is pictures was also the only one whose text sat on
+   nothing. Bleeter and Snapmatic have used `.post` since the beginning: a rounded card with the
+   picture inset in it. Matching that is not a style preference, it is the difference between
+   another app on this phone and a page that wandered in. */
+.fanpost { border-radius: 18px; background: var(--app-card); padding: 12px 12px 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 10px 24px rgba(0, 0, 0, .05); }
+.fanpost:last-child { margin-bottom: 4px; }
+
+.fanhead { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0 2px 10px; }
+.fanhead.plain { gap: 8px; padding-bottom: 7px; }
+.fanwho { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; flex: 1;
+  gap: 1px; }
+/* The name carries the card. It is the one thing somebody reads before deciding whether to look
+   at the photograph, so it is set like a heading rather than like a list row. */
+.fanwho b { font-size: 15px; font-weight: 700; letter-spacing: -.015em; line-height: 1.15;
+  color: var(--app-label);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fanwho i { font-style: normal; font-size: 11.5px; font-weight: 500; letter-spacing: -.005em;
+  color: var(--app-label2);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The date is context, not content: it steps back rather than sitting level with the name. */
+.fanwhen { margin-left: auto; align-self: flex-start; padding-top: 2px;
+  font-size: 11px; font-weight: 500; letter-spacing: .005em;
+  color: var(--app-label2); opacity: .75; flex: 0 0 auto;
+  font-variant-numeric: tabular-nums; }
+.fansold { font-size: 11.5px; font-weight: 600; color: var(--app-label2); }
+
+/* The picture, and the price sitting on it. */
+.fanshot { position: relative; border-radius: 13px; overflow: hidden; }
+.fanshot .pimg { display: block; width: 100%; border-radius: 0; margin: 0; }
+.fanmark { position: absolute; right: 10px; bottom: 10px; }
+
+/* Locked: the same shape as a photograph, so the feed does not jump when one opens. */
+.fanlock { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; aspect-ratio: 4 / 5; border-radius: 13px;
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,.035) 0 14px, transparent 14px 28px),
+    var(--app-fill);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.fanlock svg { width: 30px; height: 30px; opacity: .45; }
+
+/* The caption reads as a sentence under a photograph, which means room to breathe and a line
+   length that does not run to the bezel. Three lines, then an ellipsis: a caption longer than
+   that is a post, and a feed of posts stops being a feed of pictures. */
+.fancap { margin: 11px 2px 0; font-size: 14.5px; line-height: 1.45; letter-spacing: -.006em;
+  color: var(--app-label);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fanbuy { margin-top: 11px; margin-bottom: 0; }
+
+/* ── The price, in three states ──────────────────────────────── */
+.fanpill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;
+  border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: -.01em;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.fanpill svg { width: 13px; height: 13px; }
+.fanpill.paid { background: var(--app-tint); color: #fff; }
+.fanpill.free { background: rgba(120,120,128,.28); color: var(--app-label); }
+.fanpill.subs { background: rgba(255,159,10,.22); color: #FF9F0A; }
+
+/* ── A face ──────────────────────────────────────────────────── */
+.fanface { display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 34px; height: 34px; border-radius: 50%; font-size: 14px; font-weight: 650; color: #fff;
+  background: linear-gradient(180deg, var(--ios-grey), #545458);
+  background-size: cover; background-position: 50% 50%; }
+.fanface.img { color: transparent; }
+.fanface.big { width: 46px; height: 46px; font-size: 18px; }
+.fanface.huge { width: 82px; height: 82px; font-size: 30px;
+  box-shadow: 0 0 0 4px var(--app-bg); }
+
+/* ── A creator's page ────────────────────────────────────────── */
+.fanprofile { display: flex; flex-direction: column; align-items: center; text-align: center;
+  margin: 0 -16px 14px; padding: 0 16px 4px; }
+.fancover { display: block; width: 100%; height: 132px; margin-bottom: -41px;
+  background: linear-gradient(160deg, rgba(120,120,128,.28), rgba(120,120,128,.10));
+  background-size: cover; background-position: 50% 50%; }
+.fanprofile h2 { margin: 9px 0 0; font-size: 21px; font-weight: 700; letter-spacing: -.022em; }
+.fanat { margin: 1px 0 0; font-size: 13px; color: var(--app-label2); }
+.fanbio { margin: 8px 10px 0; font-size: 14px; line-height: 1.4; color: var(--app-label); }
+
+.fanstats { display: flex; gap: 6px; width: 100%; margin-top: 14px; }
+.fanstat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 4px; border-radius: 14px; background: var(--app-card); }
+.fanstat b { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+.fanstat i { font-style: normal; font-size: 11px; color: var(--app-label2); }
+
+/* The number a creator opens this tab for. */
+.fanbalance { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  margin: 14px 0; padding: 18px 12px; border-radius: 20px;
+  background:
+    radial-gradient(120% 100% at 20% -20%, rgba(255,255,255,.14), transparent 60%),
+    var(--app-tint);
+  color: #fff; }
+.fanbalance span { font-size: 12px; font-weight: 600; opacity: .8; letter-spacing: .02em;
+  text-transform: uppercase; }
+.fanbalance b { font-size: 32px; font-weight: 700; letter-spacing: -.03em; }
+
+/* ── Discover ────────────────────────────────────────────────── */
+.fangrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fantile { display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 0 8px 12px; border-radius: 18px; overflow: hidden; background: var(--app-card); }
+.fantilecover { display: block; width: calc(100% + 16px); margin: 0 -8px 0; height: 62px;
+  background: linear-gradient(160deg, rgba(120,120,128,.30), rgba(120,120,128,.10));
+  background-size: cover; background-position: 50% 50%; }
+.fantile .fanface { margin-top: -23px; box-shadow: 0 0 0 3px var(--app-card); }
+.fantilename { margin-top: 7px; font-size: 14px; font-weight: 650; letter-spacing: -.01em;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fantilesub { font-size: 11px; color: var(--app-label2);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fantilemeta { display: flex; flex-direction: column; align-items: center; gap: 6px;
+  margin-top: 8px; font-size: 11px; color: var(--app-label2); }
+.fantile:active { transform: scale(.97); }
+
+/* ── The sign-up's picture fields ────────────────────────────── */
+
+/* The picture fields in the OnlyFruits sign-up.
+   A link box with the gallery beside it, and a preview under both. Nobody setting up a page has
+   a URL - they have the photograph they took two minutes ago, which is already on this phone. */
+.fanpickrow { display: flex; gap: 8px; margin: 6px 0 4px; }
+.fanprev { display: none; height: 132px; border-radius: 12px; margin-bottom: 6px;
+  background-size: cover; background-position: 50% 50%;
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.fanprev.on { display: block; }
+
+/* "Available" / "Already taken", said while the handle is being typed. */
+.fanhint { min-height: 16px; margin: -2px 4px 8px; font-size: 12px; color: var(--app-label2); }
+.fanhint.ok { color: var(--ios-green); }
+.fanhint.bad { color: var(--ios-red); }
+
+/* The gallery button beside a picture field.
+   Its own class rather than `.chip`: that one exists only as `.bankcard .chip`, so a bare
+   `.chip` inherited nothing and the icon inside it drew at the SVG's natural size - a 100px
+   picture glyph in the middle of a form. The class-checker did not catch it either, because a
+   class styled only in a descendant context still counts as "a rule exists"; that is a real
+   limit of reading selectors rather than resolving them. */
+.fanchip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border-radius: 999px; background: var(--app-fill); color: var(--app-tint);
+  font-size: 13px; font-weight: 600; }
+.fanchip svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.fanchip:active { transform: scale(.96); }
+
+/* ══ FruitStore: ratings and reviews ══════════════════════════ */
+/* The score used to be a hash of the app's id. These are real, so they are drawn as a store
+   draws them: one big number, five bars, and what people wrote underneath. */
+
+/* Five stars, each filled to a fraction. Two glyphs stacked - an empty one and a clipped full
+   one - so a 4.4 reads as four and a bit rather than being rounded up to a flattering five. */
+.stars { display: inline-flex; gap: 2px; vertical-align: middle; }
+.stars i { position: relative; width: 15px; height: 15px; display: block; }
+.stars i svg { position: absolute; inset: 0; width: 15px; height: 15px; }
+.stars i svg:first-child { color: var(--app-fill2, rgba(120,120,128,.32)); }
+.stars i svg:last-child { color: #FF9F0A; clip-path: inset(0 calc(100% - var(--fill)) 0 0); }
+.stars.small i, .stars.small i svg { width: 12px; height: 12px; }
+
+.streviews { margin-bottom: 4px; }
+
+.stscore { display: flex; align-items: center; gap: 18px; padding: 4px 4px 10px; }
+.stscorebig { display: flex; flex-direction: column; align-items: center; gap: 4px;
+  flex: 0 0 auto; }
+.stscorebig b { font-size: 44px; font-weight: 700; letter-spacing: -.04em; line-height: 1; }
+.stscorebig small { font-size: 11px; color: var(--app-label2); }
+
+.stbars { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.stbar { display: flex; align-items: center; gap: 7px; }
+/* A span, not an `i`. In this stylesheet `i` is a decorative element - the island's waveform,
+   the pager's dots, the switch's knob - and every one of those gives it a background and a
+   radius. Borrowing the tag for a number picked up whichever rule reached first, so the counts
+   drew as small blue pills. A tag is not a free hook. */
+.stbarn { font-size: 11px; color: var(--app-label2); width: 8px; flex: 0 0 auto;
+  text-align: right; font-variant-numeric: tabular-nums; }
+.stbar b { flex: 1; height: 5px; border-radius: 99px; overflow: hidden;
+  background: var(--app-fill); }
+.stbar u { display: block; height: 100%; border-radius: 99px; background: #FF9F0A;
+  text-decoration: none; transition: width .35s var(--ph-spring, ease); }
+
+.stscorefoot { padding: 0 4px 10px; font-size: 12px; color: var(--app-label2); }
+
+/* Nobody has said anything yet. An honest empty state rather than a borrowed score. */
+.stnorating { display: flex; align-items: center; gap: 10px; padding: 14px 4px 12px;
+  color: var(--app-label2); font-size: 13px; }
+.stnorating svg { width: 22px; height: 22px; color: #FF9F0A; opacity: .55; }
+
+.streviewlist { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.streview { padding: 12px 14px; border-radius: 16px; background: var(--app-card); }
+.streview.mine { box-shadow: inset 0 0 0 1px var(--app-tint); }
+.streview header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.streview header b { font-size: 13px; font-weight: 650; }
+.streview header time { margin-left: auto; font-size: 11px; color: var(--app-label2);
+  opacity: .8; }
+.streview p { margin: 0; font-size: 14px; line-height: 1.42; color: var(--app-label); }
+
+/* Choosing a score. Big targets: this is the one control everybody uses. */
+.stpicker { display: flex; justify-content: center; gap: 8px; padding: 6px 0 14px; }
+.stpick { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; background: var(--app-fill);
+  transition: transform var(--ph-fast, .15s) ease, background var(--ph-fast, .15s) ease; }
+.stpick svg { width: 24px; height: 24px; color: var(--app-label2); }
+.stpick.on { background: rgba(255,159,10,.18); }
+.stpick.on svg { color: #FF9F0A; }
+.stpick:active { transform: scale(.9); }
+
+/* A store preview an operator supplied: a clip of the app running, or a screenshot.
+   The mock-ups beside these are drawn from CSS and read as placeholders, because that is what
+   they are. A recording beats a drawing. */
+/* Narrower than a drawn scene, because it holds a whole app screen rather than a sketch of
+   one. 352x710 is what the recorder captures - the screen minus the status bar, which is
+   cropped off so the picture is an app rather than a photograph of a handset - and a tile at
+   any other ratio either cuts the sides off or pads them with black. 365 x 0.4958 = 181. */
+.stshot.stmedia { flex: 0 0 181px; padding: 0; background-size: cover;
+  background-position: 50% 0; overflow: hidden; }
+.stshot.stmedia video { width: 100%; height: 100%; object-fit: cover; display: block;
+  border-radius: inherit; }
+
+/* One recording, on its own: centred, and in a frame.
+   A single tile pinned to the left of an otherwise empty strip reads as two that failed to
+   load, so it is centred. And it is SMALLER than it was - 434px of a 764px screen is more
+   than half the page given to one picture, which is a poster rather than a preview. In a card
+   of its own it reads as a screenshot of the app instead of a panel of the store. */
+.stscreens.one { justify-content: center; margin: 1px 0 20px; padding: 14px;
+  border-radius: 20px; background: var(--app-card); overflow: visible;
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.stscreens.one .stshot.stmedia { flex: 0 0 159px; height: 320px; border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+
+/* ══ The store's front page ═════════════════════════════════════════════════
+   What this replaces: one flat gradient behind every featured app, rows whose second line was
+   a sentence cut off mid-word, and section headings with nothing to separate them. Everything
+   was the same weight in the same grey, so the page had no shape and nothing to look at. */
+
+/* The shop window, with the app's own recording behind it. */
+.stfeat.filmed { background: #0B0B0F; min-height: 232px; padding: 14px; }
+/* Framed a third of the way down, not at the top. The top of every recording is the app's own
+   large title, and the window already says the app's name in its own type underneath - two
+   copies of "Bank" at two sizes on one card is what that looked like. A third of the way down
+   is where the content starts. */
+.stfeat .stfeatfilm { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: 50% 34%; background-size: cover;
+  background-position: 50% 34%; z-index: 0; }
+/* Bottom-weighted, so the recording stays legible where it is and the text stays legible over
+   it. A single flat overlay would dim the whole clip to protect two lines of it. */
+.stfeat .stfeatscrim { position: absolute; inset: 0; z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .55) 0%, rgba(0, 0, 0, .08) 24%,
+                    rgba(0, 0, 0, .34) 50%, rgba(0, 0, 0, .78) 72%,
+                    rgba(0, 0, 0, .94) 100%); }
+.stfeat .stkick, .stfeat .strow, .stfeat .stsub { position: relative; z-index: 2; }
+.stfeat .stfeatmid { flex: 1; min-width: 0; }
+/* Full width, under the name and the button rather than squeezed between them. */
+.stfeat.filmed .stsub { margin-top: 8px; font-size: 13px; line-height: 1.35;
+  color: rgba(255, 255, 255, .9); }
+/* The score on the window sits on a picture, so it is white rather than the grey it wears in
+   a list - `--app-label2` against a photograph is not a colour, it is a guess. */
+.stfeat .strate span { color: rgba(255, 255, 255, .88); }
+.stfeat .strate::before { background: rgba(255, 255, 255, .7); }
+.stfeat .stget { flex: 0 0 auto; background: rgba(255, 255, 255, .96); color: #0B0B0F; }
+.stfeat .stget.have { background: rgba(255, 255, 255, .18); color: #fff;
+  backdrop-filter: blur(12px); }
+
+/* The shelf. Its gesture comes from the sideways-strip handler, which finds any overflowing
+   horizontal scroller - there is nothing to wire here. */
+.stshelfhead { font-size: 13px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--app-label2); margin: 0 0 10px; }
+.stshelf { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 -16px 24px; padding: 0 16px 4px; scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain; }
+.stshelf::-webkit-scrollbar { display: none; }
+.stcard { flex: 0 0 152px; scroll-snap-align: start; cursor: pointer;
+  border-radius: 16px; overflow: hidden; background: var(--app-card);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18); transition: transform .16s var(--spring); }
+.stcard:active { transform: scale(.97); }
+/* No `color-mix`. It landed in Chromium 111 and the CEF this page runs in is older on plenty
+   of servers - an unsupported function makes the whole declaration invalid, so the fallback
+   would have been no background at all rather than a duller one. A tinted layer over the card
+   colour does the same job with nothing to support. */
+/* Framed below the app's own header, for the same reason the window is: the top of every
+   recording is a back link and a large title, and the card already prints the app's name
+   underneath in its own type. Two names and a "Home" nobody can press is not card art. */
+.stcard .stcardart { position: relative; height: 176px; background-size: cover;
+  background-position: 50% 32%; background-color: var(--app-card);
+  display: flex; align-items: center; justify-content: center; }
+.stcard .stcardart::after { content: ''; position: absolute; inset: 0;
+  background: var(--app-tint, #5E5CE6); opacity: .16; pointer-events: none; }
+.stcard .stcardart > * { position: relative; z-index: 1; }
+.stcard .stcardart .ic.big { width: 62px; height: 62px; border-radius: 15px; }
+.stcard .stcardfoot { display: flex; align-items: center; gap: 9px; padding: 9px 10px 11px; }
+.stcard .stcardfoot .ic { width: 32px; height: 32px; border-radius: 8px; flex: 0 0 auto; }
+.stcard .stcardname { min-width: 0; display: flex; flex-direction: column; }
+.stcard .stcardname b { font-size: 13px; font-weight: 600; color: var(--app-label);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stcard .stcardname small { font-size: 11px; color: var(--app-label2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* A section heading, with how many are under it. The count is what makes it read as a shelf
+   label rather than a stray word above a card. */
+.stsection { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin: 4px 2px 8px; }
+.stsection span { font-size: 21px; font-weight: 700; letter-spacing: -.02em;
+  color: var(--app-label); }
+.stsection b { font-size: 13px; font-weight: 600; color: var(--app-label2);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.stgroup { padding: 0 14px; margin-bottom: 22px; }
+
+/* The rating on a row: stars, then the score, on the same line as the category. */
+.strowitem .stc { display: flex; align-items: center; gap: 7px; }
+.strate { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.strate::before { content: ''; width: 3px; height: 3px; border-radius: 99px;
+  background: var(--app-label2); opacity: .7; margin-right: 3px; }
+.strate span { font-size: 12px; color: var(--app-label2);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.stars.mini i, .stars.mini i svg { width: 10px; height: 10px; }
+
+/* ── The hover on a store row ───────────────────────────────────────────────
+   What it looked like: the highlight was a 14px-radius box inset fourteen pixels from each
+   side of the card and flush against its top edge, so it never lined up with anything - and
+   the separator between rows was drawn straight across the bottom of it.
+
+   Rows go edge to edge now and carry their own padding. The card already clips with
+   `overflow: hidden`, so the first and last rows get its corners for free and there is no
+   second radius to disagree with the first. */
+.stgroup { padding: 0; }
+.strowitem { padding: 12px 14px; border-radius: 0; }
+/* The separator starts after the tile: 14 of padding, 56 of icon, 12 of gap. It was 68, which
+   was correct when the row had no padding of its own. */
+.strowitem + .strowitem::before { left: 82px; }
+/* No line across a highlight. Both the one along the top of the hovered row and the one along
+   its bottom - which belongs to the row underneath - go while the pointer is on it. */
+.strowitem:hover::before,
+.strowitem:hover + .strowitem::before { opacity: 0; }
+.strowitem + .strowitem::before { transition: opacity var(--ph-fast) ease; }
+
+/* And the shelf cards, which had a press state but nothing at all under the pointer. */
+.stcard { transition: transform .16s var(--spring), box-shadow .16s ease; }
+.stcard:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, .30); }
+.stcard:hover .stcardart::after { opacity: .24; }
+.stcard .stcardart::after { transition: opacity .16s ease; }
+
+/* ── A card clips what is in it ─────────────────────────────────────────────
+   The photograph is the one thing in an OnlyFruits card whose size comes from outside the
+   phone: a picture taken in game is two thousand pixels wide, and it only fits because a rule
+   says so. `.fanshot` already clips, but it can only clip what is inside it - so the card
+   clips too, and nothing that goes wrong one level down can reach the screen edge.
+
+   `width` stays where it was. This is a ceiling, not a layout. */
+.fanpost { overflow: hidden; }
+.fanshot { width: 100%; max-width: 100%; }
+.fanshot .pimg { max-width: 100%; }
+
+/* A follower count that opens the list it counts. It sits in a row with the posts count, which
+   is a plain span, so it has to look identical and only behave differently. */
+.soccounts .soccount { display: flex; flex-direction: column; align-items: center;
+  gap: 1px; font: inherit; color: inherit; background: none; border: 0; padding: 0;
+  cursor: pointer; }
+.soccounts .soccount:active { opacity: .55; }
+/* The like count is the tap target for who liked it, so it needs to be one. */
+.post .plike span { cursor: pointer; padding: 0 2px; }
+
+/* ══ One photograph, full screen ════════════════════════════════════════════
+   Every app that shows a picture opens this: Messages, Bleeter, Snapmatic, OnlyFruits, Mail,
+   the Gallery. Before it, a photo in a message or a feed was whatever size the card gave it
+   and there was no way to look closer at any of them.
+
+   `contain`, never `cover`. The whole point of opening a picture is seeing all of it, and a
+   viewer that crops is the card again with fewer things around it. */
+.photoview {
+  position: absolute; inset: 0; z-index: 320;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .93);
+  backdrop-filter: blur(22px) saturate(1.1);
+  opacity: 0; transition: opacity .2s ease;
+}
+.photoview.on { display: flex; opacity: 1; }
+.photoview .pvframe {
+  position: relative;
+  width: calc(100% - 26px); height: calc(100% - 88px);
+  border-radius: 30px; overflow: hidden;
+  background: #0a0a0c;
+  /* The hairline is the "frame": it is what stops a dark photograph from bleeding into a dark
+     backdrop and leaving the picture with no edge at all. */
+  box-shadow:
+    inset 0 0 0 .5px rgba(255, 255, 255, .22),
+    0 24px 60px rgba(0, 0, 0, .55);
+  animation: pv-in .26s var(--spring);
+}
+@keyframes pv-in { from { transform: scale(.94); } }
+.photoview .pvimg {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+}
+.photoview .pvcap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 34px 16px 16px;
+  font-size: 13.5px; line-height: 1.4; color: #fff;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .82));
+}
+.photoview .pvclose {
+  position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 99px; background: rgba(28, 28, 30, .72); color: #fff;
+  backdrop-filter: blur(14px);
+}
+.photoview .pvclose svg { width: 17px; height: 17px; }
+/* Anything that opens the viewer says so under the pointer. */
+[data-full] { cursor: zoom-in; }
+
+/* The frame, turned back against the handset's own quarter turn.
+   `--pvw` and `--pvh` are the screen's real layout size, set when the viewer opens: the frame
+   is laid out with them SWAPPED, so after its rotation it still sits inside the screen. */
+.photoview.rot .pvframe {
+  position: absolute; top: 50%; left: 50%;
+  width: calc(var(--pvh, 764px) - 36px);
+  height: calc(var(--pvw, 352px) - 36px);
+  transform: translate(-50%, -50%) rotate(90deg);
+  animation: none;
+}
+.photoview.rot .pvcap { padding: 26px 18px 14px; }
+
+/* ── A card clips, so a photograph cannot escape it ─────────────────────────
+   The picture is the one thing in these cards whose size comes from outside the phone: a shot
+   taken in game is two thousand pixels wide and only fits because a rule says so. If that rule
+   is ever missing - a stale stylesheet, a new card written without it - the image lays out at
+   its natural size and runs across the whole screen with square corners, which is exactly what
+   it looked like.
+
+   Clipping on the container fixes that for good WITHOUT fighting the layout: a Snapmatic card
+   runs its photograph past its own padding on purpose, and that still works because the
+   overshoot lands inside the card's border box. */
+.post { overflow: hidden; }
+
+/* Edge to edge, and exactly. The overshoot was 30px against 28px of padding, so the picture
+   hung one pixel past each side of the card - the ragged edge under the rounded corners. */
+.post.snapstyle .pimg {
+  width: calc(100% + 28px);
+  margin: 10px -14px 0;
+}
+
+/* No magnifier. A photograph you can open is not a control, and turning the pointer into a
+   loupe over every picture in the phone reads as a tool rather than a feed. */
+[data-full] { cursor: default; }
+
+/* The handset's own buttons, while a photograph is open.
+   They sit on the bezel, OUTSIDE the screen, so the viewer covering the screen never covered
+   them: pressing one locked the phone or sent it home with the picture still up, and the
+   orientation was never put back. They are inert until the photograph is dismissed, which is
+   one tap anywhere. */
+.device.photoing .btn-side { pointer-events: none; }
+
+/* ══ Fruitee ════════════════════════════════════════════════════════════════
+   A page you can give money to. The bar is the app: it is what somebody looks at before
+   deciding, so it is drawn large and says both its numbers rather than only a proportion
+   nobody can read a value off. */
+
+.fundwrap { display: block; }
+
+/* ── The bar ──────────────────────────────────────────────────────────────── */
+.fundgoal { margin: 10px 0 8px; }
+.fundbar { height: 8px; border-radius: 99px; overflow: hidden;
+  background: var(--app-fill); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.fundbar i { display: block; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #34C759, #30D158);
+  transition: width .5s var(--spring); }
+.fundnums { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; }
+.fundnums b { font-size: 17px; font-weight: 700; letter-spacing: -.02em;
+  color: var(--app-label); font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundnums span { font-size: 12.5px; color: var(--app-label2); }
+.fundnums em { margin-left: auto; font-style: normal; font-size: 12.5px; font-weight: 600;
+  color: #30D158; font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+/* A page with no target still says what it has taken - the number is the whole story then. */
+.fundraised { display: flex; align-items: baseline; gap: 7px; margin: 10px 0 8px; }
+.fundraised b { font-size: 20px; font-weight: 700; letter-spacing: -.025em;
+  color: var(--app-label); font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundraised span { font-size: 12.5px; color: var(--app-label2); }
+
+/* ── A page in the list ───────────────────────────────────────────────────── */
+.fundcard { display: block; width: 100%; text-align: left; margin-bottom: 14px;
+  border-radius: 18px; overflow: hidden; background: var(--app-card);
+  box-shadow: inset 0 0 0 .5px var(--app-sep), 0 8px 22px rgba(0, 0, 0, .10);
+  transition: transform .16s var(--spring); }
+.fundcard:active { transform: scale(.985); }
+.fundcover { position: relative; display: block; height: 128px;
+  background-size: cover; background-position: 50% 40%;
+  background-color: var(--app-fill); }
+.fundchip { position: absolute; left: 10px; bottom: 10px;
+  padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 600;
+  letter-spacing: .02em; color: #fff; background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(10px); }
+.fundchip.solo { position: static; margin-left: auto; color: var(--app-label);
+  background: var(--app-fill); backdrop-filter: none; flex: 0 0 auto; }
+.fundbody { display: block; padding: 12px 14px 14px; }
+.fundtitle { display: block; font-size: 16px; font-weight: 700; letter-spacing: -.015em;
+  color: var(--app-label); line-height: 1.25; }
+.fundowner { display: block; font-size: 12.5px; color: var(--app-label2); margin-top: 2px; }
+.fundgifts { display: block; font-size: 12px; color: var(--app-label3); margin-top: 4px; }
+
+/* ── One page, opened ─────────────────────────────────────────────────────── */
+.fundhero { height: 150px; margin: 2px -16px 12px; background-size: cover;
+  background-position: 50% 40%; background-color: var(--app-fill); }
+.fundhead { display: flex; align-items: center; gap: 11px; margin-bottom: 4px; }
+.fundface { width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto;
+  background-size: cover; background-position: center; background-color: var(--app-fill);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .18); }
+.fundwho { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fundwho b { font-size: 16px; font-weight: 700; letter-spacing: -.015em;
+  color: var(--app-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fundwho i { font-style: normal; font-size: 12px; color: var(--app-label2); }
+.fundblurb { font-size: 14.5px; line-height: 1.45; color: var(--app-label);
+  margin: 10px 0 14px; word-break: break-word; }
+
+/* ── Giving ───────────────────────────────────────────────────────────────── */
+.fundtiers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.fundtier { padding: 11px 10px; border-radius: 14px; text-align: center;
+  background: var(--app-fill); color: var(--app-label);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.fundtier b { display: block; font-size: 15px; font-weight: 700;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundtier small { display: block; font-size: 11px; margin-top: 2px;
+  color: var(--app-label2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fundtier.on { background: var(--app-tint); color: #fff;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, .18); }
+.fundtier.on small { color: rgba(255, 255, 255, .85); }
+
+/* ── A gift ───────────────────────────────────────────────────────────────── */
+.fundlist { display: block; margin-bottom: 6px; }
+.fundgift { padding: 11px 13px; border-radius: 15px; margin-bottom: 8px;
+  background: var(--app-card); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.fundgift header { display: flex; align-items: baseline; gap: 8px; }
+.fundgift header b { font-size: 14px; font-weight: 600; color: var(--app-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fundgift header span { font-size: 14px; font-weight: 700; color: #30D158;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundgift header time { margin-left: auto; font-size: 11px; color: var(--app-label3);
+  flex: 0 0 auto; }
+.fundgift p { font-size: 13.5px; line-height: 1.4; color: var(--app-label2);
+  margin-top: 5px; word-break: break-word; }
+
+/* ── The empty page, and the editor ───────────────────────────────────────── */
+.fundstart { display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 8px; padding: 30px 22px 22px; }
+.fundstart svg { width: 40px; height: 40px; color: #FF375F; opacity: .9; }
+.fundstart b { font-size: 18px; font-weight: 700; letter-spacing: -.02em;
+  color: var(--app-label); }
+.fundstart span { font-size: 13.5px; line-height: 1.45; color: var(--app-label2); }
+.fundtieredit { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fundtieredit .field { margin: 0; }
+.fundtieredit .field[data-k="amount"] { flex: 0 0 92px;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundtieredit .field[data-k="label"] { flex: 1; min-width: 0; }
+.fundtierdel { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--app-fill); color: var(--ios-red); }
+.fundtierdel svg { width: 16px; height: 16px; }
+/* The address check, when it says no. */
+.groupfoot.bad { color: var(--ios-red); }
+
+/* What is taken off a gift, itemised. Two cuts with a name each rather than one total nobody
+   can account for, and the money beside the rate: five percent is an idea, "$5 of your $100"
+   is a decision. */
+.fundcuts { margin: 4px 0 12px; padding: 10px 13px; border-radius: 14px;
+  background: var(--app-fill); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.fundcut { display: flex; align-items: baseline; gap: 8px; padding: 3px 0;
+  font-size: 13px; color: var(--app-label2); }
+.fundcut span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.fundcut i { font-style: normal; font-size: 12px; color: var(--app-label3);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundcut b { font-weight: 600; color: var(--app-label2);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.fundcut.total { margin-top: 6px; padding-top: 8px; font-size: 14px;
+  color: var(--app-label); border-top: .5px solid var(--app-sep); }
+.fundcut.total b { font-size: 15px; font-weight: 700; color: #30D158; }
+
+/* ══ FlappyFruit ════════════════════════════════════════════════════════════
+   The canvas is the app. Everything here is the frame around it: the score over the top, the
+   card that covers it between runs, and the board. */
+
+.astage { position: relative; margin: 2px -16px 0; overflow: hidden;
+  background: #67B4F2; }
+.acanvas { display: block; width: 100%; height: 62vh; max-height: 470px; touch-action: none; }
+/* The score, over the game. Heavy and outlined rather than in a box: a panel would take space
+   the game needs, and a thin number over a bright sky is unreadable. */
+.ahud { position: absolute; top: 14px; left: 0; right: 0; text-align: center;
+  font-size: 44px; font-weight: 800; letter-spacing: -.03em; color: #fff;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .35), 0 0 18px rgba(0, 0, 0, .25);
+  pointer-events: none; }
+/* The card between runs. It covers the canvas, so it also has to take the tap that starts the
+   next one - which is why it is a layer rather than something beside the game. */
+.aover { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; background: rgba(8, 20, 38, .42);
+  backdrop-filter: blur(3px); opacity: 0; pointer-events: none;
+  transition: opacity .18s ease; }
+.aover.on { opacity: 1; pointer-events: auto; }
+.aovercard { text-align: center; padding: 20px 26px; border-radius: 20px;
+  background: rgba(20, 22, 30, .82); color: #fff;
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .18), 0 16px 40px rgba(0, 0, 0, .38);
+  animation: pv-in .24s var(--spring); }
+.aovercard b { display: block; font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+.aovercard span { display: block; font-size: 13px; margin-top: 5px;
+  color: rgba(255, 255, 255, .82); }
+.abest { margin-top: 12px; padding-top: 10px; font-size: 12px;
+  color: rgba(255, 255, 255, .7); border-top: .5px solid rgba(255, 255, 255, .18); }
+.abest b { display: inline; font-size: 16px; font-family: var(--ios-num);
+  font-variant-numeric: tabular-nums; }
+
+.afoot { display: flex; justify-content: center; padding: 12px 0 4px; }
+.achip { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px;
+  border-radius: 99px; font-size: 13.5px; font-weight: 600;
+  background: var(--app-fill); color: var(--app-label);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.achip svg { width: 15px; height: 15px; opacity: .7; }
+
+/* ── The board ────────────────────────────────────────────────────────────── */
+.aboard { margin-top: 6px; }
+.alist { border-radius: 16px; overflow: hidden; background: var(--app-card);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.arow { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+.arow + .arow { box-shadow: inset 0 .5px 0 var(--app-sep); }
+/* Your own row, so it can be found without reading every name. */
+.arow.mine { background: var(--app-fill); }
+.arank { flex: 0 0 26px; text-align: center; font-size: 13px; font-weight: 700;
+  color: var(--app-label2); font-family: var(--ios-num);
+  font-variant-numeric: tabular-nums; }
+/* Gold, silver and bronze. The only place in this phone where a rank is a colour, and it earns
+   it: the top three are what anybody scrolls to first. */
+.arank.top1 { color: #FFB300; }
+.arank.top2 { color: #B8C0CC; }
+.arank.top3 { color: #CD8032; }
+.aname { flex: 1; min-width: 0; font-size: 15px; font-weight: 500; color: var(--app-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ascore { flex: 0 0 auto; font-size: 15px; font-weight: 700; color: var(--app-label);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+
+/* The medal. Four colours over one shape, set from the score - a disc per tier would be four
+   files, and a file can go missing from a manifest. */
+.amedalbox { display: none; margin-top: 12px; }
+.amedalbox.on { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.amedal { width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 34% 28%, #fff 0%, var(--face) 42%, var(--ring) 100%);
+  box-shadow: inset 0 0 0 2.5px var(--ring), 0 4px 12px rgba(0, 0, 0, .35);
+  animation: amedal-in .34s var(--spring); }
+.amedal svg { width: 20px; height: 20px; color: rgba(0, 0, 0, .38); }
+@keyframes amedal-in { from { transform: scale(.4) rotate(-25deg); opacity: 0; } }
+.amedalname { font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: rgba(255, 255, 255, .75); }
+/* The score bumps on a cleared gate. The transform is written from the loop, so all this does
+   is give it somewhere soft to land. */
+.ahud { transition: transform .09s ease-out; transform-origin: 50% 50%; }
+
+/* ══ FruitBrawl ═════════════════════════════════════════════════════════════
+   Two fighters, four choices a round. The screen has one job: make what the other person can
+   afford to throw readable at a glance, because that is the whole game. */
+
+.bwstage { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 12px; }
+.bwfighter { padding: 11px 13px; border-radius: 16px; background: var(--app-card);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+/* Yours reads as yours without a label: tinted edge, and it sits at the bottom where a
+   fighting game has always put the player. */
+.bwfighter.mine { box-shadow: inset 0 0 0 1px var(--app-tint); }
+.bwname { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+.bwname b { font-size: 15px; font-weight: 700; color: var(--app-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "ready" beside their name: they have chosen, and you are not told what. That single word is
+   the tell a real fight has. */
+.bwname em { margin-left: auto; font-style: normal; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: #FF9F0A; flex: 0 0 auto; }
+
+.bwhp { position: relative; height: 16px; border-radius: 99px; overflow: hidden;
+  background: var(--app-fill); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.bwhp i { display: block; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #FF453A, #FF9F0A);
+  transition: width .45s var(--spring); }
+.bwfighter.mine .bwhp i { background: linear-gradient(90deg, #30D158, #6BE38A); }
+/* The number ON the bar. A bar alone cannot say whether somebody is on 3 or on 12, which is
+   exactly when it matters most. */
+.bwhp span { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 700; color: #fff;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+
+/* Stamina as pips rather than a bar: it is a small whole number and you count it, you do not
+   estimate it - reading it is how you know what they cannot throw. */
+.bwstam { display: flex; gap: 4px; margin-top: 7px; }
+.bwstam i { flex: 1; height: 5px; border-radius: 99px; background: var(--app-fill);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); transition: background .25s ease; }
+.bwstam i.on { background: #0A84FF; box-shadow: none; }
+
+.bwmid { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+.bwround { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--app-label2); }
+.bwclock { font-size: 26px; font-weight: 800; letter-spacing: -.02em; color: var(--app-label);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.bwclock.urgent { color: var(--ios-red); animation: bw-pulse .5s ease-in-out infinite; }
+@keyframes bw-pulse { 50% { opacity: .45; } }
+
+/* What just happened. */
+.bwlast { padding: 11px 13px; border-radius: 15px; margin-bottom: 12px; text-align: center;
+  background: var(--app-fill); box-shadow: inset 0 0 0 .5px var(--app-sep);
+  animation: bw-last .3s var(--spring); }
+@keyframes bw-last { from { transform: translateY(-6px); opacity: 0; } }
+.bwthrow { display: flex; align-items: baseline; justify-content: center; gap: 10px;
+  font-size: 15px; font-weight: 700; color: var(--app-label); }
+.bwthrow em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--app-label3);
+  text-transform: uppercase; letter-spacing: .08em; }
+.bwsay { font-size: 12.5px; color: var(--app-label2); margin-top: 3px; }
+.bwdmg { display: flex; justify-content: center; gap: 12px; margin-top: 6px;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.bwdmg b { font-size: 17px; font-weight: 800; }
+.bwdmg .hit { color: #30D158; }
+.bwdmg .hurt { color: #FF453A; }
+.bwdmg span { font-size: 12px; color: var(--app-label3); }
+
+/* The four buttons. */
+.bwacts { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 10px; }
+.bwact { position: relative; padding: 14px 10px 12px; border-radius: 16px; text-align: center;
+  background: var(--app-card); color: var(--app-label);
+  box-shadow: inset 0 0 0 .5px var(--app-sep);
+  transition: transform .14s var(--spring), background .16s ease, opacity .16s ease; }
+.bwact svg { width: 22px; height: 22px; opacity: .85; }
+.bwact b { display: block; font-size: 14px; font-weight: 700; margin-top: 4px; }
+/* The cost, in the corner. It is the number you are really choosing between. */
+.bwact i { position: absolute; top: 8px; right: 10px; font-style: normal; font-size: 11px;
+  font-weight: 700; color: var(--app-label3);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.bwact:active { transform: scale(.96); }
+.bwact.on { background: var(--app-tint); color: #fff; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+.bwact.on i, .bwact.on svg { color: rgba(255, 255, 255, .85); opacity: 1; }
+/* Unaffordable: dimmed rather than hidden, because knowing what you CANNOT throw is part of
+   reading your own position. */
+.bwact.broke { opacity: .34; }
+.bwact[disabled] { pointer-events: none; }
+.bwact[disabled]:not(.on):not(.broke) { opacity: .55; }
+
+.bwover { text-align: center; padding: 18px 14px 14px; }
+.bwover b { display: block; font-size: 22px; font-weight: 800; letter-spacing: -.02em;
+  color: var(--app-label); }
+.bwover span { display: block; font-size: 13px; color: var(--app-label2); margin-top: 4px; }
+
+/* The lobby. */
+.bwinvite { padding: 14px; border-radius: 16px; margin-bottom: 12px;
+  background: var(--app-card); box-shadow: inset 0 0 0 1px #FF9F0A; }
+.bwinvite b { display: block; font-size: 15px; font-weight: 700; color: var(--app-label);
+  text-align: center; }
+.bwinvbtns { display: flex; gap: 8px; margin-top: 10px; }
+.bwinvbtns .bigbtn { flex: 1; margin: 0; }
+.bwqueued { display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 20px 0 14px; font-size: 14px; color: var(--app-label2); }
+.bwrules { display: block; margin-bottom: 6px; }
+.bwrule { display: grid; grid-template-columns: 26px 1fr; grid-template-rows: auto auto;
+  gap: 1px 10px; padding: 10px 13px; border-radius: 14px; margin-bottom: 7px;
+  background: var(--app-card); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.bwrule svg { grid-row: 1 / 3; align-self: center; width: 20px; height: 20px;
+  color: var(--app-label2); }
+.bwrule b { font-size: 14px; font-weight: 700; color: var(--app-label); }
+.bwrule span { font-size: 12.5px; line-height: 1.35; color: var(--app-label2); }
+
+/* What has been thrown, both sides, oldest first. Two rows of small glyphs: theirs on top
+   because that is where they are on screen, yours underneath, so a column is one exchange and
+   a pattern is something you can see rather than remember. */
+.bwhist { display: flex; gap: 5px; justify-content: center; margin-bottom: 10px; }
+.bwhcol { display: flex; flex-direction: column; gap: 4px; }
+.bwh { width: 26px; height: 26px; border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; background: var(--app-fill);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.bwh svg { width: 14px; height: 14px; }
+.bwh.them svg { color: #FF9F0A; }
+.bwh.mine svg { color: var(--app-tint); }
+
+/* Three sparring partners. */
+.bwlevels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 6px; }
+.bwlevel { padding: 12px 6px; border-radius: 14px; text-align: center;
+  background: var(--app-card); color: var(--app-label);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); transition: transform .14s var(--spring); }
+.bwlevel:active { transform: scale(.96); }
+.bwlevel b { display: block; font-size: 14px; font-weight: 700; }
+.bwlevel small { display: block; font-size: 10.5px; margin-top: 2px; color: var(--app-label2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── The tutorial ──────────────────────────────────────────────────────────
+   What was here before listed four moves and described each one, which explains nothing: the
+   game is not four moves, it is what answers what. This leads with the loop and only then
+   names them. */
+.bwt-lead { font-size: 14px; line-height: 1.5; color: var(--app-label2);
+  padding: 2px 2px 10px; }
+.bwt-steps { display: block; margin-bottom: 4px; }
+.bwt-step { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start;
+  padding: 9px 12px; border-radius: 13px; margin-bottom: 7px; font-size: 13.5px;
+  line-height: 1.4; color: var(--app-label);
+  background: var(--app-card); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.bwt-step span { width: 22px; height: 22px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
+  color: #fff; background: var(--app-tint); }
+.bwt-table { display: block; margin-bottom: 2px; }
+.bwt-row { display: grid; grid-template-columns: 26px auto 1fr auto; gap: 9px;
+  align-items: center; padding: 10px 12px; border-radius: 13px; margin-bottom: 7px;
+  background: var(--app-card); box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.bwt-ico { display: flex; align-items: center; justify-content: center; }
+.bwt-ico svg { width: 19px; height: 19px; color: var(--app-tint); }
+.bwt-row b { font-size: 14px; font-weight: 700; color: var(--app-label); }
+.bwt-beats { font-size: 12.5px; color: var(--app-label2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bwt-row i { font-style: normal; font-size: 12px; font-weight: 700; color: var(--app-label3);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+
+/* ── Money on the fight ────────────────────────────────────────────────────
+   Four choices rather than a field: a stake is a decision between a handful of amounts, and a
+   number box only invites somebody to type 99999 and be refused. */
+.bwstakes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 4px; }
+.bwstakebtn { padding: 10px 4px; border-radius: 12px; font-size: 13px; font-weight: 700;
+  background: var(--app-fill); color: var(--app-label);
+  box-shadow: inset 0 0 0 .5px var(--app-sep);
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.bwstakebtn.on { background: #30D158; color: #fff; box-shadow: none; }
+.bwstakesay { text-align: center; margin-top: 5px; font-size: 13px; font-weight: 700;
+  color: #30D158; }
+/* The pot, beside the round number: what is actually on the table this fight. */
+.bwpot { margin-left: 8px; padding: 2px 8px; border-radius: 99px; font-size: 11px;
+  font-weight: 800; color: #fff; background: #30D158; letter-spacing: 0;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.bwwon { margin-top: 8px; font-size: 15px; font-weight: 800; color: #30D158;
+  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+
+/* ══ The contact card ═══════════════════════════════════════════════════════
+   What a tap opens. It used to open a form - seven fields and a delete button - so looking
+   somebody up put you one slip away from renaming them. */
+
+.ccard { display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 6px 0 16px; }
+.cface { width: 96px; height: 96px; border-radius: 50%; background-size: cover;
+  background-position: center; background-color: var(--app-fill);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .22), inset 0 0 0 .5px var(--app-sep); }
+/* No photograph: the initial, drawn from the name. A card is never a broken picture. */
+.cface.letter { display: flex; align-items: center; justify-content: center;
+  font-size: 40px; font-weight: 600; color: #fff;
+  background: linear-gradient(180deg, #A9A9AE, #6E6E73); }
+.cname { margin-top: 12px; font-size: 24px; font-weight: 700; letter-spacing: -.025em;
+  color: var(--app-label); line-height: 1.15; }
+.csub { margin-top: 3px; font-size: 13px; color: var(--app-label2); }
+
+/* The four round buttons, in a fixed row. Greyed rather than hidden when there is nothing
+   behind them: a card whose buttons move about depending on who it is takes longer to use than
+   one that does not. */
+.cacts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+.cact { display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: none; padding: 0; }
+.cact span { width: 100%; height: 46px; border-radius: 13px; display: flex;
+  align-items: center; justify-content: center;
+  background: var(--app-fill); color: var(--app-tint);
+  box-shadow: inset 0 0 0 .5px var(--app-sep);
+  transition: transform .14s var(--spring), background .16s ease; }
+.cact svg { width: 20px; height: 20px; }
+.cact i { font-style: normal; font-size: 11px; font-weight: 500; color: var(--app-label2); }
+.cact:active span { transform: scale(.94); background: var(--app-fill2, rgba(120,120,128,.22)); }
+.cact.off { opacity: .38; }
+.cact.off span { color: var(--app-label3); }
+
+/* A contact the server owns. */
+.cprotected { display: flex; align-items: center; gap: 9px; padding: 10px 13px;
+  border-radius: 13px; margin-bottom: 12px; font-size: 12.5px; line-height: 1.35;
+  color: var(--app-label2); background: var(--app-fill);
+  box-shadow: inset 0 0 0 .5px var(--app-sep); }
+.cprotected svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: .7; }
+
+/* ══ Home widgets, the rest of the family ══════════════════════
+   Twelve tiles that have to read as one set. The rule that makes that work: every one of
+   them is a heading, a big thing, and a quiet line - `.wtop`, `.wbig`/`.wttl`, `.wsub` -
+   and the only thing that changes between them is the surface underneath.
+
+   CEF safe: no color-mix(), no :has(), no nesting. */
+.widget .wttl { font-size: 15px; font-weight: 650; letter-spacing: -.01em; line-height: 1.15;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget .wttl.big { font-size: 17px; white-space: normal;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.widget .wsub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget .wdim { opacity: .62; }
+.widget .wbig.sm { font-size: 24px; }
+/* A balance can be six figures on a tile a quarter of the screen wide. */
+.widget .wbig.wfit { font-size: 22px; letter-spacing: -.03em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget .wmask { letter-spacing: .08em; opacity: .8; }
+
+/* The empty face. Every widget has one, because a blank rectangle on a home screen reads
+   as a bug rather than as "nothing to report". */
+.widget .wnone { font-size: 13px; font-weight: 500; opacity: .72; line-height: 1.25;
+  margin-top: auto; }
+
+.widget .wrow { display: flex; gap: 10px; align-items: center; height: 100%; }
+.widget .wcol { min-width: 0; flex: 1; }
+.widget .wrow2 { display: flex; align-items: baseline; gap: 8px; }
+.widget .wart { width: 46px; height: 46px; border-radius: 10px; flex: none; }
+
+.widget .wpct { font-size: 13px; font-weight: 700; }
+.widget .wpct.up { color: #34C759; }
+.widget .wpct.down { color: #FF6961; }
+.widget .wlate { color: #FF9F0A; font-weight: 600; }
+.widget .wflag { color: #FF9F0A; }
+
+.widget .wchip { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; padding: 3px 8px; border-radius: 99px;
+  background: rgba(255,255,255,.22); }
+
+.widget .wbar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.25);
+  overflow: hidden; margin-bottom: 6px; }
+.widget .wbar i { display: block; height: 100%; border-radius: 99px; background: #fff;
+  transition: width .3s ease; }
+
+/* The ring. One element: a conic gradient for the arc, a radial mask punched out of the
+   middle by a pseudo-element rather than by a mask property, which CEF does not honour
+   consistently. `--pct` is 0..1 and `--rcol` is the arc colour. */
+.widget .wring { position: relative; width: 54px; height: 54px; border-radius: 50%;
+  background: conic-gradient(var(--rcol, #fff) calc(var(--pct, 0) * 360deg),
+    rgba(255,255,255,.22) 0);
+  display: flex; align-items: center; justify-content: center; }
+.widget .wring::before { content: ''; position: absolute; inset: 6px; border-radius: 50%;
+  background: rgba(0,0,0,.28); }
+.widget .wring span { position: relative; font-family: var(--ios-num); font-size: 15px;
+  font-weight: 600; }
+.widget .wring.sm { width: 42px; height: 42px; }
+.widget .wring.sm::before { inset: 5px; }
+.widget .wring.sm span { font-size: 12px; }
+.widget .wrings { display: flex; gap: 10px; justify-content: space-between; }
+
+/* ── The surfaces ──────────────────────────────────────────────
+   One per app, tinted to the app it opens, so the strip is readable at a glance without
+   reading a word of it. */
+.widget.w-messages { background: linear-gradient(160deg, #5BE36A, #22A93A 60%, #158A2B); }
+.widget.w-music { background: linear-gradient(160deg, #FF5E8A, #E8215B 58%, #A6103C); }
+.widget.w-battery { background: linear-gradient(160deg, #3A3D45, #202228 62%, #17181C); }
+.widget.w-store { background: linear-gradient(160deg, #59B3FF, #0A84FF 58%, #0059C4); }
+.widget.w-bank { background: linear-gradient(160deg, #4ED07A, #1E9E52 58%, #0E6E36); }
+.widget.w-vitals { background: linear-gradient(160deg, #FF7A93, #E8375F 58%, #A81639); }
+.widget.w-garage { background: linear-gradient(160deg, #7F8896, #4B535F 58%, #2E343D); }
+.widget.w-reminders { background: linear-gradient(160deg, #FFB84D, #F09000 58%, #B36700); }
+.widget.w-export { background: linear-gradient(160deg, #7E6BFF, #4B34E0 58%, #2D1CA0); }
+.widget.w-alerts { background: linear-gradient(160deg, #FF9F45, #E8541F 58%, #A5310C); }
+
+/* ── Arranging the strip ───────────────────────────────────────
+   The same jiggle the app grid uses, and the same minus badge, because they are the same
+   gesture and a second idiom for it would be a second thing to learn. */
+@keyframes ph-wjiggle { from { transform: rotate(-.7deg); } to { transform: rotate(.7deg); } }
+.widgets.jiggle .widget { animation: ph-wjiggle .15s ease-in-out infinite alternate; }
+.widgets.jiggle .widget:nth-child(2n) { animation-duration: .17s;
+  animation-direction: alternate-reverse; }
+/* The one in hand stops jiggling and lifts. `animation-duration: 0s` and NOT
+   `animation: none` - removing a name from the animation list and putting it back starts a
+   NEW animation, which is a visible jump rather than a pause. */
+.widgets .widget.wlift { animation-duration: 0s; transform: scale(1.06);
+  box-shadow: 0 18px 40px rgba(0,0,0,.45); z-index: 3; }
+
+.widget .rmbadge.wrm { position: absolute; top: -7px; left: -7px; width: 22px; height: 22px;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(60,60,67,.92); color: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  z-index: 4; }
+.widget .rmbadge.wrm svg { width: 12px; height: 12px; }
+
+.widget.wadd { align-items: center; justify-content: center; color: rgba(255,255,255,.75);
+  background: rgba(120,120,128,.24); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.20); }
+.widget.wadd svg { width: 26px; height: 26px; }
+
+/* The picker's rows: the same list the rest of the phone uses, with the size on the right. */
+.wpick .rowend { font-size: 12px; font-weight: 600; opacity: .55; margin-left: auto; }
+.wpick.off { opacity: .4; }
+/* An empty strip takes no room. A player who removed every widget should get the whole
+   screen back for icons, not eighteen pixels of padding around nothing. */
+.widgets:empty { padding: 0; }
+/* The minus badge sits proud of the tile's own corner, and `.widget` clips its content so the
+   gradient stays inside the radius - which left three quarters of the badge cut off. Only the
+   arranging state opts out of the clip; nothing inside a widget overflows while it is being
+   read, so this costs nothing the rest of the time. */
+.widgets.jiggle .widget { overflow: visible; }
+
+/* ══ The lock clock, in parts ══════════════════════════════════
+   The real clock is now the same two elements its preview always was - `.cdh` and `.cdm`,
+   with the colon as a pseudo-element between them - because `stack` puts the hours over the
+   minutes and one text node cannot be stacked. Before this, picking `stack` showed two lines
+   in the picker and one on the lock screen. */
+.lockclock { display: inline-flex; align-items: baseline; justify-content: center; }
+.lockclock i { font-style: normal; }
+.lockclock .cdh::after { content: ':'; opacity: .55; }
+.lockclock .cdh.nocolon::after { content: ''; }
+.lock[data-clock="stack"] .lockclock { flex-direction: column; align-items: center; }
+.lock[data-clock="stack"] .lockclock .cdh::after { content: ''; }
+/* `mono` boxes the clock, and a box has to be the flex container rather than an inline-block
+   or the two parts sit outside the border it draws. */
+.lock[data-clock="mono"] .lockclock { display: inline-flex; }
+
+/* ══ Hush: the fuller card, the pass, and who liked you ════════
+   Chips are the whole visual language here: what somebody is looking for, what they are
+   into, and which of those you share. A shared interest is tinted rather than badged,
+   because a badge on a dating card reads as a claim and a tint reads as a coincidence. */
+.hjob { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+  opacity: .9; margin-top: 2px; }
+.hjob svg { width: 13px; height: 13px; }
+.htags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.htag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 99px;
+  background: rgba(255,255,255,.22); color: #fff; }
+.htag.look { background: rgba(255,255,255,.34); }
+/* The one you both chose. Tinted, not starred. */
+.htag.shared { background: rgba(255,55,95,.85); }
+.hprompt { padding: 11px 14px; border-radius: 14px; background: var(--app-card);
+  color: var(--app-label); margin-top: 10px; }
+.hprompt b { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--app-label2); margin-bottom: 3px; }
+.hprompt span { font-size: 15px; line-height: 1.3; }
+
+/* The counter under the deck. It is also the only place the pass is sold, on purpose. */
+.hleft { display: flex; align-items: center; gap: 8px; justify-content: center;
+  padding: 10px 16px 0; font-size: 13px; color: var(--app-label2); }
+.hleft.out .hleftn { color: var(--ios-red); font-weight: 650; }
+.hlefts { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+.hlefts svg { width: 12px; height: 12px; }
+.hpro { display: inline-flex; align-items: center; gap: 4px; font-weight: 700;
+  color: #FF375F; }
+.hpro svg { width: 13px; height: 13px; }
+.hbuy { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 650;
+  color: #fff; background: linear-gradient(140deg, #FF6B8B, #FF375F 60%, #D01441); }
+.hbuy.big { padding: 12px 26px; font-size: 15px; margin-top: 18px; }
+
+.hprohero { text-align: center; padding: 8px 0 18px; color: var(--app-label); }
+.hprohero svg { width: 40px; height: 40px; color: #FF375F; }
+.hproprice { font-family: var(--ios-num); font-size: 40px; font-weight: 600;
+  letter-spacing: -.03em; margin-top: 6px; }
+.hprofor { font-size: 13px; color: var(--app-label2); }
+.hprobadge { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
+  padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 700; color: #fff;
+  background: linear-gradient(140deg, #FF6B8B, #FF375F 60%, #D01441); }
+.hprobadge svg { width: 13px; height: 13px; }
+
+/* Locked: a real count over six blank circles. There is nothing behind the blur - the
+   server sent the number and no names at all - so this is honest rather than decorative. */
+.hlock { text-align: center; padding: 40px 24px; color: var(--app-label); }
+.hlockn { font-family: var(--ios-num); font-size: 56px; font-weight: 600; color: #FF375F; }
+.hlockt { font-size: 15px; line-height: 1.35; color: var(--app-label2); margin-top: 4px; }
+.hlockrow { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+.hlockav { width: 38px; height: 38px; border-radius: 50%; background: var(--app-fill);
+  filter: blur(1px); }
+
+.hgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 4px 16px 16px; }
+.hgcard { position: relative; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
+  background-color: var(--app-fill); background-size: cover; background-position: center;
+  display: flex; align-items: flex-end; padding: 10px; }
+.hgname { font-size: 14px; font-weight: 650; color: #fff;
+  text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+.hgsuper { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(10,132,255,.92); color: #fff; }
+.hgsuper svg { width: 12px; height: 12px; }
+
+/* The editor's chip groups. Same control for gender, seeking, looking-for, interests and
+   the prompt, because they are the same gesture. */
+.hchips { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 16px 12px; }
+.hchip { padding: 7px 13px; border-radius: 99px; font-size: 13px; font-weight: 550;
+  background: var(--app-card); color: var(--app-label);
+  transition: transform .14s var(--snap), background .14s ease; }
+.hchip:active { transform: scale(.95); }
+.hchip.on { background: #FF375F; color: #fff; font-weight: 650; }
+.hrange { display: flex; gap: 10px; }
+.hrange > * { flex: 1; }

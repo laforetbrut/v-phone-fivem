@@ -264,12 +264,31 @@ V.Callback('v-phone:repair:open', function(src, resolve)
         served[r.job] = true
     end
 
+    -- Every garage's rating in one grouped read, rather than `ratingOf` once per garage inside
+    -- the loop. `ratingOf` STAYS: the review-submit path below calls it for a single job, where
+    -- one read is the right shape.
+    --
+    -- The rounding is copied character for character. `math.floor(x * 10 + 0.5) / 10` and any
+    -- other way of getting to one decimal disagree at the halfway point, and a 4.25 that
+    -- redraws as 4.3 where it showed 4.2 is a visible change on the garage card.
+    local ratings = {}
+    for _, r in ipairs(MySQL.query.await(
+        'SELECT job, COUNT(*) AS votes, AVG(stars) AS avg FROM vphone_repair_reviews GROUP BY job') or {}) do
+        local votes = math.floor(num(r.votes, 0))
+        ratings[tostring(r.job)] = {
+            votes = votes,
+            average = votes > 0 and (math.floor(num(r.avg, 0) * 10 + 0.5) / 10) or 0,
+        }
+    end
+
     local garages = {}
     for _, g in ipairs(CFG.garages or {}) do
         local gjob = tostring(g.job or '')
         if gjob ~= '' then
             local c = g.coords
-            local rating = ratingOf(gjob)
+            -- A garage with no reviews is absent from the GROUP BY, and the fallback below is
+            -- the same zero `ratingOf` returned for it.
+            local rating = ratings[gjob] or { votes = 0, average = 0 }
             garages[#garages + 1] = {
                 job = gjob,
                 label = tostring(g.label or gjob),

@@ -113,10 +113,23 @@ local function rideFor(r, forDriver)
     return out
 end
 
+--- The ride this character is in, or the one they still owe for.
+---
+--- **`isLive` alone was not the right question.** It answers false for `done`, so the moment
+--- the driver pressed finish the passenger's app forgot the ride existed - which meant it could
+--- never be paid for and never rated, because both of those act on a ride the app is holding.
+--- The `due` field in the payload below has always been written for exactly this case and was
+--- unreachable: `mine.state == 'done'` could not be true.
+---
+--- A finished ride stays until it is settled. A settled one is gone, which is what closes the
+--- screen when the fare is paid.
 local function myRide(cid)
     for i = #Order, 1, -1 do
         local r = Rides[Order[i]]
-        if r and r.cid == cid and isLive(r) then return r end
+        if r and r.cid == cid then
+            if isLive(r) then return r end
+            if r.state == 'done' and not r.paid then return r end
+        end
     end
     return nil
 end
@@ -499,6 +512,29 @@ V.Callback('v-phone:taxi:docpair', function(src, resolve, data)
     local passenger = tonumber(data and data.passenger)
     local other = passenger and Core.GetPlayer(passenger)
     if not other then resolve({ error = 'gone' }) return end
+
+    -- **A pairing that already exists belongs to the driver who made it.**
+    --
+    -- Without this, any on-duty driver anywhere on the map could send this event naming
+    -- somebody else's passenger and become the payee for a ride they are not driving. The
+    -- real driver's pairing was simply overwritten, and the fare went to whoever asked last.
+    --
+    -- An unsettled pairing is held for its owner until it is settled or goes stale; a new one
+    -- may be made freely, which is the ordinary case.
+    local held = DocFares[other.citizenid]
+    if held and not held.settled and held.driver ~= src
+        and (os.time() - (held.at or 0)) < 3600 then
+        resolve({ error = 'taken' })
+        return
+    end
+
+    -- And the two of them have to be in the same place. A taxi fare is a person in a car, and
+    -- the server is the only side that can say where anybody is.
+    local mePed, themPed = GetPlayerPed(src), GetPlayerPed(passenger)
+    if mePed and themPed and mePed ~= 0 and themPed ~= 0 then
+        local far = #(GetEntityCoords(mePed) - GetEntityCoords(themPed))
+        if far > 20.0 then resolve({ error = 'far' }) return end
+    end
 
     DocFares[other.citizenid] = { driver = src, driverCid = p.citizenid,
                                   at = os.time(), settled = false }

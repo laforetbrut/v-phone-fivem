@@ -20,11 +20,19 @@ const UI = PhoneUI;
 let viewController = typeof AbortController === 'function' ? new AbortController() : null;
 let viewEpoch = 0;
 
+/// Start a view, and hand back the epoch that identifies it.
+///
+/// **It used to return nothing**, and two callers wrote `const epoch = beginView()` - so they
+/// captured `undefined` and then guarded with the LIVE global instead, which makes the test
+/// `viewEpoch === viewEpoch`. Always true. Those two screens had no staleness guard at all for
+/// as long as they have existed. Returning the epoch makes the idiom everybody already used
+/// actually work.
 function beginView() {
   viewEpoch += 1;
-  if (!viewController) return;
+  if (!viewController) return viewEpoch;
   viewController.abort();
   viewController = new AbortController();
+  return viewEpoch;
 }
 
 const RESOURCE_NAME = typeof GetParentResourceName === 'function'
@@ -33,7 +41,7 @@ const RESOURCE_NAME = typeof GetParentResourceName === 'function'
 
 function isViewRead(name, payload) {
   const op = payload && payload.op;
-  if (['ambient', 'calls', 'conversation', 'app', 'card', 'places', 'airdropScan', 'hospitals'].includes(name)) return true;
+  if (['ambient', 'widgets', 'calls', 'conversation', 'app', 'card', 'places', 'airdropScan', 'hospitals'].includes(name)) return true;
   if (name === 'health') return op == null || op === 'get';
   if (name === 'notes') return op === 'list';
   if (name === 'mail') return op === 'me' || op === 'list' || op === 'saved';
@@ -266,13 +274,43 @@ function phoneClock(at) {
     zone ? { timeZone: zone } : {})).format(at || new Date());
 }
 
+/// The lock clock, drawn in the same PARTS its own preview is drawn in.
+///
+/// **The preview lied, and this is why.** `stack` puts the hours over the minutes, and the
+/// picker's little demo has always been two elements with the colon as a pseudo-element - so it
+/// could stack. The real clock was one text node set with `textContent`, and a text node cannot
+/// be stacked however the CSS is written: picking `stack` previewed as two lines and arrived on
+/// the lock screen as one. Same markup on both sides is the only arrangement where the preview
+/// is a promise rather than a drawing.
+///
+/// Written only when it changes. `tick` runs every ten seconds and the minute changes on one
+/// tick in six; rewriting the element the other five restarts nothing visible but is five
+/// pointless writes into the lock screen's own subtree.
+function paintLockClock(hhmm) {
+  const el = byId('lockclock');
+  if (!el) return;
+  const text = String(hhmm || '');
+  const at = text.indexOf(':');
+  // No colon at all - some locale, or a fixture. One part, and the CSS that adds the colon
+  // has nothing to attach to, which is right: there was none.
+  const html = at < 0
+    ? '<i class="cdh nocolon">' + esc(text) + '</i>'
+    : '<i class="cdh">' + esc(text.slice(0, at)) + '</i>' +
+      '<i class="cdm">' + esc(text.slice(at + 1)) + '</i>';
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+
 function tick() {
   const d = new Date();
   const zone = clockZone();
   const opts = zone ? { timeZone: zone } : {};
   const hhmm = phoneClock(d);
   byId('clock').textContent = hhmm;
-  byId('lockclock').textContent = hhmm;
+  // The face is a class on the lock screen itself, so every part of it - the date, the
+  // clock, the line under it - can move together rather than each being set by hand.
+  const face = ((state.prefs || {}).lockClock) || 'classic';
+  byId('lock').dataset.clock = face;
+  paintLockClock(hhmm);
   const ccClock = byId('ccclock');
   if (ccClock) ccClock.textContent = hhmm;
   byId('lockdate').textContent = d.toLocaleDateString(undefined,
@@ -1067,6 +1105,7 @@ function renderHome() {
   if (editing) wireRemoveBadges();
 
   initArrange();
+  initWidgetDrag();
   renderWidgets();
 }
 
@@ -1119,7 +1158,15 @@ function slideTrack() {
   const t = byId('pages').querySelector('.ptrack');
   if (t) t.style.transform = 'translateX(' + (-page * 100) + '%)';
 }
-function paintPages(items) {
+/// `keepGrid` skips the icon-fitting pass.
+///
+/// `fitGrid` measures the page and shrinks the icons until the rows fit, up to fourteen times.
+/// That is the right thing to do when the grid CHANGES - and a drag does not change it: the
+/// columns, the rows and the page size are all the same from the moment the tile lifts to the
+/// moment it lands. Running it anyway meant the icons resized on every seam the finger crossed,
+/// because the placeholder gap can push the last row over and pull it back. From the outside
+/// that is "moving an app changes the size of all the apps", which is what it looked like.
+function paintPages(items, keepGrid) {
   // A FIXED page size, not a balanced one. Balancing spread the icons evenly across
   // however many pages were needed, which meant installing a single app re-flowed every
   // page and threw away an arrangement the player had made. A page holds what a page
@@ -1174,7 +1221,9 @@ function paintPages(items) {
   // The grid only "works" if it fits. Rows share the page height, so the icon has to be
   // sized from what a cell actually gets - otherwise six rows of 60px icons simply spill
   // past the bottom of the screen and the last rows look like they were never drawn.
-  fitGrid(gCols, gRows);
+  //
+  // Not mid-drag: see `keepGrid` above.
+  if (!keepGrid) fitGrid(gCols, gRows);
 
   [...byId('pages').querySelectorAll('.tile:not(.gap)')].forEach((t) => {
     t.addEventListener('click', () => {
@@ -1503,12 +1552,17 @@ function enterArrange() {
   byId('arrangedone').textContent = L('ph.arrange_done');
   byId('home').classList.add('arrange');
   byId('pages').classList.add('jiggle');
+  // The widgets gain their minus badges and the add button here. Repainted from the cached
+  // reading rather than re-fetched: entering arrange mode changes what the strip DRAWS, not what
+  // it knows, and a request on every long press would be a request nobody asked for.
+  paintWidgets(byId('widgets'), widgetLast);
 }
 function exitArrange() {
   editing = false;
   endDrag(true);
   byId('home').classList.remove('arrange');
   byId('pages').classList.remove('jiggle');
+  paintWidgets(byId('widgets'), widgetLast);
 }
 
 function ptOf(e) {
@@ -1646,7 +1700,7 @@ function paintArrange() {
   invalidateDragRects();
   const withGap = arr.items.slice();
   withGap.splice(Math.max(0, Math.min(withGap.length, arr.insert)), 0, { t: 'gap' });
-  paintPages(withGap);
+  paintPages(withGap, true);
   byId('pages').classList.add('jiggle');
   wireRemoveBadges();
 }
@@ -1806,6 +1860,15 @@ function onDragEnd(e) {
     const items = layoutItems();
     paintPages(items);
     byId('pages').classList.toggle('jiggle', editing);
+    // Held, then released without moving: that is the manage sheet, not the folder view. A tap
+    // in arrange mode - no hold - still opens the folder, which is where the badges are.
+    if (a.fromHold) {
+      if (editing) wireRemoveBadges();
+      const at = items.findIndex((it) => it && it.t === 'folder' && it.name === a.item.name
+        && (it.apps || []).join(',') === (a.item.apps || []).join(','));
+      folderManageSheet(at, a.fkey);
+      return;
+    }
   // The badges lose their listeners with every repaint of the pages, so they are re-wired
   // wherever the jiggle is turned on. Three call sites, because there are three ways into edit
   // mode - the long press, a drop, and Done being cancelled.
@@ -1859,21 +1922,28 @@ function initArrange() {
     downTile = tile;
     hold = setTimeout(() => {
       hold = null;
-      // A held FOLDER opens its contents to be managed.
-      if (tile.classList.contains('isfolder')) {
-        // **And the click that follows this press must not run.**
-        //
-        // A pointerup after a long press still fires `click` on the tile, and that handler opens
-        // the folder view - straight over the sheet this just opened. The player saw a folder
-        // with no badges in it and concluded the press had done nothing, which is exactly the
-        // report. One flag, cleared by the click it suppresses.
-        arrSwallowClick = true;
-        ui('folder');
-        folderManageSheet(itemsIndexOfTileEl(tile), tile.dataset.fkey);
-        return;
-      }
+      // **The click that follows this press must not run.**
+      //
+      // A pointerup after a long press still fires `click` on the tile, and that handler opens
+      // the folder view - straight over whatever this gesture produced. The player saw a folder
+      // with no badges in it and concluded the press had done nothing, which is exactly the
+      // report. One flag, cleared by the click it suppresses.
+      arrSwallowClick = true;
       enterArrange();
       beginDrag(tile, e);
+      // A held FOLDER can now be MOVED, which it could not before: this branch used to open the
+      // manage sheet and return, so the one gesture that reorders everything else on the home
+      // screen did nothing at all to a folder.
+      //
+      // Both meanings live on one gesture rather than two. Hold and drag reorders it; hold and
+      // let go without moving opens the sheet - which keeps the reliable route to "take an app
+      // back out" that exists because the badge-inside-the-folder path has failed in players'
+      // hands three times.
+      if (arr && tile.classList.contains('isfolder')) {
+        arr.fromHold = true;
+        arr.fkey = tile.dataset.fkey;
+        ui('folder');
+      }
     }, 380);
   });
 
@@ -1908,8 +1978,17 @@ function initArrange() {
   window.addEventListener('pointerup', (e) => {
     if (hold) { clearTimeout(hold); hold = null; }
     if (arr) { onDragEnd(e); downTile = null; return; }
-    // A tap on empty space in arrange mode leaves it, the way iOS does.
-    if (editing && !downTile) exitArrange();
+    // A tap on empty space in arrange mode leaves it, the way iOS does. **The widget strip is
+    // not empty space.** It is a sibling of #pages, so `downTile` is null for every press on
+    // it - and this used to drop out of arrange mode on the pointerup, repainting the strip
+    // before the `click` on the minus or the plus could fire. Both controls did nothing, for
+    // the whole life of the feature, and neither looked broken: the badge simply vanished.
+    //
+    // Asked of where the press BEGAN, not of where the pointer is now. A finger that starts on
+    // a widget and drifts a few pixels off the strip before lifting releases over the app grid,
+    // and reading the release target would call that a tap on the wallpaper.
+    if (editing && !downTile && !wPressed) exitArrange();
+    wPressed = false;
     downTile = null;
   });
 
@@ -1950,8 +2029,17 @@ function flipPage(dir) {
 }
 
 // ══ Widgets ════════════════════════════════════════════════════
-// Both show something true: the weather the server is running, and the in-game date.
-// A widget showing the player's real-world clock would be showing the wrong clock.
+// The strip above the app grid, and what a player is allowed to put in it.
+//
+// **Half of these never touch the server.** The weather, the date, what is playing, how much
+// battery is left, what is downloading and how many texts are unread are all things the page or
+// the client already holds, and a strip built only from those makes no request at all - which is
+// what the strip cost before it could be arranged, and what it has to keep costing for anybody
+// who does not choose otherwise.
+//
+// The rest share ONE request. `srv: true` is what puts a widget in it, and the client only makes
+// that request when at least one is on the strip. See client/main.lua's `widgets` callback and
+// server/widgets.lua.
 const WEATHER_ICON = {
   EXTRASUNNY: 'sun', CLEAR: 'sun', CLOUDS: 'cloud', OVERCAST: 'cloud', SMOG: 'cloud',
   FOGGY: 'cloud', RAIN: 'rain', THUNDER: 'rain', CLEARING: 'cloud', NEUTRAL: 'sun',
@@ -1959,17 +2047,316 @@ const WEATHER_ICON = {
 };
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
+/// One widget's chrome: a heading with an icon, so twelve different tiles read as one family.
+function wHead(icon, label) {
+  return '<div class="wtop"><span>' + esc(label) + '</span>' +
+    '<span class="wicon">' + svg(icon) + '</span></div>';
+}
+
+/// The line a tile falls back to. Never a blank box: a widget with nothing to say still has to
+/// look finished, because an empty rectangle on a home screen reads as a bug.
+function wEmpty(text) { return '<div class="wnone">' + esc(text) + '</div>'; }
+
+/// Did the server answer this round at all?
+///
+/// Set from the client's `served` flag. A widget that has no data because the SERVER never
+/// spoke has to say something different from one whose builder answered "I cannot read that
+/// here": the first is an installation problem with a five-second fix, and printing the second
+/// one's message over it is how an operator ends up looking in the wrong place.
+let widgetServed = true;
+
+/// The empty face for a server-backed tile, choosing between those two.
+function wOffline(head, why) {
+  return head + wEmpty(L(widgetServed ? why : 'ph.w_noserver'));
+}
+
+/// A relative time, from a server timestamp in seconds.
+///
+/// The server sends the instant, not the phrase. That is deliberate: the phrase goes stale while
+/// the phone sits open, and re-asking for it would be a request per minute per widget.
+function wWhen(at, now) {
+  const secs = Math.round(Number(at || 0) - (now || Math.floor(Date.now() / 1000)));
+  const abs = Math.abs(secs);
+  const n = abs < 60 ? abs : abs < 3600 ? Math.round(abs / 60)
+    : abs < 86400 ? Math.round(abs / 3600) : Math.round(abs / 86400);
+  const unit = abs < 60 ? 'ph.w_secs' : abs < 3600 ? 'ph.w_mins'
+    : abs < 86400 ? 'ph.w_hours' : 'ph.w_days';
+  return L(secs < 0 ? 'ph.w_ago' : 'ph.w_in').replace('{t}', n + ' ' + L(unit));
+}
+
+/// Every widget the phone knows how to draw, in the order the picker offers them.
+///
+/// `units` is how many of the strip's four columns it takes. `app` is the app it belongs to and
+/// opens; a widget whose app is not installed is never offered and never built. `srv` marks the
+/// ones that need the shared server request.
+const WIDGETS = {
+  weather: {
+    units: 2, app: null, srv: false, icon: 'weather', tint: '#0A84FF',
+    paint: (_w, a) => {
+      const w = String((a && a.weather) || 'CLEAR').toUpperCase();
+      const icon = WEATHER_ICON[w] || 'sun';
+      return wHead(icon, L('ph.los_santos')) +
+        '<div><div class="wbig">' + esc(phoneClock()) + '</div>' +
+        '<div class="wsub">' + esc(L('ph.weather_' + icon)) + '</div></div>';
+    },
+  },
+
+  // The real date, not the game's. GTA's clock runs at its own pace and its calendar is
+  // scenery; a player reading "2" off their phone wants to know what day it actually is.
+  calendar: {
+    units: 2, app: null, srv: false, icon: 'clock', tint: '#FF3B30',
+    paint: () => {
+      const now = new Date();
+      const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
+      return '<div class="wday">' + esc(L('ph.month_' + MONTHS[now.getMonth()])) + '</div>' +
+        '<div class="wnum">' + esc(now.getDate()) + '</div>' +
+        '<div class="wsub">' + esc(L('ph.day_' + weekday)) + '</div>';
+    },
+  },
+
+  // **The sender, never the message.** A widget that flattens a text to one line puts a private
+  // conversation on a screen anybody standing behind the player can read. The count and the name
+  // are the glance; the body is what opening the app is for.
+  messages: {
+    units: 2, app: 'messages', srv: false, icon: 'messages', tint: '#34C759',
+    paint: () => {
+      const n = unreadTotal();
+      const list = state.conversations || [];
+      if (!n) {
+        return wHead('messages', L('app.messages')) +
+          wEmpty(L(list.length ? 'ph.w_msg_none' : 'ph.w_msg_never'));
+      }
+      const from = list.find((c) => (c.unread || 0) > 0);
+      return wHead('messages', L('app.messages')) +
+        '<div><div class="wbig">' + esc(n) + '</div>' +
+        '<div class="wsub">' + esc(from ? (from.name || from.number || '') : L('ph.w_msg_none')) +
+        '</div></div>';
+    },
+  },
+
+  music: {
+    units: 2, app: 'music', srv: false, icon: 'play', tint: '#FA2B56',
+    paint: () => {
+      if (!musicNow) return wHead('play', L('app.music')) + wEmpty(L('ph.w_music_none'));
+      const where = musicOutput === 'speaker' ? 'ph.w_music_speaker'
+        : musicOutput === 'car' ? 'ph.w_music_car' : 'ph.w_music_phones';
+      return '<div class="wrow">' + musicArt(musicNow, 'wart') +
+        '<div class="wcol"><div class="wttl">' + esc(musicNow.title || '') + '</div>' +
+        '<div class="wsub">' + esc(musicNow.artist || '') + '</div>' +
+        '<div class="wsub wdim">' + esc(L(where)) + '</div></div></div>';
+    },
+  },
+
+  battery: {
+    units: 2, app: null, srv: false, icon: 'charging', tint: '#30D158',
+    paint: () => {
+      const p = state._power || {};
+      const raw = Number(p.battery);
+      const b = Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : 100;
+      const col = p.charging ? '#34C759' : b <= 20 ? '#FF9500' : '#fff';
+      return wHead('charging', L('ph.w_batt')) +
+        '<div class="wrow"><div class="wring" style="--pct:' + (b / 100) + ';--rcol:' + col +
+        '"><span>' + esc(b) + '</span></div>' +
+        '<div class="wcol"><div class="wsub">' +
+        esc(L(p.charging ? 'ph.w_batt_charging' : 'ph.w_batt_left')) + '</div></div></div>';
+    },
+  },
+
+  store: {
+    units: 2, app: 'store', srv: false, icon: 'store', tint: '#0A84FF',
+    paint: () => {
+      const ids = Object.keys(downloads || {});
+      if (ids.length) {
+        const id = ids[0];
+        const a = (available || []).find((x) => x.id === id);
+        const pct = Math.max(0, Math.min(100, Number(downloads[id]) || 0));
+        return wHead('store', L(a ? a.label : 'app.store')) +
+          '<div><div class="wbar"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="wsub">' + esc(pct + '%') + '</div></div>';
+      }
+      const n = storeUpdateCount();
+      return wHead('store', L('app.store')) +
+        (n ? '<div><div class="wbig">' + esc(n) + '</div><div class="wsub">' +
+             esc(L('ph.w_store_updates')) + '</div></div>'
+           : wEmpty(L('ph.w_store_none')));
+    },
+  },
+
+  // Masked by default, and masked on the SERVER: `widgetMoney` off means the figure is never
+  // sent, so it cannot be read out of the payload by somebody with a console open.
+  bank: {
+    units: 2, app: 'bank', srv: true, icon: 'bank', tint: '#1E9E52',
+    paint: (w) => {
+      if (!w || w.ok === false) return wOffline(wHead('bank', L('app.bank')), 'ph.w_bank_off');
+      if (w.masked) {
+        return wHead('bank', L('app.bank')) +
+          '<div><div class="wbig wmask">••••</div>' +
+          '<div class="wsub">' + esc(L('ph.w_bank_hidden')) + '</div></div>';
+      }
+      return wHead('bank', L('app.bank')) +
+        '<div><div class="wbig wfit">' + esc(money(w.bank || 0)) + '</div>' +
+        '<div class="wsub">' + esc(money(w.cash || 0) + ' ' + L('ph.w_bank_cash')) + '</div></div>';
+    },
+  },
+
+  vitals: {
+    units: 2, app: 'health', srv: true, icon: 'heart', tint: '#E8375F',
+    paint: (w) => {
+      // Only the rings the framework actually answered. A ring drawn at zero because a value was
+      // missing says "starving" about a character who is fine, which is the trap `applyPower`
+      // documents for the battery.
+      const rings = [['hunger', '#FF9F0A'], ['thirst', '#0A84FF'], ['stress', '#FF375F']]
+        .filter(([k]) => w && Number.isFinite(Number(w[k])));
+      if (!rings.length) return wOffline(wHead('heart', L('app.health')), 'ph.w_vitals_none');
+      return wHead('heart', L('app.health')) +
+        '<div class="wrings">' + rings.map(([k, c]) => {
+          const v = Math.max(0, Math.min(100, Math.round(Number(w[k]))));
+          return '<div class="wring sm" style="--pct:' + (v / 100) + ';--rcol:' + c + '">' +
+            '<span>' + esc(v) + '</span></div>';
+        }).join('') + '</div>';
+    },
+  },
+
+  garage: {
+    units: 2, app: 'garage', srv: true, icon: 'car', tint: '#4B535F',
+    paint: (w) => {
+      if (!w || w.ok === false) return wOffline(wHead('car', L('app.garage')), 'ph.w_garage_off');
+      if (!w.n) return wHead('car', L('app.garage')) + wEmpty(L('ph.w_garage_none'));
+      const f = w.first || {};
+      const line = f.live ? L('ph.w_garage_out')
+        : (f.at || L('ph.w_garage_stored'));
+      return wHead('car', L('app.garage')) +
+        '<div><div class="wttl">' + esc(f.name || '') + '</div>' +
+        '<div class="wsub">' + esc(line) + '</div>' +
+        '<div class="wsub wdim">' + esc(L('ph.w_garage_n').replace('{n}', w.n)) + '</div></div>';
+    },
+  },
+
+  reminders: {
+    units: 2, app: 'reminders', srv: true, icon: 'check', tint: '#F09000',
+    paint: (w, _a, at) => {
+      if (!w) return wOffline(wHead('check', L('app.reminders')), 'ph.w_rem_none');
+      if (!w.text) {
+        return wHead('check', L('app.reminders')) +
+          wEmpty(w.someday ? L('ph.w_rem_someday').replace('{n}', w.someday) : L('ph.w_rem_none'));
+      }
+      return wHead('check', L('app.reminders')) +
+        '<div><div class="wttl' + (w.flagged ? ' wflag' : '') + '">' + esc(w.text) + '</div>' +
+        '<div class="wsub">' + esc(w.dueAt ? wWhen(w.dueAt, at) : '') + '</div>' +
+        (w.due ? '<div class="wsub wlate">' + esc(L('ph.w_rem_due').replace('{n}', w.due)) +
+                 '</div>' : '') + '</div>';
+    },
+  },
+
+  export: {
+    units: 2, app: 'export', srv: true, icon: 'export', tint: '#4B34E0',
+    paint: (w) => {
+      if (!w || w.ok === false) return wOffline(wHead('export', L('app.export')), 'ph.w_exp_off');
+      if (!w.item) return wHead('export', L('app.export')) + wEmpty(L('ph.w_exp_flat'));
+      const up = Number(w.percent) > 0;
+      return wHead('export', L('app.export')) +
+        '<div><div class="wttl">' + esc(w.item) + '</div>' +
+        '<div class="wrow2"><span class="wbig sm">' + esc(money(w.price || 0)) + '</span>' +
+        '<span class="wpct ' + (up ? 'up' : 'down') + '">' +
+        esc((up ? '+' : '') + (Number(w.percent) || 0) + '%') + '</span></div></div>';
+    },
+  },
+
+  alerts: {
+    units: 4, app: 'alerts', srv: true, icon: 'warning', tint: '#E8541F',
+    paint: (w, _a, at) => {
+      if (!w || w.ok === false) return wOffline(wHead('warning', L('app.alerts')), 'ph.w_alert_off');
+      if (!w.n) return wHead('warning', L('app.alerts')) + wEmpty(L('ph.w_alert_none'));
+      return '<div class="wtop"><span class="wchip">' + esc(w.category || '') + '</span>' +
+        '<span class="wsub">' + esc(w.emitter || '') + '</span></div>' +
+        '<div class="wttl big">' + esc(w.title || '') + '</div>' +
+        '<div class="wsub">' + esc(w.expiresAt ? wWhen(w.expiresAt, at) : '') +
+        (w.n > 1 ? ' · ' + esc(L('ph.w_alert_more').replace('{n}', w.n - 1)) : '') + '</div>';
+    },
+  },
+};
+
+/// The strip's width in columns. Four, and the tiles span 1, 2 or 4 of them.
+const WIDGET_COLS = 4;
+/// Two rows at most. A third leaves the app grid too short to look like a grid: `fitGrid`
+/// measures the real page and would shrink the icons into the high twenties.
+const WIDGET_MAX_UNITS = WIDGET_COLS * 2;
+
+/// The player's strip: their saved order, filtered to widgets that still exist and whose app is
+/// still installed, and cut at the point it would need a third row.
+///
+/// **An absent preference is not an empty strip.** `undefined` means "never arranged these",
+/// which has to keep showing what every phone showed before they could be arranged; an empty
+/// ARRAY means the player removed them all, which is a choice and is kept.
+/// Is this widget one the operator allows, and one this character's apps entitle them to?
+///
+/// Asked on the page so the picker does not offer a tile the server would refuse to build -
+/// adding a widget and having nothing appear is a worse answer than not being offered it. The
+/// server asks the same two questions again for itself, because a page cannot be trusted to.
+function widgetOk(id) {
+  const def = WIDGETS[id];
+  if (!def) return false;
+  const cfg = state.widgetCfg || {};
+  const off = cfg.off || {};
+  if (off.all || off[id]) return false;
+  if (def.app && !isInstalled(def.app)) return false;
+  return true;
+}
+
+function widgetIds() {
+  const pr = state.prefs || {};
+  const cfg = state.widgetCfg || {};
+  // **An empty strip is a choice, and it has to survive the wire.**
+  //
+  // Lua has one table type, so `{}` is sent as a JSON OBJECT rather than an array - and
+  // `Array.isArray` says no to it. Removing the last widget therefore looked like "never
+  // arranged these", fell through to the default list, and put the two starting widgets back.
+  // An object with no keys is the empty array it was written as.
+  const raw = pr.widgets;
+  const saved = Array.isArray(raw) ? raw
+    : (raw && typeof raw === 'object' && !Object.keys(raw).length) ? []
+    : (Array.isArray(cfg.default) ? cfg.default : ['weather', 'calendar']);
+  const out = [];
+  let units = 0;
+  const seen = new Set();
+  saved.forEach((id) => {
+    if (seen.has(id) || !widgetOk(id)) return;
+    const def = WIDGETS[id];
+    if (units + def.units > WIDGET_MAX_UNITS) return;
+    seen.add(id);
+    units += def.units;
+    out.push(id);
+  });
+  return out;
+}
+
+/// Everything the player could still add.
+function widgetChoices() {
+  const on = new Set(widgetIds());
+  return Object.keys(WIDGETS).filter((id) => !on.has(id) && widgetOk(id));
+}
+
+function widgetUnits(ids) {
+  return ids.reduce((n, id) => n + ((WIDGETS[id] && WIDGETS[id].units) || 0), 0);
+}
+
+function saveWidgets(ids) {
+  state.prefs = state.prefs || {};
+  state.prefs.widgets = ids;
+  return post('prefs', { widgets: ids });
+}
+
 /// Which `renderWidgets` call is the current one, and what the last good answer was.
 ///
-/// Two bugs lived in the gap between asking for the weather and being told it, and both showed as
-/// "the widgets disappeared, sometimes":
+/// Two bugs lived in the gap between asking and being told, and both showed as "the widgets
+/// disappeared, sometimes":
 ///
-///   1. A FAILED or missing answer blanked the widgets. `ambient` is a round trip, and a phone
-///      that empties its home screen because one request did not come back is a phone that looks
-///      broken for a reason the player cannot see. What is on screen is better than nothing.
+///   1. A FAILED or missing answer blanked the widgets. A phone that empties its home screen
+///      because one request did not come back is a phone that looks broken for a reason the
+///      player cannot see. What is on screen is better than nothing.
 ///   2. A LATE answer from a previous call painted over a newer one. Changing the grid calls
-///      `renderHome()` twice in quick succession - once for the layout and once from Settings -
-///      so two of these were in flight and the slower one finished last.
+///      `renderHome()` twice in quick succession, so two of these were in flight and the slower
+///      one finished last.
 ///
 /// An epoch fixes the second and the cache fixes the first: the widgets are redrawn from the last
 /// good reading while a new one is on its way, so they never flash empty.
@@ -1980,8 +2367,15 @@ async function renderWidgets() {
   const host = byId('widgets');
   if (!host) return;
 
+  const ids = widgetIds();
+  // The strip can be empty, and that is a valid arrangement rather than a failure. Nothing is
+  // asked for and nothing is drawn - except the add button, which is the way back.
+  if (!ids.length && !editing) { host.innerHTML = ''; return; }
+
   const mine = ++widgetEpoch;
-  const d = await post('ambient');
+  // The server is only troubled when something on the strip actually needs it.
+  const server = ids.some((id) => WIDGETS[id] && WIDGETS[id].srv);
+  const d = await post('widgets', server ? { server: true } : { server: false });
 
   // Somebody asked again while this was in flight. Their answer is the current one.
   if (mine !== widgetEpoch) return;
@@ -1993,44 +2387,227 @@ async function renderWidgets() {
     return;
   }
   widgetLast = d;
-  gameHour = Number(d.hours);
+  // `false` only when the client actually asked and was not answered. A strip of client-only
+  // widgets never asks, so it must not be marked offline.
+  widgetServed = !server || d.served !== false;
+  gameHour = Number((d.ambient || {}).hours);
   applyTheme();
   paintWidgets(host, d);
 }
 
 /// The widgets themselves, from one reading. Split out so the cached answer above is drawn by
 /// exactly the same code as a fresh one.
-/// The same clock as the status bar, six centimetres above it.
-///
-/// This used to show the GAME's hour on the grounds that a weather tile for Los Santos wants Los
-/// Santos time. That does not survive contact with the screen: the status bar said 19:59 and the
-/// tile under it said 09:10, and a phone showing two different times is wrong about one of them.
-/// The game hour is still read - it drives automatic dark mode, where it belongs, because the sun
-/// in the sky is a game fact.
 function paintWidgets(host, d) {
-  const w = String(d.weather || 'CLEAR').toUpperCase();
-  const icon = WEATHER_ICON[w] || 'sun';
-  host.innerHTML =
-    '<div class="widget weather"><div class="wtop"><span>' + esc(L('ph.los_santos')) + '</span>' +
-      '<span class="wicon">' + svg(icon) + '</span></div>' +
-      '<div><div class="wbig">' + esc(phoneClock()) + '</div>' +
-      '<div class="wsub">' + esc(L('ph.weather_' + icon)) + '</div></div></div>' +
-    // The real date, not the game's. GTA's clock runs at its own pace and its calendar is
-    // scenery; a player reading "2" off their phone wants to know what day it actually is.
-    calendarWidget();
+  const ambient = (d && d.ambient) || {};
+  const data = (d && d.w) || {};
+  const at = (d && d.at) || Math.floor(Date.now() / 1000);
+
+  const html = widgetIds().map((id) => {
+    const def = WIDGETS[id];
+    let body = '';
+    // A widget that throws takes its own tile down and nothing else. Twelve builders reading
+    // twelve different shapes is twelve chances for one bad payload to blank the home screen.
+    try { body = def.paint(data[id], ambient, at) || ''; } catch (e) { body = wEmpty(L('ph.w_err')); }
+    return '<button class="widget w-' + esc(id) + '" type="button" data-w="' + esc(id) + '"' +
+      ' style="--wspan:' + def.units + '">' + body +
+      (editing ? '<span class="rmbadge wrm" data-wrm="' + esc(id) + '" role="button">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"' +
+        ' stroke-linecap="round"><path d="M6 12h12"/></svg></span>' : '') +
+      '</button>';
+  }).join('');
+
+  // The add button only exists in arrange mode, and only while there is room and something left
+  // to add. Offering a control that answers "no" is worse than not offering it.
+  const room = widgetUnits(widgetIds()) < WIDGET_MAX_UNITS && widgetChoices().length;
+  host.innerHTML = html + (editing && room
+    ? '<button class="widget wadd" type="button" id="waddbtn" style="--wspan:2">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"' +
+      ' stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></button>'
+    : '');
+  host.classList.toggle('jiggle', !!editing);
+  wireWidgets(host);
 }
 
-// Returns markup. It must not touch the DOM itself: it is concatenated into the widget
-// strip above, and a version of this that wrote `innerHTML` from inside was overwritten by
-// the assignment it was part of - leaving the word "undefined" on the home screen where the
-// date should have been.
-function calendarWidget() {
-  const now = new Date();
-  const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
-  return '<div class="widget cal">' +
-      '<div class="wday">' + esc(L('ph.month_' + MONTHS[now.getMonth()])) + '</div>' +
-      '<div class="wnum">' + esc(now.getDate()) + '</div>' +
-      '<div class="wsub">' + esc(L('ph.day_' + weekday)) + '</div></div>';
+// ── Tapping, removing, and dragging ────────────────────────────
+
+/// Wired after every repaint, because listeners do not survive `innerHTML`. Cheap: at most nine
+/// elements, and only while the home screen is the thing on screen.
+function wireWidgets(host) {
+  [...host.querySelectorAll('.widget[data-w]')].forEach((el) => {
+    el.addEventListener('click', () => {
+      if (wSwallowClick) { wSwallowClick = false; return; }
+      if (wdragMoved) { wdragMoved = false; return; }
+      if (editing) return;
+      const def = WIDGETS[el.dataset.w];
+      const a = def && def.app && (state.apps || []).find((x) => x.id === def.app);
+      if (a) enterApp(a, el);
+    });
+  });
+  [...host.querySelectorAll('.wrm')].forEach((b) => {
+    // Stopped at pointerdown, exactly as the app tiles' badges are: the widget underneath
+    // starts a drag on this event, and a drag that begins the moment the badge is touched is
+    // a badge you cannot press.
+    b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); });
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ids = widgetIds().filter((x) => x !== b.dataset.wrm);
+      saveWidgets(ids);
+      paintWidgets(host, widgetLast);
+    });
+  });
+  const add = byId('waddbtn');
+  if (add) add.addEventListener('click', (e) => { e.stopPropagation(); widgetPicker(); });
+}
+
+/// The live reorder. Its own small drag rather than the app grid's, because the grid's is built
+/// around pages, folders and page breaks - none of which a four-column strip has.
+let wdrag = null;
+let wdragMoved = false;
+/// The pending long press on the strip, and where the finger was when it started.
+let whold = null;
+let wholdAt = null;
+/// Did the press that is currently in flight begin inside the widget strip?
+///
+/// The app grid's pointerup handler needs to know, and it cannot ask the event: a press that
+/// starts on a widget and lifts two pixels lower has released over #pages.
+let wPressed = false;
+/// Set when a hold has already acted, so the `click` riding the same pointerup does not act
+/// again. Its own flag rather than a second meaning for `wdragMoved`: sharing one made the
+/// pointerup handler save a reorder that had not happened.
+let wSwallowClick = false;
+
+function initWidgetDrag() {
+  const host = byId('widgets');
+  if (!host || host.dataset.wired) return;
+  host.dataset.wired = '1';
+
+  /// Lift a widget into a drag. Split out because a hold has to do it a beat after the press,
+  /// against an element that has since been repainted by `enterArrange`.
+  const lift = (el, e) => {
+    if (!el) return;
+    wdrag = { id: el.dataset.w, ids: widgetIds(), from: { x: e.clientX, y: e.clientY } };
+    wdragMoved = false;
+    el.classList.add('wlift');
+  };
+
+  // **On the CAPTURE phase, and it has to be.**
+  //
+  // `wPressed` is what tells the app grid's pointerup handler that this press began in the
+  // strip rather than on the wallpaper. The minus badge stops propagation on pointerdown - it
+  // has to, or the widget underneath starts a drag the moment the badge is touched - and that
+  // stopped the flag being set as well. So pressing the minus looked to the grid like a tap on
+  // empty space: it left arrange mode, repainted the strip, and destroyed the badge before its
+  // own `click` could fire. The badge was drawn, it was hit, and it did nothing.
+  //
+  // Capture runs before any child listener, so `stopPropagation` in one cannot reach it.
+  host.addEventListener('pointerdown', () => { wPressed = true; }, true);
+
+  host.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest ? e.target.closest('.widget[data-w]') : null;
+    wholdAt = { x: e.clientX, y: e.clientY };
+    wPressed = true;
+    if (editing) { lift(el, e); return; }
+    // **Holding the strip enters arrange mode.** It did not, and the app grid's hold is wired
+    // to #pages, which the strip is a sibling of - so holding a widget did nothing at all and
+    // the only way to reach the minus badges was to hold an app icon instead. On a real phone
+    // the whole home screen answers that gesture, and the strip is part of the home screen.
+    whold = setTimeout(() => {
+      whold = null;
+      // The click that follows this press must not run, or the widget's own tap handler opens
+      // its app straight over the arrange mode the hold just entered.
+      wSwallowClick = true;
+      enterArrange();
+      // `enterArrange` repaints the strip, so the element pressed a moment ago is detached.
+      // Find its replacement by id rather than keeping the stale node.
+      if (el) lift(byId('widgets').querySelector('.widget[data-w="' + el.dataset.w + '"]'), e);
+    }, 380);
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (whold && wholdAt && Math.hypot(e.clientX - wholdAt.x, e.clientY - wholdAt.y) > 10) {
+      clearTimeout(whold); whold = null;
+    }
+    if (!wdrag) return;
+    if (!wdragMoved && Math.hypot(e.clientX - wdrag.from.x, e.clientY - wdrag.from.y) < 8) return;
+    wdragMoved = true;
+    e.preventDefault();
+
+    const host2 = byId('widgets');
+    const tiles = [...host2.querySelectorAll('.widget[data-w]')];
+    // Nearest tile centre, the same test the app grid uses. Measured per move rather than
+    // cached: there are at most eight of them and the strip does not slide.
+    let near = -1, best = 1e9;
+    tiles.forEach((t, i) => {
+      const r = t.getBoundingClientRect();
+      const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+      if (d < best) { best = d; near = i; }
+    });
+    if (near < 0) return;
+    const cur = wdrag.ids.indexOf(wdrag.id);
+    if (cur < 0 || near === cur) return;
+    wdrag.ids.splice(near, 0, wdrag.ids.splice(cur, 1)[0]);
+    // Repaint from the working order, not from prefs: the move is not saved until it is dropped,
+    // so a drag that is abandoned leaves nothing behind.
+    const saved = (state.prefs || {}).widgets;
+    state.prefs.widgets = wdrag.ids;
+    paintWidgets(host2, widgetLast);
+    state.prefs.widgets = saved;
+    const moving = host2.querySelector('.widget[data-w="' + wdrag.id + '"]');
+    if (moving) moving.classList.add('wlift');
+  }, { passive: false });
+
+  window.addEventListener('pointerup', () => {
+    if (whold) { clearTimeout(whold); whold = null; }
+    wholdAt = null;
+    if (!wdrag) return;
+    const d = wdrag;
+    wdrag = null;
+    const host2 = byId('widgets');
+    [...host2.querySelectorAll('.wlift')].forEach((t) => t.classList.remove('wlift'));
+    // A press that never moved is a tap, and the tap handler deals with it. Only a real
+    // reorder is saved, so pressing a widget and letting go cannot rewrite the strip.
+    if (!wdragMoved) return;
+    saveWidgets(d.ids);
+    paintWidgets(host2, widgetLast);
+  });
+}
+
+/// The gallery. One row per widget, with what it draws and how much room it takes.
+function widgetPicker() {
+  const choices = widgetChoices();
+  const used = widgetUnits(widgetIds());
+  const left = WIDGET_MAX_UNITS - used;
+  const size = (u) => L(u >= 4 ? 'ph.w_size_l' : 'ph.w_size_m');
+
+  const body = (choices.length
+    ? UI.group(choices.map((id) => {
+        const def = WIDGETS[id];
+        // A widget that will not fit in what is left is shown and refused rather than hidden:
+        // hiding it reads as "that widget does not exist", and the room left is the note below.
+        const fits = def.units <= left;
+        return UI.row({
+          icon: def.icon, tint: def.tint, title: L('ph.w_' + id), subtitle: L('ph.w_' + id + '_d'),
+          value: size(def.units), data: fits ? { add: id } : { full: '1' },
+        });
+      }))
+    : '<div class="grouphead">' + esc(L('ph.w_pick_none')) + '</div>') +
+    '<div class="groupfoot">' + esc(L('ph.w_pick_room').replace('{n}', String(left))) + '</div>';
+
+  sheet(L('ph.w_pick'), body, () => {
+    [...byId('sheet').querySelectorAll('.row[data-add]')].forEach((b) => {
+      b.addEventListener('click', () => {
+        const ids = widgetIds().concat([b.dataset.add]);
+        saveWidgets(ids);
+        closeSheet(true);
+        // Straight back to the strip, still in arrange mode: adding one widget is usually the
+        // start of arranging the strip, not the end of it.
+        renderWidgets();
+      });
+    });
+    [...byId('sheet').querySelectorAll('.row[data-full]')].forEach((b) => {
+      b.addEventListener('click', () => toast(L('ph.w_pick_full')));
+    });
+  });
 }
 
 // ══ App shell ══════════════════════════════════════════════════
@@ -2053,7 +2630,9 @@ function clearAppVisualState() {
   clearTimeout(appFrameTimer);
   appFrameTimer = null;
   byId('appbody').classList.remove('frame-loading');
-  app.classList.remove('black', 'camfull');
+  // `nowplaying` goes with them: it is a per-screen class, and a screen left behind is a
+  // transparent nav bar and an unpadded body on whatever app opens next.
+  app.classList.remove('black', 'camfull', 'nowplaying');
   byId('screen').classList.remove('appblack', 'cipher-open');
   byId('navbar').classList.remove('hidden');
   // Leaving the camera drops the selfie camera, or it would follow the player out.
@@ -2167,6 +2746,14 @@ function enterApp(a, tile) {
 }
 
 function closeApp(instant) {
+  // **The game's animation loop dies here, whatever route out was taken.**
+  //
+  // `requestAnimationFrame` keeps calling back for as long as the page lives, and the page
+  // lives for the whole session - so a loop nobody cancels is a phone quietly running a
+  // hundred and twenty simulation steps a second behind a game that needs those frames. There
+  // is no route out of an app that does not pass through here.
+  flapStop();
+
   // Whatever route out of an app is taken, the camera's first-person hold and hidden HUD
   // must not survive it. Cheap to call when no camera was open.
   if (camAppOpen) {
@@ -2280,7 +2867,11 @@ function fitNavTitle() {
   const back = byId('navback');
   if (!bar || !title || !back) return;
 
-  bar.classList.remove('tightnav');
+  // A conversation header has already decided its own shape: a face, the name, and a chevron
+  // with no word beside it. The retry path can run a frame after that was set, and stripping
+  // the classes then would put "Messages" back and turn the row into a plain label again.
+  if (title.querySelector('.navface')) return;
+  bar.classList.remove('tightnav', 'facenav');
   if (back.classList.contains('hidden')) return;
   // `setNav` runs before the screen it belongs to has been laid out, so the first measurement can
   // come back with no bar at all. One retry on the next frame, and no loop: if there is still no
@@ -2302,6 +2893,35 @@ function fitNavTitle() {
   // A few pixels of air, not zero: two glyphs touching reads as broken just as much as two
   // glyphs overlapping.
   if (gap > -6) bar.classList.add('tightnav');
+}
+
+/// The contact's face beside their name, in the nav bar, and the back WORD dropped.
+///
+/// This is what Messages looks like on the phone it is imitating: a chevron on the left, the
+/// person you are talking to in the middle, and the call button on the right. The word
+/// "Messages" beside the chevron was the whole imbalance - a long label on one side, a round
+/// button on the other, and a name that read as off-centre because the two sides did not weigh
+/// the same. The chevron alone is still the control; the word was only ever a courtesy.
+///
+/// `setNav` writes `textContent` on every screen, so whatever is put here is wiped the moment
+/// another screen is opened. That is the cleanup: there is none to forget.
+function navFace(name, photo) {
+  const bar = byId('navbar');
+  const el = byId('navtitlesm');
+  if (!bar || !el) return;
+  bar.classList.add('tightnav', 'facenav');
+  const initials = String(name || '').trim().split(/\s+/).slice(0, 2)
+    .map((w) => w.charAt(0).toUpperCase()).join('');
+  el.innerHTML =
+    '<span class="navface"' +
+      // `inlineBackground`, which is this file's own way of putting a URL in a style
+      // attribute. The url() here was UNQUOTED and escaped with `encodeURI`, which
+      // deliberately leaves `)` and `;` alone - so a closing bracket ended the token and a
+      // semicolon started a new declaration. The photo is another player's: it arrives on a
+      // shared contact card and is stored in the receiver's contacts.
+      (photo ? ' style="' + inlineBackground(photo) + '"' : '') + '>' +
+      (photo ? '' : esc(initials)) + '</span>' +
+    '<span class="navwho">' + esc(name || '') + '</span>';
 }
 
 /// The three levels, for one app.
@@ -2723,44 +3343,149 @@ function healthRecord() {
 // ── Notes ──────────────────────────────────────────────────────
 // Part of the phone rather than a sample resource: notes are the one thing people expect
 // to survive everything else, so they live with the phone's own data.
+let notes = [];
+let noteQuery = '';
+
+/// The line under a note's title: the first thing it says that is not its title.
+///
+/// Titles are auto-filled from the opening of the body, so showing the body's first line under
+/// it would print the same words twice. Whatever comes after the title is what tells somebody
+/// which note this is.
+function noteSnippet(n) {
+  const body = String(n.body || '').replace(/\s+/g, ' ').trim();
+  const title = String(n.title || '').trim();
+  const rest = body.indexOf(title) === 0 ? body.slice(title.length).trim() : body;
+  return rest.slice(0, 48);
+}
+
+function noteMatches(n, q) {
+  if (!q) return true;
+  const hay = (String(n.title || '') + ' ' + String(n.body || '')).toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.indexOf(w) >= 0);
+}
+
 RENDER.notes = async () => {
   setNav(L('app.notes'), null, { icon: 'add', onClick: () => noteEdit({}) });
   loading();
   const d = await post('notes', { op: 'list' });
-  const list = (d && d.notes) || [];
-  if (!list.length) { body(UI.empty(L('ph.no_notes'), 'note')); return; }
-  body(UI.group(list.map((n) => UI.row({
-    icon: 'note', tint: '#FFCC00', title: n.title || L('ph.untitled'),
-    subtitle: shortWhen(n.at), chevron: true, data: { id: n.id },
-  }))));
-  rows('.row', (el) => el.addEventListener('click', () => {
-    const n = list.find((x) => String(x.id) === el.dataset.id);
+  notes = (d && d.notes) || [];
+  paintNotes();
+};
+
+function paintNotes() {
+  const found = notes.filter((n) => noteMatches(n, noteQuery));
+  const pinned = found.filter((n) => n.pinned);
+  const rest = found.filter((n) => !n.pinned);
+
+  const card = (n) =>
+    '<div class="noterow" data-id="' + esc(String(n.id)) + '">' +
+      '<div class="notemid">' +
+        '<div class="notetitle">' +
+          (n.pinned ? '<i class="notepin">' + svg('star') + '</i>' : '') +
+          esc(n.title || L('ph.untitled')) + '</div>' +
+        '<div class="notesub"><span>' + esc(shortWhen(n.updated || n.at)) + '</span>' +
+          esc(noteSnippet(n) || L('ph.note_empty')) + '</div>' +
+      '</div>' + svg('chevron') +
+    '</div>';
+
+  const section = (title, list) => list.length
+    ? '<div class="grouphead">' + esc(title) + '</div>' +
+      '<div class="notelist">' + list.map(card).join('') + '</div>'
+    : '';
+
+  body(
+    // The search field is always there, not only once there are enough notes to need it: a
+    // control that appears at some threshold is one nobody learns is available.
+    (notes.length
+      ? '<div class="notesearch"><input class="field" id="nq" type="search" maxlength="60" ' +
+          'value="' + esc(noteQuery) + '" placeholder="' + esc(L('ph.search')) + '" ' +
+          'aria-label="' + esc(L('ph.search')) + '" /></div>'
+      : '') +
+    (found.length
+      ? section(L('ph.note_pinned'), pinned) +
+        section(pinned.length ? L('ph.note_others') : L('ph.notes_all'), rest)
+      : UI.empty(L(noteQuery ? 'ph.note_nofind' : 'ph.no_notes'), 'note'))
+  );
+
+  const q = byId('nq');
+  if (q) {
+    q.addEventListener('input', () => {
+      noteQuery = q.value;
+      // Redrawn in place and the focus put back: rebuilding the body drops the caret, and a
+      // search box that loses focus on the first letter can only ever take one letter.
+      const at = q.selectionStart;
+      paintNotes();
+      const again = byId('nq');
+      if (again) { again.focus(); again.setSelectionRange(at, at); }
+    });
+  }
+  rows('.noterow', (el) => el.addEventListener('click', () => {
+    const n = notes.find((x) => String(x.id) === el.dataset.id);
     if (n) noteEdit(n);
   }));
-};
+}
 
 function noteEdit(n) {
   if (!openApp || openApp.id !== 'notes') return;
   beginView();
-  setNav(n.id ? (n.title || L('ph.untitled')) : L('ph.note_new'), L('app.notes'), null,
+  let pinned = n.pinned === 1 || n.pinned === true;
+
+  // Pinning is the header's job rather than a button at the bottom, because it is the one
+  // thing here that is true of the note rather than a change to its text: it takes effect on
+  // the tap and does not wait for Save.
+  const setNavBar = () => setNav(
+    n.id ? (n.title || L('ph.untitled')) : L('ph.note_new'), L('app.notes'),
+    n.id ? { icon: 'star', onClick: async () => {
+      pinned = !pinned;
+      const r = await post('notes', { op: 'pin', id: n.id, pinned });
+      if (!r || !r.ok) { pinned = !pinned; toast(L('ph.err_x')); return; }
+      n.pinned = pinned ? 1 : 0;
+      const inList = notes.find((x) => String(x.id) === String(n.id));
+      if (inList) inList.pinned = n.pinned;
+      if (pinned) ui('toggleon'); else ui('toggleoff');
+      toast(L(pinned ? 'ph.note_pinned_on' : 'ph.note_pinned_off'));
+      setNavBar();
+    } } : null,
     () => RENDER.notes());
+  setNavBar();
+
   body(
-    UI.field('ntitle', L('ph.note_title'), n.title || '', 'maxlength="80"') +
-    '<textarea class="mailedit" id="nbody" maxlength="4000" placeholder="' + esc(L('ph.note_body')) + '">' +
-      esc(n.body || '') + '</textarea>' +
+    '<div class="noteedit">' +
+      '<input class="field notetitlebox" id="ntitle" type="text" maxlength="80" ' +
+        'value="' + esc(n.title || '') + '" placeholder="' + esc(L('ph.note_title')) + '" ' +
+        'aria-label="' + esc(L('ph.note_title')) + '" />' +
+      (n.id ? '<div class="notewhen">' + esc(shortWhen(n.updated || n.at)) + '</div>' : '') +
+      '<textarea class="notebody" id="nbody" maxlength="4000" placeholder="' +
+        esc(L('ph.note_body')) + '">' + esc(n.body || '') + '</textarea>' +
+      '<div class="notecount" id="ncount"></div>' +
+    '</div>' +
     UI.button(L('ph.save'), 'nsave', 'tinted') +
     (n.id ? UI.button(L('ph.delete'), 'ndel', 'destructive') : '')
   );
+
+  const count = () => {
+    const t = byId('nbody').value;
+    const words = t.trim() ? t.trim().split(/\s+/).length : 0;
+    byId('ncount').textContent = L('ph.note_count')
+      .replace('{w}', words).replace('{c}', t.length);
+  };
+  byId('nbody').addEventListener('input', count);
+  count();
+
   byId('nsave').addEventListener('click', async () => {
     const r = await post('notes', { op: 'save', id: n.id, title: byId('ntitle').value, body: byId('nbody').value });
     if (r && r.ok) { toast(L('ph.saved')); RENDER.notes(); }
     else toast(L('ph.err_' + ((r && r.error) || 'x')));
   });
   const del = byId('ndel');
-  if (del) del.addEventListener('click', async () => {
-    await post('notes', { op: 'del', id: n.id });
-    toast(L('ph.deleted')); RENDER.notes();
-  });
+  // Asked about rather than done. Everything else on this screen can be typed back; a deleted
+  // note cannot, and the button sits directly under Save.
+  if (del) del.addEventListener('click', () =>
+    confirmSheet(L('ph.note_del_sure'), L('ph.delete'), async () => {
+      await post('notes', { op: 'del', id: n.id });
+      toast(L('ph.deleted'));
+      RENDER.notes();
+    }));
 }
 
 // A timestamp out of the database, as milliseconds. NaN when there is nothing usable.
@@ -2972,7 +3697,7 @@ function mailRead(m) {
       '<div class="mailmeta">' + esc(shortWhen(m.at)) + '</div>' +
     '</div>' +
     '<div class="mailbody">' + esc(m.body || '') + '</div>' +
-    (m.image ? '<button class="mailimg" id="mimg" type="button" style="'
+    (m.image ? '<button class="mailimg" id="mimg" type="button" data-full="' + esc(photoRow(m.image).url) + '" style="'
       + photoStyle(m.image) + '"></button>' : '') +
     UI.button(L('ph.mail_reply'), 'mreply', 'tinted') +
     UI.button(L('ph.mail_forward'), 'mfwd', 'plain') +
@@ -3240,26 +3965,136 @@ function photoRow(v) {
   return v;
 }
 
+// ══ One photograph, full screen ════════════════════════════════════
+// Every app that shows a picture opens this one. Before it, a photo in a message or a feed was
+// whatever size its card gave it, and there was no way to look closer at ANY of them.
+//
+// **Opt-in by attribute, not by a list of selectors.** Anything carrying `data-full` opens;
+// `photoImg` writes it, so every place that uses the shared helper is covered without being
+// named, including whatever is written next month. A list of classes here would be a list to
+// keep in step with six apps, and the first thing to go missing from it would be the newest
+// app - which is exactly the one nobody would think to check.
+//
+// Avatars and icons are left out on purpose: they go through their own helpers and do not
+// carry the attribute. Zooming a 30px profile picture is not a feature.
+function openPhoto(url, caption) {
+  const clean = String(url || '').trim();
+  if (!clean) return;
+  const host = byId('photoview');
+  const wasOpen = host.classList.contains('on');
+  host.innerHTML =
+    '<div class="pvframe">' +
+      '<img class="pvimg" src="' + esc(cssUrl(clean)) + '" alt="" />' +
+      '<button class="pvclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
+        svg('xmark') + '</button>' +
+      (caption ? '<div class="pvcap">' + esc(caption) + '</div>' : '') +
+    '</div>';
+
+  // **The handset turns, and the frame turns back.**
+  //
+  // Rotating the device rotates everything inside it, so a photograph laid out to fill the
+  // screen's 352x764 box comes out standing on its side - which is how a landscape picture
+  // ended up a narrow strip. The frame takes the quarter turn back, and is laid out with the
+  // screen's two dimensions SWAPPED so that once turned it still fits: net zero rotation for
+  // the picture, a phone lying on its side for the player, and the long axis finally used.
+  const screenEl = byId('screen');
+  host.style.setProperty('--pvw', screenEl.offsetWidth + 'px');
+  host.style.setProperty('--pvh', screenEl.offsetHeight + 'px');
+  host.classList.add('on', 'rot');
+  // Marks the handset so its bezel buttons stop responding - they are outside the screen and
+  // the viewer cannot cover them.
+  byId('device').classList.add('photoing');
+
+  // **Only the FIRST open remembers.** Opening a second photograph without closing the first
+  // would otherwise record the viewer's own sideways state as "where it was", and the handset
+  // could never be put back - it stayed on its side for the rest of the session.
+  if (!wasOpen) photoWasLandscape = landscape;
+  photoZoom = true;
+  setLandscape(true);
+  ui('sheet');
+}
+
+function closePhoto() {
+  const host = byId('photoview');
+  if (!host.classList.contains('on')) return false;
+  host.classList.remove('on', 'rot');
+  byId('device').classList.remove('photoing');
+  host.innerHTML = '';
+  photoZoom = false;
+  // Back to where it was, which is not always portrait: opening a photograph from the camera
+  // starts from a handset that is already on its side.
+  setLandscape(photoWasLandscape);
+  return true;
+}
+
+// Click anywhere - the backdrop, the photograph, the close button. There is one thing to do
+// here and everything does it, which is what "tap to dismiss" means.
+byId('photoview').addEventListener('click', () => closePhoto());
+
+// One delegated listener for the whole phone, so no app has to remember to wire it.
+byId('screen').addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-full]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openPhoto(el.dataset.full, el.dataset.fullcap || '');
+}, true);
+
 // An <img> that honours the recipe, for the places that use a real element rather than a
 // background: a post, a message bubble. Same output as `photoStyle` produces for a background.
 function photoImg(value, cls) {
   const r = photoRow(value);
   const ratio = { portrait: '4 / 5', square: '1 / 1', tall: '9 / 16' }[r.crop || ''] || '';
+  // No `max-width` here, and that was tried.
+  //
+  // A photograph taken in game is two thousand pixels wide, and an inline ceiling looked like
+  // the way to guarantee it always fits. It is not: a Snapmatic card deliberately runs its
+  // picture PAST its own padding, edge to edge, with `width: calc(100% + 30px)` - and an
+  // inline rule beats a stylesheet, so the ceiling silently undid the full-bleed and put a
+  // margin back around every photograph in the feed.
+  //
+  // Containment belongs on the container. The cards clip, so nothing can escape them whatever
+  // arrives, and a card that WANTS its picture wider than its text is still allowed to say so.
   const style = 'filter:' + filterCss(r.filter)
     + (ratio ? ';aspect-ratio:' + ratio + ';object-fit:cover;object-position:50% '
       + focusOf(r.focus) + '%' : '');
+  // `data-full` is what makes it openable. Written here rather than at each call site, so a
+  // picture drawn by this helper can always be looked at properly.
   return '<img class="' + esc(cls || '') + '" src="' + esc(r.url)
-    + '" style="' + style + '" alt="" />';
+    + '" style="' + style + '" data-full="' + esc(r.url) + '" alt="" />';
 }
-function inlineBackground(url) {
-  const clean = Array.from(String(url || '')).filter((char) => {
-    const code = char.charCodeAt(0);
-    return code >= 32 && code !== 127;
-  }).join('');
-  const safe = clean
+/// A URL, safe to sit inside a CSS `url("...")`.
+///
+/// Control characters dropped, then the two characters that could end the quoted string escaped.
+/// Shared by the two helpers below so a URL is cleaned once and used in either place.
+function cssUrl(url) {
+  return Array.from(String(url || ''))
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"');
-  return 'background-image:url(&quot;' + esc(safe) + '&quot;)';
+}
+
+/// For an HTML STRING: `'<div style="' + inlineBackground(u) + '">'`.
+///
+/// The quotes come out as `&quot;` on purpose - the value is about to be written inside a
+/// double-quoted attribute, and the parser turns them back into quotes when it reads the markup.
+///
+/// **Which is why it must never be handed to `setAttribute`.** That takes a raw string and does
+/// no entity decoding, so `url(&quot;https://...&quot;)` reaches the CSS parser verbatim, fails
+/// to parse, and the element is simply left with no background. Nothing errors and nothing logs;
+/// the picture is just absent. Use `setBackground` for an element that already exists.
+function inlineBackground(url) {
+  return 'background-image:url(&quot;' + esc(cssUrl(url)) + '&quot;)';
+}
+
+/// For an element that already exists. The same value, without the entity encoding.
+function setBackground(el, url) {
+  if (!el) return;
+  el.style.backgroundImage = url ? 'url("' + cssUrl(url) + '")' : '';
 }
 function photoStyle(v) {
   const r = photoRow(v);
@@ -3275,6 +4110,22 @@ function pickPhoto(onPick) {
   const host = byId('sheet');
   const sourceOpen = host.classList.contains('on');
   const sourceNode = host.firstChild;
+  // **The epoch the sheet underneath was opened at.**
+  //
+  // A caller writes `const epoch = sheetEpoch` when it builds its sheet, and later
+  // `closeSheet(false, epoch)` - which refuses if the number has moved, because a moved number
+  // means some other sheet is on screen and closing it would be closing the wrong thing.
+  //
+  // Raising the picker bumps it twice: once opening the picker, once putting the composer
+  // back. But putting the composer back restores the SAME sheet, with the same fields and the
+  // same listeners, so the caller's number was never stale - and its save silently refused to
+  // close, leaving the sheet open and the screen behind it never refreshed. That is the
+  // profile edit that needed the app closed and reopened before the new name showed up.
+  //
+  // Restoring the number rather than advancing past it says what is true: this is the sheet
+  // that was there before. Anything holding the PICKER's number still mismatches, which is
+  // the case the guard is for.
+  const beneath = sheetEpoch;
   post('photos', { op: 'list' }).then((d) => {
     if (sourceOpen
       ? (!host.classList.contains('on') || host.firstChild !== sourceNode)
@@ -3286,7 +4137,7 @@ function pickPhoto(onPick) {
     const restore = host.classList.contains('on') ? document.createDocumentFragment() : null;
     if (restore) while (host.firstChild) restore.appendChild(host.firstChild);
     const restoreComposer = restore ? () => {
-      sheetEpoch += 1;
+      sheetEpoch = beneath;
       sheetReturn = null;
       emojiClose();
       host.replaceChildren(restore);
@@ -3336,9 +4187,21 @@ function forwardSms(m) {
 
 function messageActions(m) {
   const value = String((m && (m.body || m.attachment)) || '');
+  const mine = (m && m.reactions && m.reactions.mine) || '';
   sheet(L('ph.message_actions'),
-    '<div class="msgactionpreview">' + bubbleHtml(Object.assign({}, m, { mine: false })) + '</div>' +
+    // The Tapback row, above the preview and above everything else. It is the action taken on
+    // a message nine times out of ten, and burying it under three buttons would have made the
+    // long press a worse gesture than it was before.
+    (m && m.id
+      ? '<div class="tapback">' + REACTIONS.map((k) =>
+          '<button class="tb' + (mine === k ? ' on' : '') + '" type="button" data-r="' + k + '" ' +
+            'aria-label="' + esc(L('ph.react_' + k)) + '">' + REACT_GLYPH[k] + '</button>').join('') +
+        '</div>'
+      : '') +
+    '<div class="msgactionpreview">' +
+      bubbleHtml(Object.assign({}, m, { mine: false, reactions: null })) + '</div>' +
     '<div class="msgactiongrid">' +
+      (m && m.id ? UI.button(L('ph.reply'), 'msgreply', 'tinted') : '') +
       UI.button(L('ph.copy'), 'msgcopy', 'plain') +
       UI.button(L('ph.forward'), 'msgforward', 'tinted') +
     '</div>' +
@@ -3356,6 +4219,14 @@ function messageActions(m) {
     '<div class="sheethint">' + esc(L('ph.message_actions_hint')) + '</div>',
     () => {
       const epoch = sheetEpoch;
+      qrows('sheet', '.tapback .tb', (b) => b.addEventListener('click', async () => {
+        if (!closeSheet(false, epoch)) return;
+        await react(m, b.dataset.r);
+      }));
+      if (byId('msgreply')) byId('msgreply').addEventListener('click', () => {
+        closeSheet();
+        requestAnimationFrame(() => replyTo(m));
+      });
       byId('msgcopy').addEventListener('click', () => {
         closeSheet();
         if (value) copyText(value);
@@ -3708,7 +4579,16 @@ RENDER.messages = async () => {
   post('outbox', {}).then((r) => {
     if (!r || !r.ok) return;
     outbox = farr(r.items);
-    if (openApp && openApp.id === 'messages' && thread !== null) openThread(thread);
+    if (!(openApp && openApp.id === 'messages' && thread !== null)) return;
+    // **`paintTail()`, not `openThread()`.**
+    //
+    // The queued bubbles live in `#threadtail` and `tailHtml()` exists to redraw exactly them.
+    // Re-opening the whole thread rebuilt the composer as well, which threw away whatever the
+    // player had typed - and this answer arrives a moment after Messages opens, which is
+    // precisely when `messageTo()` has just prefilled a draft for them. So tapping "message" on
+    // a contact card and starting to type lost what you typed, once, unpredictably.
+    if (byId('threadtail')) paintTail();
+    else openThread(thread);
   });
 
   // Re-read before drawing. `state.conversations` is a snapshot taken when the phone was
@@ -3838,8 +4718,12 @@ async function openGroup(id, name) {
     () => {
       threadGroup = null;
       foot('');
+      typingPing(true);
+      typingSet(null, false);
       RENDER.messages();
     });
+  // A group has no one face, so it gets its initials and the same chevron-only header.
+  navFace(name, null);
   loading();
   const res = await post('conversation', { group: id });
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
@@ -3865,6 +4749,11 @@ async function openGroup(id, name) {
 function messageTo(number, draft) {
   const to = String(number || '').trim();
   if (!to) return;
+  // A number that answers with an APP answers a text the same way it answers a call.
+  // 911 is the case that made this obvious: tapping Call opened the emergency app and
+  // tapping Message opened a thread into a number nobody reads. One of those two is a
+  // player waiting for a reply that is never coming.
+  if (contactOpensApp(to)) return;
   if (!openApp || openApp.id !== 'messages') {
     const app = (state.apps || []).find((a) => a.id === 'messages');
     if (!app) { toast(L('ph.err_notinstalled')); return; }
@@ -3881,13 +4770,20 @@ async function openThread(number, draft) {
   // A service thread is opened by its `svc:Label` key rather than by a number. Show the
   // label, and offer no call button: there is nobody on the other end to ring.
   const isService = String(number || '').slice(0, 4) === 'svc:';
-  setNav(isService ? String(number).slice(4) : nameOfNumber(number), L('app.messages'),
+  const withWhom = isService ? String(number).slice(4) : nameOfNumber(number);
+  setNav(withWhom, L('app.messages'),
     isService ? null : { icon: 'phone', onClick: () => placeCall(number) },
   () => {
+    // Leaving the thread stops the dots on the other phone. Without this they sit there
+    // until the other end's own timer gives up on them, which reads as somebody typing a
+    // message they never send.
+    typingPing(true);
+    typingSet(null, false);
     thread = null;
     foot('');
     RENDER.messages();
   });
+  navFace(withWhom, isService ? null : photoOfNumber(number));
   loading();
   const res = await post('conversation', { number });
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
@@ -3944,10 +4840,70 @@ function outboxHtml() {
     '<div class="pendnote">' + esc(L('ph.outbox_note')) + '</div>';
 }
 
-function bubbleHtml(m) {
+// ══════════════════════════════════════════════════════════════
+// Reactions
+// ══════════════════════════════════════════════════════════════
+// Six, in the order the phone this one imitates offers them. The page owns the glyph and the
+// server owns the key: nothing a player can influence ever becomes a character drawn on
+// somebody else's message.
+const REACTIONS = ['love', 'like', 'dislike', 'haha', 'wow', 'question'];
+const REACT_GLYPH = {
+  love: '❤️', like: '👍', dislike: '👎',
+  haha: '😂', wow: '‼️', question: '❓',
+};
+
+/// The badge that sits on the corner of a bubble somebody reacted to.
+///
+/// Distinct glyphs, not one per person: three people who all sent a heart are one heart and a
+/// three, which is what a group thread needs to stay readable. `mine` is drawn ringed, so
+/// finding your own among four is a glance rather than a memory test.
+function reactBadge(marks) {
+  if (!marks || !marks.counts) return '';
+  const kinds = REACTIONS.filter((k) => marks.counts[k] > 0);
+  if (!kinds.length) return '';
+  let total = 0;
+  kinds.forEach((k) => { total += marks.counts[k]; });
+  return '<span class="mreact' + (marks.mine ? ' own' : '') + '">' +
+    kinds.slice(0, 3).map((k) => '<i>' + REACT_GLYPH[k] + '</i>').join('') +
+    (total > 1 ? '<b>' + total + '</b>' : '') + '</span>';
+}
+
+/// One line standing in for the message a reply answers.
+///
+/// The quoted text is a COPY taken when the reply was written, and it is drawn as a quote
+/// rather than as a live bubble - a message that was later unsent leaves the quote behind,
+/// which is how quoting works on paper and is the honest thing to show.
+function quoteHtml(m) {
+  const q = m && m.reply;
+  if (!q) return '';
+  const who = q.mine ? L('ph.msg_you')
+    : nameOfNumber(q.from || (!threadGroup && thread) || '');
+  const what = q.kind === 'image' ? L('ph.photo')
+    : (q.kind === 'location' ? L('ph.msg_location') : (q.body || ''));
+  return '<div class="mquote' + (m.mine ? ' me' : ' them') + '" data-jump="' + esc(String(q.id)) + '">' +
+    '<span class="mqwho">' + esc(who) + '</span>' +
+    '<span class="mqtext">' + esc(String(what).slice(0, 90)) + '</span></div>';
+}
+
+/// True for a link that will animate. Used only to put a GIF label on the corner.
+///
+/// Read off the URL rather than stored as a fourth message kind: adding a kind would have
+/// meant teaching the conversation list, the export API and forensics what it meant, all to
+/// gain one small word in one corner.
+function looksAnimated(url) {
+  return /\.gif(\?|#|$)/i.test(String(url || ''));
+}
+
+/// One message. `prev` and `next` are its neighbours in the thread, and they decide its shape.
+///
+/// A run of messages from the same person is drawn as iOS draws it: one tail on the last of
+/// the run and full corners on the rest, tight together, with the name shown once at the top
+/// in a group rather than above every line.
+function bubbleHtml(m, prev, next) {
   let inner;
   if (m.kind === 'image') {
     inner = photoImg(m.attachment, 'mimg') +
+      (looksAnimated(m.attachment) ? '<span class="gifmark">GIF</span>' : '') +
       (m.body ? '<div class="mcap">' + esc(m.body) + '</div>' : '');
   } else if (m.kind === 'location') {
     // A shared position opens in Maps, which here means: it sets your waypoint.
@@ -3956,7 +4912,16 @@ function bubbleHtml(m) {
   } else {
     inner = esc(m.body);
   }
-  const sender = (!m.mine && threadGroup && m.from)
+
+  // Same voice as the one before it, with nothing in between. A reply starts its own run: the
+  // quote above it needs the space, and gluing it to the bubble above hides which one it
+  // answers.
+  const sameAs = (a, b) => !!a && !!b && a.mine === b.mine &&
+    String(a.from || '') === String(b.from || '');
+  const joinAbove = sameAs(m, prev) && !m.reply;
+  const joinBelow = sameAs(m, next) && !(next && next.reply);
+
+  const sender = (!m.mine && threadGroup && m.from && !joinAbove)
     ? '<div class="gsender">' + esc(nameOfNumber(m.from)) + '</div>' : '';
   // Copying a code out of a message is the one action anybody ever takes on one, so it gets
   // a button rather than a long press. Incoming only: there is no point offering to copy a
@@ -3971,73 +4936,331 @@ function bubbleHtml(m) {
   // for the tint behind it, and stripping the background left white words on the app's own
   // background - readable in dark, invisible in light.
   const imgClass = m.kind !== 'image' ? '' : (m.body ? ' imgcap' : ' imgb');
-  return sender + '<div class="bub ' + (m.mine ? 'me' : 'them') + imgClass + '">' +
-    inner + '</div>' + copy;
+  const badge = reactBadge(m.reactions);
+  const shape = (joinAbove ? ' joinabove' : '') + (joinBelow ? ' joinbelow' : '') +
+    (badge ? ' hasreact' : '');
+  return sender + quoteHtml(m) +
+    '<div class="bub ' + (m.mine ? 'me' : 'them') + imgClass + shape + '"' +
+      (m.id ? ' data-id="' + esc(String(m.id)) + '"' : '') + '>' +
+    inner + badge + '</div>' + copy;
 }
 
+/// The date line iOS puts above the first message of a session.
+///
+/// Drawn when the day changes, or after a gap long enough that the two messages are not one
+/// conversation. Forty minutes is the gap: short enough that coming back after dinner is
+/// marked, long enough that a slow exchange is not chopped into a dozen headings.
+const THREAD_GAP_MS = 40 * 60 * 1000;
+
+function dayLine(m, prev) {
+  const ms = whenMs(m && m.at);
+  if (!Number.isFinite(ms)) return '';
+  const before = prev ? whenMs(prev.at) : NaN;
+  if (Number.isFinite(before)) {
+    const sameDay = new Date(ms).toDateString() === new Date(before).toDateString();
+    if (sameDay && ms - before < THREAD_GAP_MS) return '';
+  }
+  const d = new Date(ms);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86400000);
+  let day;
+  if (d.toDateString() === today.toDateString()) day = L('ph.today');
+  else if (d.toDateString() === yesterday.toDateString()) day = L('ph.yesterday');
+  else day = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return '<div class="mday"><b>' + esc(day) + '</b> ' +
+    esc(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) + '</div>';
+}
+
+/// Delivered, or read, under the last message you sent.
+///
+/// Only under the last one, and only when it is yours and the newest in the thread. A column
+/// of "Delivered" down the right-hand side is what this looks like when the rule is forgotten,
+/// and it is the reason the real one is drawn exactly once.
+function receiptHtml(list) {
+  const last = list[list.length - 1];
+  if (!last || !last.mine || threadGroup) return '';
+  // A group has no single reader, so it has no single answer. Left out rather than guessed at.
+  return '<div class="mreceipt">' + esc(L(last.seen ? 'ph.msg_read' : 'ph.msg_delivered')) + '</div>';
+}
+
+/// Every bubble, with its separators.
+function bubblesHtml(list) {
+  let out = '';
+  for (let i = 0; i < list.length; i += 1) {
+    out += dayLine(list[i], list[i - 1]) + bubbleHtml(list[i], list[i - 1], list[i + 1]);
+  }
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════
+// The end of the thread
+// ══════════════════════════════════════════════════════════════
+// Three things live below the last bubble and none of them are messages: the receipt line,
+// whoever is currently typing, and anything the handset is still holding. They share one
+// element so that appending a message means writing ONE bubble and rewriting one small tail -
+// rather than redrawing fifty bubbles and watching every one of them play its entrance again.
+// That mistake has been made in this file before, on the home screen, and it reads to a player
+// as the app refreshing itself for no reason.
+
+let threadMsgs = [];      // what the open thread is showing, oldest first
+let typingFrom = null;    // the number, or a group member's number, currently writing
+let typingTimer = 0;
+
+function tailHtml() {
+  return receiptHtml(threadMsgs) + typingHtml() + outboxHtml();
+}
+
+function paintTail() {
+  const tail = byId('threadtail');
+  if (tail) tail.innerHTML = tailHtml();
+}
+
+/// Three dots, drawn as a bubble because that is what it becomes.
+function typingHtml() {
+  if (!typingFrom) return '';
+  const who = threadGroup ? '<div class="gsender">' + esc(nameOfNumber(typingFrom)) + '</div>' : '';
+  return who + '<div class="bub them typing" aria-label="' + esc(L('ph.msg_typing')) + '">' +
+    '<i></i><i></i><i></i></div>';
+}
+
+/// Somebody is writing, or has stopped.
+///
+/// It clears itself. A stop message can be lost - the other phone can be closed, put in a
+/// pocket or dropped from the server between the last keystroke and the send - and three dots
+/// that never go away are worse than none at all, because they are a lie that persists.
+function typingSet(number, on) {
+  if (typingTimer) { clearTimeout(typingTimer); typingTimer = 0; }
+  const next = on ? String(number || '') : null;
+  if (next === typingFrom) {
+    if (next) typingTimer = setTimeout(() => typingSet(null, false), 6500);
+    return;
+  }
+  typingFrom = next;
+  paintTail();
+  if (next) {
+    typingTimer = setTimeout(() => typingSet(null, false), 6500);
+    const b = byId('appbody');
+    if (b) b.scrollTop = b.scrollHeight;
+  }
+}
+
+/// One more message at the bottom, without redrawing the ones already there.
+///
+/// The bubble above is patched rather than rebuilt: a run that has just grown by one means the
+/// old last bubble keeps its shape but loses its tail, which is two class changes and no new
+/// markup.
+function appendMessage(m) {
+  const el = byId('thread');
+  const tail = byId('threadtail');
+  if (!el || !tail) return;
+  const prev = threadMsgs[threadMsgs.length - 1];
+  // The LAST bubble, not the last element: an incoming message carrying a code puts a copy
+  // button after its bubble, and the button is not what loses its tail.
+  const all = document.querySelectorAll('#thread > .bub');
+  const prevEl = all.length ? all[all.length - 1] : null;
+  threadMsgs.push(m);
+  if (prev && prevEl && prev.mine === m.mine &&
+      String(prev.from || '') === String(m.from || '') && !m.reply) {
+    prevEl.classList.add('joinbelow');
+  }
+  tail.insertAdjacentHTML('beforebegin', dayLine(m, prev) + bubbleHtml(m, prev, null));
+  // A message arriving means whoever sent it has stopped writing it.
+  if (!m.mine) typingSet(null, false);
+  paintTail();
+  const fresh = document.querySelectorAll('#thread > .bub');
+  if (fresh.length) wireBubble(fresh[fresh.length - 1], m);
+  wireLocButtons();
+  wireCodeCopy();
+  const b = byId('appbody');
+  if (b) b.scrollTop = b.scrollHeight;
+}
+
+/// The "copy the code" button on a message carrying one.
+///
+/// **Guarded per element, and called from `appendMessage` too.** `paintThread` wired these once
+/// over the whole thread, and a message that ARRIVES is inserted by `appendMessage` without a
+/// repaint - so a verification code that landed while its own thread was open drew a button that
+/// did nothing at all. Which is the case that matters: a code is the most likely thing in the
+/// phone to arrive while somebody is looking straight at the conversation.
+function wireCodeCopy() {
+  rows('.codecopy', (b) => {
+    if (b.dataset.wired === '1') return;
+    b.dataset.wired = '1';
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyText(b.dataset.code, L('ph.code_copied'));
+    });
+  });
+}
+
+/// The "set a waypoint" button on a shared location.
+///
+/// **Guarded per element.** `rows` selects every `.locbtn` in the app body, and `appendMessage`
+/// calls this after inserting each new bubble without clearing the thread - so every message
+/// received added another listener to every location button already on screen, and tapping one
+/// after six messages sent six waypoint requests and raised six toasts. `wireBubble`, two lines
+/// away, has always used exactly this flag.
 function wireLocButtons() {
-  rows('.locbtn', (b) => b.addEventListener('click', async () => {
-    const parts = String(b.dataset.loc || '').split(';');
-    const r = await post('waypoint', { x: Number(parts[0]), y: Number(parts[1]) });
-    if (r && r.ok) toast(L('ph.waypoint_set'));
-  }));
+  rows('.locbtn', (b) => {
+    if (b.dataset.wired === '1') return;
+    b.dataset.wired = '1';
+    b.addEventListener('click', async () => {
+      const parts = String(b.dataset.loc || '').split(';');
+      const r = await post('waypoint', { x: Number(parts[0]), y: Number(parts[1]) });
+      if (r && r.ok) toast(L('ph.waypoint_set'));
+    });
+  });
+}
+
+/// The gestures one bubble answers to.
+///
+/// Wired per bubble rather than delegated from the thread, because a bubble arriving later
+/// has to behave exactly like one that was there when the screen was drawn - and a listener
+/// on the container would have to find the message again from the element every time.
+function wireBubble(b, m) {
+  if (!b || b.dataset.wired === '1') return;
+  b.dataset.wired = '1';
+  let hold = 0, sx = 0, sy = 0, active = false, opened = false;
+  const cancelHold = () => { if (hold) clearTimeout(hold); hold = 0; };
+  const stop = () => {
+    active = false;
+    cancelHold();
+    b.classList.remove('pressing', 'dragging');
+    b.style.removeProperty('--msg-drag');
+  };
+
+  b.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button') || e.target.closest('.locbtn')) return;
+    sx = e.clientX;
+    sy = e.clientY;
+    active = true;
+    opened = false;
+    b.classList.add('pressing');
+    // The element keeps the pointer until it is released, so a pointerup outside the bubble is
+    // still delivered here. Without it the release was simply never seen, `active` stayed true,
+    // and every later mouse move over that bubble dragged it - which is exactly what "hovering
+    // a message slides it sideways" was.
+    if (b.setPointerCapture && e.pointerId != null) {
+      try { b.setPointerCapture(e.pointerId); } catch { /* not captureable, the guard below covers it */ }
+    }
+    hold = setTimeout(() => {
+      if (!active) return;
+      opened = true;
+      b.classList.remove('pressing');
+      messageActions(m);
+    }, 440);
+  });
+
+  b.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    // A mouse that is merely passing over holds no button. Belt to the capture's braces: if a
+    // release was missed for any reason at all, the next movement cancels rather than drags.
+    if (e.pointerType === 'mouse' && e.buttons === 0) { stop(); return; }
+    const dx = e.clientX - sx;
+    const dy = e.clientY - sy;
+    if (Math.abs(dx) > 11 || Math.abs(dy) > 11) cancelHold();
+    // Vertical wins. Dragging a thread up and down must not smear every bubble it passes.
+    if (Math.abs(dy) > Math.abs(dx)) { b.style.removeProperty('--msg-drag'); return; }
+    b.style.setProperty('--msg-drag', Math.max(0, Math.min(46, dx * .5)) + 'px');
+    b.classList.toggle('dragging', dx > 14);
+  });
+
+  b.addEventListener('pointerup', (e) => {
+    if (!active) return;
+    const dx = e.clientX - sx;
+    const dy = e.clientY - sy;
+    stop();
+    // A swipe to the right is REPLY, the gesture every messaging app uses for it. Forty pixels
+    // rather than fifty-two: on a 372-wide screen the old distance was most of a short bubble,
+    // so the gesture kept ending before it counted.
+    if (!opened && dx > 40 && Math.abs(dy) < 30) replyTo(m);
+  });
+
+  b.addEventListener('pointercancel', stop);
+  b.addEventListener('lostpointercapture', stop);
+  // A mouse has no swipe worth the name. Double click is the same intent with one hand.
+  b.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    replyTo(m);
+  });
+}
+
+/// Put a reaction on a message, or take yours off by choosing it again.
+///
+/// The badge is drawn from what the SERVER answers rather than from what was tapped: the
+/// server holds everybody's, and a page that drew its own guess would show a different count
+/// from the phone beside it until somebody reopened the thread.
+async function react(m, kind) {
+  if (!m || !m.id) return;
+  const res = await post('msgReact', { id: m.id, reaction: kind });
+  if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+  applyReaction(m.id, res.reactions);
+  if (res.reaction) ui('toggleon'); else ui('toggleoff');
+}
+
+/// Redraw one bubble's badge, in place.
+///
+/// In place matters: repainting the thread would replay every bubble's entrance animation for
+/// a change the size of a full stop.
+function applyReaction(id, marks) {
+  const m = threadMsgs.find((x) => x && String(x.id) === String(id));
+  if (m) m.reactions = marks || null;
+  const b = document.querySelector('#thread > .bub[data-id="' + String(id).replace(/"/g, '') + '"]');
+  if (!b) return;
+  const old = b.querySelector('.mreact');
+  if (old) old.remove();
+  const html = reactBadge(marks);
+  if (html) {
+    b.insertAdjacentHTML('beforeend', html);
+    b.classList.add('hasreact');
+  } else {
+    b.classList.remove('hasreact');
+  }
+}
+
+/// Scroll to the message a quote names, and flash it.
+///
+/// It may not be on screen at all: a thread loads the newest forty, and the message being
+/// answered can be older than that. Saying so beats scrolling to nothing.
+function jumpToMessage(id) {
+  const el = byId('thread');
+  const target = el && el.querySelector('.bub[data-id="' + String(id).replace(/"/g, '') + '"]');
+  if (!target) { toast(L('ph.msg_reply_gone')); return; }
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  target.classList.remove('flash');
+  // Reading a layout property between the two forces the class to actually come off before it
+  // goes back on. Without it the browser collapses both into no change and nothing flashes.
+  void target.offsetWidth;
+  target.classList.add('flash');
+  setTimeout(() => target.classList.remove('flash'), 1200);
 }
 
 function paintThread(messages, service) {
-  body(`<div class="thread" id="thread">${messages.map(bubbleHtml).join('')}${outboxHtml()}</div>`);
+  threadMsgs = messages || [];
+  typingFrom = null;
+  if (typingTimer) { clearTimeout(typingTimer); typingTimer = 0; }
+  replyDraft = null;
+  body('<div class="thread" id="thread">' + bubblesHtml(threadMsgs) +
+       '<div class="ttail" id="threadtail">' + tailHtml() + '</div></div>');
   wireLocButtons();
-  rows('.codecopy', (b) => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    copyText(b.dataset.code, L('ph.code_copied'));
-  }));
-  // A tap remains a tap. Message actions use the familiar mobile long-press gesture,
-  // with a short horizontal swipe as a faster alternative.
-  [...byId('thread').querySelectorAll('.bub')].forEach((b, i) => {
-    let hold = 0, sx = 0, sy = 0, active = false, opened = false;
-    const cancelHold = () => { if (hold) clearTimeout(hold); hold = 0; };
-    b.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button') || e.target.closest('.locbtn')) return;
-      sx = e.clientX;
-      sy = e.clientY;
-      active = true;
-      opened = false;
-      b.classList.add('pressing');
-      hold = setTimeout(() => {
-        if (!active) return;
-        opened = true;
-        b.classList.remove('pressing');
-        messageActions(messages[i]);
-      }, 440);
-    });
-    b.addEventListener('pointermove', (e) => {
-      if (!active) return;
-      const dx = e.clientX - sx;
-      const dy = e.clientY - sy;
-      b.style.setProperty('--msg-drag', Math.max(-8, Math.min(34, dx * .26)) + 'px');
-      if (Math.abs(dx) > 11 || Math.abs(dy) > 11) cancelHold();
-    });
-    b.addEventListener('pointerup', (e) => {
-      if (!active) return;
-      const dx = e.clientX - sx;
-      const dy = e.clientY - sy;
-      active = false;
-      cancelHold();
-      b.classList.remove('pressing');
-      b.style.removeProperty('--msg-drag');
-      if (!opened && dx > 52 && Math.abs(dy) < 28) messageActions(messages[i]);
-    });
-    b.addEventListener('pointercancel', () => {
-      active = false;
-      cancelHold();
-      b.classList.remove('pressing');
-      b.style.removeProperty('--msg-drag');
-    });
+  wireCodeCopy();
+  byId('thread').addEventListener('click', (e) => {
+    const q = e.target.closest('.mquote');
+    if (q) jumpToMessage(q.dataset.jump);
   });
+  // A tap remains a tap. Message actions use the familiar mobile long-press gesture,
+  // with a short right swipe as the shortcut to replying.
+  // Direct children only. Queued messages and the typing dots live in the tail INSIDE this
+  // element and are bubbles too, so a plain `.bub` search would find them and shift every
+  // index by one - wiring each bubble to the wrong message.
+  [...document.querySelectorAll('#thread > .bub')].forEach((b, i) => wireBubble(b, threadMsgs[i]));
   // No composer on a service thread. `svc:Bleeter` is not a line anybody answers, and a
   // send box that can only fail is worse than no send box.
   if (service) { foot(''); return; }
-  foot(`<div class="compose">` +
-    `<button class="attach" id="attach" type="button" aria-label="${esc(L('ph.attach'))}">+</button>` +
+  foot('<div class="replybar" id="replybar"></div>' +
+    `<div class="compose">` +
+    `<button class="attach" id="attach" type="button" aria-label="${esc(L('ph.attach'))}">${svg('add')}</button>` +
+    `<button class="attach gifbtn" id="msggif" type="button" aria-label="${esc(L('ph.gif'))}">GIF</button>` +
     `<button class="emoji" id="msgemoji" type="button" aria-label="${esc(L('ph.emoji'))}">😊</button>` +
     // **A textarea, not an input.** An `<input>` cannot hold a newline at all - not typed,
     // not pasted - so a long message was one unbroken paragraph however it was written. It
@@ -4047,6 +5270,7 @@ function paintThread(messages, service) {
       'placeholder="' + esc(L('ph.write')) + '" aria-label="' + esc(L('ph.write')) + '"></textarea>' +
     `<button class="sendbtn" id="sendmsg" type="button" aria-label="${esc(L('ph.send'))}">${svg('send')}</button></div>`);
   byId('attach').addEventListener('click', () => attachSheet());
+  byId('msggif').addEventListener('click', () => gifSheet());
   byId('msgemoji').addEventListener('click', () => emojiOpen('msg'));
   byId('msg').addEventListener('focus', emojiClose);
   const el = byId('thread');
@@ -4066,6 +5290,38 @@ function paintThread(messages, service) {
   };
 
   const target = () => threadGroup ? { group: threadGroup.id } : { number: thread };
+
+  // Everything that puts a message on the screen goes through here, so a picture, a GIF, a
+  // location and a typed line all get the same grouping, the same receipt and the same
+  // wiring. Three separate copies of this is what it was before, and they had already drifted.
+  window.threadSend = async (payload) => {
+    const res = await post('send', Object.assign({}, payload, target(),
+      replyDraft ? { reply: replyDraft.id } : {}));
+    if (res && res.queued) {
+      // Held by the handset until the bars come back. Said out loud rather than drawn as a
+      // sent message, and the bubble carries the mark - somebody who thinks a text went out
+      // and finds out an hour later that it did not is worse served than somebody told now.
+      outbox = outbox.concat([{ id: res.id, payload: Object.assign({}, payload, target()) }]);
+      paintTail();
+      ui('error');
+      toast(L('ph.outbox_queued'));
+      byId('appbody').scrollTop = byId('appbody').scrollHeight;
+    } else if (res && res.ok) {
+      // `res.id` matters: without it the bubble you just sent has no identity, so you cannot
+      // react to it, quote it or unsend it until the thread is reopened.
+      appendMessage({ id: res.id, mine: true, body: res.body, kind: res.kind,
+                      attachment: res.attachment, reply: res.reply, at: Date.now() });
+      ui('sent');
+    } else {
+      ui('error');
+      toast(L('ph.err_' + ((res && res.error) || 'x')));
+      return false;
+    }
+    replySet(null);
+    typingPing(true);
+    return true;
+  };
+
   const send = async () => {
     const input = byId('msg');
     // Trailing blank lines are not a message. Leading and trailing whitespace goes, and the
@@ -4074,24 +5330,7 @@ function paintThread(messages, service) {
     if (!text) return;
     input.value = '';
     grow();
-    const res = await post('send', Object.assign({ body: text }, target()));
-    if (res && res.queued) {
-      // Held by the handset until the bars come back. Said out loud rather than drawn as a
-      // sent message, and the bubble carries the mark - somebody who thinks a text went out
-      // and finds out an hour later that it did not is worse served than somebody told now.
-      outbox = outbox.concat([{ id: res.id, payload: Object.assign({ body: text }, target()) }]);
-      el.insertAdjacentHTML('beforeend', outboxBubble({ id: res.id, payload: { body: text } }));
-      ui('error');
-      toast(L('ph.outbox_queued'));
-      byId('appbody').scrollTop = byId('appbody').scrollHeight;
-    } else if (res && res.ok) {
-      el.insertAdjacentHTML('beforeend', bubbleHtml({ mine: true, body: res.body, kind: res.kind, attachment: res.attachment }));
-      ui('sent');
-      byId('appbody').scrollTop = byId('appbody').scrollHeight;
-    } else {
-      ui('error');
-      toast(L('ph.err_' + ((res && res.error) || 'x')));
-    }
+    await threadSend({ body: text });
   };
 
   // Anything that is not typed: a photo from the gallery, an image or GIF by link, or
@@ -4111,17 +5350,18 @@ function paintThread(messages, service) {
       () => {
         const sendMedia = async (payload) => {
           const epoch = sheetEpoch;
-          const res = await post('send', Object.assign(payload, target()));
-          if (!closeSheet(false, epoch)) return;
-          if (res && res.ok) {
-            el.insertAdjacentHTML('beforeend', bubbleHtml({ mine: true, body: res.body, kind: res.kind, attachment: res.attachment }));
-            wireLocButtons();
-            byId('appbody').scrollTop = byId('appbody').scrollHeight;
-          } else toast(L('ph.err_' + ((res && res.error) || 'x')));
+          const ok = await threadSend(payload);
+          if (ok) closeSheet(false, epoch);
         };
         [...byId('sheet').querySelectorAll('.shot')].forEach((sh) =>
           sh.addEventListener('click', () => sendMedia({
-            kind: 'image', attachment: photoRow(shots[Number(sh.dataset.i)]).url, body: '',
+            // `photoEncode`, not `.url`. A retouch is a RECIPE carried in the URL's
+            // fragment - the row keeps it, and handing over the bare link hands over the
+            // picture as it was before it was edited. Every reader of this string decodes
+            // it: photoRow does, and the fragment never reaches the host.
+            kind: 'image', body: '',
+            attachment: (function (r) { return photoEncode(r.url, r); }
+              (photoRow(shots[Number(sh.dataset.i)]))),
           })));
         byId('atpick').addEventListener('click', () =>
           pickPhoto((url) => sendMedia({ body: '', kind: 'image', attachment: url })));
@@ -4131,12 +5371,13 @@ function paintThread(messages, service) {
         });
         byId('atloc').addEventListener('click', async () => {
           const epoch = sheetEpoch;
+          // Its own request: where you are standing is decided on the server, from the ped,
+          // rather than sent up from a page that could name any two numbers.
           const res = await post('sendloc', target());
           if (!closeSheet(false, epoch)) return;
           if (res && res.ok) {
-            el.insertAdjacentHTML('beforeend', bubbleHtml({ mine: true, kind: 'location', attachment: res.attachment || '0;0', body: '' }));
-            wireLocButtons();
-            byId('appbody').scrollTop = byId('appbody').scrollHeight;
+            appendMessage({ id: res.id, mine: true, kind: 'location',
+                            attachment: res.attachment || '0;0', body: '', at: Date.now() });
           } else toast(L('ph.err_' + ((res && res.error) || 'x')));
         });
       });
@@ -4153,7 +5394,224 @@ function paintThread(messages, service) {
     e.preventDefault();
     send();
   });
-  byId('msg').addEventListener('input', grow);
+  byId('msg').addEventListener('input', () => { grow(); typingPing(false); });
+  // Leaving the box is as good a sign of having stopped as anything. Not the only one: the
+  // other end expires the dots by itself, because a phone that is closed, pocketed or dropped
+  // never sends the stop.
+  byId('msg').addEventListener('blur', () => typingPing(true));
+}
+
+// ══════════════════════════════════════════════════════════════
+// Three dots, from this end
+// ══════════════════════════════════════════════════════════════
+// The page tells the client it is writing; the client tells the server; the server tells the
+// other phone. Throttled HERE as well as on the server: the server floor protects the server,
+// and this one stops a keystroke turning into a round trip through the NUI bridge sixty times
+// a second on a machine that is also drawing a city.
+
+let typingSentAt = 0;
+const TYPING_PING_EVERY = 2400;
+
+function typingPing(stop) {
+  if (!thread && !threadGroup) return;
+  const now = Date.now();
+  if (stop) {
+    // Only worth saying if this end has actually claimed to be writing.
+    if (!typingSentAt) return;
+    typingSentAt = 0;
+  } else {
+    if (now - typingSentAt < TYPING_PING_EVERY) return;
+    typingSentAt = now;
+  }
+  post('typing', Object.assign({ stop: !!stop },
+    threadGroup ? { group: threadGroup.id } : { number: thread }));
+}
+
+// ══════════════════════════════════════════════════════════════
+// Replying to one message in particular
+// ══════════════════════════════════════════════════════════════
+
+let replyDraft = null;    // the message the next send will quote
+
+/// Arm or clear the quote above the composer.
+function replySet(m) {
+  replyDraft = m && m.id ? m : null;
+  const bar = byId('replybar');
+  if (!bar) return;
+  if (!replyDraft) { bar.innerHTML = ''; bar.classList.remove('on'); return; }
+  const what = replyDraft.kind === 'image' ? L('ph.photo')
+    : (replyDraft.kind === 'location' ? L('ph.msg_location') : (replyDraft.body || ''));
+  bar.innerHTML =
+    '<div class="rbtext"><span>' +
+      esc(replyDraft.mine ? L('ph.msg_you') : nameOfNumber(replyDraft.from || thread)) + '</span>' +
+      esc(String(what).slice(0, 70)) + '</div>' +
+    '<button class="rbx" id="replyx" type="button" aria-label="' + esc(L('ph.cancel')) + '">' +
+      svg('xmark') + '</button>';
+  bar.classList.add('on');
+  byId('replyx').addEventListener('click', () => replySet(null));
+}
+
+function replyTo(m) {
+  if (!m || !m.id) { toast(L('ph.msg_reply_gone')); return; }
+  replySet(m);
+  ui('sheet');
+  const box = byId('msg');
+  if (box) box.focus();
+}
+
+// ══════════════════════════════════════════════════════════════
+// The GIF shelf
+// ══════════════════════════════════════════════════════════════
+// What comes back is a list of links, and what goes out is an ordinary image message. The
+// library and the search both live on the server - the library because an operator edits it in
+// one place, the search because the key it needs must never be in this file.
+
+let gifLib = null;        // the answer, kept for as long as the phone is open
+let gifRecent = null;     // yours, oldest last
+let gifTab = '';          // the open category, or '' for recents, or 'search'
+
+async function gifLibrary() {
+  if (!gifLib) gifLib = (await post('gifs', {})) || { packs: [] };
+  if (!gifRecent) {
+    const r = await post('appStorage', { app: 'messages', op: 'get', key: 'gifRecent' });
+    try { gifRecent = JSON.parse((r && r.value) || '[]') || []; } catch { gifRecent = []; }
+  }
+  return gifLib;
+}
+
+/// The words a shipped GIF can be found by.
+///
+/// Every link ends in a descriptive slug - `.../cat-thumbs-up.gif` - which is a caption the
+/// library already carries and nobody had to write. Folded together with the category key and
+/// its translated name, so "chat", "cat" and "oui" all reach the same picture.
+function gifWords(url, pack) {
+  const slug = String(url).split('/').pop().replace(/\.gif.*$/i, '').replace(/[-_]+/g, ' ');
+  const label = hasString('ph.gif_' + pack) ? L('ph.gif_' + pack) : pack;
+  return gifFold(decodeURIComponent(slug) + ' ' + pack + ' ' + label);
+}
+
+/// Lower case, without accents. A French player searching "sante" must find "santé", and one
+/// searching "santé" must find it too.
+function gifFold(text) {
+  return String(text || '').toLowerCase()
+    .replace(/[à-å]/g, 'a').replace(/[è-ë]/g, 'e')
+    .replace(/[ì-ï]/g, 'i').replace(/[ò-ö]/g, 'o')
+    .replace(/[ù-ü]/g, 'u').replace(/[ç]/g, 'c');
+}
+
+/// Search the shipped library. Every word typed has to appear somewhere in a picture's words,
+/// so "cat oui" narrows rather than widens.
+function gifFind(packs, query) {
+  const want = gifFold(query).split(/\s+/).filter(Boolean);
+  if (!want.length) return [];
+  const out = [];
+  packs.forEach((p) => (p.gifs || []).forEach((u) => {
+    const words = gifWords(u, p.key);
+    if (want.every((w) => words.indexOf(w) >= 0)) out.push(u);
+  }));
+  return out;
+}
+
+/// Remember one, at the front, without duplicates.
+function gifUsed(url) {
+  const keep = Math.max(0, Math.min(40, Number((gifLib && gifLib.recent) || 12)));
+  gifRecent = [url].concat((gifRecent || []).filter((u) => u !== url)).slice(0, keep);
+  post('appStorage', { app: 'messages', op: 'set', key: 'gifRecent',
+                       value: JSON.stringify(gifRecent) });
+}
+
+/// One grid of pictures. Nothing but an image and the URL it stands for.
+function gifGrid(urls, note) {
+  if (!urls || !urls.length) {
+    return '<div class="gifnote">' + esc(note || L('ph.gif_none')) + '</div>';
+  }
+  return '<div class="gifgrid">' + urls.map((u) =>
+    '<button class="gifcell" type="button" data-u="' + esc(u) + '">' +
+      '<img src="' + esc(u) + '" alt="" loading="lazy" /></button>').join('') + '</div>';
+}
+
+async function gifSheet() {
+  const lib = await gifLibrary();
+  if (lib.enabled === false) { toast(L('ph.gif_off')); return; }
+
+  const packs = lib.packs || [];
+  // Recents first when there are any, because the picture somebody wants is usually one they
+  // have already sent. A shelf that always opens on the same category makes them scroll past
+  // it every time.
+  if (!gifTab || (gifTab === '' && !(gifRecent || []).length)) {
+    gifTab = (gifRecent || []).length ? '' : ((packs[0] && packs[0].key) || '');
+  }
+
+  const tabs = ((gifRecent || []).length ? [{ key: '', label: L('ph.gif_recent') }] : [])
+    .concat(packs.map((p) => ({ key: p.key, label: hasString('ph.gif_' + p.key)
+      ? L('ph.gif_' + p.key) : p.key })));
+
+  sheet(L('ph.gif'),
+    '<div class="gifsearch"><input class="field" id="gifq" type="text" maxlength="60" ' +
+      'placeholder="' + esc(L('ph.gif_search')) + '" aria-label="' + esc(L('ph.gif_search')) + '" /></div>' +
+    '<div class="gifstrip" id="giftabs">' + tabs.map((t) =>
+      '<button class="giftab' + (t.key === gifTab ? ' on' : '') + '" type="button" data-k="' +
+        esc(t.key) + '">' + esc(t.label) + '</button>').join('') + '</div>' +
+    '<div id="gifbody"></div>',
+    () => {
+      const epoch = sheetEpoch;
+
+      const paint = (urls, note) => {
+        const b = byId('gifbody');
+        if (!b) return;
+        b.innerHTML = gifGrid(urls, note);
+        [...b.querySelectorAll('.gifcell')].forEach((c) =>
+          c.addEventListener('click', async () => {
+            const u = c.dataset.u;
+            const ok = await threadSend({ kind: 'image', attachment: u, body: '' });
+            if (ok) { gifUsed(u); closeSheet(false, epoch); }
+          }));
+      };
+
+      const showTab = (key) => {
+        gifTab = key;
+        qrows('sheet', '.giftab', (c) => c.classList.toggle('on', c.dataset.k === key));
+        if (key === '') { paint(gifRecent || [], L('ph.gif_none_recent')); return; }
+        const pack = packs.find((p) => p.key === key);
+        paint((pack && pack.gifs) || []);
+      };
+
+      qrows('sheet', '.giftab', (c) =>
+        c.addEventListener('click', () => showTab(c.dataset.k)));
+
+      let typing = 0;
+      byId('gifq').addEventListener('input', () => {
+        const q = byId('gifq').value.trim();
+        if (typing) { clearTimeout(typing); typing = 0; }
+        if (!q) { showTab(gifTab || ((packs[0] && packs[0].key) || '')); return; }
+
+        // The shipped library answers straight away, on every keystroke: it is an array in
+        // this page and searching it costs nothing. Nobody waits for a phone to filter
+        // eighteen lists.
+        qrows('sheet', '.giftab', (c) => c.classList.remove('on'));
+        const local = gifFind(packs, q);
+        paint(local, L('ph.gif_none_found'));
+
+        // The provider, if the operator configured one, adds to that - and only after a pause,
+        // because each of those is a request they pay for and "cat" typed slowly is one
+        // search, not three.
+        if (!lib.search) return;
+        typing = setTimeout(async () => {
+          const r = await post('gifSearch', { q });
+          if (sheetEpoch !== epoch || byId('gifq').value.trim() !== q) return;
+          if (!r || !r.ok) return;          // the local results are already on screen
+          const seen = {};
+          const merged = local.concat(r.gifs || []).filter((u) => {
+            if (seen[u]) return false;
+            seen[u] = 1;
+            return true;
+          });
+          paint(merged, L('ph.gif_none_found'));
+        }, 420);
+      });
+
+      showTab(gifTab);
+    }, 'gifs');
 }
 
 function newMessageSheet() {
@@ -4227,55 +5685,293 @@ RENDER.contacts = () => {
         })))
       : UI.empty(L('ph.no_contacts'), 'contacts');
     wire();
+    paintGarages(q);
+  };
+
+  // The garages, under the phone book and in their own group. They are a service rather
+  // than people, and mixing them in would put a garage between two friends alphabetically.
+  //
+  // **The list is the Repair app's own.** That app already speaks to doc-mechanicmdt - the
+  // garages, their opening state, the ratings and the callout queue - so this asks it rather
+  // than building a second route to the same eight callbacks. Tapping one opens Repair at
+  // that garage, which is where the tow request, the rating and the follow-up already live.
+  const paintGarages = async (q) => {
+    const host = byId('cgarages');
+    if (!host) return;
+    if (!appById('repair')) { host.innerHTML = ''; return; }
+    // NOT `repairFetch`. That one bails on `repairLive()` - true only while the Repair app is
+    // the open one - so called from Contacts it answered null every time and the garage group
+    // was silently empty. This asks the same two questions without the guard, because the
+    // question "which garages exist" has nothing to do with which app is on screen.
+    const all = repairData && !repairData.error
+      ? farr(repairData.garages)
+      : await (async () => {
+          const base = await post('repairOpen', {});
+          if (!base || base.error) return [];
+          // TWO providers, and only one of them needs a second question.
+          //
+          // `Config.Repair.provider` is 'auto': doc-mechanicmdt when it is running, the list in
+          // config.lua when it is not. The config one answers with its garages already in the
+          // first reply; only doc needs the follow-up. Returning empty whenever `doc` was false
+          // threw away every garage on a server that does not run doc - which is the default -
+          // and the group vanished the moment the cached copy was gone.
+          if (!base.doc) return farr(base.garages);
+          const doc = await post('repairDoc', { op: 'garages' });
+          return (doc && !doc.error && farr(doc.garages)) || [];
+        })();
+    // `label`, not `name`. BOTH providers produce it: the config one writes it directly, and
+    // client/repair.lua turns doc-mechanicmdt's `name` into it on the way through. Reading
+    // `name` here got a row with an icon, a state and no garage on it.
+    const list = all.filter((g) => !q || String(g.label || '').toLowerCase().includes(q));
+    if (!list.length) { host.innerHTML = ''; return; }
+    host.innerHTML = UI.group(list.map((g) => UI.row({
+      icon: 'wrench', tint: '#FF9500', title: g.label || g.job,
+      subtitle: L(g.open ? 'ph.gar_open' : 'ph.gar_closed'),
+      chevron: true, data: { g: g.job },
+    })), { header: L('ph.garages') });
+    qrows('cgarages', '.row[data-g]', (r) => r.addEventListener('click', () => {
+      const app = appById('repair');
+      if (!app) { toast(L('ph.err_notinstalled')); return; }
+      // The garage to land on, read by RENDER.repair once the app is up.
+      repairJumpTo = r.dataset.g;
+      enterApp(app, null);
+    }));
   };
   const wire = () => rows('.row', (r) => r.addEventListener('click', () => {
     const c = (state.contacts || []).find((x) => String(x.id) === r.dataset.id);
-    if (c) contactSheet(c);
+    // The CARD, not the form. Looking somebody up should not put you one slip away from
+    // renaming them.
+    if (c) contactCard(c);
   }));
+  const me = myCard();
   body(searchHtml(L('ph.search_contacts')) +
-    UI.group([UI.row({ icon: 'airdrop', tint: '#0A84FF', title: L('ph.share_my_number'),
-      subtitle: myNum(state.number), chevron: true, data: { me: '1' } })]) +
-    '<div id="clist"></div>');
-  rows('.row', (r) => { if (r.dataset.me) r.addEventListener('click',
-    // No name sent: the SERVER labels this one, from the name the player typed during setup.
-    // Sending one here would be a value the server ignores, which is worse than sending none.
-    () => airdropShare('number', { number: state.number })); });
+    // My card, at the top, the way a phone book puts you first. It opens the card rather than
+    // firing the share straight away: handing over your number and handing over everything are
+    // two different decisions, and the row used to make one of them for you.
+    UI.group([UI.row({ avatar: me.name, photo: me.photo || null,
+      title: me.name, subtitle: L('ph.my_card'), chevron: true, data: { me: '1' } })]) +
+    '<div id="clist"></div><div id="cgarages"></div>');
+  rows('.row', (r) => { if (r.dataset.me) r.addEventListener('click', () => myCardSheet()); });
   draw('');
   onSearch(draw);
 };
 
-function contactSheet(c) {
-  if (c.system) {
-    const details = [
-      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.number'), value: maskNum(c.number) }),
-      c.email ? UI.row({ icon: 'mail', tint: '#0A84FF', title: L('ph.c_email'), value: c.email,
-                         chevron: true, data: { mailto: c.email } }) : '',
-      c.address ? UI.row({ icon: 'map', tint: '#FF9500', title: L('ph.c_address'), subtitle: c.address }) : '',
-      c.note ? UI.row({ icon: 'note', tint: '#8E8E93', title: L('ph.c_note'), subtitle: c.note }) : '',
-    ].filter(Boolean);
-    sheet(c.name,
-      '<div class="requiredcontact">' +
-        '<span class="requiredavatar">' + esc(String(c.name || '?').trim().charAt(0).toUpperCase()) + '</span>' +
-        '<strong>' + esc(c.name) + '</strong>' +
-        '<small>' + svg('lockshut') + esc(L('ph.required_contact_hint')) + '</small>' +
-      '</div>' +
-      UI.group(details) +
-      UI.button(L('ph.call'), 'ccall', 'tinted') +
-      UI.button(L('ph.facetime'), 'cface', 'plain') +
-      UI.button(L('ph.message'), 'cmsg', 'plain') +
-      UI.button(L('ph.airdrop_share'), 'cshare', 'plain'),
-      () => {
-        byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
-        byId('cface').addEventListener('click', () => { closeSheet(); placeCall(c.number, { video: true }); });
-        byId('cmsg').addEventListener('click', () => { closeSheet(); messageTo(c.number); });
-        byId('cshare').addEventListener('click', () =>
-          airdropShare('contact', { name: c.name, number: c.number }));
-        wireMailto();
-      });
-    return;
+// ══ My card ════════════════════════════════════════════════════
+// What somebody else gets when you hand them your whole card rather than just your number.
+//
+// **Every field of it is filled in by the SERVER when it is sent.** The page here is only for
+// deciding what to say about yourself; it does not get to choose what it is called in a
+// stranger's phone book, which is the same rule this file already applies to sharing a number
+// and an address. See the `card` branch in server/main.lua.
+
+/// My card as this phone knows it: the name and number the server holds, plus whatever I have
+/// chosen to add.
+function myCard() {
+  const p = state.prefs || {};
+  return {
+    name: p.ownerName || L('ph.me'),
+    number: state.number,
+    photo: p.cardPhoto || '',
+    job: p.cardJob || '',
+    address: p.cardAddress || '',
+    birthday: p.cardBirthday || '',
+    note: p.cardNote || '',
+    // Filled in by `myCardSheet` before it draws. The address lives in the Mail app and is not
+    // in the boot state, so the card asks for it rather than guessing - and a card claiming to
+    // show "what people get from you" that quietly omitted the address would be wrong about
+    // the one thing it is for.
+    email: myCardEmail,
+  };
+}
+
+// The address the Mail app answers with, remembered for this session.
+let myCardEmail = '';
+
+async function myCardSheet() {
+  // One call, and only when the card is opened. A player with no mailbox simply has no address
+  // line, which is the truth rather than an empty row.
+  if (!myCardEmail) {
+    const me = await post('mail', { op: 'me' });
+    myCardEmail = (me && me.address) || '';
   }
+  const c = myCard();
+  const filled = ['photo', 'job', 'address', 'birthday', 'note']
+    .filter((k) => c[k]).length;
+
+  sheet(L('ph.my_card'),
+    // No action row here. Call, Message, FaceTime and Email are ways to reach somebody ELSE,
+    // and four greyed-out buttons on your own card is a row of things you cannot do taking up
+    // the space where what you CAN do should be.
+    cardHead(c, c.job || L('ph.my_card_sub')) +
+    cardRows(c) +
+    // The whole thing, in one row, to somebody standing next to you.
+    UI.button(L('ph.my_card_share'), 'mcshare', 'tinted') +
+    // And the old behaviour kept, because handing over a number and handing over everything
+    // are two different decisions and somebody should be able to make the small one.
+    UI.button(L('ph.share_my_number'), 'mcnum', 'plain') +
+    UI.button(L('ph.c_edit'), 'mcedit', 'plain') +
+    '<div class="groupfoot">' + esc(filled
+      ? L('ph.my_card_hint')
+      : L('ph.my_card_empty')) + '</div>',
+    () => {
+      byId('mcshare').addEventListener('click', () => {
+        // No payload. The server builds every field from what it holds - that is the point.
+        airdropShare('card', {});
+      });
+      byId('mcnum').addEventListener('click', () => airdropShare('number', { number: state.number }));
+      byId('mcedit').addEventListener('click', () => myCardEdit());
+    });
+}
+
+/// The form for my own card. The name and the number are shown but not editable here: the name
+/// is set at setup and the number is the server's, and a field that silently did nothing would
+/// be worse than no field.
+function myCardEdit() {
+  const c = myCard();
+  sheet(L('ph.my_card_edit'),
+    (c.photo ? '<div class="cardphoto" style="' + inlineBackground(c.photo) + '"></div>' : '') +
+    UI.button(L('ph.my_card_photo'), 'mcpick', 'plain') +
+    (c.photo ? UI.button(L('ph.my_card_nophoto'), 'mcclear', 'plain') : '') +
+    UI.field('mcjob', L('ph.c_job'), c.job, 'maxlength="60"') +
+    UI.field('mcaddr', L('ph.c_address'), c.address, 'maxlength="120"') +
+    UI.field('mcbday', L('ph.c_birthday'), c.birthday, 'maxlength="20"') +
+    UI.field('mcnote', L('ph.c_note'), c.note, 'maxlength="120"') +
+    UI.button(L('ph.save'), 'mcsave', 'tinted') +
+    '<div class="groupfoot">' + esc(L('ph.my_card_edit_hint')) + '</div>',
+    () => {
+      // Captured fresh after the picker, like every other sheet: the picker takes the sheet
+      // away and gives it back, and a number written down before that is about a sheet that is
+      // no longer on screen.
+      let epoch = sheetEpoch;
+      let photo = c.photo;
+
+      byId('mcpick').addEventListener('click', () => pickPhoto((url) => {
+        photo = url;
+        epoch = sheetEpoch;
+        toast(L('ph.my_card_photo_set'));
+      }));
+      const clear = byId('mcclear');
+      if (clear) clear.addEventListener('click', () => { photo = ''; toast(L('ph.my_card_photo_off')); });
+
+      byId('mcsave').addEventListener('click', async () => {
+        const res = await post('prefs', {
+          cardPhoto: photo,
+          cardJob: byId('mcjob').value,
+          cardAddress: byId('mcaddr').value,
+          cardBirthday: byId('mcbday').value,
+          cardNote: byId('mcnote').value,
+        });
+        if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+        state.prefs = res.prefs;
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        RENDER.contacts();
+      });
+    });
+}
+
+// ══ The contact card ═══════════════════════════════════════════
+// **Tapping somebody used to open a form.** Seven text fields, a save button and a delete
+// button - the whole card was an edit screen, so the ordinary act of looking somebody up put
+// you one slip away from renaming them. Reading and writing are two different things and they
+// are two different screens now: the card is what a tap opens, and the form is behind Edit.
+
+/// The head of a card: the face, the name, and the row of round buttons under it.
+///
+/// A photograph when there is one, initials when there is not - and the initials are drawn from
+/// the name rather than shipped as a placeholder image, so a card is never a broken picture.
+function cardHead(c, sub) {
+  const initial = String(c.name || '?').trim().charAt(0).toUpperCase();
+  return '<div class="ccard">' +
+      (c.photo
+        ? '<div class="cface" style="' + inlineBackground(c.photo) + '"></div>'
+        : '<div class="cface letter">' + esc(initial) + '</div>') +
+      '<div class="cname">' + esc(c.name || '') + '</div>' +
+      (sub ? '<div class="csub">' + esc(sub) + '</div>' : '') +
+    '</div>';
+}
+
+/// The four round buttons. Greyed rather than hidden when there is nothing behind them: a card
+/// whose buttons move about depending on who it is takes longer to use than one that does not.
+function cardActions(c, opts) {
+  const o = opts || {};
+  const one = (id, icon, label, on) =>
+    '<button class="cact' + (on ? '' : ' off') + '" id="' + id + '" type="button"' +
+      (on ? '' : ' disabled') + '>' +
+      '<span>' + svg(icon) + '</span><i>' + esc(L(label)) + '</i></button>';
+  return '<div class="cacts">' +
+    one('ccall', 'phone', 'ph.call', !o.mine && !!c.number) +
+    one('cmsg', 'messages', 'ph.message', !o.mine && !!c.number) +
+    one('cface', 'camera', 'ph.facetime', !o.mine && !!c.number) +
+    one('cmail', 'mail', 'ph.c_email', !o.mine && !!c.email) +
+  '</div>';
+}
+
+/// The rows under the buttons. Only what exists: a card is what somebody knows about a person,
+/// and eight empty labels say nothing except that the phone has eight fields.
+function cardRows(c) {
+  const rows = [
+    c.number ? UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.number'),
+                        subtitle: maskNum(c.number) }) : '',
+    c.email ? UI.row({ icon: 'mail', tint: '#0A84FF', title: L('ph.c_email'),
+                       subtitle: c.email, chevron: true, data: { mailto: c.email } }) : '',
+    c.job ? UI.row({ icon: 'jobs', tint: '#7D7AFF', title: L('ph.c_job'), subtitle: c.job }) : '',
+    c.address ? UI.row({ icon: 'map', tint: '#FF9500', title: L('ph.c_address'),
+                         subtitle: c.address }) : '',
+    c.birthday ? UI.row({ icon: 'star', tint: '#FF375F', title: L('ph.c_birthday'),
+                          subtitle: c.birthday }) : '',
+    c.note ? UI.row({ icon: 'note', tint: '#8E8E93', title: L('ph.c_note'),
+                      subtitle: c.note }) : '',
+  ].filter(Boolean);
+  return rows.length ? UI.group(rows) : '';
+}
+
+/// Somebody's card. Read-only, and everything that changes it is a second tap away.
+function contactCard(c) {
+  const system = !!c.system;
+  sheet(c.name,
+    cardHead(c, system ? L('ph.required_contact') : (c.job || '')) +
+    cardActions(c, {}) +
+    (system
+      ? '<div class="cprotected">' + svg('lockshut') +
+          '<span>' + esc(L('ph.required_contact_hint')) + '</span></div>'
+      : '') +
+    cardRows(c) +
+    UI.button(L('ph.airdrop_share'), 'cshare', 'plain') +
+    // A protected contact is the server's, not the player's: nothing here may edit or remove
+    // it, and offering buttons that would be refused is worse than not offering them.
+    (system ? '' : UI.button(L('ph.c_edit'), 'cedit', 'plain')) +
+    (system ? '' : UI.button(L('ph.delete'), 'cdel', 'destructive')),
+    () => {
+      const epoch = sheetEpoch;
+      const on = (id, fn) => { const el = byId(id); if (el && !el.disabled) el.addEventListener('click', fn); };
+      on('ccall', () => { closeSheet(); placeCall(c.number); });
+      on('cmsg', () => { closeSheet(); messageTo(c.number); });
+      on('cface', () => { closeSheet(); placeCall(c.number, { video: true }); });
+      on('cmail', () => { closeSheet(); mailTo(c.email); });
+      on('cshare', () => airdropShare('contact', { name: c.name, number: c.number }));
+      on('cedit', () => contactEdit(c));
+      on('cdel', () => {
+        confirmSheet(L('ph.c_delete_sure').replace('{n}', c.name), L('ph.delete'), async () => {
+          await post('contactDelete', { id: c.id });
+          if (closeSheet(false, epoch)) { await refresh(); RENDER.contacts(); }
+        });
+      });
+      wireMailto();
+    });
+}
+
+/// The form. Reached from Edit, or from the plus button for somebody new.
+function contactEdit(c) {
+  contactSheet(c || {});
+}
+
+function contactSheet(c) {
+  // A protected contact has no form at all: it is the server's row, and the card is the only
+  // thing there was ever anything to show.
+  if (c.system) { contactCard(c); return; }
   const isNew = !c.id;
-  sheet(isNew ? L('ph.new_contact') : c.name,
+  sheet(isNew ? L('ph.new_contact') : L('ph.c_edit'),
     // The card, not just a name and a number: a face, a way to write, where they are,
     // when it is their birthday, and whatever you needed to remember about them.
     (c.photo ? '<div class="cardphoto" style="' + inlineBackground(c.photo) + '"></div>' : '') +
@@ -4919,7 +6615,7 @@ RENDER.bankpro = async () => {
     UI.hero({
       // The purple company tile, not the green personal one - a boss glancing at the two apps
       // must never mistake which account is on screen.
-      appicon: 'bankpro',
+      appicon: 'bank',
       eyebrow: job.label || job.name || '',
       // A balance that cannot be read says so instead of showing zero. Telling somebody
       // their company has nothing, when the truth is that the banking script does not
@@ -5572,17 +7268,47 @@ RENDER.jobs = async (cached) => {
 // an unset preference reads, so a row the player has never touched still shows the truth.
 const SETTING_TOGGLES = {
   hidenumber:     { key: 'hideNumber' },
+  receipts:       { key: 'receipts', defaultOn: true },
   streamer:       { key: 'streamer' },
   serverid:       { key: 'showServerId', defaultOn: true },
   silenceunknown: { key: 'silenceUnknown' },
   previews:       { key: 'previews', defaultOn: true },
   peek:           { key: 'peek', defaultOn: true },
+  // The strip has to be redrawn, and redrawn from the SERVER: whether the balance is masked is
+  // decided there, and the figure is simply not in the payload while it is off - so flipping
+  // this cannot be a repaint of what the page already holds.
+  widgetmoney:    { key: 'widgetMoney', after: () => renderWidgets() },
 };
 
-RENDER.settings = () => {
+// ══════════════════════════════════════════════════════════════
+// Settings
+// ══════════════════════════════════════════════════════════════
+// A front page of categories, and a screen for each one. It was a single column holding the
+// device name, four sounds, the wallpaper picker, privacy, security, notifications, a
+// transparency slider and a row per installed app - a page nobody reads to the end and
+// nobody finds the same thing in twice.
+//
+// Every section below is the SAME markup it was, moved rather than retyped, so no row
+// changed behaviour on the way. The wiring is shared and runs after whichever page was
+// drawn: every handler in it already guards on its element existing, because the rows it
+// serves have always been conditional.
+
+const SETTINGS_PAGES = [
+  { id: 'general',  icon: 'settings', tint: '#8E8E93', label: 'ph.set_general' },
+  { id: 'display',  icon: 'sun',      tint: '#0A84FF', label: 'ph.set_display' },
+  { id: 'wall',     icon: 'wall',     tint: '#5AC8FA', label: 'ph.wallpaper' },
+  { id: 'sounds',   icon: 'speaker',  tint: '#FF9500', label: 'ph.set_sounds' },
+  { id: 'notifs',   icon: 'bell',     tint: '#FF2D55', label: 'ph.notifications' },
+  { id: 'privacy',  icon: 'lockshut', tint: '#8E8E93', label: 'ph.calls_privacy' },
+  { id: 'security', icon: 'faceid',   tint: '#FF3B30', label: 'ph.sec_header' },
+  { id: 'action',   icon: 'focus',    tint: '#BF5AF2', label: 'ph.action_button' },
+  { id: 'about',    icon: 'id',       tint: '#8E8E93', label: 'ph.about_title' },
+];
+
+function settingsSection(id) {
   const p = state.prefs || {};
-  body(
-    UI.group([
+  if (id === 'general') {
+    return UI.group([
       UI.row({ icon: 'phone', tint: '#0A84FF', title: p.deviceName || L('ph.setup_default_device'),
         subtitle: p.ownerName || '', chevron: true, data: { t: 'device_name' } }),
       // The copy still carries the real number: masking is about the screen.
@@ -5590,35 +7316,34 @@ RENDER.settings = () => {
       // `415-555-0142` where `4155550142` was expected would be a bug this created.
       UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: myNum(state.number),
                data: { copy: state.number || '' } }),
+    ]) +
+    UI.group([UI.row({ icon: 'moon', tint: '#5856D6', title: L('ph.dnd'), toggle: !!p.dnd, data: { t: 'dnd' } })],
+      { footer: L('ph.dnd_hint') });
+  }
+  if (id === 'display') {
+    return UI.group([
       UI.row({ icon: 'folder', tint: '#5AC8FA', title: L('ph.grid'),
         value: (p.gridCols || 4) + ' x ' + (p.gridRows || 4), chevron: true, data: { t: 'grid' } }),
       UI.row({ icon: 'moon', tint: '#5856D6', title: L('ph.dark_mode'),
         value: L('ph.theme_' + (p.darkMode || (p.dark ? 'dark' : 'light'))), chevron: true, data: { t: 'theme' } }),
-      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.vibrate'), toggle: p.vibrate !== false, data: { t: 'vibrate' } }),
-      UI.row({ icon: 'speaker', tint: '#FF9500', title: L('ph.ringer'),
-        value: Math.round((p.ringVolume ?? 0.7) * 100) + '%', chevron: true, data: { t: 'ringer' } }),
-      UI.row({ icon: 'music', tint: '#FF2D55', title: L('ph.ringtone'),
-        value: p.ringUrl ? L('ph.tone_custom') : L('ph.tone_' + (p.ringtone || 'classic')),
-        chevron: true, data: { t: 'ringtone' } }),
-      UI.row({ icon: 'bell', tint: '#FF9F0A', title: L('ph.alerttone'),
-        value: p.alertUrl ? L('ph.tone_custom') : L('ph.tone_' + (p.alertTone || 'ping')),
-        chevron: true, data: { t: 'alerttone' } }),
+      // Moved here from Privacy, where it had been filed with call anonymity and read
+      // receipts. What the lock screen's clock looks like is a display choice and nothing
+      // else, and nobody goes looking for it under privacy.
+      UI.row({ icon: 'clock', tint: '#5E5CE6', title: L('ph.lock_clock'),
+        value: L('ph.clock_' + (p.lockClock || 'classic')), chevron: true,
+        data: { clock: '1' } }),
     ]) +
-    (p.wallpaperUrl ? '<div class="wallpreview" style="' + inlineBackground(p.wallpaperUrl) + '"></div>' : '') +
-    (state.customWallpaper === false ? '' :
-      UI.field('wurl', L('ph.wall_url'), p.wallpaperUrl || '') +
-      '<div class="seg">' +
-        '<button class="' + (p.wallFit !== 'contain' ? 'on' : '') + '" data-fit="cover">' + esc(L('ph.fit_cover')) + '</button>' +
-        '<button class="' + (p.wallFit === 'contain' ? 'on' : '') + '" data-fit="contain">' + esc(L('ph.fit_contain')) + '</button>' +
-      '</div>' +
-      UI.button(L('ph.wall_apply'), 'wapply') +
-      (p.wallpaperUrl ? UI.button(L('ph.wall_clear'), 'wclear', 'plain') : '') +
-      '<div class="groupfoot">' + esc(L('ph.wall_hint')) + '</div>') +
-    UI.group((state.wallpapers || []).map((w) => UI.row({
-      icon: 'wall', tint: '#007AFF', title: L('ph.wall_' + w),
-      value: (!p.wallpaperUrl && p.wallpaper === w) ? L('ph.on') : '',
-      data: { w },
-    })), { header: L('ph.wallpaper') }) +
+    // The widget strip. Arranging it is a gesture on the home screen rather than a screen in
+    // here - which is how iOS does it, and the hint below is what says so. The one thing that
+    // cannot be a gesture is the masking switch, because it is a decision about what leaves the
+    // server rather than about where a tile sits.
+    '<div class="grouphead">' + esc(L('ph.set_widgets')) + '</div>' +
+    UI.group([
+      UI.row({ icon: 'add', tint: '#0A84FF', title: L('ph.w_pick'), chevron: true,
+        data: { t: 'widgets' } }),
+      UI.row({ icon: 'bank', tint: '#1E9E52', title: L('ph.set_widget_money'),
+        toggle: !!p.widgetMoney, data: { t: 'widgetmoney' } }),
+    ], { footer: L('ph.set_widget_money_hint') + ' ' + L('ph.set_widget_hint') }) +
     // The device itself: how big, and which side it sits on.
     '<div class="grouphead">' + esc(L('ph.device')) + '</div>' +
     // No size slider, on purpose. The phone is laid out in pixels at 372x784, so any size
@@ -5632,8 +7357,55 @@ RENDER.settings = () => {
         '<button class="' + (p.side === 'left' ? 'on' : '') + '" data-side="left">' + esc(L('ph.side_left')) + '</button>' +
       '</div>' +
     '</div>' +
-    UI.group([UI.row({ icon: 'moon', tint: '#5856D6', title: L('ph.dnd'), toggle: !!p.dnd, data: { t: 'dnd' } })],
-      { footer: L('ph.dnd_hint') }) +
+    // iOS 27's headline user-facing change. It is a stored preference every layer of
+    // the glass derives from, not a fade on one overlay.
+    '<div class="grouphead">' + esc(L('ph.transparency')) + '</div>' +
+    '<div class="sliderow">' +
+      '<div class="sl"><span>' + esc(L('ph.glass_clear')) + '</span>' +
+      '<span>' + esc(L('ph.glass_tinted')) + '</span></div>' +
+      '<input type="range" id="glass" min="0" max="100" step="1" aria-label="' +
+        esc(L('ph.transparency')) + '" value="' + (p.glass ?? 55) + '" />' +
+    '</div>' +
+    '<div class="groupfoot">' + esc(L('ph.glass_hint')) + '</div>';
+  }
+  if (id === 'wall') {
+    return     (p.wallpaperUrl ? '<div class="wallpreview" style="' + inlineBackground(p.wallpaperUrl) + '"></div>' : '') +
+    (state.customWallpaper === false ? '' :
+      UI.field('wurl', L('ph.wall_url'), p.wallpaperUrl || '') +
+      '<div class="seg">' +
+        '<button class="' + (p.wallFit !== 'contain' ? 'on' : '') + '" data-fit="cover">' + esc(L('ph.fit_cover')) + '</button>' +
+        '<button class="' + (p.wallFit === 'contain' ? 'on' : '') + '" data-fit="contain">' + esc(L('ph.fit_contain')) + '</button>' +
+      '</div>' +
+      UI.button(L('ph.wall_apply'), 'wapply') +
+      (p.wallpaperUrl ? UI.button(L('ph.wall_clear'), 'wclear', 'plain') : '') +
+      '<div class="groupfoot">' + esc(L('ph.wall_hint')) + '</div>') +
+    UI.group((state.wallpapers || []).map((w) => UI.row({
+      icon: 'wall', tint: '#007AFF', title: L('ph.wall_' + w),
+      value: (!p.wallpaperUrl && p.wallpaper === w) ? L('ph.on') : '',
+      data: { w },
+    })), { header: L('ph.wallpaper') });
+  }
+  if (id === 'sounds') {
+    return UI.group([
+      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.vibrate'), toggle: p.vibrate !== false, data: { t: 'vibrate' } }),
+      UI.row({ icon: 'speaker', tint: '#FF9500', title: L('ph.ringer'),
+        value: Math.round((p.ringVolume ?? 0.7) * 100) + '%', chevron: true, data: { t: 'ringer' } }),
+      UI.row({ icon: 'play', tint: '#FF2D55', title: L('ph.ringtone'),
+        value: p.ringUrl ? L('ph.tone_custom') : L('ph.tone_' + (p.ringtone || 'classic')),
+        chevron: true, data: { t: 'ringtone' } }),
+      UI.row({ icon: 'bell', tint: '#FF9F0A', title: L('ph.alerttone'),
+        value: p.alertUrl ? L('ph.tone_custom') : L('ph.tone_' + (p.alertTone || 'ping')),
+        chevron: true, data: { t: 'alerttone' } }),
+    ]);
+  }
+  if (id === 'notifs') return (
+    UI.group([
+      UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.previews'),
+        toggle: p.previews !== false, data: { t: 'previews' } }),
+      UI.row({ icon: 'phone', tint: '#0A84FF', title: L('ph.peek'),
+        toggle: p.peek !== false, data: { t: 'peek' } }),
+    ], { header: L('ph.notifications'), footer: L('ph.previews_hint') }));
+  if (id === 'privacy') return (
     // Calls and privacy. Withholding your number is only offered when the operator allows
     // it at all — a row that cannot do anything is worse than no row.
     UI.group([
@@ -5643,13 +7415,18 @@ RENDER.settings = () => {
       })] : []),
       UI.row({ icon: 'phone', tint: '#FF9500', title: L('ph.silence_unknown'),
         toggle: !!p.silenceUnknown, data: { t: 'silenceunknown' } }),
+      // Read receipts sit with the other things this phone tells other people about you,
+      // rather than inside Messages: it is a privacy choice before it is a chat feature.
+      UI.row({ icon: 'messages', tint: '#30D158', title: L('ph.receipts'),
+        toggle: p.receipts !== false, data: { t: 'receipts' } }),
       UI.row({ icon: 'shield', tint: '#BF5AF2', title: L('ph.streamer'),
         subtitle: L('ph.streamer_sub'), toggle: !!p.streamer, data: { t: 'streamer' } }),
       UI.row({ icon: 'id', tint: '#64D2FF', title: L('ph.show_server_id'),
         subtitle: L('ph.show_server_id_sub'), toggle: p.showServerId !== false,
         data: { t: 'serverid' } }),
     ], { header: L('ph.calls_privacy'),
-         footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }) +
+         footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }));
+  if (id === 'security') return (
     // Security. The passcode and Face ID were set once during setup and then unreachable
     // for the life of the character - a phone whose code cannot be changed is a phone whose
     // code is shared the first time somebody looks over a shoulder.
@@ -5666,27 +7443,13 @@ RENDER.settings = () => {
         icon: 'lockopen', tint: '#8E8E93', title: L('ph.sec_off'),
         subtitle: L('ph.sec_off_hint'), chevron: true, data: { t: 'securityoff' },
       })] : []),
-    ], { header: L('ph.sec_header'), footer: L('ph.sec_footer') }) +
-    UI.group([
-      UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.previews'),
-        toggle: p.previews !== false, data: { t: 'previews' } }),
-      UI.row({ icon: 'phone', tint: '#0A84FF', title: L('ph.peek'),
-        toggle: p.peek !== false, data: { t: 'peek' } }),
-    ], { header: L('ph.notifications'), footer: L('ph.previews_hint') }) +
-    // iOS 27's headline user-facing change. It is a stored preference every layer of
-    // the glass derives from, not a fade on one overlay.
-    '<div class="grouphead">' + esc(L('ph.transparency')) + '</div>' +
-    '<div class="sliderow">' +
-      '<div class="sl"><span>' + esc(L('ph.glass_clear')) + '</span>' +
-      '<span>' + esc(L('ph.glass_tinted')) + '</span></div>' +
-      '<input type="range" id="glass" min="0" max="100" step="1" aria-label="' +
-        esc(L('ph.transparency')) + '" value="' + (p.glass ?? 55) + '" />' +
-    '</div>' +
-    '<div class="groupfoot">' + esc(L('ph.glass_hint')) + '</div>' +
+    ], { header: L('ph.sec_header'), footer: L('ph.sec_footer') }));
+  if (id === 'action') return (
     UI.group((state.apps || []).map((a) => UI.row({
       appicon: (UI.hasTile && UI.hasTile(a.id)) ? a.id : a.icon, title: L(a.label),
       value: p.actionApp === a.id ? L('ph.on') : '', data: { act: a.id },
-    })), { header: L('ph.action_button'), footer: L('ph.action_hint') }) +
+    })), { header: L('ph.action_button'), footer: L('ph.action_hint') }));
+  if (id === 'about') return (
     // About, where a phone puts it: the last thing in Settings.
     //
     // The row IS the attribution the licence requires, and it stays. The footer line under it
@@ -5694,9 +7457,49 @@ RENDER.settings = () => {
     // credit given.
     UI.group([
       UI.row({ icon: 'phone', tint: '#8E8E93', title: L('ph.about_device'), value: 'iFruit' }),
-      UI.row({ icon: 'id', tint: '#8E8E93', title: L('ph.about_dev'), value: 'vyrriox' }),
-    ], { header: L('ph.about_title') })
+      UI.row({ icon: 'id', tint: '#8E8E93', title: L('ph.about_dev'), value: 'vyrriox',
+               data: { t: 'egg' } }),
+    ], { header: L('ph.about_title') }));
+  return '';
+}
+
+/// One category, on its own screen.
+function settingsPage(id) {
+  if (!openApp || openApp.id !== 'settings') return;
+  const page = SETTINGS_PAGES.find((x) => x.id === id);
+  if (!page) return;
+  beginView();
+  setNav(L(page.label), L('app.settings'), null, () => RENDER.settings());
+  body(settingsSection(id));
+  wireSettings();
+}
+
+RENDER.settings = () => {
+  const p = state.prefs || {};
+  setNav(L('app.settings'), null, null);
+  body(
+    // The handset itself first, the way a phone puts it.
+    UI.group([
+      UI.row({ icon: 'phone', tint: '#0A84FF', title: p.deviceName || L('ph.setup_default_device'),
+        subtitle: p.ownerName || '', chevron: true, data: { t: 'device_name' } }),
+      // The copy still carries the real number: masking is about the screen.
+      // The copy carries the REAL number, ungrouped: grouping is for the eye, and pasting
+      // `415-555-0142` where `4155550142` was expected would be a bug this created.
+      UI.row({ icon: 'phone', tint: '#34C759', title: L('ph.my_number'), value: myNum(state.number),
+               data: { copy: state.number || '' } }),
+    ]) +
+    UI.group(SETTINGS_PAGES.map((x) => UI.row({
+      icon: x.icon, tint: x.tint, title: L(x.label), chevron: true, data: { page: x.id },
+    })))
   );
+  wireSettings();
+};
+
+function wireSettings() {
+  const p = state.prefs || {};
+  rows('.row[data-page]', (r) => r.addEventListener('click', () => settingsPage(r.dataset.page)));
+  rows('[data-t="egg"]', (b) => b.addEventListener('click', () => playEgg()));
+
   const wa = byId('wapply');
   if (wa) wa.addEventListener('click', async () => {
     const res = await post('prefs', { wallpaperUrl: byId('wurl').value.trim() });
@@ -5737,6 +7540,8 @@ RENDER.settings = () => {
     if (r.dataset.w) {
       const res = await post('prefs', { wallpaper: r.dataset.w });
       if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); RENDER.settings(); }
+    } else if (r.dataset.clock) {
+      lockClockSheet();
     } else if (r.dataset.copy) {
       copyText(r.dataset.copy);
     } else if (r.dataset.t === 'device_name') {
@@ -5827,7 +7632,11 @@ RENDER.settings = () => {
         // The lock screen is drawn on open, so a switch that changes what it says - the
         // server id, or streamer mode masking the number - has to repaint it now.
         paintLockMeta();
+        if (spec.after) spec.after();
       }
+      return;
+    } else if (r.dataset.t === 'widgets') {
+      widgetPicker();
       return;
     } else if (r.dataset.t === 'ringtone' || r.dataset.t === 'alerttone') {
       const isRing = r.dataset.t === 'ringtone';
@@ -5837,7 +7646,7 @@ RENDER.settings = () => {
       const curUrl = (isRing ? p.ringUrl : p.alertUrl) || '';
       sheet(L(isRing ? 'ph.ringtone' : 'ph.alerttone'),
         UI.group(list.map((t) => UI.row({
-          icon: 'music', title: L('ph.tone_' + t),
+          icon: 'play', title: L('ph.tone_' + t),
           value: (!curUrl && curTone === t) ? '\u2713' : '', data: { tone: t },
         }))) +
         (sc.allowCustom === false ? '' :
@@ -5906,7 +7715,7 @@ RENDER.settings = () => {
       }
     }
   }));
-};
+}
 
 // 0 is ultra clear, 100 fully tinted. Every material alpha is resolved from this value.
 function applyGlass(v) {
@@ -5931,14 +7740,14 @@ function applyWallpaper() {
   if (p.wallpaperUrl) {
     // A linked image replaces the gradient rather than sitting on top of it, so the
     // class list cannot leave a stripe of the old one showing at the edges.
-    w.style.backgroundImage = 'url("' + p.wallpaperUrl + '")';
+    setBackground(w, p.wallpaperUrl);   // cssUrl, not concatenation: a quote or a backslash in the path used to kill the wallpaper silently
     w.style.backgroundSize = (p.wallFit === 'contain') ? 'contain' : 'cover';
     // The band chosen when the photo was framed in the gallery, not blindly the middle.
     w.style.backgroundPosition = (p.wallFocus === undefined || p.wallFocus === null)
       ? 'center' : ('50% ' + focusOf(p.wallFocus) + '%');
     w.style.backgroundRepeat = 'no-repeat';
     w.style.backgroundColor = '#000';
-    screen.style.backgroundImage = 'url("' + p.wallpaperUrl + '")';
+    setBackground(screen, p.wallpaperUrl);   // cssUrl, not concatenation: a quote or a backslash in the path used to kill the wallpaper silently
     screen.style.backgroundSize = (p.wallFit === 'contain') ? 'contain' : 'cover';
     screen.style.backgroundPosition = (p.wallFocus === undefined || p.wallFocus === null)
       ? 'center' : ('50% ' + focusOf(p.wallFocus) + '%');
@@ -6026,6 +7835,11 @@ function applyTheme() {
 }
 
 let landscape = false;
+// The handset is turned and enlarged while a photograph is open, and put back afterwards -
+// including back into landscape if that is where it already was, which is the case when a
+// picture is opened from the camera.
+let photoZoom = false;
+let photoWasLandscape = false;
 // Whose phone is on screen, when it is not the player's own.
 //
 // Staff can hold another character's handset (see server/adminview.lua). Everything on the
@@ -6052,7 +7866,12 @@ function applyDevice() {
   const rawH = d.offsetHeight || 784;
   const footprintW = landscape ? rawH : rawW;
   const footprintH = landscape ? rawW : rawH;
-  const fit = Math.max(0.10, Math.min(1,
+  // Normally the phone never grows past the size the player chose - it only shrinks to fit a
+  // small window. A photograph is the one thing worth breaking that for: turned sideways at
+  // its usual size, a picture is a postage stamp in the corner of a 1080p screen, which is
+  // what "on ne voit rien" meant. It goes back to the player's size the moment it closes.
+  const cap = photoZoom ? 2.6 : 1;
+  const fit = Math.max(0.10, Math.min(cap,
     (vw - 24) / (footprintW * size),
     (vh - 24) / (footprintH * size)));
   const scale = size * fit;
@@ -6078,7 +7897,185 @@ function setLandscape(on) { landscape = on === true; applyDevice(); }
 // set a waypoint would be a list of place names.
 let placeFilter = 'all';
 
+// -- Your own pins ----------------------------------------------
+// A second list inside Maps: not the server's directory of garages and hospitals, but the
+// places one character decided were worth remembering. Where the car is, the spot by the
+// water, the lockup. Private to that character.
+//
+// **Nothing here sends a position.** Saving a pin asks the server to write down where the ped
+// is; the page never names coordinates, because a page that could name them could pin a door
+// it has never stood at, and a pin is a waypoint.
+
+const PIN_ICONS = ['map', 'house', 'garage', 'car', 'star', 'heart',
+                   'fuel', 'cart', 'wrench', 'shield', 'fire', 'wall'];
+
+let mapsTab = 'places';    // places | pins
+let pins = [];
+
+/// How far, in words a driver reads at a glance.
+function pinAway(m) {
+  if (!Number.isFinite(m)) return '';
+  if (m < 950) return Math.max(1, Math.round(m)) + ' m';
+  return (Math.round(m / 100) / 10) + ' km';
+}
+
+function paintPins() {
+  // Nearest first when the server could tell us, which is the order somebody actually wants:
+  // the pin you are looking for is almost always the one you are near.
+  const list = (pins || []).slice().sort((a, b) => {
+    const A = Number.isFinite(a.away) ? a.away : Infinity;
+    const B = Number.isFinite(b.away) ? b.away : Infinity;
+    return A - B;
+  });
+  body(mapsSeg() +
+    (list.length
+      ? UI.group(list.map((pn) => UI.row({
+          icon: pn.icon || 'map', tint: '#FF9500', title: pn.label,
+          value: pinAway(pn.away), chevron: true, data: { p: pn.id },
+        })), { footer: L('ph.pin_hint') })
+      : UI.empty(L('ph.pin_none'), 'map')) +
+    UI.button(L('ph.pin_add'), 'pinadd', 'tinted'));
+
+  wireMapsSeg();
+  byId('pinadd').addEventListener('click', () => pinEdit(null));
+
+  rows('.row[data-p]', (r) => {
+    const find = () => list.find((x) => String(x.id) === r.dataset.p);
+    // A long press edits, a tap navigates. `opened` stops the tap that follows a press from
+    // also setting a waypoint behind the sheet that press just opened.
+    let hold = 0, opened = false;
+    const cancel = () => { if (hold) clearTimeout(hold); hold = 0; };
+    r.addEventListener('pointerdown', () => {
+      opened = false;
+      hold = setTimeout(() => {
+        hold = 0;
+        opened = true;
+        const pn = find();
+        if (pn) pinEdit(pn);
+      }, 440);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) =>
+      r.addEventListener(ev, cancel));
+    r.addEventListener('click', async () => {
+      if (opened) { opened = false; return; }
+      const pn = find();
+      if (!pn) return;
+      await post('waypoint', { x: pn.x, y: pn.y, label: pn.label });
+      toast(L('ph.waypoint_set'));
+      ui('waypoint');
+    });
+  });
+}
+
+/// New pin, or an existing one. A new one has no position field, on purpose: it is saved where
+/// the player is standing, and that is the whole rule.
+/// The lock screen's clock face.
+///
+/// Shown as five rows with the time drawn in each one, rather than five names: nobody knows
+/// what "mono" looks like from the word, and a choice you have to try one at a time to
+/// understand is a choice most people leave alone.
+function lockClockSheet() {
+  const faces = ['classic', 'slim', 'stack', 'mono', 'minimal'];
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const current = (state.prefs || {}).lockClock || 'classic';
+  sheet(L('ph.lock_clock'),
+    '<div class="clockpick" id="clockpick">' + faces.map((f) =>
+      '<button class="clockopt' + (f === current ? ' on' : '') + '" type="button" data-f="' + f + '">' +
+        '<span class="clockdemo" data-clock="' + f + '">' +
+          '<i class="cdh">' + esc(hh) + '</i><i class="cdm">' + esc(mm) + '</i></span>' +
+        '<span class="clockname">' + esc(L('ph.clock_' + f)) + '</span></button>').join('') +
+    '</div>' +
+    '<div class="groupfoot">' + esc(L('ph.lock_clock_hint')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      qrows('sheet', '.clockopt', (b) => b.addEventListener('click', async () => {
+        const face = b.dataset.f;
+        qrows('sheet', '.clockopt', (o) => o.classList.toggle('on', o.dataset.f === face));
+        const r = await post('prefs', { lockClock: face });
+        if (!r || !r.ok) { toast(L('ph.err_x')); return; }
+        state.prefs = state.prefs || {};
+        state.prefs.lockClock = face;
+        byId('lock').dataset.clock = face;
+        ui('toggleon');
+        closeSheet(false, epoch);
+      }));
+    });
+}
+
+function pinEdit(pn) {
+  const isNew = !pn;
+  let icon = (pn && pn.icon) || 'map';
+  sheet(L(isNew ? 'ph.pin_add' : 'ph.pin_edit'),
+    UI.field('pinname', L('ph.pin_name'), (pn && pn.label) || '', 'maxlength="40"') +
+    '<div class="grouphead">' + esc(L('ph.pin_icon')) + '</div>' +
+    '<div class="pinicons" id="pinicons">' + PIN_ICONS.map((k) =>
+      '<button class="pinicon' + (k === icon ? ' on' : '') + '" type="button" data-k="' + k + '">' +
+        svg(k) + '</button>').join('') + '</div>' +
+    UI.button(L(isNew ? 'ph.pin_save_here' : 'ph.save'), 'pingo', 'tinted') +
+    (isNew ? '<div class="groupfoot">' + esc(L('ph.pin_here_hint')) + '</div>' : '') +
+    (isNew ? '' : UI.button(L('ph.pin_share'), 'pinshare', 'plain')) +
+    (isNew ? '' : UI.button(L('ph.delete'), 'pindel', 'destructive')),
+    () => {
+      const epoch = sheetEpoch;
+      qrows('sheet', '.pinicon', (b) => b.addEventListener('click', () => {
+        icon = b.dataset.k;
+        qrows('sheet', '.pinicon', (o) => o.classList.toggle('on', o.dataset.k === icon));
+      }));
+      byId('pingo').addEventListener('click', async () => {
+        const label = byId('pinname').value.trim();
+        if (!isNew && !label) { toast(L('ph.err_empty')); return; }
+        const r = await post('pins', isNew
+          ? { op: 'add', label, icon }
+          : { op: 'save', id: pn.id, label, icon });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        pins = r.pins || [];
+        paintPins();
+        ui('waypoint');
+      });
+      if (byId('pinshare')) byId('pinshare').addEventListener('click', () => {
+        closeSheet();
+        // Only the id travels. Everything else about the pin is read out of the row on the
+        // server, which is the same rule that put it there.
+        requestAnimationFrame(() => airdropShare('place', { id: pn.id }));
+      });
+      if (byId('pindel')) byId('pindel').addEventListener('click', async () => {
+        const r = await post('pins', { op: 'del', id: pn.id });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        pins = r.pins || [];
+        paintPins();
+      });
+    });
+}
+
+/// The two halves of Maps, as one control at the top of both.
+function mapsSeg() {
+  return '<div class="seg mapsseg">' +
+    '<button class="' + (mapsTab === 'places' ? 'on' : '') + '" data-t="places">' +
+      esc(L('ph.maps_places')) + '</button>' +
+    '<button class="' + (mapsTab === 'pins' ? 'on' : '') + '" data-t="pins">' +
+      esc(L('ph.maps_pins')) + '</button></div>';
+}
+
+function wireMapsSeg() {
+  [...byId('appbody').querySelectorAll('.mapsseg button')].forEach((b) =>
+    b.addEventListener('click', () => {
+      mapsTab = b.dataset.t;
+      RENDER.maps();
+    }));
+}
+
 RENDER.maps = async () => {
+  if (mapsTab === 'pins') {
+    loading();
+    const r = await post('pins', { op: 'list' });
+    pins = (r && r.pins) || [];
+    paintPins();
+    return;
+  }
   loading();
   const d = await post('places');
   if (!d || d.error) { body(UI.empty(L('ph.err_off'), 'map')); return; }
@@ -6091,18 +8088,26 @@ RENDER.maps = async () => {
   const shown = placeFilter === 'all' ? all : all.filter((p) => p.kind === placeFilter);
 
   body(
-    '<div class="seg">' +
-      '<button class="' + (placeFilter === 'all' ? 'on' : '') + '" data-k="all">' + esc(L('ph.all')) + '</button>' +
-      kinds.map((k) => '<button class="' + (placeFilter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(kindName(k)) + '</button>').join('') +
+    mapsSeg() +
+    // Chips that WRAP, not a segmented control. Ten categories sharing one row ground every
+    // label down to two letters and an ellipsis - "Ba...", "Ca...", "Ga..." - which is a filter
+    // nobody can use. The scrolling variant is no better: this page is driven by a mouse and a
+    // sideways scroller has no gesture behind it.
+    '<div class="mapskinds">' +
+      '<button class="mapkind' + (placeFilter === 'all' ? ' on' : '') + '" data-k="all">' +
+        esc(L('ph.all')) + '</button>' +
+      kinds.map((k) => '<button class="mapkind' + (placeFilter === k ? ' on' : '') +
+        '" data-k="' + esc(k) + '">' + esc(kindName(k)) + '</button>').join('') +
     '</div>' +
     (shown.length
       ? UI.group(shown.map((pl, i) => UI.row({
           icon: pl.icon, title: pl.label, subtitle: pl.kindLabel || L('ph.place_' + pl.kind),
-          chevron: true, data: { i },
+          value: pinAway(pl.away), chevron: true, data: { i },
         })), { footer: L('ph.maps_hint') })
       : UI.empty(L('ph.no_places'), 'map'))
   );
-  [...byId('appbody').querySelectorAll('.seg button')].forEach((b) =>
+  wireMapsSeg();
+  [...byId('appbody').querySelectorAll('.mapkind')].forEach((b) =>
     b.addEventListener('click', () => { placeFilter = b.dataset.k; RENDER.maps(); }));
   rows('.row[data-i]', (r) => r.addEventListener('click', async () => {
     const pl = shown[Number(r.dataset.i)];
@@ -6127,7 +8132,7 @@ const MUSIC_TABS = [
   { id: 'listen', icon: 'play', label: 'ph.music_home' },
   { id: 'playlists', icon: 'folder', label: 'ph.playlists' },
   { id: 'radio', icon: 'speaker', label: 'ph.music_radio' },
-  { id: 'library', icon: 'music', label: 'ph.library' },
+  { id: 'library', icon: 'play', label: 'ph.library' },
   { id: 'search', icon: 'search', label: 'ph.search' },
 ];
 
@@ -6166,9 +8171,13 @@ async function musicSavePlaylists(list, limits) {
 function musicPlaylistId() {
   return 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
 }
+// Twelve rather than six, spread right round the wheel. With six, a shelf of eight tracks
+// put the same orange beside itself twice and the row read as one block of colour.
 const MUSIC_PALETTES = [
   ['#ff4365', '#811848'], ['#ae63ff', '#45238c'], ['#ff9c45', '#a72841'],
   ['#4fc7ff', '#2450a4'], ['#54d8a0', '#126b68'], ['#f3d45b', '#bf4864'],
+  ['#ff6b9d', '#5b1e6b'], ['#7b8cff', '#1f2f7a'], ['#3ddad7', '#0d5566'],
+  ['#c3f53c', '#3f7a1e'], ['#ff7a3d', '#7a2410'], ['#d16bff', '#5c1a86'],
 ];
 
 function musicNormalise(track, index) {
@@ -6198,9 +8207,14 @@ function musicSeed(track) {
 function musicArt(track, cls) {
   const palette = MUSIC_PALETTES[musicSeed(track)];
   const image = track && track.art ? inlineBackground(track.art) + ';' : '';
+  // No play arrow stamped into the artwork. A cover is a picture of a record, not a button,
+  // and printing a triangle across every one of them made a shelf of six look like a shelf
+  // of six identical buttons. The things that ARE buttons - the hero, the mini player -
+  // draw their own, where a control belongs.
   return '<span class="musicart ' + esc(cls || '') + '" style="' + image +
     '--ma:' + palette[0] + ';--mb:' + palette[1] + '">' +
-    '<i></i>' + svg('music') + '</span>';
+    '<i></i><em>' + esc(String((track && track.title) || '?').trim().charAt(0).toUpperCase()) +
+    '</em></span>';
 }
 
 // A playlist's own artwork.
@@ -6346,7 +8360,7 @@ function musicTrackRow(track, index, live) {
 
 function musicHero(track) {
   if (!track) {
-    return '<div class="musichero emptyhero"><div class="musicorbits">' + svg('music') + '</div>' +
+    return '<div class="musichero emptyhero"><div class="musicorbits">' + svg('play') + '</div>' +
       '<span>' + esc(L('ph.music_welcome')) + '</span><h2>' + esc(L('ph.music_yours')) + '</h2>' +
       '<p>' + esc(L('ph.music_welcome_hint')) + '</p>' +
       '<button id="musicemptyadd" type="button">' + svg('add') + esc(L('ph.track_add')) + '</button></div>';
@@ -6687,11 +8701,23 @@ function musicRenderPlayer(model) {
     '<div class="musicvolume">' + svg('speaker') +
       '<input id="mvolume" type="range" min="0" max="100" value="' + Math.round(current.volume * 100) +
         '" aria-label="' + esc(L('ph.volume')) + '" />' + svg('speaker') + '</div>' +
+    // Three controls spread across the width, and nothing drawn around them.
+    //
+    // They were a grey slab split into thirds by hairlines, with a second grey pill under it.
+    // That is the shape of a settings form, and it sat directly beneath an artwork, a glow
+    // and a play button - four competing surfaces on a screen whose subject is one record.
+    // The labels stay, small, because a player who does not already know what an AirPlay
+    // triangle means will not learn it here.
     '<div class="musicplayeractions">' +
-      '<button id="mplayerfav" type="button">' + svg(current.favorite ? 'heart' : 'star') + '<span>' + esc(L('ph.favorite')) + '</span></button>' +
+      '<button id="mplayerfav" type="button" class="' + (current.favorite ? 'on' : '') + '">' +
+        svg(current.favorite ? 'heart' : 'star') + '<span>' + esc(L('ph.favorite')) + '</span></button>' +
       '<button id="mplayerout" type="button">' + svg('airdrop') + '<span>' + esc(L('ph.output')) + '</span></button>' +
       '<button id="mplayerqueue" type="button">' + svg('note') + '<span>' + esc(L('ph.queue')) + '</span></button></div>' +
-    UI.button(L('ph.music_stop'), 'mplayerstop', 'plain') + '</div>');
+    // Not a button of the same weight as the three above it. Stopping is the rarest thing
+    // anybody does here, and it is only present at all because a deck that cannot be stopped
+    // is a screen with no way out.
+    '<button class="musicplayerstop" id="mplayerstop" type="button">' +
+      esc(L('ph.music_stop')) + '</button></div>');
   byId('mplaymain').addEventListener('click', () => musicToggle(current));
   byId('mprevious').addEventListener('click', () => musicStep(-1));
   byId('mnext').addEventListener('click', () => musicStep(1));
@@ -6849,7 +8875,7 @@ async function musicNewPlaylist(model) {
         if (!name) return;
         const epoch = sheetEpoch;
         await musicSavePlaylists(
-          mine.concat([{ id: musicPlaylistId(), name, icon: 'music', tint: null, tracks: [] }]),
+          mine.concat([{ id: musicPlaylistId(), name, icon: 'play', tint: null, tracks: [] }]),
           model.limits);
         if (closeSheet(false, epoch)) RENDER.music(true);
       });
@@ -6890,6 +8916,10 @@ RENDER.music = async (quiet) => {
   if (!quiet) loading();
   const model = await musicModel();
   if (!model.enabled) { foot(''); body(UI.empty(L('ph.err_off'), 'music')); return; }
+  // One class, set here, for the two rules the now-playing screen needs on the app frame. It
+  // used to be `:has()`, which this stylesheet's own header forbids - so those rules held in
+  // the preview's Chrome and could silently not hold in the browser the game ships.
+  byId('app').classList.toggle('nowplaying', !!musicPlayerOpen);
   if (musicPlayerOpen) { musicRenderPlayer(model); return; }
   musicFoot(model);
 
@@ -6976,7 +9006,7 @@ RENDER.music = async (quiet) => {
   body('<div class="musiclibrarytiles">' +
     '<button id="mlibfav" type="button"><span>' + svg('heart') + '</span><div><b>' + esc(L('ph.favourites')) +
       '</b><small>' + esc(String(favourites.length)) + '</small></div>' + svg('chevron') + '</button>' +
-    '<button id="mlibalbums" type="button"><span>' + svg('music') + '</span><div><b>' + esc(L('ph.albums')) +
+    '<button id="mlibalbums" type="button"><span>' + svg('play') + '</span><div><b>' + esc(L('ph.albums')) +
       '</b><small>' + esc(String(new Set(model.library.map((track) => track.album)).size)) + '</small></div>' + svg('chevron') + '</button></div>' +
     musicSection(L('ph.songs'), { id: 'add', label: L('ph.add') }) +
     (model.library.length ? '<div class="musictracklist">' +
@@ -7240,6 +9270,70 @@ RENDER.mdt = async (cached) => {
 // three ways is something players do constantly and currently do in their heads.
 let calcAcc = null, calcOp = null, calcVal = '0', calcFresh = true;
 
+// ── The tape ───────────────────────────────────────────────────
+// The last ten sums, kept the way a real calculator keeps a paper roll: what was asked and what
+// came back. It is stored per character rather than held in the page, so closing the phone does
+// not throw it away - a number worked out five minutes ago is exactly the thing somebody comes
+// back to look at.
+
+const CALC_KEEP = 10;
+const CALC_SIGN = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+let calcTape = null;
+
+/// A number as the tape should print it: no trailing zeros, no exponent for ordinary sizes.
+function calcNum(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return String(Math.round(n * 1e6) / 1e6);
+}
+
+async function calcLoadTape() {
+  if (calcTape) return calcTape;
+  const r = await post('appStorage', { app: 'calc', op: 'get', key: 'tape' });
+  try { calcTape = JSON.parse((r && r.value) || '[]') || []; } catch { calcTape = []; }
+  return calcTape;
+}
+
+function calcRemember(sum, answer) {
+  calcTape = [{ q: sum, a: answer }].concat(calcTape || []).slice(0, CALC_KEEP);
+  post('appStorage', { app: 'calc', op: 'set', key: 'tape', value: JSON.stringify(calcTape) });
+  calcPaintTape();
+}
+
+function calcTapeHtml() {
+  const tape = calcTape || [];
+  if (!tape.length) return '<div class="calcempty">' + esc(L('ph.calc_no_tape')) + '</div>';
+  return tape.map((e, i) =>
+    '<button class="calcline" type="button" data-a="' + esc(e.a) + '" data-i="' + i + '">' +
+      '<span class="calcq">' + esc(e.q) + '</span>' +
+      '<span class="calca">' + esc(e.a) + '</span></button>').join('');
+}
+
+function calcPaintTape() {
+  const host = byId('calctape');
+  if (!host) return;
+  host.innerHTML = calcTapeHtml();
+  // Tapping a line brings its ANSWER back down to the display, which is what a tape is for:
+  // carrying a number forward without typing it again.
+  qrows('calctape', '.calcline', (b) => b.addEventListener('click', () => {
+    calcVal = b.dataset.a;
+    calcFresh = true;
+    const out = byId('calcout');
+    if (out) out.textContent = calcVal;
+    calcCloseTape();
+    ui('key');
+  }));
+}
+
+function calcOpenTape() {
+  const p = byId('calcpanel');
+  if (p) { p.classList.add('on'); calcPaintTape(); }
+}
+function calcCloseTape() {
+  const p = byId('calcpanel');
+  if (p) p.classList.remove('on');
+}
+
 function calcPress(k) {
   const put = (v) => { calcVal = calcFresh ? v : (calcVal === '0' ? v : calcVal + v); calcFresh = false; };
   if (k >= '0' && k <= '9') put(k);
@@ -7251,7 +9345,12 @@ function calcPress(k) {
     if (calcOp !== null && calcAcc !== null) {
       const b = parseFloat(calcVal);
       const r = { '+': calcAcc + b, '-': calcAcc - b, '*': calcAcc * b, '/': b === 0 ? 0 : calcAcc / b }[calcOp];
+      // The sum is written down BEFORE the operands are cleared, because after this line there
+      // is nothing left to write down: the whole point of the tape is the question, and the
+      // question only exists while `calcAcc` and `calcOp` still hold it.
+      const sum = calcNum(calcAcc) + ' ' + CALC_SIGN[calcOp] + ' ' + calcNum(b);
       calcVal = String(Math.round(r * 1e6) / 1e6);
+      calcRemember(sum, calcVal);
       calcAcc = null; calcOp = null; calcFresh = true;
     }
   } else {
@@ -7262,19 +9361,46 @@ function calcPress(k) {
   if (out) out.textContent = calcVal;
 }
 
-RENDER.calc = () => {
+RENDER.calc = async () => {
   byId('app').classList.add('black');
   byId('screen').classList.add('appblack');
+  await calcLoadTape();
+  setNav(L('app.calc'), null, { icon: 'clock', label: L('ph.calc_tape'), onClick: calcOpenTape });
   const K = [['c', 'fn', 'AC'], ['neg', 'fn', '+/-'], ['pct', 'fn', '%'], ['/', 'op', '÷'],
              ['7', '', '7'], ['8', '', '8'], ['9', '', '9'], ['*', 'op', '×'],
              ['4', '', '4'], ['5', '', '5'], ['6', '', '6'], ['-', 'op', '−'],
              ['1', '', '1'], ['2', '', '2'], ['3', '', '3'], ['+', 'op', '+'],
              ['0', 'wide', '0'], ['.', '', ','], ['=', 'op', '=']];
-  body('<div class="calcout" id="calcout">' + esc(calcVal) + '</div>' +
+  // Wrapped, so the keypad can sit ON the bottom edge with the answer filling whatever is
+  // left above it - which is the whole shape of this app. Without a wrapper both halves are
+  // just two blocks stacked at the top of a tall empty screen.
+  body('<div class="calcwrap">' +
+    '<div class="calcout" id="calcout">' + esc(calcVal) + '</div>' +
     '<div class="calcgrid">' + K.map(function (e) {
       return '<button class="ckey ' + e[1] + '" data-k="' + esc(e[0]) + '" type="button">' + e[2] + '</button>';
-    }).join('') + '</div>');
+    }).join('') + '</div>' +
+    // Inside the wrapper, not beside it. `#appbody` scrolls, so anything positioned against the
+    // app frame from in there is clipped by it; the wrapper is the box that fills the screen
+    // and stays put, which is what a panel anchored to the bottom needs.
+    //
+    // Over the keypad rather than a strip above the display: the tape is looked at occasionally
+    // and the keys are used constantly, so the keys keep the room.
+    '<div class="calcpanel" id="calcpanel">' +
+      '<div class="calcpanelhead">' + esc(L('ph.calc_tape')) +
+        '<button class="calcclear" id="calcclear" type="button">' + esc(L('ph.clear')) + '</button>' +
+        '<button class="calcx" id="calcx" type="button" aria-label="' + esc(L('ph.close')) + '">' +
+          svg('xmark') + '</button>' +
+      '</div>' +
+      '<div class="calctape" id="calctape"></div>' +
+    '</div></div>');
   rows('.ckey', (b) => b.addEventListener('click', () => calcPress(b.dataset.k)));
+  byId('calcx').addEventListener('click', calcCloseTape);
+  byId('calcclear').addEventListener('click', () => {
+    calcTape = [];
+    post('appStorage', { app: 'calc', op: 'set', key: 'tape', value: '[]' });
+    calcPaintTape();
+    ui('toggleoff');
+  });
 };
 
 
@@ -7336,6 +9462,7 @@ function hideSystemPanels(instant) {
 }
 
 function closeOverlays() {
+  closePhoto();
   hideSystemPanels();
   byId('switcher').classList.remove('on');
   closeSheet(true);
@@ -7346,6 +9473,13 @@ function closeOverlays() {
 }
 
 function resetTransientUI() {
+  // **First, because it is the only overlay that also TURNED THE HANDSET.**
+  //
+  // Everything else here is a panel that goes away. This one left the phone rotated and
+  // enlarged, so a reset that skipped it - pressing a side button, locking, an admin reset -
+  // took the photograph off the screen and left the handset lying on its side with no way
+  // back. That is the phone that "bugged" for the rest of the session.
+  closePhoto();
   g = null;
   appPull = null;
   hideAuth();
@@ -7865,22 +9999,194 @@ function wireSideButtons() {
 // an honest fallback when nobody did.
 function descOf(a) {
   const k = 'ph.desc_' + a.id;
-  const v = L(k);
-  if (v !== k) return v;
+  // **`hasString`, not `L(k) !== k`.**
+  //
+  // `L()` does not return the key when it misses - it HUMANISES it, so `ph.desc_fruitee`
+  // comes back as "Desc Fruitee". The old test compared the answer against the key, which is
+  // therefore true for every missing string, so this returned on the first line every single
+  // time: the operator's own `desc` and the honest fallback below it were both unreachable,
+  // and any app without a translation advertised itself in the store as "Desc Something".
+  //
+  // That is the third time this exact trap has been walked into in this file - the licence
+  // rows in the Wallet and the place names before it - which is why `hasString` exists and
+  // says so in its own comment.
+  if (hasString(k)) return L(k);
   if (a.desc) return a.desc;
   return L('ph.desc_generic');
 }
 
+/// Five stars, filled to a score.
+///
+/// Half stars are drawn as half, because rounding 4.4 up to five full stars is the store
+/// flattering itself. The empty ones stay visible so the score can be read as a proportion at a
+/// glance rather than counted.
+function starRow(score, cls) {
+  const value = Math.max(0, Math.min(5, Number(score) || 0));
+  let html = '<span class="stars ' + (cls || '') + '">';
+  for (let i = 1; i <= 5; i += 1) {
+    const fill = Math.max(0, Math.min(1, value - (i - 1)));
+    html += '<i style="--fill:' + Math.round(fill * 100) + '%">' + svg('star') + svg('star') + '</i>';
+  }
+  return html + '</span>';
+}
+
 function storeFacts(a) {
+  // Size and age are the two facts a store shows that this phone genuinely cannot know: there
+  // is no download and no rating board. They are derived from the id so at least they are
+  // STABLE - the same app reads the same on every screen - and they are labelled as what they
+  // are rather than dressed up as measurements.
   let seed = 0;
   String(a.id || '').split('').forEach((char) => { seed = (seed * 31 + char.charCodeAt(0)) % 997; });
+  const r = a.rating || null;
   return {
-    rating: (4.5 + (seed % 5) / 10).toFixed(1),
-    reviews: 120 + (seed * 37) % 4800,
+    // Real, or nothing. An app nobody has reviewed says so; it does not borrow a score from
+    // the way its name happens to hash, which is what this returned before.
+    rating: r && r.count ? Number(r.average).toFixed(1) : null,
+    reviews: r && r.count ? r.count : 0,
     age: (a.category === 'social' || a.category === 'finance') ? '12+' : '4+',
     version: String(a.version || '1.0'),
     size: (18 + seed % 64) + ' MB',
   };
+}
+
+/// The reviews for one app: the score, the five bars, and what people wrote.
+///
+/// Loaded after the page is drawn rather than with it. The rest of the page is config the client
+/// already has, so waiting on a query to show a description would make every app in the store
+/// feel slow for the sake of a section most people scroll past.
+async function storeReviews(a) {
+  const host = byId('streviews');
+  if (!host) return;
+  const d = await post('storeReviews', { app: a.id });
+  // The page may have moved on while the query ran.
+  if (!byId('streviews') || byId('streviews') !== host) return;
+  if (!d || !d.ok) { host.innerHTML = ''; return; }
+
+  const total = d.count || 0;
+  const spread = d.spread || [0, 0, 0, 0, 0];
+
+  // The score at the top of the page comes from the store LIST, which was fetched before this
+  // review existed - so leaving a review moved the section and left the headline saying "no
+  // ratings yet". Two numbers describing the same thing have to agree, and the fresher one wins.
+  const meta = document.querySelector('.stmeta');
+  if (meta && meta.firstElementChild) {
+    const big = meta.firstElementChild.querySelector('.mv');
+    const kicker = meta.firstElementChild.querySelector('.mk');
+    if (big) big.textContent = total ? Number(d.average).toFixed(1) : '--';
+    if (kicker) {
+      kicker.textContent = total
+        ? Number(total).toLocaleString() + ' ' + L('ph.store_ratings')
+        : L('ph.store_no_ratings');
+    }
+  }
+  const bars = [5, 4, 3, 2, 1].map((star) => {
+    const n = spread[star - 1] || 0;
+    const pct = total ? Math.round((n / total) * 100) : 0;
+    return '<span class="stbar"><span class="stbarn">' + star + '</span>' +
+      '<b><u style="width:' + pct + '%"></u></b></span>';
+  }).join('');
+
+  const written = (d.reviews || []).filter((r) => (r.body || '').trim());
+
+  host.innerHTML =
+    (total
+      ? '<div class="stscore">' +
+          '<div class="stscorebig"><b>' + esc(Number(d.average).toFixed(1)) + '</b>' +
+            starRow(d.average) +
+            '<small>' + esc(L('ph.store_out_of')) + '</small></div>' +
+          '<div class="stbars">' + bars + '</div>' +
+        '</div>' +
+        '<div class="stscorefoot">' + esc(String(total) + ' ' + L('ph.store_ratings')) + '</div>'
+      : '<div class="stnorating">' + svg('star') +
+          '<span>' + esc(L('ph.store_be_first')) + '</span></div>') +
+    (d.canReview
+      ? UI.button(L(d.mine ? 'ph.store_edit_review' : 'ph.store_write_review'), 'strev', 'plain')
+      : '<div class="groupfoot">' + esc(L('ph.store_need_app')) + '</div>') +
+    (written.length
+      // Three, and a button for the rest. A store page is read on the way to a decision, and
+      // forty reviews between the description and the version number is a page nobody reaches
+      // the bottom of. The count on the button is the whole set rather than what is left,
+      // because "see all 40" is a size and "see 37 more" is arithmetic.
+      ? '<div class="streviewlist" id="streviewlist">' +
+          written.slice(0, STORE_REVIEWS_SHOWN).map(storeReviewCard).join('') + '</div>' +
+        (written.length > STORE_REVIEWS_SHOWN
+          ? '<button class="linkbtn" id="strevmore" type="button">' +
+              esc(L('ph.store_all_reviews').replace('{n}', String(written.length))) + '</button>'
+          : '')
+      : '');
+
+  const write = byId('strev');
+  if (write) write.addEventListener('click', () => storeWriteReview(a, d));
+
+  const more = byId('strevmore');
+  if (more) more.addEventListener('click', () => {
+    // Drawn in place rather than in a sheet: the reviews are already the section somebody
+    // scrolled to, and moving them into a modal would lose that position on the way back.
+    byId('streviewlist').innerHTML = written.map(storeReviewCard).join('');
+    more.remove();
+  });
+}
+
+/// How many reviews the page shows before it offers the rest.
+const STORE_REVIEWS_SHOWN = 3;
+
+function storeReviewCard(r) {
+  return '<article class="streview' + (r.mine ? ' mine' : '') + '">' +
+    '<header>' + starRow(r.stars, 'small') +
+      '<b>' + esc(r.mine ? L('ph.store_you') : (r.name || '?')) + '</b>' +
+      (r.ts ? '<time>' + esc(txWhen({ ts: r.ts })) + '</time>' : '') +
+    '</header>' +
+    '<p>' + esc(r.body) + '</p>' +
+  '</article>';
+}
+
+/// Writing one. Stars first, because that is the part everybody fills in.
+function storeWriteReview(a, d) {
+  let stars = (d.mine && d.mine.stars) || 5;
+  const picker = () => [1, 2, 3, 4, 5].map((n) =>
+    '<button class="stpick' + (n <= stars ? ' on' : '') + '" data-s="' + n + '" type="button">' +
+      svg('star') + '</button>').join('');
+
+  sheet(L(d.mine ? 'ph.store_edit_review' : 'ph.store_write_review'),
+    '<div class="stpicker" id="stpicker">' + picker() + '</div>' +
+    UI.field('srbody', L('ph.store_review_ph'), (d.mine && d.mine.body) || '',
+             'maxlength="' + (d.maxLength || 300) + '"') +
+    UI.button(L('ph.store_post_review'), 'srgo', 'tinted') +
+    (d.mine ? UI.button(L('ph.delete'), 'srdel', 'destructive') : '') +
+    '<div class="groupfoot">' + esc(L('ph.store_review_hint')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      // `qrows('sheet', ...)`, not `rows(...)`: `rows` queries `#appbody` and this picker is in
+      // the sheet, so every listener was being attached to nothing. The stars drew correctly and
+      // did not respond, which is the quietest possible way for a control to be broken.
+      const wire = () => qrows('sheet', '#stpicker .stpick', (b) => b.addEventListener('click', () => {
+        stars = Number(b.dataset.s) || 5;
+        byId('stpicker').innerHTML = picker();
+        wire();
+        ui('toggleon');
+      }));
+      wire();
+
+      byId('srgo').addEventListener('click', async () => {
+        const go = byId('srgo');
+        if (go.disabled) return;
+        go.disabled = true;
+        const r = await post('storeReview', { app: a.id, stars, body: byId('srbody').value });
+        if (!r || !r.ok) { go.disabled = false; toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        toast(L('ph.store_review_thanks'));
+        storeReviews(a);
+      });
+
+      const del = byId('srdel');
+      if (del) del.addEventListener('click', async () => {
+        const r = await post('storeReviewDelete', { app: a.id });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        storeReviews(a);
+      });
+    });
 }
 
 function storePermissionLabel(permission) {
@@ -7891,8 +10197,139 @@ function storePermissionLabel(permission) {
     : translated;
 }
 
+/// Which apps ship a recorded preview.
+///
+/// A NUI page cannot ask what files exist, and one 404 per app to find out is not a way to find
+/// out. `tools/make-previews.js` writes a manifest next to the recordings, so a single small
+/// fetch answers for the whole catalogue.
+///
+/// A fork that never ran the tool has no manifest, and that is the normal state rather than an
+/// error: the fetch fails, the object is empty, and every app falls back to the drawn scenes
+/// exactly as before.
+let shippedPreviews = null;
+let shippedPreviewsAsked = null;
+
+function loadShippedPreviews() {
+  if (!shippedPreviewsAsked) {
+    shippedPreviewsAsked = fetch('previews/index.json')
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}))
+      .then((m) => {
+        shippedPreviews = (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+        return shippedPreviews;
+      });
+  }
+  return shippedPreviewsAsked;
+}
+
+/// A preview an OPERATOR supplied: a clip or a screenshot of the app actually running.
+///
+/// The mock-ups below are drawn from CSS - little abstract shapes standing in for a screen - and
+/// they were the only thing there was. They read as placeholders because that is what they are.
+/// A real recording of the app is better than any drawing of one, so if an app names its own
+/// previews they win outright.
+///
+/// `.webm` and `.mp4` become a muted, looping, inline video: a store preview is a silent
+/// three-second loop, never something that asks permission or takes over the screen. Anything
+/// else is treated as a still.
+///
+/// The host gate is the same one every other picture in this phone goes through, so a preview
+/// cannot be a URL to somewhere the operator has not allowed.
+const STORE_VIDEO = /\.(webm|mp4)(\?|#|$)/i;
+
+function storeMedia(url, name) {
+  const clean = String(url || '').trim();
+  if (!clean) return '';
+  const video = STORE_VIDEO.test(clean);
+  if (video) {
+    return '<div class="stshot stmedia">' +
+      '<video src="' + esc(clean) + '" autoplay loop muted playsinline ' +
+        'preload="metadata" aria-label="' + name + '"></video></div>';
+  }
+  return '<div class="stshot stmedia" style="' + inlineBackground(clean) + '" ' +
+    'role="img" aria-label="' + name + '"></div>';
+}
+
+/// The real previews for an app, in the order they should be shown.
+///
+/// The operator's own list first, then whatever the resource ships, then nothing - and nothing
+/// is what sends the page back to the drawn scenes. The mock-ups are never mixed in behind a
+/// real one, because half real and half abstract looks worse than either on its own.
+/// The shipped entry for an app, in the theme the player is actually looking at.
+///
+/// Every recording used to be dark, because that is what the recorder happened to boot in - so
+/// on a light phone the whole store was dark rectangles on a white page. A store showing an app
+/// in a theme its owner does not use is showing them somebody else's phone.
+///
+/// The dark set keeps the bare name and the light set hangs off it, so an entry written before
+/// there were two of them still reads correctly and simply has no light twin to find.
+function shippedFor(a) {
+  const entry = (shippedPreviews && shippedPreviews[a.id]) || null;
+  if (!entry || Array.isArray(entry)) return entry;
+  const light = !byId('screen').classList.contains('dark');
+  return (light && entry.light) ? entry.light : entry;
+}
+
+function storeOwnPreviews(a) {
+  const configured = Array.isArray(a.previews) ? a.previews.filter(Boolean) : [];
+  if (configured.length) return configured;
+  const shipped = shippedFor(a);
+  if (Array.isArray(shipped)) return shipped;
+  return (shipped && Array.isArray(shipped.previews)) ? shipped.previews : [];
+}
+
+/// A single still of the app, for somewhere a moving picture would be too much.
+///
+/// The front page can show a dozen apps at once, and a dozen videos decoding behind a game is
+/// not a design, it is a frame-rate problem. Exactly ONE thing on this page moves - the shop
+/// window at the top - and everything else uses the still the recorder writes beside the clip.
+function storePoster(a) {
+  const shipped = shippedFor(a);
+  if (shipped && !Array.isArray(shipped) && shipped.poster) return shipped.poster;
+  // An operator who supplied their own previews and no poster: the first still among them
+  // stands in, and if they only gave clips there is simply no poster and the card falls back
+  // to its tint. Nothing here invents an image.
+  return storeOwnPreviews(a).find((u) => !STORE_VIDEO.test(u)) || '';
+}
+
+/// The one clip an app leads with.
+function storeClip(a) {
+  return storeOwnPreviews(a).find((u) => STORE_VIDEO.test(u)) || '';
+}
+
+/// The rating, as a line rather than a block: stars, the score, and how many said so.
+///
+/// Returns an empty string when nobody has rated the app. An unrated app showing five empty
+/// stars reads as nought out of five, which is a review it never got.
+function storeRateLine(a) {
+  const r = a.rating;
+  if (!r || !r.count) return '';
+  return '<span class="strate">' + starRow(r.average, 'mini') +
+    '<span>' + esc(Number(r.average).toFixed(1)) + '</span></span>';
+}
+
+/// The button, which is the same button wherever it appears.
+///
+/// Written once because it is four states deep - downloading, required, updatable, installed,
+/// for sale - and a second copy of that in the shop window would have drifted from this one
+/// within a version. `data-act` is what the row's click handler reads.
+function storeGetButton(a) {
+  const has = isInstalled(a.id);
+  const pct = downloads[a.id];
+  const act = pct !== undefined ? 'cancel'
+    : (a.required ? 'none' : (a.update && has ? 'update' : (has ? 'open' : 'get')));
+  return '<button class="stget ' + (has || a.required ? 'have' : '') +
+    (!has && a.price && !a.purchased ? ' paid' : '') +
+    (pct !== undefined ? ' dling' : '') +
+    '" data-act="' + act + '" type="button">' + esc(storeLabel(a, has)) + '</button>';
+}
+
 function storePreview(a, index) {
   const name = esc(L(a.label));
+
+  const own = storeOwnPreviews(a);
+  if (own.length) return index < own.length ? storeMedia(own[index], name) : '';
+
   if (a.id === 'cipher') {
     const scenes = [
       '<div class="stcipherseal">' + svg('lockshut') + '<span><b>' +
@@ -7954,12 +10391,18 @@ function storeDetail(a) {
                 '" id="stget" type="button">' + esc(storeLabel(a, false)) + '</button>')) +
       '</div></div></div></div>' +
     '<div class="stmeta">' +
-      '<div><div class="mv">' + facts.rating + ' ★</div><div class="mk">' +
-        esc(Number(facts.reviews).toLocaleString()) + ' ' + esc(L('ph.store_ratings')) + '</div></div>' +
+      '<div><div class="mv">' + (facts.rating || '--') + '</div><div class="mk">' +
+        esc(facts.reviews
+          ? Number(facts.reviews).toLocaleString() + ' ' + L('ph.store_ratings')
+          : L('ph.store_no_ratings')) + '</div></div>' +
       '<div><div class="mv">' + facts.age + '</div><div class="mk">' + esc(L('ph.store_age')) + '</div></div>' +
       '<div><div class="mv">' + facts.size + '</div><div class="mk">' + esc(L('ph.store_size')) + '</div></div>' +
     '</div>' +
-    '<div class="stscreens" aria-label="' + esc(L('ph.store_previews')) + '">' +
+    // A lone recording is centred and shown larger. Three drawn scenes fill the strip and
+    // invite a drag; one tile against two thirds of empty space just looks like the other two
+    // failed to load, which is the opposite of what a real preview is here to fix.
+    '<div class="stscreens' + (storeOwnPreviews(a).length === 1 ? ' one' : '') +
+      '" aria-label="' + esc(L('ph.store_previews')) + '">' +
       [0, 1, 2].map((index) => storePreview(a, index)).join('') + '</div>' +
     '<div class="grouphead">' + esc(L('ph.about')) + '</div>' +
     '<div class="storedesc">' + esc(descOf(a)) + '</div>' +
@@ -7980,6 +10423,8 @@ function storeDetail(a) {
         '<div class="stpermissions">' + permissions.map((permission) =>
           UI.chip(storePermissionLabel(permission), 'permission')).join('') + '</div>'
       : '') +
+    '<div class="grouphead">' + esc(L('ph.store_reviews')) + '</div>' +
+    '<div id="streviews" class="streviews">' + UI.spinner(L('ph.loading')) + '</div>' +
     '<div class="grouphead">' + esc(L('ph.store_information')) + '</div>' +
     '<div class="group stinfoRows">' +
       UI.row({ title: L('ph.store_dev'), value: a.developer || (a.owner === 'v-phone' ? 'iFruit Studio' : (a.owner || 'iFruit')) }) +
@@ -7990,6 +10435,7 @@ function storeDetail(a) {
   );
   pushAnim();
   byId('appbody').scrollTop = 0;
+  storeReviews(a);
 
   const so = byId('stopen');
   if (so) so.addEventListener('click', () => {
@@ -8146,21 +10592,70 @@ function storeUpdateCount() {
 /// underneath it read "Social" as well - the same word three times down the screen, on the one
 /// line that could have said something. Under a heading it says what the app is instead; in a
 /// search result, where there is no heading, the category is genuinely the useful thing.
-function storeRow(a, underHeading) {
-  const has = isInstalled(a.id);
-  const label = storeLabel(a, has);
+/// The shop window: one app, its own recording playing behind it.
+///
+/// What this replaces was the same flat gradient for every app with an icon and two lines of
+/// text on it, so the window said nothing about what was inside. The apps ship a recording of
+/// themselves now, and showing the actual thing is what a shop window is for.
+///
+/// It carries the button too. Reaching a paid app's price meant opening its page first, which
+/// is a step between somebody wanting an app and getting it for no reason at all.
+function storeHero(a) {
+  const clip = storeClip(a);
+  const poster = storePoster(a);
+  const style = a.accent ? ' style="--app-tint:' + esc(a.accent) + '"' : '';
+  return '<div class="stfeat' + (clip || poster ? ' filmed' : '') +
+    '" data-app="' + esc(a.id) + '"' + style + '>' +
+    (clip
+      ? '<video class="stfeatfilm" src="' + esc(clip) + '" autoplay loop muted playsinline' +
+        (poster ? ' poster="' + esc(poster) + '"' : '') + '></video>'
+      : (poster ? '<div class="stfeatfilm" style="' + inlineBackground(poster) + '"></div>' : '')) +
+    (clip || poster ? '<div class="stfeatscrim"></div>' : '') +
+    '<div class="stkick">' + esc(L('ph.store_featured')) + '</div>' +
+    // The name and the button on one line, the description on its own underneath.
+    //
+    // All three side by side left the description about twenty-five characters of width, so
+    // every app's sentence was cut off after four words - the same mid-word ellipsis that made
+    // the list rows unreadable, in the largest thing on the page. Full width fits a sentence.
+    '<div class="strow">' + appTile(a) +
+      '<div class="stfeatmid"><div class="stname">' + esc(L(a.label)) + '</div>' +
+        storeRateLine(a) + '</div>' +
+      storeGetButton(a) +
+    '</div>' +
+    '<div class="stsub">' + esc(descOf(a)) + '</div>' +
+  '</div>';
+}
+
+/// A card on the shelf: the app's own still, its tile, its name.
+///
+/// Deliberately a still and not a clip - see `storePoster`. A card with no still at all keeps
+/// its tint and its icon, which is a card rather than a hole.
+function storeCard(a) {
+  const poster = storePoster(a);
+  const style = a.accent ? ' style="--app-tint:' + esc(a.accent) + '"' : '';
+  return '<div class="stcard" data-app="' + esc(a.id) + '"' + style + '>' +
+    '<div class="stcardart"' + (poster ? ' style="' + inlineBackground(poster) + '"' : '') + '>' +
+      (poster ? '' : appTile(a, 'big')) + '</div>' +
+    '<div class="stcardfoot">' + appTile(a) +
+      '<div class="stcardname"><b>' + esc(L(a.label)) + '</b>' +
+        '<small>' + esc(L('ph.cat_' + (a.category || 'utilities'))) + '</small></div>' +
+    '</div></div>';
+}
+
+function storeRow(a) {
   const pct = downloads[a.id];
-  const second = underHeading
-    ? descOf(a)
-    : L('ph.cat_' + (a.category || 'utilities'));
+  // **The category and the score, never the description.**
+  //
+  // The second line used to be the app's own sentence, on one line, cut with an ellipsis
+  // wherever it ran out of room - "What the city is saying, ..." - which is the ugliest thing
+  // a list can do and told nobody anything. A description belongs on the page somebody opens
+  // to read it. What helps here is what helps in every store: what kind of app this is, and
+  // whether anyone rates it.
+  const rate = storeRateLine(a);
   return '<div class="strowitem" data-app="' + esc(a.id) + '">' + appTile(a) +
     '<div class="stmid"><div class="stt">' + esc(L(a.label)) + '</div>' +
-    '<div class="stc">' + esc(second) + '</div></div>' +
-    '<button class="stget ' + (has || a.required ? 'have' : '') +
-      (pct !== undefined ? ' dling' : '') + '" data-act="' +
-      (pct !== undefined ? 'cancel'
-        : (a.required ? 'none' : (a.update && has ? 'update' : (has ? 'open' : 'get')))) +
-      '" type="button">' + esc(label) + '</button>' +
+    '<div class="stc">' + esc(L('ph.cat_' + (a.category || 'utilities'))) + rate + '</div></div>' +
+    storeGetButton(a) +
     // The bar sits under the row rather than inside the button: a button that is also a progress
     // indicator is a button nobody is sure is still a button.
     (pct !== undefined
@@ -8206,8 +10701,13 @@ function storeBarShow(id) {
   return true;
 }
 
-RENDER.store = () => {
+RENDER.store = async () => {
   setNav(L('app.store'), null);
+
+  // Settled before anything draws, so the detail page never swaps a drawn mock-up for a real
+  // recording a moment after somebody has looked at it. It is one local file, fetched once for
+  // the whole session; the list below is what pays for it, and it pays once.
+  await loadShippedPreviews();
 
   // Deduplicated by id: the registry is a config seed merged with the operator's rows, and
   // a duplicate there used to surface as the same app listed twice in the store.
@@ -8231,7 +10731,9 @@ RENDER.store = () => {
   );
 
   const wire = () => {
-    rows('.stfeat, .strowitem', (el) => el.addEventListener('click', (e) => {
+    // The shelf's cards need no drag guard of their own: the sideways-strip handler already
+    // swallows the click that follows a drag, once, for every strip in the phone.
+    rows('.stfeat, .strowitem, .stcard', (el) => el.addEventListener('click', (e) => {
       if (e.target.closest('.stget')) return;
       const a = all.find((x) => x.id === el.dataset.app);
       if (a) storeDetail(a);
@@ -8280,18 +10782,42 @@ RENDER.store = () => {
     ].filter(Boolean).join(' ').toLowerCase().includes(q)) : shown;
     let html = '';
 
+    // **What to put in the window, in order of what is most worth seeing.**
+    //
     // Recomputed on every paint, never captured once: installing the featured app used to
-    // leave it in the window still offering something you now own. If there is nothing
-    // left to get, the window goes away rather than advertising your own apps back at you.
-    const feat = all.find((a) => a.optional && !isInstalled(a.id))
-              || all.find((a) => !a.required && !isInstalled(a.id))
+    // leave it in the window still offering something you now own.
+    //
+    // The last two lines are the ones that matter. This used to stop at "something you have
+    // not got" and show NOTHING when there was nothing left - so a player who had installed
+    // everything, which is the ordinary state of a server that has been running a while, got
+    // a front page with no window and no shelf at all: bare lists, and no sign anything had
+    // been built. A store still has a front page for the people who already bought from it.
+    const yours = (a) => isInstalled(a.id);
+    const gettable = all.filter((a) => !a.required && !yours(a));
+    const feat = gettable.find((a) => a.optional)   // paid or downloadable: the real shop window
+              || gettable[0]
+              || all.find((a) => a.update && yours(a))   // then anything with an update waiting
+              || all.find((a) => !a.required)            // then simply something to look at
+              || all[0]
               || null;
-    if (!q && storeCat === 'all' && feat) {
-      html += '<div class="stfeat" data-app="' + esc(feat.id) + '">' +
-        '<div class="stkick">' + esc(L('ph.store_featured')) + '</div>' +
-        '<div class="strow">' + UI.appIcon(feat.icon) +
-        '<div><div class="stname">' + esc(L(feat.label)) + '</div>' +
-        '<div class="stsub">' + esc(descOf(feat)) + '</div></div></div></div>';
+    if (!q && storeCat === 'all' && feat) html += storeHero(feat);
+
+    // The shelf, under the window: apps as cards you can drag through. It is the difference
+    // between a shop and a spreadsheet, and the only place on this page where an app is bigger
+    // than a row.
+    //
+    // What you have not got comes first, because that is what a shelf is for. When there is
+    // not enough of that left to fill one, it falls back to the rest of the catalogue - a
+    // browse strip rather than a buy strip, which is still a shelf and still better than the
+    // nothing that used to be here.
+    if (!q && storeCat === 'all') {
+      const others = all.filter((a) => !a.required);
+      const shelf = (gettable.length >= 2 ? gettable : others)
+        .filter((a) => !feat || a.id !== feat.id);
+      if (shelf.length >= 2) {
+        html += '<div class="stshelfhead">' + esc(L('ph.store_discover')) + '</div>' +
+          '<div class="stshelf">' + shelf.slice(0, 10).map(storeCard).join('') + '</div>';
+      }
     }
 
     if (!list.length) {
@@ -8300,18 +10826,18 @@ RENDER.store = () => {
     }
 
     if (q || storeCat !== 'all') {
-      // A search result or a filtered list: no heading above it, so the category is the useful
-      // second line. `map(storeRow)` alone would pass the index as `underHeading` - truthy for
-      // every row except the first - which is the classic way this goes wrong quietly.
-      html += '<div class="group" style="padding:0 14px">' +
-        list.map((x) => storeRow(x, false)).join('') + '</div>';
+      // A search result or a filtered list, with no heading above it. `map(storeRow)` is safe
+      // now that the row takes one argument: it used to take a second, and passing it straight
+      // to `map` handed the INDEX to it - truthy for every row except the first, which is the
+      // classic way this goes wrong quietly.
+      html += '<div class="group stgroup">' + list.map(storeRow).join('') + '</div>';
     } else {
       cats.forEach((c) => {
         const inCat = list.filter((a) => (a.category || 'utilities') === c);
         if (!inCat.length) return;
-        html += '<div class="stsection">' + esc(L('ph.cat_' + c)) + '</div>' +
-          '<div class="group" style="padding:0 14px;margin-bottom:20px">' +
-          inCat.map((x) => storeRow(x, true)).join('') + '</div>';
+        html += '<div class="stsection"><span>' + esc(L('ph.cat_' + c)) + '</span>' +
+            '<b>' + esc(String(inCat.length)) + '</b></div>' +
+          '<div class="group stgroup">' + inCat.map(storeRow).join('') + '</div>';
       });
     }
     byId('stbody').innerHTML = html;
@@ -8497,51 +11023,244 @@ RENDER.health = async (cached) => {
 // Owned by the phone, and stored the same way a third-party app would store it: through
 // the per-app storage the SDK exposes. If the example app's path were not good enough
 // for a built-in one, it would not be good enough to hand to anybody else either.
-let reminders = null;
+// The four lists, and the four repeats. Both are closed sets the server also holds: the page
+// draws the names, the server stores the keys, and neither trusts the other's spelling.
+const REM_LISTS = ['personal', 'work', 'shopping', 'other'];
+const REM_TINT = { personal: '#FF9500', work: '#0A84FF', shopping: '#30D158', other: '#BF5AF2' };
+const REM_REPEATS = [0, 1440, 10080, 43200];
 
-async function loadReminders() {
-  if (reminders) return reminders;
-  const r = await post('appStorage', { app: 'reminders', op: 'get', key: 'items' });
-  try { reminders = JSON.parse((r && r.value) || '[]') || []; } catch { reminders = []; }
-  return reminders;
+let reminders = [];
+let remTab = 'today';     // today | scheduled | all | flagged | done
+
+/// When a reminder is due, in words, and whether that is a problem.
+///
+/// The overdue case is the one worth getting right: a date in the past on a reminder that is
+/// not done is the single most useful thing this app can tell somebody, so it is coloured and
+/// it says how long ago rather than showing a date to be worked out.
+function remWhen(r) {
+  const ms = whenMs(r.due);
+  // `> 0` and not merely finite: a zero comes back as a valid millisecond epoch and formats as
+  // the first of January 1970, in red, as an overdue reminder. "No date" has to be a date this
+  // function refuses, not one it renders.
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const d = new Date(ms);
+  const now = Date.now();
+  const today = new Date();
+  const tomorrow = new Date(today.getTime() + 86400000);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  let day;
+  if (d.toDateString() === today.toDateString()) day = L('ph.today');
+  else if (d.toDateString() === tomorrow.toDateString()) day = L('ph.tomorrow');
+  else day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return { text: day + ' ' + time, late: !r.done && ms < now, ms };
 }
 
-function saveReminders() {
-  return post('appStorage', { app: 'reminders', op: 'set', key: 'items', value: JSON.stringify(reminders) });
+const remIsToday = (r) => {
+  const w = remWhen(r);
+  if (!w) return false;
+  return w.late || new Date(w.ms).toDateString() === new Date().toDateString();
+};
+
+/// The reminders one tab shows.
+function remFor(tab) {
+  const live = reminders.filter((r) => !r.done);
+  if (tab === 'done') return reminders.filter((r) => r.done);
+  if (tab === 'flagged') return live.filter((r) => r.flagged);
+  if (tab === 'scheduled') return live.filter((r) => remWhen(r));
+  if (tab === 'today') return live.filter(remIsToday);
+  return live;
+}
+
+/// One reminder as a row: a tick circle, the text, and what is true about it underneath.
+function remRow(r) {
+  const w = remWhen(r);
+  const bits = [];
+  if (w) bits.push('<span class="' + (w.late ? 'remlate' : 'remwhen') + '">' + esc(w.text) + '</span>');
+  if (r.repeatMins > 0) bits.push('<span class="remrep">' + svg('refresh') + '</span>');
+  if (r.note) bits.push('<span class="remnote">' + esc(r.note.split('\n')[0].slice(0, 44)) + '</span>');
+  return '<div class="remrow' + (r.done ? ' off' : '') + '" data-id="' + esc(String(r.id)) + '">' +
+    '<button class="remtick" type="button" data-tick="' + esc(String(r.id)) + '" ' +
+      'style="--rem-tint:' + (REM_TINT[r.list] || '#FF9500') + '" ' +
+      'aria-label="' + esc(L(r.done ? 'ph.rem_undo' : 'ph.rem_tick')) + '">' +
+      (r.done ? svg('check') : '') + '</button>' +
+    '<div class="remmid">' +
+      '<div class="remtext">' + (r.flagged ? '<i class="remflag"></i>' : '') + esc(r.text) + '</div>' +
+      (bits.length ? '<div class="remsub">' + bits.join('') + '</div>' : '') +
+    '</div>' +
+    '<button class="remopen" type="button" data-edit="' + esc(String(r.id)) + '" ' +
+      'aria-label="' + esc(L('ph.edit')) + '">' + svg('chevron') + '</button>' +
+  '</div>';
 }
 
 RENDER.reminders = async () => {
-  setNav(L('app.reminders'), null, { icon: 'add', onClick: () => {
-    sheet(L('ph.new_reminder'), UI.field('rtext', L('ph.reminder_ph')) + UI.button(L('ph.save'), 'rsave'),
-      () => byId('rsave').addEventListener('click', async () => {
-        const v = byId('rtext').value.trim();
-        if (!v) return;
-        const epoch = sheetEpoch;
-        reminders.unshift({ t: v, done: false });
-        await saveReminders();
-        if (closeSheet(false, epoch)) RENDER.reminders();
-      }));
-  } });
-  await loadReminders();
-  if (!reminders.length) { body(UI.empty(L('ph.no_reminders'), 'check')); return; }
-  const open = reminders.filter((r) => !r.done);
-  const done = reminders.filter((r) => r.done);
-  body(
-    (open.length ? UI.group(open.map((r) => UI.row({
-      icon: 'check', tint: '#FF9500', title: r.t, data: { i: reminders.indexOf(r) },
-    })), { header: L('ph.to_do') }) : '') +
-    (done.length ? UI.group(done.map((r) => UI.row({
-      icon: 'check', tint: '#FF9500', title: r.t, value: L('ph.done'), tone: 'pos', data: { i: reminders.indexOf(r) },
-    })), { header: L('ph.done') }) : '')
-  );
-  rows('.row[data-i]', (el) => el.addEventListener('click', async () => {
-    const r = reminders[Number(el.dataset.i)];
-    if (!r) return;
-    // Ticking a done one removes it: a list you can never shorten stops being a list.
-    if (r.done) reminders.splice(Number(el.dataset.i), 1); else r.done = true;
-    await saveReminders(); RENDER.reminders();
-  }));
+  setNav(L('app.reminders'), null, { icon: 'add', onClick: () => remEdit({}) });
+  loading();
+  const d = await post('reminders', { op: 'list' });
+  reminders = (d && d.items) || [];
+  paintReminders();
 };
+
+function paintReminders() {
+  const live = reminders.filter((r) => !r.done);
+  const counts = {
+    today: live.filter(remIsToday).length,
+    scheduled: live.filter(remWhen).length,
+    all: live.length,
+    flagged: live.filter((r) => r.flagged).length,
+    done: reminders.length - live.length,
+  };
+  const tabs = ['today', 'scheduled', 'all', 'flagged', 'done'];
+  // A tab that has emptied while you were looking at it hands you back to the whole list
+  // rather than showing you nothing with no way to tell why.
+  if (!counts[remTab]) remTab = counts.today ? 'today' : 'all';
+
+  const list = remFor(remTab);
+  body(
+    '<div class="remtabs">' + tabs.map((t) =>
+      '<button class="remtab' + (t === remTab ? ' on' : '') + '" type="button" data-t="' + t + '">' +
+        esc(L('ph.rem_' + t)) + '<b>' + counts[t] + '</b></button>').join('') + '</div>' +
+    (list.length
+      ? '<div class="remlist">' + list.map(remRow).join('') + '</div>'
+      : UI.empty(L(remTab === 'done' ? 'ph.rem_none_done' : 'ph.no_reminders'), 'check')) +
+    (remTab === 'done' && counts.done
+      ? UI.button(L('ph.rem_clear_done'), 'remclear', 'destructive') : '')
+  );
+
+  rows('.remtab', (b) => b.addEventListener('click', () => {
+    remTab = b.dataset.t;
+    paintReminders();
+  }));
+  rows('.remtick', (b) => b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const r = reminders.find((x) => String(x.id) === b.dataset.tick);
+    if (!r) return;
+    // Marked on screen first. The row has to answer the tap now; the server confirms a beat
+    // later and its answer is what the list is rebuilt from either way.
+    b.closest('.remrow').classList.toggle('off');
+    if (!r.done) ui('toggleon'); else ui('toggleoff');
+    const res = await post('reminders', { op: 'done', id: r.id, done: !r.done });
+    if (res && res.ok) { reminders = res.items || []; paintReminders(); }
+  }));
+  rows('.remopen', (b) => b.addEventListener('click', () => {
+    const r = reminders.find((x) => String(x.id) === b.dataset.edit);
+    if (r) remEdit(r);
+  }));
+  if (byId('remclear')) byId('remclear').addEventListener('click', async () => {
+    const res = await post('reminders', { op: 'clearDone' });
+    if (res && res.ok) { reminders = res.items || []; remTab = 'all'; paintReminders(); }
+  });
+}
+
+/// New, or an existing one. The same sheet either way, because they are the same fields.
+function remEdit(r) {
+  const has = !!r.id;
+  const at = whenMs(r.due);
+  const d = Number.isFinite(at) ? new Date(at) : null;
+  // A date input wants `YYYY-MM-DD` in LOCAL time. `toISOString` is UTC, so a reminder set at
+  // half past midnight would open showing the day before.
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateVal = d ? d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) : '';
+  const timeVal = d ? pad(d.getHours()) + ':' + pad(d.getMinutes()) : '';
+
+  sheet(L(has ? 'ph.rem_edit' : 'ph.new_reminder'),
+    UI.field('rtext', L('ph.reminder_ph'), r.text || '', 'maxlength="120"') +
+    '<div class="grouphead">' + esc(L('ph.rem_list')) + '</div>' +
+    '<div class="rempick" id="rlist">' + REM_LISTS.map((k) =>
+      '<button class="rempill' + ((r.list || 'personal') === k ? ' on' : '') + '" type="button" ' +
+        'data-k="' + k + '" style="--rem-tint:' + REM_TINT[k] + '">' +
+        esc(L('ph.rem_list_' + k)) + '</button>').join('') + '</div>' +
+    '<div class="grouphead">' + esc(L('ph.rem_when')) + '</div>' +
+    '<div class="remwhenrow">' +
+      '<input class="field" id="rdate" type="date" value="' + esc(dateVal) + '" ' +
+        'aria-label="' + esc(L('ph.rem_date')) + '" />' +
+      '<input class="field" id="rtime" type="time" value="' + esc(timeVal) + '" ' +
+        'aria-label="' + esc(L('ph.rem_time')) + '" />' +
+    '</div>' +
+    // The three anybody actually wants, one tap each. Typing a date for "in an hour" is the
+    // reason people stop using a reminders app.
+    '<div class="remquick" id="rquick">' +
+      '<button class="rempill" type="button" data-mins="60">' + esc(L('ph.rem_in_hour')) + '</button>' +
+      '<button class="rempill" type="button" data-tonight="1">' + esc(L('ph.rem_tonight')) + '</button>' +
+      '<button class="rempill" type="button" data-tomorrow="1">' + esc(L('ph.rem_tomorrow_am')) + '</button>' +
+      '<button class="rempill" type="button" data-clear="1">' + esc(L('ph.rem_no_date')) + '</button>' +
+    '</div>' +
+    '<div class="grouphead">' + esc(L('ph.rem_repeat')) + '</div>' +
+    '<div class="rempick" id="rrep">' + REM_REPEATS.map((m) =>
+      '<button class="rempill' + ((r.repeatMins || 0) === m ? ' on' : '') + '" type="button" ' +
+        'data-m="' + m + '">' + esc(L('ph.rem_every_' + m)) + '</button>').join('') + '</div>' +
+    '<textarea class="field remnotebox" id="rnote" maxlength="400" placeholder="' +
+      esc(L('ph.rem_note')) + '">' + esc(r.note || '') + '</textarea>' +
+    UI.row({ icon: 'star', tint: '#FF453A', title: L('ph.rem_flag'),
+             toggle: r.flagged === true, data: { t: 'remflag' } }) +
+    UI.button(L('ph.save'), 'rsave', 'tinted') +
+    (has ? UI.button(L('ph.delete'), 'rdel', 'destructive') : ''),
+    () => {
+      const epoch = sheetEpoch;
+      let list = r.list || 'personal';
+      let rep = r.repeatMins || 0;
+      let flagged = r.flagged === true;
+
+      qrows('sheet', '#rlist .rempill', (b) => b.addEventListener('click', () => {
+        list = b.dataset.k;
+        qrows('sheet', '#rlist .rempill', (o) => o.classList.toggle('on', o.dataset.k === list));
+      }));
+      qrows('sheet', '#rrep .rempill', (b) => b.addEventListener('click', () => {
+        rep = Number(b.dataset.m);
+        qrows('sheet', '#rrep .rempill', (o) => o.classList.toggle('on', Number(o.dataset.m) === rep));
+      }));
+      qrows('sheet', '.row[data-t="remflag"]', (row) => row.addEventListener('click', () => {
+        flagged = !flagged;
+        const sw = row.querySelector('.switch');
+        if (sw) sw.classList.toggle('on', flagged);
+      }));
+
+      const setWhen = (when) => {
+        const p2 = (n) => String(n).padStart(2, '0');
+        byId('rdate').value = when
+          ? when.getFullYear() + '-' + p2(when.getMonth() + 1) + '-' + p2(when.getDate()) : '';
+        byId('rtime').value = when ? p2(when.getHours()) + ':' + p2(when.getMinutes()) : '';
+      };
+      qrows('sheet', '#rquick .rempill', (b) => b.addEventListener('click', () => {
+        if (b.dataset.clear) { setWhen(null); return; }
+        const when = new Date();
+        if (b.dataset.mins) when.setMinutes(when.getMinutes() + Number(b.dataset.mins));
+        else if (b.dataset.tonight) when.setHours(20, 0, 0, 0);
+        else { when.setDate(when.getDate() + 1); when.setHours(9, 0, 0, 0); }
+        setWhen(when);
+      }));
+
+      byId('rsave').addEventListener('click', async () => {
+        const text = byId('rtext').value.trim();
+        if (!text) { toast(L('ph.err_empty')); return; }
+        const dv = byId('rdate').value;
+        const tv = byId('rtime').value;
+        // A date with no time means the whole day, and the whole day means nine in the
+        // morning: a reminder that goes off at midnight is one nobody is awake for.
+        let due = 0;
+        if (dv) {
+          const parts = dv.split('-').map(Number);
+          const clock = (tv || '09:00').split(':').map(Number);
+          due = new Date(parts[0], parts[1] - 1, parts[2], clock[0] || 0, clock[1] || 0, 0).getTime();
+        }
+        const res = await post('reminders', {
+          op: 'save', id: r.id, text, note: byId('rnote').value,
+          list, due, repeatMins: rep, flagged,
+        });
+        if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        reminders = res.items || [];
+        paintReminders();
+      });
+
+      if (byId('rdel')) byId('rdel').addEventListener('click', async () => {
+        const res = await post('reminders', { op: 'del', id: r.id });
+        if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        reminders = res.items || [];
+        paintReminders();
+      });
+    });
+}
 
 // -- Camera -----------------------------------------------------
 // Real, and only as real as the operator made it: with no upload target configured there
@@ -8699,7 +11418,11 @@ RENDER.camera = async (cached) => {
 
 // The Gallery: every photo, tap to view, and from there set it as wallpaper, AirDrop it,
 // or delete it. Same store as the camera - one shoots, one keeps.
-let galleryAlbum = '';     // '' is everything
+let galleryAlbum = '';
+// Which field `galleryAlbum` names: an album somebody typed, or a place the server filed
+// the picture under. Without it a place and a personal album sharing a name would show
+// each other's photographs.
+let galleryKind = '';     // '' is everything
 
 /// The photo list, shared by Gallery and Camera.
 ///
@@ -8717,33 +11440,214 @@ async function photosList(cached) {
   return answer;
 }
 
+// ══════════════════════════════════════════════════════════════
+// Looking at one photograph
+// ══════════════════════════════════════════════════════════════
+// Tapping a thumbnail used to open the EDITOR, which is the wrong first thing: nine times
+// out of ten somebody tapping a picture wants to look at it. So a tap opens this - the photo
+// on the phone, the rest of the roll a swipe away, and four things you can do to it. The
+// editor is one of the four, behind its own button, where a screen that changes a picture
+// belongs.
+
+let viewRows = [];      // what is being looked through, in the order the grid showed
+let viewAt = 0;         // which one
+
+function photoViewer(rows, at) {
+  if (!openApp || openApp.id !== 'gallery') return;
+  viewRows = rows || [];
+  viewAt = Math.max(0, Math.min(viewRows.length - 1, Number(at) || 0));
+  if (!viewRows.length) { RENDER.gallery(true); return; }
+  beginView();
+  paintViewer();
+}
+
+function paintViewer() {
+  const row = viewRows[viewAt];
+  if (!row) { RENDER.gallery(true); return; }
+  const v = row.v;
+
+  setNav(String(viewAt + 1) + ' / ' + viewRows.length, L('app.gallery'), null,
+    () => { viewRows = []; RENDER.gallery(true); });
+
+  body('<div class="pview" id="pview">' +
+      '<div class="pviewstage" id="pstage">' +
+        '<img class="pviewimg" id="pimg" src="' + esc(v.url) + '" alt="" ' +
+          'style="filter:' + filterCss(v.filter) + '" />' +
+      '</div>' +
+      (v.place ? '<div class="pviewwhere">' + svg('map') + esc(v.place) + '</div>' : '') +
+      // The roll along the bottom, so the next picture is one tap rather than a swipe you
+      // have to guess the length of. The one being looked at is ringed.
+      '<div class="pviewroll" id="proll">' + viewRows.map((r, i) =>
+        '<button class="prollone' + (i === viewAt ? ' on' : '') + '" type="button" ' +
+          'data-i="' + i + '" style="' + photoStyle(r.v) + '"></button>').join('') + '</div>' +
+    '</div>');
+
+  foot('<div class="pbar">' +
+    '<button id="pshare" type="button">' + svg('share') +
+      '<span>' + esc(L('ph.share')) + '</span></button>' +
+    '<button id="pedit" type="button">' + svg('wrench') +
+      '<span>' + esc(L('ph.edit')) + '</span></button>' +
+    '<button id="pfull" type="button">' + svg('landscape') +
+      '<span>' + esc(L('ph.fullscreen')) + '</span></button>' +
+    '<button id="pdel" type="button" class="neg">' + svg('trash') +
+      '<span>' + esc(L('ph.delete')) + '</span></button></div>');
+
+  // The thumbnail being looked at, brought under the eye. Without this, opening the
+  // fortieth picture shows a roll scrolled to the first.
+  const strip = byId('proll');
+  const now = strip && strip.querySelector('.prollone.on');
+  if (now) strip.scrollLeft = now.offsetLeft - strip.clientWidth / 2 + now.clientWidth / 2;
+
+  qrows('proll', '.prollone', (b) => b.addEventListener('click', () => {
+    viewAt = Number(b.dataset.i);
+    paintViewer();
+  }));
+
+  // A drag across the picture moves through the roll, the way it does on a phone. The
+  // threshold is generous because this is a mouse: a drag here is a click and a sweep, not
+  // a thumb, and a short one is far more likely to be a slip than an intention.
+  const stage = byId('pstage');
+  let sx = null;
+  stage.addEventListener('pointerdown', (e) => { sx = e.clientX; });
+  stage.addEventListener('pointerup', (e) => {
+    if (sx === null) return;
+    const dx = e.clientX - sx;
+    sx = null;
+    if (Math.abs(dx) < 40) { openPhoto(v.url); return; }   // a tap: full screen
+    photoStep(dx < 0 ? 1 : -1);
+  });
+  stage.addEventListener('pointercancel', () => { sx = null; });
+
+  byId('pfull').addEventListener('click', () => openPhoto(v.url));
+  byId('pshare').addEventListener('click', () =>
+    airdropShare('photo', { url: photoEncode(v.url, v) }));
+  byId('pedit').addEventListener('click', () => photoSheet(
+    viewRows.map((r) => r.raw), viewRows.findIndex((r) => r === row), viewAlbums));
+  byId('pdel').addEventListener('click', () => confirmSheet(
+    L('ph.photo_del_sure'), L('ph.delete'), async () => {
+      await post('photos', { op: 'del', index: row.i + 1 });
+      photosForget();
+      // The list is rebuilt from the server rather than spliced here: the index the server
+      // works in is a position in ITS array, and patching a copy of it is how two lists
+      // start disagreeing about which picture is which.
+      RENDER.gallery();
+    }));
+}
+
+function photoStep(by) {
+  const next = viewAt + by;
+  if (next < 0 || next >= viewRows.length) return;
+  viewAt = next;
+  paintViewer();
+  ui('swipe');
+}
+
+// The albums the editor offers, kept from the render that opened the viewer.
+let viewAlbums = [];
+// ── The gallery ────────────────────────────────────────────────
+// Two halves, the way a photos app is built: every picture in one grid, and the albums
+// they belong to in the other. The albums are worked out from the photographs rather than
+// kept in a second list, so one can never be listed after its last picture is deleted.
+//
+// Two KINDS of album. The ones somebody named themselves, and the ones the phone filed by
+// where the shutter went - the place is written by the server at capture time. A player who
+// never names an album still opens this tab and finds their pictures sorted.
+
+let galleryTab = 'photos';   // photos | albums
+
+/// Every album that exists, in both senses, with a cover and a count.
+function galleryAlbums(rows) {
+  const mine = {}, places = {};
+  rows.forEach((x) => {
+    if (x.v.album) (mine[x.v.album] = mine[x.v.album] || []).push(x);
+    if (x.v.place) (places[x.v.place] = places[x.v.place] || []).push(x);
+  });
+  const box = (name, list, kind) => ({ name, list, kind });
+  return Object.keys(mine).sort().map((k) => box(k, mine[k], 'mine'))
+    .concat(Object.keys(places).sort().map((k) => box(k, places[k], 'place')));
+}
+
+function galleryCard(a) {
+  const cover = a.list[0];
+  return '<button class="galcard" type="button" data-alb="' + esc(a.name) +
+    '" data-kind="' + a.kind + '">' +
+    '<span class="galcardart" style="' + photoStyle(cover.v) + '"></span>' +
+    '<span class="galcardname">' + esc(a.name) + '</span>' +
+    '<span class="galcardn">' + a.list.length + '</span></button>';
+}
+
 RENDER.gallery = async (cached) => {
+  // The viewer puts a toolbar in the footer, and a footer is not cleared by drawing a new body.
+  // Without this, going back to the grid left Share, Edit, Full screen and Delete sitting under
+  // it - four buttons acting on a photograph nobody was looking at any more.
+  foot('');
   const d = await photosList(cached);
   const shots = (d && d.photos) || [];
   const albums = (d && d.albums) || [];
   setNav(L('app.gallery'), null);
   if (!shots.length) { body(UI.empty(L('ph.no_photos'), 'images')); return; }
 
-  // Albums are worked out from the photos, so the strip can never list one that is empty.
-  const strip = '<div class="seg scroll" id="galbums">' +
-    '<button class="' + (galleryAlbum === '' ? 'on' : '') + '" data-a="">' + esc(L('ph.all_photos')) + '</button>' +
-    albums.map((a) => '<button class="' + (galleryAlbum === a ? 'on' : '') + '" data-a="' + esc(a) + '">' +
-      esc(a) + '</button>').join('') + '</div>';
+  const rows_ = shots.map((v, i) => ({ v: photoRow(v), i }));
+  const boxes = galleryAlbums(rows_);
+  const tabs = '<div class="seg galseg">' +
+    '<button class="' + (galleryTab === 'photos' ? 'on' : '') + '" data-gt="photos">' +
+      esc(L('ph.all_photos')) + '</button>' +
+    '<button class="' + (galleryTab === 'albums' ? 'on' : '') + '" data-gt="albums">' +
+      esc(L('ph.albums')) + '</button></div>';
 
-  const shown = shots.map((v, i) => ({ v: photoRow(v), i }))
-    .filter((x) => galleryAlbum === '' || x.v.album === galleryAlbum);
+  if (galleryTab === 'albums' && !galleryAlbum) {
+    body(tabs + (boxes.length
+      ? '<div class="galcards">' + boxes.map(galleryCard).join('') + '</div>'
+      : UI.empty(L('ph.album_none'), 'images')));
+    wireGalleryTabs();
+    rows('.galcard', (b) => b.addEventListener('click', () => {
+      galleryAlbum = b.dataset.alb;
+      galleryKind = b.dataset.kind;
+      RENDER.gallery(true);
+    }));
+    return;
+  }
 
-  body(strip + (shown.length
-    ? '<div class="shots">' + shown.map((x) =>
-        '<div class="shot" data-i="' + x.i + '" style="' + photoStyle(x.v) + '"></div>').join('') + '</div>'
-    : UI.empty(L('ph.album_empty'), 'images')));
+  // One album open, or everything. `galleryKind` says which field the name belongs to, so a
+  // place called the same thing as somebody's own album cannot pull the other one's pictures.
+  const shown = galleryAlbum
+    ? rows_.filter((x) => (galleryKind === 'place' ? x.v.place : x.v.album) === galleryAlbum)
+    : rows_;
 
-  qrows('galbums', 'button', (b) => b.addEventListener('click', () => {
-    // Filtering by album is a local choice over the list already held.
-    galleryAlbum = b.dataset.a; RENDER.gallery(true);
+  body((galleryAlbum
+      ? '<button class="galback" id="galback" type="button">' + svg('chevron') +
+        esc(galleryAlbum) + '<b>' + shown.length + '</b></button>'
+      : tabs) +
+    (shown.length
+      ? '<div class="shots">' + shown.map((x) =>
+          '<div class="shot" data-i="' + x.i + '" style="' + photoStyle(x.v) + '"></div>').join('') + '</div>'
+      : UI.empty(L('ph.album_empty'), 'images')));
+
+  if (byId('galback')) byId('galback').addEventListener('click', () => {
+    galleryAlbum = '';
+    galleryKind = '';
+    RENDER.gallery(true);
+  });
+  wireGalleryTabs();
+  viewAlbums = albums;
+  rows('.shot', (el) => el.addEventListener('click', () => {
+    // The viewer is handed the rows AS SHOWN - so paging through a place album pages
+    // through that album, not through the whole roll behind it - and each row keeps the
+    // index the server knows it by.
+    const list = shown.map((x) => ({ v: x.v, i: x.i, raw: shots[x.i] }));
+    photoViewer(list, list.findIndex((x) => x.i === Number(el.dataset.i)));
   }));
-  rows('.shot', (el) => el.addEventListener('click', () => photoSheet(shots, Number(el.dataset.i), albums)));
 };
+
+function wireGalleryTabs() {
+  [...byId('appbody').querySelectorAll('.galseg button')].forEach((b) =>
+    b.addEventListener('click', () => {
+      galleryTab = b.dataset.gt;
+      galleryAlbum = '';
+      galleryKind = '';
+      RENDER.gallery(true);
+    }));
+}
 
 // ══ Zooming a photo ════════════════════════════════════════════
 // A photograph is worth looking at closely, and a phone that cannot is annoying. The wheel
@@ -8808,9 +11712,19 @@ function wirePhotoZoom(wrapId, imgId) {
 
 function photoSheet(shots, i, albums) {
   const r = photoRow(shots[i]);
+  // The bare link for the <img> on this screen - the browser must not be handed a fragment
+  // it would try to resolve - and the encoded one for anything that LEAVES the phone.
   const url = r.url;
+  const shareUrl = photoEncode(r.url, r);
+  // A DRAFT. Every control below only repaints; nothing reaches the server until Save is
+  // pressed. It used to write on each tap, so trying a filter committed it, there was no way
+  // back to what the picture looked like before, and a player who tapped through six looks to
+  // see them had saved six times and lost the original framing on the way.
   let crop = CROPS.includes(r.crop) ? r.crop : 'none';
   let focus = focusOf(r.focus);
+  let filter = r.filter || 'none';
+  const was = { crop, focus, filter };
+  const changed = () => crop !== was.crop || focus !== was.focus || filter !== was.filter;
   sheet(L('app.gallery'),
     '<div class="shotzoom" id="shotwrap"><img class="shotbig" id="shotbig" src="' + esc(url) +
       '" style="filter:' + filterCss(r.filter) + '" />' +
@@ -8831,6 +11745,12 @@ function photoSheet(shots, i, albums) {
       '<input type="range" id="sfocus" min="0" max="100" step="1" value="' + focus +
         '" aria-label="' + esc(L('ph.crop_focus')) + '" />' +
     '</div>' +
+    // Save first, and it says whether there is anything to save. A button that is always
+    // available on a screen where nothing has changed teaches people to ignore it.
+    '<div class="shotsave" id="shotsavebar">' +
+      '<button class="shotrevert" id="srevert" type="button">' + esc(L('ph.revert')) + '</button>' +
+      '<button class="shotkeep" id="skeep" type="button">' + esc(L('ph.save')) + '</button>' +
+    '</div>' +
     UI.button(L('ph.album_set'), 'salbum', 'plain') +
     UI.button(L('ph.airdrop_share'), 'sshare', 'tinted') +
     UI.button(L('ph.set_wallpaper'), 'swall') +
@@ -8849,7 +11769,15 @@ function photoSheet(shots, i, albums) {
         wrap.style.aspectRatio = ratio ? String(ratio) : '';
         img.style.height = ratio ? '100%' : '';
         img.style.objectFit = ratio ? 'cover' : '';
-        img.style.objectPosition = ratio ? '50% ' + focus + '%' : '';
+        // BOTH axes, not just the vertical one.
+        //
+        // `cover` only leaves slack on the axis the picture overflows on, and which axis
+        // that is depends on the source. A 16:9 game screenshot in a 3:4 frame is scaled to
+        // fill the height and spills over the SIDES - so the vertical position had no slack
+        // at all and the slider moved nothing, whichever end it was dragged to. Setting the
+        // same percentage on both means it always moves whichever axis can move, and is a
+        // no-op on the one that cannot.
+        img.style.objectPosition = ratio ? focus + '% ' + focus + '%' : '';
         if (ratio) img.style.transform = '';
         const row = byId('sfocusrow');
         // Framing only means something once something is being cut off.
@@ -8857,33 +11785,58 @@ function photoSheet(shots, i, albums) {
       };
       paint();
       wirePhotoZoom('shotwrap', 'shotbig');
+
+      // The bar only lights up once something is different from what is stored.
+      const dirty = () => {
+        const bar = byId('shotsavebar');
+        if (bar) bar.classList.toggle('on', changed());
+      };
+      dirty();
+
+      byId('skeep').addEventListener('click', async () => {
+        if (!changed()) return;
+        // One write for the whole edit, so a half-saved picture is not a state that exists.
+        const res = await post('photos', { op: 'edit', index: i + 1,
+          crop: crop === 'none' ? '' : crop, focus, filter: filter === 'none' ? '' : filter });
+        if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+        photosForget();
+        was.crop = crop; was.focus = focus; was.filter = filter;
+        dirty();
+        ui('shutter');
+        toast(L('ph.crop_saved'));
+        RENDER.gallery();
+      });
+
+      byId('srevert').addEventListener('click', () => {
+        crop = was.crop; focus = was.focus; filter = was.filter;
+        const slider0 = byId('sfocus');
+        if (slider0) slider0.value = focus;
+        byId('shotbig').style.filter = filterCss(filter);
+        [...byId('sfilters').querySelectorAll('button')].forEach((x) =>
+          x.classList.toggle('on', x.dataset.f === filter));
+        [...byId('scrops').querySelectorAll('button')].forEach((x) =>
+          x.classList.toggle('on', x.dataset.c === crop));
+        paint();
+        dirty();
+      });
       [...byId('sheet').querySelectorAll('#scrops button')].forEach((b) =>
-        b.addEventListener('click', async () => {
+        b.addEventListener('click', () => {
           crop = b.dataset.c;
           [...byId('scrops').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
           paint();
-          await post('photos', { op: 'edit', index: i + 1, crop: crop === 'none' ? '' : crop });
-          photosForget();
-          toast(L('ph.crop_saved'));
+          dirty();
         }));
       const slider = byId('sfocus');
       if (slider) {
         // Repaint on every movement, save when it stops: dragging must not post fifty times.
-        slider.addEventListener('input', () => { focus = focusOf(slider.value); paint(); });
-        ['change', 'pointerup'].forEach((ev) => slider.addEventListener(ev, async () => {
-          await post('photos', { op: 'edit', index: i + 1, focus });
-          photosForget();
-          toast(L('ph.crop_saved'));
-        }));
+        slider.addEventListener('input', () => { focus = focusOf(slider.value); paint(); dirty(); });
       }
       [...byId('sheet').querySelectorAll('#sfilters button')].forEach((b) =>
-        b.addEventListener('click', async () => {
-          const f = b.dataset.f;
-          byId('shotbig').style.filter = filterCss(f);
+        b.addEventListener('click', () => {
+          filter = b.dataset.f;
+          byId('shotbig').style.filter = filterCss(filter);
           [...byId('sfilters').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
-          await post('photos', { op: 'edit', index: i + 1, filter: f === 'none' ? '' : f });
-          photosForget();
-          toast(L('ph.crop_saved'));
+          dirty();
         }));
       byId('salbum').addEventListener('click', () => {
         const list = (albums || []).slice();
@@ -8907,7 +11860,7 @@ function photoSheet(shots, i, albums) {
             }));
           });
       });
-      byId('sshare').addEventListener('click', () => airdropShare('photo', { url }));
+      byId('sshare').addEventListener('click', () => airdropShare('photo', { url: shareUrl }));
       byId('swall').addEventListener('click', async () => {
         const epoch = sheetEpoch;
         // The framing goes with it: a portrait crop exists so the wallpaper shows the right
@@ -9054,6 +12007,9 @@ function taxiStep(state, doc) {
 /// the passenger's own ride come from the same call, so moving between them needed no request.
 RENDER.taxi = async (cached) => {
   if (cached && taxiData) return taxiFrom(taxiData);
+  // Up to three chained requests, none of them cancellable. Whichever screen the player is on
+  // when the last one lands is the one this would paint over.
+  const epoch = viewEpoch;
   loading();
   // The config provider answers `taxiOpen` and says whether doc-taxijob owns this server; if it
   // does, its own state is asked for instead.
@@ -9071,6 +12027,9 @@ RENDER.taxi = async (cached) => {
       taxiDocFare = (live.fare && live.fare.callId) ? live.fare : taxiDocFare;
     }
   }
+  // Every request above has landed. If the player left Taxi, or moved to another screen inside
+  // it, none of this is theirs any more.
+  if (!openApp || openApp.id !== 'taxi' || epoch !== viewEpoch) return;
   if (!d || d.error) {
     body(UI.empty(L('ph.taxi_e_' + ((d && d.error) || 'off')), 'taxi'));
     return;
@@ -9998,6 +12957,9 @@ let repairData = null;    // the last answer: garages, permissions, the prefill
 let repairQueue = null;   // the staff queue, kept apart because it refreshes on its own clock
 let repairTab = 'garages';
 let repairOpenJob = null; // the garage being read, so a live update can redraw under it
+// A garage tapped in Contacts. Read once when the app opens and cleared immediately, so it
+// cannot send somebody to the same garage the second time they open Repair by hand.
+let repairJumpTo = null;
 let repairTimer = null;   // the poll, which must not outlive the app
 let repairDraft = {};     // what is half-written per garage, kept across a re-render
 
@@ -10664,6 +13626,13 @@ RENDER.repair = async (cached) => {
   const garages = farr(d.garages);
   const open = garages.filter((g) => g.call);
 
+  // Somebody came in from a garage's row in Contacts. Straight to that garage's page.
+  if (repairJumpTo) {
+    const want = garages.find((g) => g.job === repairJumpTo);
+    repairJumpTo = null;
+    if (want) { repairGarage(want); return; }
+  }
+
   const tabs = [
     { id: 'garages', icon: 'repair', label: 'ph.repair_tab_garages' },
     { id: 'mine', icon: 'clock', label: 'ph.repair_tab_mine', badge: open.length },
@@ -11217,7 +14186,7 @@ function lotteryPicker(s) {
             .replace('{b}', String(s.max))) + '</small>') +
     '</div>' +
     '<div class="lotgrid">' + cells.join('') + '</div>' +
-    '<div class="lotpay">' + svg('card') + esc(L('ph.lottery_pay_with')
+    '<div class="lotpay">' + svg('wallet') + esc(L('ph.lottery_pay_with')
       .replace('{n}', L('ph.lottery_pay_' + s.account))) + '</div>' +
     '<div class="lotbuyrow">' +
       '<button class="lotbuy" id="lotbuy" type="button"' + (ready ? '' : ' disabled') + '>' +
@@ -12451,9 +15420,10 @@ RENDER.charging = async () => {
 function airdropOffer(o) {
   o = o || {};
   const icon = o.kind === 'photo' ? 'images'
-    : o.kind === 'track' ? 'music'
+    : o.kind === 'track' ? 'play'
     : o.kind === 'health' ? 'heart'
     : o.kind === 'email' ? 'mail'
+    : o.kind === 'place' ? 'map'
     : 'contacts';
   const preview = o.kind === 'photo'
     ? '<img class="shotbig" src="' + esc(o.preview || '') + '" />'
@@ -12476,6 +15446,13 @@ function airdropOffer(o) {
         }
         // A track is filed here rather than on the server: the library lives in this phone's
         // app storage, and the page is what knows its layout.
+        // A pin is already filed on the server - it is a row in the reader's own list - so
+        // there is nothing to write here, only somewhere to go and look.
+        if (r.place) {
+          toast(L('ph.pin_got').replace('{n}', r.place.label || ''));
+          if (openApp && openApp.id === 'maps') { mapsTab = 'pins'; RENDER.maps(); }
+          return;
+        }
         if (r.track && r.track.url) {
           const library = await musicLibrary();
           if (!library.some((row) => row.url === r.track.url)) {
@@ -13565,6 +16542,13 @@ function postCard(pst, appId) {
         esc(L('ph.soc_comments')) + '">' + svg('messages') + '<span>' + (pst.comments || 0) + '</span></button>' +
       '<button class="pact prepost' + (pst.reposted ? ' on' : '') + '" type="button" aria-label="' +
         esc(L('ph.soc_repost')) + '">' + svg('repost') + '<span>' + (pst.reposts || 0) + '</span></button>' +
+      // Passing a photograph to one person is what people actually do with one, and it went
+      // nowhere before: the only way to show somebody a post was to tell them to go and find
+      // it. Only on a post that HAS a photograph - there is nothing to send otherwise.
+      (pst.image
+        ? '<button class="pact pshare" type="button" aria-label="' +
+            esc(L('ph.soc_share')) + '">' + svg('send') + '</button>'
+        : '') +
       '<span class="pspacer"></span>' +
       // Saving sits on the right, away from the three public actions, because it is the one
       // that does something for the reader rather than for the author. No count beside it:
@@ -13601,6 +16585,25 @@ function wirePosts(appId, reload) {
       b.querySelector('span').textContent = r.likes;
       if (r.liked) ui('toggleon');
     }
+  }));
+  // The count, not the heart. Tapping the heart likes; tapping the number beside it asks who
+  // else did - which is where anybody looks for that, and where nothing happened before.
+  rows('.post .plike span', (n) => n.addEventListener('click', (e) => {
+    e.stopPropagation();
+    socLikers(appId, Number(n.closest('.post').dataset.id));
+  }));
+  rows('.post .pshare', (b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Read off the card rather than out of a list held to one side. The card is on screen and
+    // is by definition the post being shared; a registry of what was last rendered is one more
+    // thing that can be looking at the previous feed.
+    const card = b.closest('.post');
+    const media = card.querySelector('img.pimg, video.pimg');
+    const text = card.querySelector('.pbody');
+    socSharePost(appId, {
+      image: media ? media.getAttribute('src') : '',
+      body: text ? text.textContent : '',
+    });
   }));
   rows('.post .prepost', (b) => b.addEventListener('click', async () => {
     const id = Number(b.closest('.post').dataset.id);
@@ -13818,10 +16821,26 @@ function storyViewer(appId, group) {
   if (!group || !group.items || !group.items.length) return;
   let index = 0;
   const host = byId('folderview');
+  // A CHILD of #folderview, never its whole contents.
+  //
+  // This wrote `host.innerHTML` and then cleared it on close - and #folderview's three children
+  // (#foldername, #folderapps, #folderacts) exist only in index.html. Nothing rebuilds them. So
+  // viewing one story deleted them permanently, `openFolder` found no #folderapps and answered
+  // "folder gone", and every app inside every folder on the home screen was unreachable for the
+  // rest of the session.
+  const stage = () => {
+    let v = host.querySelector('.storyview');
+    if (!v) {
+      v = document.createElement('div');
+      v.className = 'storyview';
+      host.appendChild(v);
+    }
+    return v;
+  };
   const paint = () => {
     const item = group.items[index];
-    host.innerHTML =
-      '<div class="storyview">' +
+    const view = stage();
+    view.innerHTML =
         '<div class="storybars">' + group.items.map((_, i) =>
           '<i class="' + (i < index ? 'done' : (i === index ? 'now' : '')) + '"></i>').join('') + '</div>' +
         '<div class="storyhead">' + socAvatar(group, 'storyav') +
@@ -13834,23 +16853,24 @@ function storyViewer(appId, group) {
         // Only on your own story. Who watched somebody else's is between them and the author,
         // and `group.mine` is the server's answer rather than a comparison done here.
         (group.mine ? '<button class="storyseen" type="button">' + svg('focus') +
-          '<span>' + esc(L('ph.soc_seen_by')) + '</span></button>' : '') +
-      '</div>';
+          '<span>' + esc(L('ph.soc_seen_by')) + '</span></button>' : '');
     post('social', { op: 'storySeen', id: item.id });
-    host.querySelector('.storyclose').addEventListener('click', (e) => { e.stopPropagation(); close(); });
-    const seenBtn = host.querySelector('.storyseen');
+    view.querySelector('.storyclose').addEventListener('click', (e) => { e.stopPropagation(); close(); });
+    const seenBtn = view.querySelector('.storyseen');
     if (seenBtn) seenBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       storyViewers(appId, item.id);
     });
-    host.querySelector('.storyphoto').addEventListener('click', () => {
+    view.querySelector('.storyphoto').addEventListener('click', () => {
       index += 1;
       if (index >= group.items.length) close(); else paint();
     });
   };
   const close = () => {
     host.classList.remove('on', 'storymode');
-    host.innerHTML = '';
+    // Only what this viewer added. The folder's own markup stays where index.html put it.
+    const v = host.querySelector('.storyview');
+    if (v) v.remove();
   };
   host.classList.add('on', 'storymode');
   paint();
@@ -13858,18 +16878,91 @@ function storyViewer(appId, group) {
 
 // Who watched one story. The seen table has existed since stories shipped and only ever drove
 // the unseen ring; this reads it the other way, which is what the author wants to know.
+/// A list of people, in a sheet. Four things need one - who watched a story, who liked a post,
+/// who follows an account, who it follows - and they are the same list every time.
+///
+/// The one it replaces drew the avatar as INITIALS and the blue tick as a `✓` typed into the
+/// title, and no row went anywhere. A list of people whose names you cannot tap is a list of
+/// people you cannot reach, which on a roleplay server is most of the point of having it.
+function socPeopleSheet(appId, title, people, emptyKey, emptyIcon) {
+  const list = people || [];
+  sheet(title + (list.length ? ' (' + list.length + ')' : ''),
+    list.length
+      ? '<div class="group socpeople">' + list.map((v) =>
+          '<button class="row lead socfind" data-who="' + esc(v.handle) + '" type="button">' +
+            socAvatar(v, 'socav') +
+            '<span class="rmain"><span class="rt">' + esc(v.displayname || v.handle) +
+              socVerified(v) + '</span>' +
+              '<span class="rs">@' + esc(v.handle) + '</span></span>' +
+          '</button>').join('') + '</div>'
+      : UI.empty(L(emptyKey), emptyIcon || 'contacts'),
+    () => qrows('sheet', '.socfind', (b) => b.addEventListener('click', () => {
+      // The sheet goes rather than stacking a profile on top of it: a list is a way to reach
+      // somebody, and once you have you are done with the list.
+      closeSheet(true);
+      socialProfile(appId, b.dataset.who);
+    })));
+}
+
 async function storyViewers(appId, id) {
   const r = await post('social', { op: 'storyViewers', id, app: appId });
   if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
-  const list = r.viewers || [];
-  sheet(L('ph.soc_seen_by') + ' (' + list.length + ')',
-    list.length
-      ? UI.group(list.map((v) => UI.row({
-          avatar: v.displayname || v.handle,
-          title: (v.displayname || v.handle) + (v.verified ? ' ✓' : ''),
-          subtitle: '@' + v.handle,
-        })))
-      : UI.empty(L('ph.soc_no_viewers'), 'focus'));
+  socPeopleSheet(appId, L('ph.soc_seen_by'), r.viewers, 'ph.soc_no_viewers', 'focus');
+}
+
+/// Who liked a post. Reached by tapping the count, which is where anybody would look.
+async function socLikers(appId, id) {
+  const r = await post('social', { op: 'likers', id, app: appId });
+  if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+  socPeopleSheet(appId, L('ph.soc_liked_by'), r.people, 'ph.soc_no_likers', 'heart');
+}
+
+/// Followers, or who somebody follows. Same list, one word apart.
+async function socFollows(appId, handle, which) {
+  const r = await post('social', { op: 'follows', handle: handle || '', which, app: appId });
+  if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+  socPeopleSheet(appId, L(which === 'following' ? 'ph.soc_following_count' : 'ph.soc_followers'),
+    r.people, which === 'following' ? 'ph.soc_no_following' : 'ph.soc_no_followers', 'contacts');
+}
+
+/// Send a post to somebody, as a message.
+///
+/// It goes through `dmSend`, which already carries an image and already tells the other phone
+/// something arrived - so this needed nothing new on the server, and a shared post lands in
+/// the same conversation as everything else rather than in a channel of its own.
+function socSharePost(appId, pst) {
+  if (!pst || !pst.image) { toast(L('ph.soc_share_nophoto')); return; }
+  post('social', { op: 'dmList', app: appId }).then((d) => {
+    const threads = (d && d.threads) || [];
+    sheet(L('ph.soc_share'),
+      (threads.length
+        ? '<div class="group socpeople">' + threads.map((t) =>
+            '<button class="row lead socshareto" data-who="' + esc(t.handle) + '" type="button">' +
+              socAvatar(t, 'socav') +
+              '<span class="rmain"><span class="rt">' + esc(t.displayname || t.handle) +
+                '</span><span class="rs">@' + esc(t.handle) + '</span></span>' +
+            '</button>').join('') + '</div>'
+        : '') +
+      UI.field('socshareh', L('ph.soc_share_to'), '', 'maxlength="24"') +
+      UI.button(L('ph.send'), 'socsharego', 'tinted') +
+      '<div class="groupfoot">' + esc(L('ph.soc_share_hint')) + '</div>',
+      () => {
+        const epoch = sheetEpoch;
+        const send = async (handle) => {
+          const who = String(handle || '').replace(/^@/, '').trim();
+          if (!who) return;
+          const r = await post('social', { op: 'dmSend', app: appId, handle: who,
+            image: pst.image, body: pst.body || '' });
+          if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+          if (!closeSheet(false, epoch)) return;
+          ui('sent');
+          toast(L('ph.soc_shared'));
+        };
+        qrows('sheet', '.socshareto', (b) =>
+          b.addEventListener('click', () => send(b.dataset.who)));
+        byId('socsharego').addEventListener('click', () => send(byId('socshareh').value));
+      });
+  });
 }
 
 // ── Search ─────────────────────────────────────────────────────
@@ -13959,7 +17052,7 @@ async function socialProfile(appId, handle) {
   SOC.handle[appId] = handle || '';
   loading();
   const r = await post('social', { op: 'profile', handle: handle || '', app: appId });
-  if (!socialActive(appId, viewEpoch)) return;
+  if (!socialActive(appId, epoch)) return;
   if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), APP_ICON[appId])); return; }
 
   const a = r.account, c = r.counts || {};
@@ -13980,10 +17073,14 @@ async function socialProfile(appId, handle) {
       (a.verified ? '<div class="socverifline">' + svg('check') + '<span>' +
         esc(L('ph.soc_verified')) + '</span></div>' : '') +
       (a.bio ? '<div class="socbio">' + esc(a.bio) + '</div>' : '') +
+      // Two of the three open the list they count. Posts does not: they are already on
+      // the screen underneath.
       '<div class="soccounts">' +
         '<span><b>' + (c.posts || 0) + '</b>' + esc(L('ph.soc_posts')) + '</span>' +
-        '<span><b>' + (c.followers || 0) + '</b>' + esc(L('ph.soc_followers')) + '</span>' +
-        '<span><b>' + (c.following || 0) + '</b>' + esc(L('ph.soc_following_count')) + '</span>' +
+        '<button class="soccount" data-which="followers" type="button"><b>' +
+          (c.followers || 0) + '</b>' + esc(L('ph.soc_followers')) + '</button>' +
+        '<button class="soccount" data-which="following" type="button"><b>' +
+          (c.following || 0) + '</b>' + esc(L('ph.soc_following_count')) + '</button>' +
       '</div>' +
       (r.me ? '<button class="socedit" id="socedit" type="button">' + esc(L('ph.soc_edit')) + '</button>' +
               '<button class="socedit" id="socsaved" type="button">' + esc(L('ph.soc_saved')) + '</button>'
@@ -13995,6 +17092,10 @@ async function socialProfile(appId, handle) {
     '</div>' +
     (posts.length
       ? (grid ? '<div class="socgrid">' + posts.map((p) =>
+            // No `data-full` here: a thumbnail in a profile grid opens the POST, which is
+            // where the caption and the comments are. The picture is one tap further, from
+            // the card itself - going straight to the photograph would skip everything the
+            // post says about it.
             '<button class="socthumb" data-id="' + p.id + '" style="' +
               inlineBackground(p.image) + '" type="button"></button>').join('') + '</div>'
           : posts.map((p) => postCard(p, appId)).join(''))
@@ -14002,6 +17103,8 @@ async function socialProfile(appId, handle) {
   );
   pushAnim();
 
+  rows('.soccount', (b) => b.addEventListener('click', () =>
+    socFollows(appId, a.handle, b.dataset.which)));
   if (r.me) byId('socedit').addEventListener('click', () => socialEdit(appId, a));
   if (r.me) byId('socsaved').addEventListener('click', () => socialSaved(appId));
   else {
@@ -14106,7 +17209,7 @@ async function socialDmThread(appId, handle) {
   const epoch = beginView();
   loading();
   const r = await post('social', { op: 'dmThread', handle, app: appId });
-  if (!socialActive(appId, viewEpoch)) return;
+  if (!socialActive(appId, epoch)) return;
   if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), 'messages')); return; }
 
   // Back goes to the thread list, not out of the app: this is a screen deeper, and the
@@ -14154,6 +17257,9 @@ function socialRender(appId) {
   foot('');
   const tabs = appId === 'hush'
     ? [{ id: 'swipe', icon: 'sparkles', label: L('app.hush') },
+       // Who liked you and is waiting. Its own tab rather than a badge on Matches, because
+       // they are different states: a match is done, a like is a decision still to make.
+       { id: 'likes', icon: 'star', label: L('ph.hush_likes') },
        { id: 'matches', icon: 'heart', label: L('ph.hush_matches') },
        { id: 'me', icon: 'contacts', label: L('ph.soc_profile') }]
     : [{ id: 'feed', icon: 'home', label: L('ph.soc_feed') },
@@ -14185,6 +17291,7 @@ function socialRender(appId) {
   const tab = SOC.tab[appId];
   if (appId === 'hush') {
     if (tab === 'matches') return hushMatches();
+    if (tab === 'likes') return hushLiked();
     if (tab === 'me') return hushProfile();
     return hushSwipe();
   }
@@ -14280,8 +17387,12 @@ function socNotifLine(n) {
 }
 
 async function socialNotifs(appId) {
+  // The same guard every sibling renderer in this block uses. Without it a slow answer paints
+  // over whichever view the player moved to while it was in flight.
+  const epoch = viewEpoch;
   loading();
   const d = await post('social', { op: 'notifs', app: appId });
+  if (!socialActive(appId, epoch)) return;
   if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'bell')); return; }
 
   const list = d.notifs || [];
@@ -14331,9 +17442,11 @@ function socLinkify(escaped) {
 }
 
 async function socialTagFeed(appId, tag) {
+  const epoch = viewEpoch;
   loading();
   setNav('#' + tag, L('app.' + appId), null, () => socialRender(appId));
   const d = await post('social', { op: 'tag', app: appId, tag });
+  if (!socialActive(appId, epoch)) return;
   if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'bleet')); return; }
   const list = d.posts || [];
   body(list.length
@@ -14426,6 +17539,1969 @@ function snapCompose() {
 }
 
 RENDER.bleeter = () => needAccount('bleeter', () => socialRender('bleeter'));
+// ══ FruitBrawl ═════════════════════════════════════════════════
+// Two players from the server, one duel, four choices a round.
+//
+// **The page holds no game state of its own.** Everything drawn here comes from the last view
+// the server pushed, and the only thing sent back is which of four buttons was pressed. That is
+// not caution for its own sake: two phones showing the same fight have to agree, and the only
+// way two clients agree is by both being told rather than both deciding.
+//
+// The round timer IS drawn locally, from the deadline the server sent - a countdown is the one
+// thing that has to move between messages, and it is a display, not a rule. When it reaches
+// zero nothing happens here; the server resolves the round and pushes what it did.
+
+const BRAWL_ACTIONS = ['jab', 'heavy', 'block', 'grab'];
+const BRAWL_ICON = { jab: 'sparkles', heavy: 'warning', block: 'shield', grab: 'contacts' };
+
+let brawlData = null;    // the lobby answer
+let brawlView = null;    // the live fight, as the server last described it
+let brawlTick = null;    // the countdown's interval
+let brawlPicked = null;  // what this side chose this round, for the button state
+let brawlStake = 0;      // what this player wants to put on the next fight
+let brawlTaught = false; // the tutorial is offered once a session, not once a visit
+
+function brawlStopTick() {
+  if (brawlTick) { clearInterval(brawlTick); brawlTick = null; }
+}
+
+/// A health bar. The number is on it as well as the length: a bar alone cannot say whether
+/// somebody is on 3 or on 12, which is exactly the moment it matters most.
+function brawlBar(f, rules, mine) {
+  const pct = Math.max(0, Math.min(100, Math.round((f.hp / (rules.health || 100)) * 100)));
+  const pips = [];
+  for (let i = 0; i < (rules.stamina || 6); i += 1) {
+    pips.push('<i class="' + (i < f.stamina ? 'on' : '') + '"></i>');
+  }
+  return '<div class="bwfighter' + (mine ? ' mine' : '') + '">' +
+      '<div class="bwname"><b>' + esc(f.name || '?') + '</b>' +
+        (f.picked && !mine ? '<em>' + esc(L('ph.brawl_ready')) + '</em>' : '') +
+      '</div>' +
+      '<div class="bwhp"><i style="width:' + pct + '%"></i>' +
+        '<span>' + esc(String(f.hp)) + '</span></div>' +
+      '<div class="bwstam">' + pips.join('') + '</div>' +
+    '</div>';
+}
+
+/// What just happened, in words. The tag comes from the server, so both phones tell the same
+/// story about the same exchange.
+function brawlLastLine(last) {
+  if (!last) return '';
+  const mine = L('ph.brawl_act_' + last.mine);
+  const theirs = L('ph.brawl_act_' + last.theirs);
+  const say = L('ph.brawl_tag_' + last.tagMe);
+  return '<div class="bwlast">' +
+      '<div class="bwthrow"><span>' + esc(mine) + '</span>' +
+        '<em>' + esc(L('ph.brawl_versus')) + '</em>' +
+        '<span>' + esc(theirs) + '</span></div>' +
+      '<div class="bwsay">' + esc(say) + '</div>' +
+      '<div class="bwdmg">' +
+        (last.tookThem > 0 ? '<b class="hit">-' + last.tookThem + '</b>' : '') +
+        (last.tookMe > 0 ? '<b class="hurt">-' + last.tookMe + '</b>' : '') +
+        (!last.tookMe && !last.tookThem ? '<span>' + esc(L('ph.brawl_nothing')) + '</span>' : '') +
+      '</div>' +
+    '</div>';
+}
+
+// What beats what. Drawn from this rather than written out in prose, so the tutorial and the
+// game can never disagree about the rules.
+const BRAWL_BEATS = {
+  jab:   ['grab'],
+  heavy: ['jab', 'block'],
+  block: ['jab'],
+  grab:  ['block', 'heavy'],
+};
+
+/// How to play, in the order somebody needs it.
+///
+/// The list of four moves that was here before described each one and explained nothing: the
+/// game is not four moves, it is what answers what, and a player who has not been told that is
+/// pressing buttons. So this leads with the loop - throw, run out of breath, guard, get
+/// grabbed - and only then names the moves.
+///
+/// Shown automatically to somebody who has never fought, because that is exactly who needs it
+/// and nobody else does. No setting to store: their record already says whether they are new.
+function brawlTutorial(rules) {
+  const cost = (rules && rules.cost) || {};
+  const arrow = (a) => '<div class="bwt-row">' +
+      '<span class="bwt-ico">' + svg(BRAWL_ICON[a]) + '</span>' +
+      '<b>' + esc(L('ph.brawl_act_' + a)) + '</b>' +
+      '<span class="bwt-beats">' + esc(L('ph.brawl_beats')) + ' ' +
+        BRAWL_BEATS[a].map((x) => esc(L('ph.brawl_act_' + x))).join(', ') + '</span>' +
+      '<i>' + (a === 'block' ? '+' + (rules.regain || 2) : '-' + (cost[a] || 0)) + '</i>' +
+    '</div>';
+
+  sheet(L('ph.brawl_tut_title'),
+    '<div class="bwt-lead">' + esc(L('ph.brawl_tut_lead')) + '</div>' +
+
+    '<div class="grouphead">' + esc(L('ph.brawl_tut_loop')) + '</div>' +
+    '<div class="bwt-steps">' +
+      ['1', '2', '3'].map((n) =>
+        '<div class="bwt-step"><span>' + n + '</span>' +
+          esc(L('ph.brawl_tut_step_' + n)) + '</div>').join('') +
+    '</div>' +
+
+    '<div class="grouphead">' + esc(L('ph.brawl_tut_moves')) + '</div>' +
+    '<div class="bwt-table">' + BRAWL_ACTIONS.map(arrow).join('') + '</div>' +
+    '<div class="groupfoot">' + esc(L('ph.brawl_tut_stamina')
+      .replace('{n}', String(rules.stamina || 6))
+      .replace('{r}', String(rules.regain || 2))) + '</div>' +
+
+    '<div class="grouphead">' + esc(L('ph.brawl_tut_read')) + '</div>' +
+    '<div class="bwt-lead">' + esc(L('ph.brawl_tut_read_body')) + '</div>' +
+    UI.button(L('ph.brawl_tut_go'), 'bwtgo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      byId('bwtgo').addEventListener('click', () => closeSheet(false, epoch));
+    });
+}
+
+/// What has been thrown, both sides, oldest first.
+///
+/// This is what turns a guessing game into a reading game. Without it every round is a fresh
+/// coin toss between strangers; with it, somebody who has thrown three Heavies is telling you
+/// something and you can watch them do it.
+function brawlHistory(list) {
+  if (!list || !list.length) return '';
+  return '<div class="bwhist">' + list.map((h) =>
+    '<div class="bwhcol">' +
+      '<span class="bwh them" title="' + esc(L('ph.brawl_act_' + h.theirs)) + '">' +
+        svg(BRAWL_ICON[h.theirs]) + '</span>' +
+      '<span class="bwh mine" title="' + esc(L('ph.brawl_act_' + h.mine)) + '">' +
+        svg(BRAWL_ICON[h.mine]) + '</span>' +
+    '</div>').join('') + '</div>';
+}
+
+/// The fight.
+function brawlFightHtml(v, rules) {
+  const cost = rules.cost || {};
+  const over = v.over;
+
+  const buttons = BRAWL_ACTIONS.map((a) => {
+    const price = cost[a] || 0;
+    const afford = v.me.stamina >= price;
+    const chosen = brawlPicked === a;
+    return '<button class="bwact' + (chosen ? ' on' : '') + (afford ? '' : ' broke') +
+      '" data-act="' + a + '"' + (afford && !v.me.picked && !over ? '' : ' disabled') + ' type="button">' +
+      svg(BRAWL_ICON[a]) +
+      '<b>' + esc(L('ph.brawl_act_' + a)) + '</b>' +
+      '<i>' + (a === 'block'
+        ? '+' + (rules.regain || 2)
+        : (price > 0 ? '-' + price : '0')) + '</i>' +
+    '</button>';
+  }).join('');
+
+  return '<div class="bwstage">' +
+      brawlBar(v.them, rules, false) +
+      '<div class="bwmid">' +
+        '<div class="bwround">' + esc(L('ph.brawl_round').replace('{n}', String(v.round))) +
+          (v.stake > 0
+            ? '<span class="bwpot">' + esc(money(v.stake * 2)) + '</span>' : '') + '</div>' +
+        '<div class="bwclock" id="bwclock">--</div>' +
+      '</div>' +
+      brawlBar(v.me, rules, true) +
+    '</div>' +
+    brawlHistory(v.history) +
+    brawlLastLine(v.last) +
+    (over
+      ? '<div class="bwover">' +
+          '<b>' + esc(L(over.winner === null || over.winner === undefined
+            ? 'ph.brawl_draw'
+            : (v.me.hp > 0 && v.them.hp <= 0 ? 'ph.brawl_won' : 'ph.brawl_lost'))) + '</b>' +
+          '<span>' + esc(L('ph.brawl_why_' + (over.why || 'knockout'))) + '</span>' +
+          ((over.stake || 0) > 0
+            ? '<div class="bwwon">' + esc(
+                over.winner === null || over.winner === undefined
+                  ? L('ph.brawl_pot_back').replace('{n}', money(over.stake))
+                  : (v.me.hp > 0 && v.them.hp <= 0
+                      ? L('ph.brawl_pot_won').replace('{n}', money(over.stake * 2))
+                      : L('ph.brawl_pot_lost').replace('{n}', money(over.stake)))) + '</div>'
+            : '') +
+        '</div>' +
+        UI.button(L('ph.brawl_again'), 'bwagain', 'tinted')
+      : '<div class="bwacts">' + buttons + '</div>' +
+        '<div class="groupfoot">' +
+          esc(v.me.picked ? L('ph.brawl_waiting') : L('ph.brawl_choose')) + '</div>' +
+        UI.button(L('ph.brawl_forfeit'), 'bwquit', 'destructive'));
+}
+
+/// The countdown, drawn from the server's deadline.
+///
+/// Local because it has to move between messages, and harmless because it decides nothing: at
+/// zero it simply stops, and the round ends when the server says it did.
+function brawlStartTick() {
+  brawlStopTick();
+  brawlTick = setInterval(() => {
+    const el = byId('bwclock');
+    if (!el || !brawlView || brawlView.over) { brawlStopTick(); return; }
+    const left = Math.max(0, Math.round(brawlView.endsAt - (Date.now() / 1000) + brawlSkew));
+    el.textContent = String(left);
+    el.classList.toggle('urgent', left <= 3);
+  }, 250);
+}
+
+// The server's clock minus this machine's, measured once from the first view that arrives. Two
+// computers are never quite on the same second, and a countdown that started at 11 or at 8
+// because of that would look broken.
+let brawlSkew = 0;
+
+RENDER.brawl = async () => {
+  // Fetched when the app opens rather than when the first punch lands: a recording that starts
+  // downloading at the moment it is needed is a recording that plays late.
+  brawlPreload();
+  beginView();
+  setNav(L('app.brawl'), null);
+  loading();
+  const d = await post('app', { app: 'brawl' });
+  if (!openApp || openApp.id !== 'brawl') return;
+  if (!d || !d.ok) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'shield')); return; }
+  brawlData = d;
+
+  if (d.match) {
+    brawlView = d.match;
+    brawlSkew = d.match.endsAt - (Date.now() / 1000) > 0
+      ? 0
+      : (d.match.endsAt - (Date.now() / 1000));
+    brawlPaint();
+    return;
+  }
+
+  brawlStopTick();
+  brawlView = null;
+
+  const st = d.stats || {};
+  const stakes = d.stakes || { on: false, max: 0 };
+  // Four choices rather than a field: a stake is a decision between a handful of amounts, and
+  // a number box invites somebody to type 99999 and be refused.
+  const stakeChoices = [0, Math.round((stakes.max || 100) * 0.25),
+                        Math.round((stakes.max || 100) * 0.5), stakes.max || 100]
+    .filter((v, i, all) => v >= 0 && all.indexOf(v) === i);
+  if (stakeChoices.indexOf(brawlStake) === -1) brawlStake = 0;
+
+  body(
+    UI.hero({ appicon: 'fire', eyebrow: L('ph.brawl_record'),
+              title: st.wins + ' - ' + st.losses,
+              subtitle: st.best > 0 ? L('ph.brawl_best').replace('{n}', String(st.best)) : '' }) +
+    (d.invite
+      ? '<div class="bwinvite">' +
+          '<b>' + esc(L('ph.brawl_challenged').replace('{n}', d.invite.from)) + '</b>' +
+          (d.invite.stake > 0
+            ? '<div class="bwstakesay">' +
+                esc(L('ph.brawl_for_money').replace('{n}', money(d.invite.stake))) + '</div>'
+            : '') +
+          '<div class="bwinvbtns">' +
+            UI.button(L('ph.brawl_accept'), 'bwyes', 'tinted') +
+            UI.button(L('ph.brawl_decline'), 'bwno', 'plain') +
+          '</div>' +
+        '</div>'
+      : '') +
+    (d.queued
+      ? '<div class="bwqueued">' + UI.spinner() +
+          '<span>' + esc(L('ph.brawl_searching')) + '</span></div>' +
+        UI.button(L('ph.brawl_leave_queue'), 'bwleave', 'plain')
+      : (stakes.on
+          ? '<div class="grouphead">' + esc(L('ph.brawl_stake')) + '</div>' +
+            '<div class="bwstakes" id="bwstakes">' +
+              stakeChoices.map((v) =>
+                '<button class="bwstakebtn' + (v === brawlStake ? ' on' : '') +
+                  '" data-stake="' + v + '" type="button">' +
+                  (v === 0 ? esc(L('ph.brawl_stake_none')) : esc(money(v))) +
+                '</button>').join('') +
+            '</div>' +
+            '<div class="groupfoot">' +
+              esc(L('ph.brawl_stake_hint').replace('{n}', money(stakes.max || 100))) + '</div>'
+          : '') +
+        UI.button(L('ph.brawl_quick'), 'bwquick', 'tinted') +
+        UI.field('bwnum', L('ph.brawl_number'), '', 'inputmode="tel" maxlength="16"') +
+        UI.button(L('ph.brawl_challenge'), 'bwsend', 'plain') +
+        // Somebody has to be online to fight, and on a quiet server that is nobody. The bot
+        // is beatable by READING rather than by luck, which is the same skill the real game
+        // wants - so practising against it is practice for the thing itself.
+        '<div class="grouphead">' + esc(L('ph.brawl_solo')) + '</div>' +
+        '<div class="bwlevels">' +
+          ['easy', 'normal', 'hard'].map((lv) =>
+            '<button class="bwlevel" data-level="' + lv + '" type="button">' +
+              '<b>' + esc(L('ph.brawl_lvl_' + lv)) + '</b>' +
+              '<small>' + esc(L('ph.brawl_lvl_' + lv + '_who')) + '</small>' +
+            '</button>').join('') +
+        '</div>' +
+        '<div class="groupfoot">' + esc(L('ph.brawl_solo_hint')) + '</div>') +
+    UI.button(L('ph.brawl_how'), 'bwhow', 'plain') +
+    ((d.board || []).length
+      ? '<div class="grouphead">' + esc(L('ph.brawl_board')) + '</div>' +
+        '<div class="alist">' + (d.board || []).map((r) =>
+          '<div class="arow">' +
+            '<span class="arank' + (r.rank <= 3 ? ' top' + r.rank : '') + '">' + r.rank + '</span>' +
+            '<span class="aname">' + esc(r.name) + '</span>' +
+            '<span class="ascore">' + r.wins + '</span>' +
+          '</div>').join('') + '</div>'
+      : '')
+  );
+
+  const wire = (id, fn) => { const el = byId(id); if (el) el.addEventListener('click', fn); };
+
+  wire('bwhow', () => brawlTutorial(d.rules || {}));
+  rows('.bwstakebtn', (b) => b.addEventListener('click', () => {
+    brawlStake = Number(b.dataset.stake) || 0;
+    rows('.bwstakebtn', (x) => x.classList.toggle('on', Number(x.dataset.stake) === brawlStake));
+    ui('toggleon');
+  }));
+
+  // Nobody has ever fought, so nobody has ever been told how. Shown once, here, rather than
+  // stored behind a setting: their own record already answers "is this person new".
+  if ((st.wins || 0) + (st.losses || 0) === 0 && !brawlTaught) {
+    brawlTaught = true;
+    brawlTutorial(d.rules || {});
+  }
+
+  wire('bwquick', async () => {
+    const r = await post('brawlQueue', { stake: brawlStake });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    if (r.match) { brawlView = r.match; brawlPaint(); return; }
+    RENDER.brawl();
+  });
+  wire('bwleave', async () => { await post('brawlQueue', { leave: true }); RENDER.brawl(); });
+  wire('bwsend', async () => {
+    const r = await post('brawlInvite', { number: byId('bwnum').value, stake: brawlStake });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    ui('sent');
+    toast(L('ph.brawl_sent').replace('{n}', r.sent || ''));
+  });
+  wire('bwyes', async () => {
+    const r = await post('brawlAnswer', { accept: true });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); RENDER.brawl(); return; }
+    brawlView = r.match; brawlPaint();
+  });
+  wire('bwno', async () => { await post('brawlAnswer', { accept: false }); RENDER.brawl(); });
+
+  rows('.bwlevel', (b) => b.addEventListener('click', async () => {
+    const r = await post('brawlSolo', { level: b.dataset.level });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    brawlView = r.match;
+    brawlPaint();
+  }));
+};
+
+/// Draw the fight from `brawlView`. Called by the render and by every push.
+function brawlPaint() {
+  if (!openApp || openApp.id !== 'brawl' || !brawlView) return;
+  const rules = (brawlData && brawlData.rules) || {};
+  setNav(L('app.brawl'), null);
+  body(brawlFightHtml(brawlView, rules));
+  brawlStartTick();
+
+  rows('.bwact', (b) => b.addEventListener('click', async () => {
+    if (b.disabled) return;
+    const action = b.dataset.act;
+    // Shown as chosen straight away. The server confirms in a moment, and if it refuses the
+    // next push puts it back - but a fighting game where the button does not respond until a
+    // round trip has finished is a fighting game that feels broken.
+    brawlPicked = action;
+    rows('.bwact', (x) => { x.disabled = true; x.classList.toggle('on', x.dataset.act === action); });
+    ui('toggleon');
+    const r = await post('brawlPick', { action });
+    if (!r || !r.ok) {
+      brawlPicked = null;
+      toast(L('ph.err_' + ((r && r.error) || 'x')));
+      brawlPaint();
+    }
+  }));
+
+  const quit = byId('bwquit');
+  if (quit) quit.addEventListener('click', () => {
+    confirmSheet(L('ph.brawl_forfeit_sure'), L('ph.brawl_forfeit'), async () => {
+      await post('brawlForfeit', {});
+    });
+  });
+  const again = byId('bwagain');
+  if (again) again.addEventListener('click', () => { brawlView = null; RENDER.brawl(); });
+}
+
+/// A view pushed by the server.
+///
+/// Held whether or not the app is open: somebody who pocketed the phone mid-round comes back to
+/// the round that is actually running, not to the one they left.
+function brawlPush(view) {
+  if (!view) return;
+  const wasRound = brawlView && brawlView.round;
+  const isNew = wasRound !== undefined && wasRound !== null && view.round !== wasRound;
+  brawlView = view;
+  if (view.round !== wasRound) brawlPicked = null;
+  // The bell rings LAST, after the exchange has been heard - it announces the round that is
+  // starting, not the one that just ended. Queued rather than delayed, so it waits for however
+  // long the punch and the grunt actually took.
+  if (!wasRound && !view.over) brawlSound('bell');
+
+  if (!openApp || openApp.id !== 'brawl') {
+    // Not looking at it. A round resolving while the phone is away is worth a buzz, and the
+    // banner the server sent for the invite has already done the announcing.
+    if (view.over) buzzDevice();
+    return;
+  }
+  const ringBell = isNew && !view.over;
+  if (view.last && view.round !== wasRound) {
+    // The move that was thrown, then what it did. Two sounds rather than one, because a Heavy
+    // that got blocked and a Heavy that landed are the same throw and completely different
+    // news - and a player watching their opponent should hear which.
+    //
+    // No timer between them any more: the queue puts the second one after the first, whatever
+    // length the first turned out to be.
+    brawlSound(view.last.mine);
+    if (view.last.tookMe > 0) brawlSound('hurt');
+    else if (view.last.tookThem > 0) brawlSound('hit');
+  }
+  if (view.over) brawlSound(view.over.winner && view.me.hp > 0 ? 'win' : 'lose');
+  else if (ringBell) brawlSound('bell');
+  brawlPaint();
+}
+
+// ══ FlappyFruit ════════════════════════════════════════════════
+// A game, and a scoreboard the whole server shares.
+//
+// **Fixed timestep, and that is the whole reason it feels right.** The obvious way to write
+// this is to move everything by `dt` each frame, and it is wrong here: the phone is drawn in a
+// game that runs anywhere from 30 to 240 frames a second, so a `dt`-scaled jump arc is a
+// different arc on every machine, and floating point drift makes two identical runs diverge.
+// The simulation steps at a FIXED 120 hertz whatever the display does, the leftover time is
+// carried to the next frame, and drawing interpolates between the last two steps so it is
+// still smooth on a screen that does not divide evenly. Same physics on every computer, which
+// is also what makes the server's time check mean anything.
+//
+// Everything is drawn with the canvas 2D context and no images: a sprite sheet would be one
+// more file to ship and one more thing to go missing, and shapes cost nothing here.
+
+const FLAP = {
+  // The world is written in its own units and scaled to whatever the canvas is, so the game
+  // is identical on a phone that has been resized.
+  W: 360, H: 640,
+  GRAVITY: 1500,        // units per second squared
+  LIFT: -430,           // instant upward velocity on a flap
+  SPEED: 132,           // how fast the world comes at you
+  GAP: 158,             // the hole between two pipes
+  PIPE_W: 62,
+  SPACING: 200,         // distance between one pipe and the next
+  BIRD_X: 108,
+  BIRD_R: 15,
+  GROUND: 92,
+  STEP: 1 / 120,        // the fixed simulation step
+
+  // It gets faster, and the gap closes - slowly, and both stop. A game that ramps for ever
+  // becomes impossible rather than hard, and a game that never ramps is the same ten seconds
+  // repeated until somebody gets bored.
+  SPEED_MAX: 196,
+  SPEED_PER_POINT: 1.8,
+  GAP_MIN: 126,
+  GAP_PER_POINT: 0.8,
+
+  // How long the fruit tumbles after it is hit, before the card comes up. The run is over the
+  // instant it touches something - the score is already final - but cutting straight to a
+  // panel reads as a freeze rather than as a crash.
+  FALL: 1.15,
+};
+
+/// The medal a score earns. Four of them, and none for a score of nothing: a medal for turning
+/// up is a medal that means nothing when it is finally earned.
+const FLAP_MEDALS = [
+  { at: 40, key: 'platinum', ring: '#8FD8FF', face: '#E8F6FF' },
+  { at: 25, key: 'gold', ring: '#E8A93B', face: '#FFD974' },
+  { at: 12, key: 'silver', ring: '#8E97A6', face: '#D8DEE8' },
+  { at: 4, key: 'bronze', ring: '#9C6034', face: '#D69158' },
+];
+
+function flapMedal(score) {
+  return FLAP_MEDALS.find((m) => score >= m.at) || null;
+}
+
+let flapData = null;
+let flapTab = 'play';
+// The running game, or null. Held at module level because the loop has to be stoppable from
+// outside - leaving the app has to kill it, and a `requestAnimationFrame` nobody cancels is a
+// phone that quietly eats a core for the rest of the session.
+let flapGame = null;
+
+function flapStop() {
+  if (!flapGame) return;
+  cancelAnimationFrame(flapGame.raf);
+  // The space-bar listener is on the DOCUMENT, so it outlives the canvas it was drawn for.
+  // Stopping the loop and leaving the listener behind would mean a key press flapping a bird
+  // that is no longer on screen, in whatever app is.
+  if (typeof flapGame.onGone === 'function') flapGame.onGone();
+  if (typeof flapGame.resize === 'function') window.removeEventListener('resize', flapGame.resize);
+  flapGame = null;
+}
+
+/// One run.
+///
+/// `onEnd` is handed the score and how long it took. Both go to the server: the second is what
+/// makes the first checkable.
+function flapStart(canvas, hud, onEnd) {
+  flapStop();
+
+  const ctx = canvas.getContext('2d');
+  // Drawn at the device's real pixel density, then scaled back with a transform, so the edges
+  // are not soft on a high-density display.
+  const fit = () => {
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const box = canvas.getBoundingClientRect();
+    canvas.width = Math.round(box.width * dpr);
+    canvas.height = Math.round(box.height * dpr);
+    return { dpr, w: box.width, h: box.height };
+  };
+  let size = fit();
+
+  const g = {
+    raf: 0,
+    state: 'ready',          // ready -> playing -> dead
+    score: 0,
+    started: 0,
+    last: 0,
+    carry: 0,                // leftover time between fixed steps
+    y: FLAP.H / 2, vy: 0, prevY: FLAP.H / 2,
+    rot: 0, prevRot: 0,
+    pipes: [],
+    scroll: 0,
+    flash: 0,
+    shake: 0,          // screen shake, decaying
+    falling: 0,        // seconds left of the death tumble
+    puffs: [],         // the feathers a hit throws off
+    pop: 0,            // the score's little bump when a gate is cleared
+    speed: FLAP.SPEED,
+    gap: FLAP.GAP,
+    // A drifting skyline and a cloud layer, each at its own speed. Parallax is most of what
+    // makes a flat scene read as depth.
+    far: 0, near: 0,
+  };
+  flapGame = g;
+
+  const reset = () => {
+    g.state = 'ready';
+    g.score = 0;
+    g.y = FLAP.H / 2; g.prevY = g.y; g.vy = 0; g.rot = 0; g.prevRot = 0;
+    g.pipes = [];
+    g.scroll = 0;
+    g.flash = 0;
+    g.shake = 0;
+    g.falling = 0;
+    g.puffs = [];
+    g.pop = 0;
+    g.speed = FLAP.SPEED;
+    g.gap = FLAP.GAP;
+    for (let i = 0; i < 4; i += 1) {
+      g.pipes.push({ x: FLAP.W + 120 + i * FLAP.SPACING, gap: gapFor(),
+                     height: g.gap, passed: false });
+    }
+  };
+
+  function gapFor() {
+    const top = 70;
+    const bottom = FLAP.H - FLAP.GROUND - 70 - g.gap;
+    return top + Math.random() * Math.max(10, bottom - top);
+  }
+
+  const flap = () => {
+    // `falling` too, not only `dead`. Between the two the fruit is tumbling, and a tap that
+    // still lifted it would have it flying its own crash.
+    if (g.state === 'dead' || g.state === 'falling') return;
+    if (g.state === 'ready') { g.state = 'playing'; g.started = performance.now(); }
+    g.vy = FLAP.LIFT;
+    ui('flap');
+  };
+
+  const die = () => {
+    if (g.state === 'dead' || g.state === 'falling') return;
+    // **`falling`, not `dead`.** The run is over the instant something is touched and the
+    // score is already final - but cutting straight to a panel reads as a freeze. The fruit
+    // tumbles for a beat first, and the card comes up after it lands.
+    g.state = 'falling';
+    g.falling = FLAP.FALL;
+    g.flash = 1;
+    g.shake = 1;
+    g.vy = Math.min(g.vy, -180);          // a small bounce off whatever it hit
+    for (let i = 0; i < 12; i += 1) {
+      g.puffs.push({
+        x: FLAP.BIRD_X, y: g.y,
+        vx: -40 - Math.random() * 90,
+        vy: -120 + Math.random() * 240,
+        life: 0.5 + Math.random() * 0.5,
+        r: 2 + Math.random() * 3,
+      });
+    }
+    ui('error');
+    onEnd(g.score, Math.max(0, Math.round(performance.now() - g.started)));
+  };
+
+  // ── One fixed step of the world ───────────────────────────────
+  const step = () => {
+    // The feathers, whatever else is happening.
+    for (let i = g.puffs.length - 1; i >= 0; i -= 1) {
+      const f = g.puffs[i];
+      f.life -= FLAP.STEP;
+      if (f.life <= 0) { g.puffs.splice(i, 1); continue; }
+      f.vy += 420 * FLAP.STEP;
+      f.x += f.vx * FLAP.STEP;
+      f.y += f.vy * FLAP.STEP;
+    }
+    g.shake = Math.max(0, g.shake - FLAP.STEP * 3.4);
+    g.pop = Math.max(0, g.pop - FLAP.STEP * 4);
+
+    // The tumble. The world has stopped moving - only the fruit still is, which is what makes
+    // it read as "you crashed" rather than "the game paused".
+    if (g.state === 'falling') {
+      g.prevY = g.y;
+      g.prevRot = g.rot;
+      g.vy += FLAP.GRAVITY * FLAP.STEP;
+      g.y = Math.min(FLAP.H - FLAP.GROUND - FLAP.BIRD_R, g.y + g.vy * FLAP.STEP);
+      g.rot = Math.min(1.6, g.rot + 4.2 * FLAP.STEP);
+      g.falling -= FLAP.STEP;
+      if (g.falling <= 0) { g.state = 'dead'; if (g.onDown) g.onDown(); }
+      return;
+    }
+
+    if (g.state !== 'playing') {
+      // Idling on the title: the bird bobs so the screen is not a still picture.
+      g.prevY = g.y;
+      g.y = FLAP.H / 2 + Math.sin(g.scroll / 26) * 9;
+      g.scroll += FLAP.SPEED * FLAP.STEP;
+      g.far += FLAP.SPEED * 0.18 * FLAP.STEP;
+      g.near += FLAP.SPEED * 0.45 * FLAP.STEP;
+      return;
+    }
+
+    g.prevY = g.y;
+    g.prevRot = g.rot;
+    g.vy += FLAP.GRAVITY * FLAP.STEP;
+    g.y += g.vy * FLAP.STEP;
+
+    // Nose up when climbing, and tip further down the longer it falls. Clamped, because a bird
+    // spinning past vertical reads as a bug rather than as a dive.
+    const want = Math.max(-0.5, Math.min(1.4, g.vy / 620));
+    g.rot += (want - g.rot) * 0.16;
+
+    // Faster, and tighter, the further you get. Both are clamped, so the game gets harder and
+    // then stops - it never becomes impossible.
+    g.speed = Math.min(FLAP.SPEED_MAX, FLAP.SPEED + g.score * FLAP.SPEED_PER_POINT);
+    g.gap = Math.max(FLAP.GAP_MIN, FLAP.GAP - g.score * FLAP.GAP_PER_POINT);
+
+    g.scroll += g.speed * FLAP.STEP;
+    g.far += g.speed * 0.18 * FLAP.STEP;
+    g.near += g.speed * 0.45 * FLAP.STEP;
+
+    for (const p of g.pipes) {
+      p.x -= g.speed * FLAP.STEP;
+      if (!p.passed && p.x + FLAP.PIPE_W < FLAP.BIRD_X - FLAP.BIRD_R) {
+        p.passed = true;
+        g.score += 1;
+        g.pop = 1;
+        ui('point');
+      }
+      if (p.x + FLAP.PIPE_W < -40) {
+        // Recycled rather than allocated: the furthest pipe becomes the next one, so the
+        // array never grows and nothing is garbage a minute into a run.
+        const furthest = g.pipes.reduce((m, q) => Math.max(m, q.x), 0);
+        p.x = furthest + FLAP.SPACING;
+        p.height = g.gap;
+        p.gap = gapFor();
+        p.passed = false;
+      }
+    }
+
+    // The ground, the ceiling, and the pipes.
+    if (g.y + FLAP.BIRD_R >= FLAP.H - FLAP.GROUND) { g.y = FLAP.H - FLAP.GROUND - FLAP.BIRD_R; die(); return; }
+    if (g.y - FLAP.BIRD_R <= 0) { g.y = FLAP.BIRD_R; g.vy = 0; }
+
+    for (const p of g.pipes) {
+      const withinX = FLAP.BIRD_X + FLAP.BIRD_R > p.x && FLAP.BIRD_X - FLAP.BIRD_R < p.x + FLAP.PIPE_W;
+      if (!withinX) continue;
+      const above = g.y - FLAP.BIRD_R < p.gap;
+      const below = g.y + FLAP.BIRD_R > p.gap + p.height;
+      if (above || below) { die(); return; }
+    }
+  };
+
+  // ── Drawing ───────────────────────────────────────────────────
+  const round = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  };
+
+  const draw = (alpha) => {
+    const scale = size.h / FLAP.H;
+    // The shake is applied to the TRANSFORM rather than to every draw call: one place, and it
+    // cannot get out of step with itself.
+    const sx = g.shake > 0 ? (Math.random() - 0.5) * 9 * g.shake : 0;
+    const sy = g.shake > 0 ? (Math.random() - 0.5) * 9 * g.shake : 0;
+    ctx.setTransform(size.dpr * scale, 0, 0, size.dpr * scale, sx * size.dpr, sy * size.dpr);
+    const w = size.w / scale;
+
+    // Sky.
+    const sky = ctx.createLinearGradient(0, 0, 0, FLAP.H);
+    sky.addColorStop(0, '#2E6FD8');
+    sky.addColorStop(0.55, '#67B4F2');
+    sky.addColorStop(1, '#B9E4FF');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, FLAP.H);
+
+    // Sun, and the far skyline behind everything.
+    ctx.fillStyle = 'rgba(255,240,190,.85)';
+    ctx.beginPath(); ctx.arc(w - 66, 92, 34, 0, Math.PI * 2); ctx.fill();
+
+    const skyline = (offset, height, colour, step) => {
+      ctx.fillStyle = colour;
+      const base = FLAP.H - FLAP.GROUND;
+      for (let i = -1; i < w / step + 2; i += 1) {
+        const x = i * step - (offset % step);
+        // Deterministic from the tower's index, so the city does not reshuffle every frame.
+        const seed = Math.abs(Math.sin((Math.floor((offset / step) + i)) * 12.9898)) % 1;
+        const h = height * (0.45 + seed * 0.55);
+        ctx.fillRect(x, base - h, step * 0.72, h);
+      }
+    };
+    skyline(g.far, 150, 'rgba(24,58,110,.30)', 54);
+    skyline(g.near, 104, 'rgba(18,44,86,.42)', 38);
+
+    // Pipes.
+    for (const p of g.pipes) {
+      const grad = ctx.createLinearGradient(p.x, 0, p.x + FLAP.PIPE_W, 0);
+      grad.addColorStop(0, '#3FA45A');
+      grad.addColorStop(0.35, '#6BD986');
+      grad.addColorStop(1, '#2F8347');
+      ctx.fillStyle = grad;
+      const lipW = FLAP.PIPE_W + 12;
+      round(p.x, -20, FLAP.PIPE_W, p.gap + 20, 6); ctx.fill();
+      round(p.x - 6, p.gap - 26, lipW, 26, 7); ctx.fill();
+      const lower = p.gap + p.height;
+      round(p.x, lower, FLAP.PIPE_W, FLAP.H - FLAP.GROUND - lower + 20, 6); ctx.fill();
+      round(p.x - 6, lower, lipW, 26, 7); ctx.fill();
+    }
+
+    // Ground: a solid band with a scrolling stripe so the speed is visible even between pipes.
+    const gy = FLAP.H - FLAP.GROUND;
+    ctx.fillStyle = '#E0C173'; ctx.fillRect(0, gy, w, FLAP.GROUND);
+    ctx.fillStyle = '#C9A85C';
+    for (let i = -1; i < w / 26 + 2; i += 1) {
+      ctx.fillRect(i * 26 - (g.scroll % 26), gy, 13, 9);
+    }
+    ctx.fillStyle = '#7DBE5C'; ctx.fillRect(0, gy, w, 9);
+
+    // The fruit. Interpolated between the last two fixed steps, which is what keeps it smooth
+    // on a display whose refresh does not divide into 120.
+    const y = g.prevY + (g.y - g.prevY) * alpha;
+    const rot = g.prevRot + (g.rot - g.prevRot) * alpha;
+    ctx.save();
+    ctx.translate(FLAP.BIRD_X, y);
+    ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(0,0,0,.16)';
+    ctx.beginPath(); ctx.ellipse(2, 4, FLAP.BIRD_R, FLAP.BIRD_R * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+    const body = ctx.createLinearGradient(-FLAP.BIRD_R, -FLAP.BIRD_R, FLAP.BIRD_R, FLAP.BIRD_R);
+    body.addColorStop(0, '#FF9F45'); body.addColorStop(1, '#FF5E3A');
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(0, 0, FLAP.BIRD_R, 0, Math.PI * 2); ctx.fill();
+    // A leaf, so it is a fruit rather than a ball.
+    ctx.fillStyle = '#48C774';
+    ctx.beginPath(); ctx.ellipse(3, -FLAP.BIRD_R - 1, 7, 4, -0.5, 0, Math.PI * 2); ctx.fill();
+    // A wing that beats with the climb.
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    const beat = Math.sin(g.scroll / 5) * 3;
+    ctx.beginPath(); ctx.ellipse(-4, 2 + beat, 8, 5, 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#22242A';
+    ctx.beginPath(); ctx.arc(7, -4, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // The feathers.
+    for (const f of g.puffs) {
+      ctx.fillStyle = 'rgba(255,236,214,' + Math.max(0, Math.min(1, f.life)).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // The hit flash.
+    if (g.flash > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,' + (g.flash * 0.75).toFixed(3) + ')';
+      ctx.fillRect(0, 0, w, FLAP.H);
+      g.flash = Math.max(0, g.flash - 0.06);
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  };
+
+  // ── The loop ──────────────────────────────────────────────────
+  const frame = (now) => {
+    if (flapGame !== g) return;         // a newer run, or the app was left
+    g.raf = requestAnimationFrame(frame);
+
+    if (!g.last) g.last = now;
+    // Clamped: a tab that was throttled comes back with a second of owed time, and running a
+    // hundred and twenty steps at once would teleport the bird through a pipe.
+    let elapsed = Math.min(0.25, (now - g.last) / 1000);
+    g.last = now;
+
+    g.carry += elapsed;
+    let guard = 0;
+    while (g.carry >= FLAP.STEP && guard < 60) { step(); g.carry -= FLAP.STEP; guard += 1; }
+
+    draw(g.carry / FLAP.STEP);
+    if (hud) {
+      hud.textContent = String(g.score);
+      // A bump on the frame a gate is cleared. Written on the element rather than as a CSS
+      // class toggle, because a class that has to be removed and re-added to restart an
+      // animation is the thing that silently stops firing on a fast run.
+      hud.style.transform = g.pop > 0 ? 'scale(' + (1 + g.pop * 0.22).toFixed(3) + ')' : '';
+    }
+  };
+
+  g.resize = () => { size = fit(); };
+  g.flap = flap;
+  g.reset = reset;
+  reset();
+  g.raf = requestAnimationFrame(frame);
+  return g;
+}
+
+/// The medal, drawn rather than shipped as an image: four coloured discs are not worth a file
+/// each, and an SVG here cannot go missing from a `files` block.
+function flapMedalHtml(m) {
+  return '<span class="amedal" style="--ring:' + esc(m.ring) + ';--face:' + esc(m.face) + '">' +
+      svg('star') +
+    '</span>' +
+    '<span class="amedalname">' + esc(L('ph.flap_medal_' + m.key)) + '</span>';
+}
+
+/// One row of the board.
+function flapRow(r) {
+  return '<div class="arow' + (r.mine ? ' mine' : '') + '">' +
+    '<span class="arank' + (r.rank <= 3 ? ' top' + r.rank : '') + '">' + r.rank + '</span>' +
+    '<span class="aname">' + esc(r.nick || L('ph.flap_unnamed')) + '</span>' +
+    '<span class="ascore">' + esc(String(r.score)) + '</span>' +
+  '</div>';
+}
+
+function flapNickSheet(current, lim, then) {
+  sheet(L('ph.flap_nick'),
+    UI.field('flapnick', L('ph.flap_nick_ph'), current || '',
+             'maxlength="' + (lim.nickMax || 12) + '"') +
+    '<div class="groupfoot">' + esc(L('ph.flap_nick_hint')) + '</div>' +
+    UI.button(L('ph.save'), 'flapnickgo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      byId('flapnickgo').addEventListener('click', async () => {
+        const r = await post('arcadeNick', { game: 'flappy', nick: byId('flapnick').value });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        then(r.nick);
+      });
+    });
+}
+
+RENDER.flappy = async () => {
+  beginView();
+  setNav(L('app.flappy'), null);
+  loading();
+  const d = await post('app', { app: 'flappy' });
+  if (!openApp || openApp.id !== 'flappy') return;
+  if (!d || !d.ok) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'sparkles')); return; }
+  flapData = d;
+  const lim = d.limits || {};
+
+  const tabs = '<div class="seg">' +
+    [['play', 'ph.flap_play'], ['board', 'ph.flap_board']]
+      .map(([k, key]) => '<button class="' + (flapTab === k ? 'on' : '') + '" data-tab="' + k + '">' +
+        esc(L(key)) + '</button>').join('') + '</div>';
+
+  if (flapTab === 'board') {
+    flapStop();
+    // **The parentheses are the fix, and their absence was the bug.**
+    //
+    // `'<div>' + list.length ? a : b` does not mean what it looks like: `+` binds tighter than
+    // `?:`, so the condition tested was the STRING `'<div class="aboard">3'` - always truthy.
+    // The empty branch was unreachable, and the `'</div>'` that followed it belonged to that
+    // branch too, so it never appeared. The markup came out unclosed, the tab bar was swallowed
+    // into it, and there was no way back to the game from the board.
+    body(tabs +
+      '<div class="aboard">' +
+        ((d.board || []).length
+          ? '<div class="alist">' + (d.board || []).map(flapRow).join('') + '</div>'
+          : UI.empty(L('ph.flap_board_empty'), 'sparkles')) +
+      '</div>' +
+      (d.best > 0 && d.rank
+        ? '<div class="groupfoot">' +
+            esc(L('ph.flap_your_rank').replace('{n}', String(d.rank))
+                                     .replace('{s}', String(d.best))) + '</div>'
+        : ''));
+  } else {
+    body(tabs +
+      '<div class="astage">' +
+        '<canvas class="acanvas" id="flapcanvas"></canvas>' +
+        '<div class="ahud" id="flaphud">0</div>' +
+        '<div class="aover" id="flapover">' +
+          '<div class="aovercard">' +
+            '<b id="flaptitle">' + esc(L('ph.flap_ready')) + '</b>' +
+            '<span id="flapsay">' + esc(L('ph.flap_tap')) + '</span>' +
+            '<div class="amedalbox" id="flapmedal"></div>' +
+            '<div class="abest">' + esc(L('ph.flap_best')) + ' <b id="flapbest">' +
+              esc(String(d.best || 0)) + '</b></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="afoot">' +
+        '<button class="achip" id="flapwho">' + svg('contacts') +
+          '<span id="flapnickshow">' + esc(d.nick || L('ph.flap_set_nick')) + '</span></button>' +
+      '</div>');
+  }
+
+  rows('.seg button[data-tab]', (b) => b.addEventListener('click', () => {
+    flapTab = b.dataset.tab;
+    RENDER.flappy();
+  }));
+
+  if (flapTab !== 'play') return;
+
+  const canvas = byId('flapcanvas');
+  const over = byId('flapover');
+  // What the last run ended as, filled in the moment it ends and read when the fruit lands.
+  // The two are separate on purpose: the score is final at the instant of impact and the
+  // server can be told straight away, so the round trip happens DURING the tumble instead of
+  // after it - by the time the card is due, the answer is usually already here.
+  let ending = null;
+
+  const game = flapStart(canvas, byId('flaphud'), async (score, ms) => {
+    ending = { score, title: L('ph.flap_over'),
+               say: L('ph.flap_scored').replace('{n}', String(score)), medal: flapMedal(score) };
+    paintOver();
+
+    const r = await post('arcadeScore', { game: 'flappy', score, ms, nick: flapData.nick || '' });
+    if (!r || !r.ok) {
+      // The run still happened. A refused score says so rather than pretending it was zero.
+      ending.say = L('ph.err_' + ((r && r.error) || 'x'));
+      paintOver();
+      return;
+    }
+    flapData.best = r.best;
+    flapData.board = r.board;
+    flapData.rank = r.rank;
+    ending.best = r.best;
+    if (r.beaten) { ending.title = L('ph.flap_newbest'); ending.beaten = true; }
+    paintOver();
+  });
+
+  /// Drawn twice: once when the run ends, once when the answer comes back. Idempotent, so it
+  /// does not matter which order they land in - and it draws nothing until the fruit is down.
+  function paintOver() {
+    if (!ending || !game || game.state !== 'dead') return;
+    const el = byId('flapover');
+    if (!el) return;
+    byId('flaptitle').textContent = ending.title;
+    byId('flapsay').textContent = ending.say;
+    if (ending.best !== undefined) byId('flapbest').textContent = String(ending.best);
+    const slot = byId('flapmedal');
+    if (slot) {
+      slot.innerHTML = ending.medal ? flapMedalHtml(ending.medal) : '';
+      slot.classList.toggle('on', !!ending.medal);
+    }
+    if (!el.classList.contains('on')) {
+      el.classList.add('on');
+      if (ending.beaten) ui('success');
+    }
+  }
+
+  // The fruit has landed. Whatever the server has said by now goes on the card.
+  game.onDown = () => paintOver();
+
+  // Tap, click, or the space bar. All three do the one thing this game has.
+  const hit = (e) => {
+    e.preventDefault();
+    // Nothing at all while it is still coming down: a tap during the tumble used to restart
+    // the run before the player had seen what they scored.
+    if (game.state === 'falling') return;
+    if (game.state === 'dead') {
+      over.classList.remove('on');
+      byId('flaphud').textContent = '0';
+      ending = null;
+      game.reset();
+      return;
+    }
+    over.classList.remove('on');
+    game.flap();
+  };
+  canvas.addEventListener('pointerdown', hit);
+  over.addEventListener('pointerdown', hit);
+
+  // Scoped to the app: a space bar that flapped a bird while somebody was typing a message
+  // would be a bug in a different app.
+  const key = (e) => {
+    if (!openApp || openApp.id !== 'flappy' || flapTab !== 'play') return;
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (isTyping()) return;
+    hit(e);
+  };
+  document.addEventListener('keydown', key);
+  game.onGone = () => document.removeEventListener('keydown', key);
+
+  if (byId('flapwho')) byId('flapwho').addEventListener('click', () =>
+    flapNickSheet(flapData.nick, lim, (nick) => {
+      flapData.nick = nick;
+      byId('flapnickshow').textContent = nick;
+    }));
+
+  window.addEventListener('resize', game.resize);
+};
+
+// ══ Fruitee ════════════════════════════════════════════════════
+// A page you can give money to: a name, a picture, a few lines about what it is for, and a
+// target. Free and on every phone from the start, because a fundraiser behind a paywall is a
+// fundraiser nobody reaches.
+//
+// Three screens and no more: what other people are raising for, your own page, and what you
+// have given. Everything else in the app is a sheet raised from one of those.
+
+let fundData = null;
+let fundTab = 'discover';
+// Captured fresh after the photo picker, like every other sheet in this phone: the picker
+// takes the sheet away and gives it back, and a number written down before that is a number
+// about a sheet that is no longer on screen.
+let fundEpoch = 0;
+
+/// The bar. It is the whole point of a page with a target, so it says its two numbers rather
+/// than only drawing a proportion nobody can read a value off.
+function fundBar(page) {
+  const raised = Math.max(0, Number(page.raised) || 0);
+  const goal = Math.max(0, Number(page.goal) || 0);
+  if (!goal) {
+    return '<div class="fundraised"><b>' + esc(money(raised)) + '</b>' +
+      '<span>' + esc(L('ph.fund_raised')) + '</span></div>';
+  }
+  const pct = Math.max(0, Math.min(100, Math.round((raised / goal) * 100)));
+  return '<div class="fundgoal">' +
+      '<div class="fundbar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="fundnums">' +
+        '<b>' + esc(money(raised)) + '</b>' +
+        '<span>' + esc(L('ph.fund_of').replace('{n}', money(goal))) + '</span>' +
+        '<em>' + pct + '%</em>' +
+      '</div>' +
+    '</div>';
+}
+
+/// What is taken off a gift, named and itemised.
+///
+/// Two cuts, and the app says WHOSE each one is rather than printing a single total nobody can
+/// account for. Shown on both sides: to the giver before they give, and to the owner on their
+/// own page - the same numbers, so neither side can be surprised by the other's.
+///
+/// `amount` renders the money as well as the rate, which is the part that makes it real: five
+/// percent is an idea, and "$5 of your $100" is a decision.
+function fundCuts(lim, amount) {
+  const cuts = (lim && lim.taxes) || [];
+  if (!cuts.length) return '';
+  const gross = Math.max(0, Math.floor(Number(amount) || 0));
+  let taken = 0;
+  const lines = cuts.map((c) => {
+    const cut = gross ? Math.floor((gross * c.percent) / 100) : 0;
+    taken += cut;
+    return '<div class="fundcut">' +
+        '<span>' + esc(L('ph.fund_tax_' + c.key)) + '</span>' +
+        '<i>' + esc(String(c.percent)) + '%</i>' +
+        (gross ? '<b>-' + esc(money(cut)) + '</b>' : '') +
+      '</div>';
+  }).join('');
+  return '<div class="fundcuts">' + lines +
+    (gross
+      ? '<div class="fundcut total"><span>' + esc(L('ph.fund_page_gets')) + '</span>' +
+          '<b>' + esc(money(Math.max(0, gross - taken))) + '</b></div>'
+      : '') +
+  '</div>';
+}
+
+/// A page in the browse list.
+function fundCard(page) {
+  return '<button class="fundcard" type="button" data-slug="' + esc(page.slug) + '">' +
+    '<span class="fundcover"' +
+      (page.cover ? ' style="' + inlineBackground(page.cover) + '"' : '') + '>' +
+      '<span class="fundchip">' + esc(L('ph.fund_cat_' + page.category)) + '</span>' +
+    '</span>' +
+    '<span class="fundbody">' +
+      '<span class="fundtitle">' + esc(page.title) + '</span>' +
+      (page.owner ? '<span class="fundowner">' + esc(page.owner) + '</span>' : '') +
+      fundBar(page) +
+      '<span class="fundgifts">' +
+        esc(L('ph.fund_gifts').replace('{n}', String(page.gifts || 0))) + '</span>' +
+    '</span>' +
+  '</button>';
+}
+
+/// One page, opened. Everything a giver needs to decide, and the button.
+async function fundOpenPage(slug) {
+  const r = await post('fundPage', { slug });
+  if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+  const page = r.page;
+  const lim = r.limits || {};
+
+  sheet(page.title,
+    (page.cover
+      ? '<div class="fundhero" style="' + inlineBackground(page.cover) + '"></div>' : '') +
+    '<div class="fundhead">' +
+      (page.avatar
+        ? '<span class="fundface" style="' + inlineBackground(page.avatar) + '"></span>' : '') +
+      '<span class="fundwho">' +
+        '<b>' + esc(page.title) + '</b>' +
+        (page.owner ? '<i>' + esc(page.owner) + '</i>' : '') +
+      '</span>' +
+      '<span class="fundchip solo">' + esc(L('ph.fund_cat_' + page.category)) + '</span>' +
+    '</div>' +
+    fundBar(page) +
+    (page.blurb ? '<div class="fundblurb">' + esc(page.blurb) + '</div>' : '') +
+    (page.closed
+      ? '<div class="groupfoot">' + esc(L('ph.fund_is_closed')) + '</div>'
+      : (page.mine
+          // Your own page, from the outside. No button: giving to yourself is refused on the
+          // server, and a button that always fails is worse than no button.
+          ? '<div class="groupfoot">' + esc(L('ph.fund_your_own')) + '</div>'
+          : UI.button(L('ph.fund_give'), 'fundgive', 'tinted'))) +
+    (r.supporters && r.supporters.length
+      ? '<div class="grouphead">' + esc(L('ph.fund_supporters')) + '</div>' +
+        '<div class="fundlist">' + r.supporters.map(fundGiftRow).join('') + '</div>'
+      : '<div class="groupfoot">' + esc(L('ph.fund_be_first')) + '</div>'),
+    () => {
+      const give = byId('fundgive');
+      if (give) give.addEventListener('click', () => fundGiveSheet(page, lim));
+    });
+}
+
+/// One gift, in a list. An anonymous one has no name to show, not a name it is hiding.
+function fundGiftRow(g) {
+  return '<article class="fundgift">' +
+    '<header>' +
+      '<b>' + esc(g.anon ? L('ph.fund_anon') : (g.name || L('ph.fund_someone'))) + '</b>' +
+      '<span>' + esc(money(g.amount)) + '</span>' +
+      (g.ts ? '<time>' + esc(txWhen({ ts: g.ts })) + '</time>' : '') +
+    '</header>' +
+    (g.body ? '<p>' + esc(g.body) + '</p>' : '') +
+  '</article>';
+}
+
+/// Giving. The tiers are buttons, and there is always a field beside them: a suggested amount
+/// that cannot be ignored is not a suggestion.
+function fundGiveSheet(page, lim) {
+  let amount = (page.tiers && page.tiers[0] && page.tiers[0].amount) || lim.minGift || 1;
+  let anon = false;
+
+  const tiers = () => (page.tiers || []).map((t) =>
+    '<button class="fundtier' + (t.amount === amount ? ' on' : '') +
+      '" data-a="' + t.amount + '" type="button">' +
+      '<b>' + esc(money(t.amount)) + '</b>' +
+      (t.label ? '<small>' + esc(t.label) + '</small>' : '') +
+    '</button>').join('');
+
+  sheet(L('ph.fund_give_to').replace('{n}', page.title),
+    ((page.tiers || []).length
+      ? '<div class="fundtiers" id="fundtiers">' + tiers() + '</div>' : '') +
+    UI.field('fundamt', L('ph.fund_amount'), String(amount),
+             'inputmode="numeric" maxlength="9"') +
+    (page.msgs
+      ? UI.field('fundmsg', L('ph.fund_message'), '', 'maxlength="200"') : '') +
+    (page.anon
+      ? UI.group([UI.row({ icon: 'lockshut', tint: '#8E8E93', title: L('ph.fund_anonymous'),
+                           subtitle: L('ph.fund_anon_hint'), toggle: false,
+                           data: { t: 'anon' } })]) : '') +
+    '<div id="fundcutbox">' + fundCuts(lim, amount) + '</div>' +
+    UI.button(L('ph.fund_confirm'), 'fundgo', 'tinted') +
+    '<div class="groupfoot">' +
+      esc(L('ph.fund_bounds').replace('{min}', money(lim.minGift || 1))
+                            .replace('{max}', money(lim.maxGift || 0))) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      // The split is redrawn whenever the amount moves, because a percentage of nothing is
+      // not what somebody is deciding about.
+      const redrawCuts = () => {
+        const box = byId('fundcutbox');
+        if (box) box.innerHTML = fundCuts(lim, amount);
+      };
+      const wireTiers = () => qrows('sheet', '.fundtier', (b) =>
+        b.addEventListener('click', () => {
+          amount = Number(b.dataset.a) || amount;
+          byId('fundamt').value = String(amount);
+          byId('fundtiers').innerHTML = tiers();
+          wireTiers();
+          redrawCuts();
+          ui('toggleon');
+        }));
+      wireTiers();
+
+      // Typing an amount clears the chosen tier, because it is no longer the chosen amount.
+      const field = byId('fundamt');
+      field.addEventListener('input', () => {
+        amount = Math.max(0, Math.floor(Number(field.value) || 0));
+        if (byId('fundtiers')) byId('fundtiers').innerHTML = tiers();
+        wireTiers();
+        redrawCuts();
+      });
+
+      qrows('sheet', '[data-t="anon"]', (b) => b.addEventListener('click', () => {
+        anon = !anon;
+        b.classList.toggle('on', anon);
+        b.querySelector('.sw').classList.toggle('on', anon);
+        b.setAttribute('aria-checked', anon ? 'true' : 'false');
+        ui(anon ? 'toggleon' : 'toggleoff');
+      }));
+
+      byId('fundgo').addEventListener('click', async () => {
+        const go = byId('fundgo');
+        if (go.disabled) return;
+        go.disabled = true;
+        const msg = byId('fundmsg');
+        const r = await post('fundGive', {
+          slug: page.slug,
+          amount: Math.floor(Number(byId('fundamt').value) || 0),
+          body: msg ? msg.value : '',
+          anon,
+        });
+        if (!r || !r.ok) {
+          go.disabled = false;
+          toast(L('ph.err_' + ((r && r.error) || 'x')));
+          return;
+        }
+        if (!closeSheet(false, epoch)) return;
+        ui('success');
+        toast(L('ph.fund_thanks'));
+        RENDER.fruitee();
+      });
+    });
+}
+
+// ── The owner's side ───────────────────────────────────────────
+
+/// Create the page, or change it. One form either way: there is nothing about editing a page
+/// that is a different question from making one.
+function fundEditor(page, lim) {
+  const p = page || {};
+  const cats = lim.categories || ['other'];
+  let category = p.category || cats[0];
+  let tiers = (p.tiers || []).slice();
+
+  const tierRows = () => tiers.map((t, i) =>
+    '<div class="fundtieredit">' +
+      '<input class="field" data-ti="' + i + '" data-k="amount" inputmode="numeric" ' +
+        'value="' + esc(String(t.amount)) + '" aria-label="' + esc(L('ph.fund_amount')) + '" />' +
+      '<input class="field" data-ti="' + i + '" data-k="label" maxlength="32" ' +
+        'value="' + esc(t.label || '') + '" placeholder="' + esc(L('ph.fund_tier_label')) + '" ' +
+        'aria-label="' + esc(L('ph.fund_tier_label')) + '" />' +
+      '<button class="fundtierdel" data-del="' + i + '" type="button" ' +
+        'aria-label="' + esc(L('ph.delete')) + '">' + svg('trash') + '</button>' +
+    '</div>').join('');
+
+  sheet(L(page ? 'ph.fund_edit' : 'ph.fund_create'),
+    UI.field('fundtitle', L('ph.fund_title'), p.title || '', 'maxlength="60"') +
+    UI.field('fundslug', L('ph.fund_slug'), p.slug || '', 'maxlength="24"') +
+    '<div class="groupfoot" id="fundslugsay">' + esc(L('ph.fund_slug_hint')) + '</div>' +
+    UI.field('fundblurb', L('ph.fund_blurb'), p.blurb || '', 'maxlength="400"') +
+
+    '<div class="grouphead">' + esc(L('ph.fund_look')) + '</div>' +
+    UI.field('fundcover', L('ph.fund_cover'), p.cover || '', 'maxlength="300"') +
+    UI.button(L('ph.fund_pick_cover'), 'fundcoverpick', 'plain') +
+    UI.field('fundav', L('ph.fund_avatar'), p.avatar || '', 'maxlength="300"') +
+    UI.button(L('ph.fund_pick_avatar'), 'fundavpick', 'plain') +
+
+    '<div class="grouphead">' + esc(L('ph.fund_category')) + '</div>' +
+    '<div class="seg scroll" id="fundcats">' + cats.map((c) =>
+      '<button class="' + (c === category ? 'on' : '') + '" data-c="' + esc(c) + '" type="button">' +
+        esc(L('ph.fund_cat_' + c)) + '</button>').join('') + '</div>' +
+
+    '<div class="grouphead">' + esc(L('ph.fund_goal')) + '</div>' +
+    UI.field('fundgoalamt', L('ph.fund_goal_ph'), String(p.goal || ''),
+             'inputmode="numeric" maxlength="9"') +
+    '<div class="groupfoot">' + esc(L('ph.fund_goal_hint')) + '</div>' +
+
+    (lim.maxTiers > 0
+      ? '<div class="grouphead">' + esc(L('ph.fund_tiers')) + '</div>' +
+        '<div id="fundtierlist">' + tierRows() + '</div>' +
+        UI.button(L('ph.fund_tier_add'), 'fundtieradd', 'plain') +
+        '<div class="groupfoot">' + esc(L('ph.fund_tiers_hint')) + '</div>'
+      : '') +
+
+    UI.group([
+      UI.row({ icon: 'messages', tint: '#0A84FF', title: L('ph.fund_allow_messages'),
+               toggle: p.msgs !== false, data: { t: 'msgs' } }),
+      UI.row({ icon: 'lockshut', tint: '#8E8E93', title: L('ph.fund_allow_anon'),
+               toggle: p.anon !== false, data: { t: 'anon' } }),
+    ]) +
+    UI.button(L('ph.save'), 'fundsave', 'tinted'),
+    () => {
+      fundEpoch = sheetEpoch;
+
+      const wirePick = (fieldId, buttonId) =>
+        byId(buttonId).addEventListener('click', () => pickPhoto((url) => {
+          byId(fieldId).value = url;
+          fundEpoch = sheetEpoch;
+        }));
+      wirePick('fundcover', 'fundcoverpick');
+      wirePick('fundav', 'fundavpick');
+
+      qrows('sheet', '#fundcats button', (b) => b.addEventListener('click', () => {
+        category = b.dataset.c;
+        qrows('sheet', '#fundcats button', (x) => x.classList.toggle('on', x.dataset.c === category));
+      }));
+
+      const readTiers = () => {
+        const host = byId('fundtierlist');
+        if (!host) return;
+        [...host.querySelectorAll('[data-ti]')].forEach((el) => {
+          const i = Number(el.dataset.ti);
+          if (!tiers[i]) return;
+          if (el.dataset.k === 'amount') tiers[i].amount = Math.floor(Number(el.value) || 0);
+          else tiers[i].label = el.value;
+        });
+      };
+      const paintTiers = () => {
+        const host = byId('fundtierlist');
+        if (!host) return;
+        host.innerHTML = tierRows();
+        qrows('sheet', '.fundtierdel', (b) => b.addEventListener('click', () => {
+          readTiers();
+          tiers.splice(Number(b.dataset.del), 1);
+          paintTiers();
+        }));
+      };
+      paintTiers();
+
+      const add = byId('fundtieradd');
+      if (add) add.addEventListener('click', () => {
+        readTiers();
+        if (tiers.length >= (lim.maxTiers || 0)) { toast(L('ph.fund_tiers_full')); return; }
+        tiers.push({ amount: lim.minGift || 1, label: '' });
+        paintTiers();
+      });
+
+      let msgs = p.msgs !== false;
+      let anon = p.anon !== false;
+      const toggleRow = (key, get, set) => qrows('sheet', '[data-t="' + key + '"]', (b) =>
+        b.addEventListener('click', () => {
+          set(!get());
+          b.querySelector('.sw').classList.toggle('on', get());
+          b.setAttribute('aria-checked', get() ? 'true' : 'false');
+          ui(get() ? 'toggleon' : 'toggleoff');
+        }));
+      toggleRow('msgs', () => msgs, (v) => { msgs = v; });
+      toggleRow('anon', () => anon, (v) => { anon = v; });
+
+      // The address, checked while it is typed. It is the one field somebody else can have
+      // taken, and finding that out after writing four hundred characters of blurb is the
+      // worst possible moment to find it out.
+      const slugField = byId('fundslug');
+      let slugTimer = null;
+      slugField.addEventListener('input', () => {
+        clearTimeout(slugTimer);
+        slugTimer = setTimeout(async () => {
+          const r = await post('fundSlug', { slug: slugField.value });
+          const say = byId('fundslugsay');
+          if (!say || !r || !r.ok) return;
+          say.textContent = r.free
+            ? L('ph.fund_slug_free').replace('{n}', r.slug)
+            : L(r.reason === 'short' ? 'ph.fund_slug_short' : 'ph.fund_slug_taken');
+          say.classList.toggle('bad', !r.free);
+        }, 320);
+      });
+
+      byId('fundsave').addEventListener('click', async () => {
+        readTiers();
+        const r = await post('fundSetup', {
+          slug: slugField.value,
+          title: byId('fundtitle').value,
+          blurb: byId('fundblurb').value,
+          cover: byId('fundcover').value,
+          avatar: byId('fundav').value,
+          category,
+          goal: Math.floor(Number(byId('fundgoalamt').value) || 0),
+          tiers, anon, msgs,
+        });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, fundEpoch)) return;
+        ui('success');
+        RENDER.fruitee();
+      });
+    });
+}
+
+RENDER.fruitee = async () => {
+  const epoch = beginView();
+  setNav(L('app.fruitee'), null);
+  loading();
+  const d = await post('app', { app: 'fruitee' });
+  if (!openApp || openApp.id !== 'fruitee') return;
+  if (!d || !d.ok) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'x')), 'heart')); return; }
+  fundData = d;
+  const lim = d.limits || {};
+  const page = d.page;
+
+  const tabs = '<div class="seg">' +
+    [['discover', 'ph.fund_discover'], ['mine', 'ph.fund_mine'], ['given', 'ph.fund_given']]
+      .map(([k, key]) => '<button class="' + (fundTab === k ? 'on' : '') + '" data-tab="' + k + '">' +
+        esc(L(key)) + '</button>').join('') + '</div>';
+
+  let main = '';
+  if (fundTab === 'discover') {
+    main = (d.discover || []).length
+      ? (d.discover || []).map(fundCard).join('')
+      : UI.empty(L('ph.fund_none'), 'heart');
+
+  } else if (fundTab === 'given') {
+    main = (d.given || []).length
+      ? UI.group((d.given || []).map((g) => UI.row({
+          icon: 'heart', tint: '#FF375F',
+          title: g.title, subtitle: g.body || txWhen({ ts: g.at }),
+          value: money(g.amount), mono: true,
+        })), { header: L('ph.fund_given'), footer: L('ph.fund_given_hint') })
+      : UI.empty(L('ph.fund_given_none'), 'heart');
+
+  } else if (!page) {
+    // No page yet. The whole tab is the invitation, because there is nothing else to put on it.
+    main = '<div class="fundstart">' + svg('heart') +
+        '<b>' + esc(L('ph.fund_start_title')) + '</b>' +
+        '<span>' + esc(L('ph.fund_start_body')) + '</span>' +
+      '</div>' +
+      UI.button(L('ph.fund_create'), 'fundnew', 'tinted');
+
+  } else {
+    main =
+      fundCard(page) +
+      UI.group([
+        UI.row({ icon: 'bank', tint: '#30D158', title: L('ph.fund_balance'),
+                 subtitle: L('ph.fund_balance_hint'),
+                 value: money(d.balance || 0), mono: true }),
+      ]) +
+      ((lim.taxes || []).length
+        ? '<div class="grouphead">' + esc(L('ph.fund_whats_taken')) + '</div>' +
+          fundCuts(lim, 0) +
+          '<div class="groupfoot">' +
+            esc(L('ph.fund_cut').replace('{n}', String(lim.taxTotal || 0))) + '</div>'
+        : '') +
+      UI.button(L('ph.fund_withdraw'), 'fundout', 'tinted') +
+      UI.button(L('ph.fund_edit'), 'fundedit', 'plain') +
+      UI.button(L(page.closed ? 'ph.fund_reopen' : 'ph.fund_shut'), 'fundshut', 'plain') +
+      UI.button(L('ph.delete'), 'funddel', 'destructive') +
+      ((d.gifts || []).length
+        ? '<div class="grouphead">' + esc(L('ph.fund_received')) + '</div>' +
+          '<div class="fundlist">' + (d.gifts || []).map(fundGiftRow).join('') + '</div>'
+        : '<div class="groupfoot">' + esc(L('ph.fund_be_first')) + '</div>');
+  }
+
+  body(tabs + '<div class="fundwrap">' + main + '</div>');
+
+  rows('.seg button[data-tab]', (b) => b.addEventListener('click', () => {
+    fundTab = b.dataset.tab;
+    RENDER.fruitee();
+  }));
+  rows('.fundcard', (b) => b.addEventListener('click', () => fundOpenPage(b.dataset.slug)));
+
+  if (byId('fundnew')) byId('fundnew').addEventListener('click', () => fundEditor(null, lim));
+  if (byId('fundedit')) byId('fundedit').addEventListener('click', () => fundEditor(page, lim));
+
+  if (byId('fundout')) byId('fundout').addEventListener('click', async () => {
+    const r = await post('fundPayout', {});
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    ui('success');
+    toast(L('ph.fund_paid').replace('{n}', money(r.amount)));
+    RENDER.fruitee();
+  });
+
+  if (byId('fundshut')) byId('fundshut').addEventListener('click', async () => {
+    const r = await post('fundClose', { closed: !page.closed });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    RENDER.fruitee();
+  });
+
+  if (byId('funddel')) byId('funddel').addEventListener('click', () => {
+    confirmSheet(L('ph.fund_delete_sure'), L('ph.delete'), async () => {
+      const r = await post('fundDelete', {});
+      if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+      RENDER.fruitee();
+    });
+  });
+};
+
+// ══ OnlyFruits ═════════════════════════════════════════════════
+// Photographs somebody pays to see: a page, followers, subscriptions and tips.
+//
+// **The lock is not drawn here.** A picture this reader has not paid for arrives with no `image`
+// field at all - the server drops the URL rather than sending it with a flag - so the placeholder
+// below is not hiding anything. That is the whole point: a NUI page is a browser, and a paywall
+// that ships the picture and covers it with CSS is a paywall anybody can walk through with the
+// developer tools. If you are reading this to add a feature, the rule is: never let the page
+// receive a URL it is not allowed to show.
+let fanTab = 'feed';
+let fanData = null;
+
+/// A small round face, from a picture when there is one and an initial when there is not.
+function fanFace(name, photo, cls) {
+  const c = 'fanface ' + (cls || '');
+  return photo
+    ? '<span class="' + c + ' img" style="' + inlineBackground(photo) + '"></span>'
+    : '<span class="' + c + '">' + esc(String(name || '?').slice(0, 1).toUpperCase()) + '</span>';
+}
+
+/// What this picture costs, said once and in one place.
+///
+/// A pill rather than a line of text: on a card that is mostly photograph, the price has to be
+/// findable without reading, and three states - free, a price, subscribers only - have to be
+/// told apart at a glance rather than by their wording.
+function fanPricePill(o) {
+  if (o.subsOnly) {
+    return '<span class="fanpill subs">' + svg('star') + esc(L('ph.fan_subscribers')) + '</span>';
+  }
+  if (!o.price) return '<span class="fanpill free">' + esc(L('ph.fan_free')) + '</span>';
+  return '<span class="fanpill paid">' + esc(money(o.price)) + '</span>';
+}
+
+function fanCard(o, showBuy) {
+  const locked = !!o.locked;
+  // The locked state is a frame with a lock in it, and it is the same shape as a photograph so
+  // the feed does not jump when one opens. The price sits on the frame, because the question a
+  // locked card has to answer is "how much".
+  const media = locked
+    ? '<div class="fanlock">' + svg('lockshut') + fanPricePill(o) + '</div>'
+    : '<div class="fanshot">' + photoImg(o.image, 'pimg') +
+        (o.price || o.subsOnly ? '<span class="fanmark">' + fanPricePill(o) + '</span>' : '') +
+      '</div>';
+
+  const head = o.handle
+    ? '<button class="fanhead" type="button" data-creator="' + esc(o.handle) + '">' +
+        fanFace(o.name || o.handle, o.avatar) +
+        '<span class="fanwho"><b>' + esc(o.name || o.handle) + '</b>' +
+          '<i>@' + esc(o.handle) + '</i></span>' +
+        (o.ts ? '<span class="fanwhen">' + esc(txWhen({ ts: o.ts })) + '</span>' : '') +
+      '</button>'
+    : (o.ts || o.sold
+        ? '<div class="fanhead plain">' +
+            (o.ts ? '<span class="fanwhen">' + esc(txWhen({ ts: o.ts })) + '</span>' : '') +
+            (o.sold ? '<span class="fansold">' +
+              esc(L('ph.fan_sold').replace('{n}', String(o.sold))) + '</span>' : '') +
+          '</div>'
+        : '');
+
+  return '<article class="fanpost">' + head + media +
+    (o.caption ? '<div class="fancap">' + esc(o.caption) + '</div>' : '') +
+    (locked && showBuy && !o.subsOnly
+      ? '<button class="bigbtn tinted fanbuy" type="button" data-unlock="' + esc(String(o.id)) + '">' +
+          esc(L('ph.fan_unlock')) + ' ' + esc(money(o.price)) + '</button>'
+      : '') +
+    '</article>';
+}
+
+/// Discover is a shelf of people, and people in a photography app are shown as a picture.
+///
+/// It was a list of rows with an initial in a circle - the same thing the contact book draws -
+/// which told a reader nothing about whether they wanted to follow somebody. The tile leads
+/// with their banner, because that is the one thing they chose to represent themselves with.
+function fanTile(c) {
+  return '<button class="fantile" type="button" data-creator="' + esc(c.handle) + '">' +
+    '<span class="fantilecover"' +
+      (c.cover || c.avatar ? ' style="' + inlineBackground(c.cover || c.avatar) + '"' : '') +
+      '></span>' +
+    fanFace(c.name || c.handle, c.avatar, 'big') +
+    '<span class="fantilename">' + esc(c.name || c.handle) + '</span>' +
+    '<span class="fantilesub">@' + esc(c.handle) + '</span>' +
+    '<span class="fantilemeta">' +
+      '<span>' + esc(String(c.followers || 0)) + ' ' + esc(L('ph.fan_followers')) + '</span>' +
+      (c.subPrice ? '<span class="fanpill paid">' + esc(money(c.subPrice)) + '</span>' : '') +
+    '</span>' +
+  '</button>';
+}
+
+/// The three numbers, side by side, the way a profile shows them.
+function fanStats(c) {
+  const one = (n, label) => '<span class="fanstat"><b>' + esc(String(n)) + '</b>' +
+    '<i>' + esc(L(label)) + '</i></span>';
+  return '<div class="fanstats">' + one(c.followers, 'ph.fan_followers') +
+    one(c.subscribers, 'ph.fan_subscribers') + one(c.posts, 'ph.fan_posts') + '</div>';
+}
+
+/// The banner, the face over it, the name and the bio.
+///
+/// The cover was stored, sent to the page and drawn nowhere - a field somebody fills in during
+/// sign-up and never sees again. This is where it goes, and it is what makes a creator page look
+/// like a page rather than a form.
+function fanProfileHead(c) {
+  return '<header class="fanprofile">' +
+    '<span class="fancover"' + (c.cover ? ' style="' + inlineBackground(c.cover) + '"' : '') + '></span>' +
+    fanFace(c.name || c.handle, c.avatar, 'huge') +
+    '<h2>' + esc(c.name || c.handle) + '</h2>' +
+    '<p class="fanat">@' + esc(c.handle) + '</p>' +
+    (c.bio ? '<p class="fanbio">' + esc(c.bio) + '</p>' : '') +
+    fanStats(c) +
+  '</header>';
+}
+
+RENDER.onlyfruits = async () => {
+  loading();
+  const d = await post('app', { app: 'onlyfruits' });
+  if (!d || d.error) { body(UI.empty(L('ph.err_' + ((d && d.error) || 'off')), 'sparkles')); return; }
+  fanData = d;
+  const lim = d.limits || {};
+
+  const tabs = '<div class="seg">' +
+    [['feed', 'ph.fan_feed'], ['discover', 'ph.fan_discover'], ['me', 'ph.fan_me']]
+      .map(([k, key]) => '<button class="' + (fanTab === k ? 'on' : '') + '" data-tab="' + k + '">' +
+        esc(L(key)) + '</button>').join('') + '</div>';
+
+  let main = '';
+  if (fanTab === 'feed') {
+    main = (d.feed || []).length
+      ? (d.feed || []).map((o) => fanCard(o, true)).join('')
+      : UI.empty(L('ph.fan_empty_feed'), 'sparkles');
+
+  } else if (fanTab === 'discover') {
+    main = (d.discover || []).length
+      ? '<div class="fangrid">' + (d.discover || []).map(fanTile).join('') + '</div>'
+      : UI.empty(L('ph.fan_empty_disc'), 'sparkles');
+
+  } else if (!d.me) {
+    // No page yet. The sign-up is its own screen and its own flow, so the tabs go: somebody
+    // who has not joined has nothing to switch between.
+    fanSignup();
+    return;
+
+  } else {
+    const me = d.me;
+    main =
+      fanProfileHead(me) +
+      // The balance is the number a creator opens this tab for, so it is the number that is
+      // large. The stats above are context; this is the point.
+      '<div class="fanbalance"><span>' + esc(L('ph.fan_balance')) + '</span>' +
+        '<b>' + esc(money(d.balance || 0)) + '</b></div>' +
+      UI.button(L('ph.fan_new'), 'fannew', 'tinted') +
+      ((d.balance || 0) > 0 ? UI.button(L('ph.fan_payout'), 'fanout', 'plain') : '') +
+      UI.button(L('ph.fan_edit'), 'fanedit', 'plain') +
+      ((d.earnings || []).length
+        ? UI.group((d.earnings || []).map((t) => UI.row({
+            icon: t.kind === 'payout' ? 'bank' : 'star',
+            title: L('ph.fan_kind_' + t.kind),
+            // `txWhen` is the bank's, and it already understands a bare `ts` in seconds.
+            // A second date formatter would be a second place to get the unit wrong.
+            subtitle: txWhen(t),
+            value: (t.amount >= 0 ? '+' : '') + money(t.amount),
+            tone: t.amount >= 0 ? 'pos' : 'neg', mono: true,
+          })), { header: L('ph.fan_history'),
+                 footer: lim.fee > 0 ? L('ph.fan_fee') + ' ' + lim.fee + '%' : '' })
+        : UI.empty(L('ph.fan_no_earnings'), 'bank')) +
+      ((d.posts || []).length ? (d.posts || []).map((o) => fanCard(o, false)).join('') : '');
+  }
+
+  body(tabs + '<div class="fanbody">' + main + '</div>');
+
+  rows('.seg [data-tab]', (b) => b.addEventListener('click', () => {
+    fanTab = b.dataset.tab; RENDER.onlyfruits();
+  }));
+  rows('[data-creator]', (b) => b.addEventListener('click', () => fanCreator(b.dataset.creator)));
+  rows('[data-unlock]', (b) => b.addEventListener('click', () => fanUnlock(b.dataset.unlock, b)));
+  if (byId('fannew')) byId('fannew').addEventListener('click', fanNewPost);
+  if (byId('fanedit')) byId('fanedit').addEventListener('click', () => fanEdit(fanData.me));
+  if (byId('fanout')) byId('fanout').addEventListener('click', fanPayout);
+};
+
+/// A picture field. The gallery is the ONLY way to fill it.
+///
+/// There is no link box, on purpose. This app SELLS photographs, and a box somebody can paste a
+/// URL into is a box somebody pastes somebody else's photograph into. The server refuses
+/// anything the phone's own camera did not take, so a link box would be a field that always
+/// fails - which is worse than no field at all, because it looks like it should work.
+///
+/// The value rides in a hidden input, so every caller still reads `byId(id).value` and nothing
+/// else had to change.
+function fanPhotoField(id, label, value) {
+  return '<input type="hidden" id="' + id + '" value="' + esc(value || '') + '" />' +
+    '<div class="fanpickrow">' +
+      '<button class="fanchip" id="' + id + 'pick" type="button">' + svg('images') +
+        '<span>' + esc(L('ph.fan_pick')) + '</span></button>' +
+      '<button class="fanchip' + (value ? '' : ' hidden') + '" id="' + id + 'clear" type="button">' +
+        '<span>' + esc(L('ph.fan_clear')) + '</span></button>' +
+    '</div>' +
+    '<div class="fanprev' + (value ? ' on' : '') + '" id="' + id + 'prev"' +
+      (value ? ' style="' + inlineBackground(value) + '"' : '') + '></div>' +
+    '<div class="groupfoot">' + esc(L('ph.fan_ingame_only')) + '</div>';
+}
+
+/// `afterPick` runs once a photograph has been chosen and the composer has been put back.
+///
+/// It exists because `pickPhoto` DETACHES the sheet it was raised from and restores it, and
+/// restoring bumps `sheetEpoch`. Anything holding an epoch from before the picker is holding a
+/// stale one, and `closeSheet(false, stale)` quietly refuses - so the save would go through, the
+/// sheet would stay open and nothing would refresh. From the outside that is "publishing does
+/// not work", which is exactly how it was reported.
+function fanWirePhotoField(id, afterPick) {
+  const field = byId(id);
+  const prev = byId(id + 'prev');
+  const paint = () => {
+    if (!prev) return;
+    const v = (field.value || '').trim();
+    setBackground(prev, v);
+    prev.classList.toggle('on', !!v);
+    // The clear button is written once and shown or hidden, rather than drawn into the markup
+    // only when there is something to clear - at markup time nothing has been picked yet.
+    const clear = byId(id + 'clear');
+    if (clear) clear.classList.toggle('hidden', !v);
+  };
+  paint();
+  const pick = byId(id + 'pick');
+  if (pick) pick.addEventListener('click', () => pickPhoto((url) => {
+    field.value = url;
+    paint();
+    if (afterPick) afterPick();
+  }));
+  const clear = byId(id + 'clear');
+  if (clear) clear.addEventListener('click', () => { field.value = ''; paint(); });
+}
+
+/// The page form, used from the edit button and as the last step of the sign-up.
+function fanSetupForm(me) {
+  const editing = !!(me && me.handle);
+  me = me || {};
+  const lim = (fanData && fanData.limits) || {};
+  // "Create your page" on a page that already exists is the form telling somebody it does not
+  // know who they are. The two words are different because the two situations are.
+  return '<div class="grouphead">' + esc(L(editing ? 'ph.fan_edit' : 'ph.fan_setup')) + '</div>' +
+    UI.field('fh', L('ph.fan_handle'), me.handle || '', 'maxlength="20" autocomplete="off"') +
+    '<div class="fanhint" id="fhsay"></div>' +
+    UI.field('fn', L('ph.fan_name'), me.name || '', 'maxlength="40"') +
+    UI.field('fb', L('ph.fan_bio'), me.bio || '', 'maxlength="200"') +
+    '<div class="grouphead">' + esc(L('ph.fan_avatar')) + '</div>' +
+    fanPhotoField('fa', L('ph.fan_avatar'), me.avatar) +
+    '<div class="grouphead">' + esc(L('ph.fan_cover')) + '</div>' +
+    fanPhotoField('fc', L('ph.fan_cover'), me.cover) +
+    (lim.subscriptions === false ? '' :
+      '<div class="grouphead">' + esc(L('ph.fan_subprice')) + '</div>' +
+      UI.field('fs', L('ph.fan_subprice'), String(me.subPrice || 0),
+               'type="number" inputmode="numeric" min="0" max="' + (lim.maxSubPrice || 10000) + '"') +
+      '<div class="groupfoot">' + esc(L('ph.fan_subprice_hint')) + '</div>') +
+    UI.button(L('ph.save'), 'fansave', 'tinted') +
+    '<div class="groupfoot">' + esc(L('ph.fan_setup_hint')) + '</div>';
+}
+
+/// Say whether a handle is free WHILE it is being typed.
+///
+/// Debounced, because a request per keystroke is a request per keystroke. The answer never
+/// names who holds a taken handle - the server does not send it and nothing here asks.
+function fanWireHandle() {
+  const field = byId('fh');
+  const say = byId('fhsay');
+  if (!field || !say) return;
+  let timer = null;
+  let seq = 0;
+  const check = async () => {
+    const mine = ++seq;
+    const value = field.value.trim();
+    if (!value) { say.textContent = ''; say.className = 'fanhint'; return; }
+    const r = await post('fanHandle', { handle: value });
+    // A slower answer to an older keystroke must not overwrite a newer one.
+    if (mine !== seq || !r || !r.ok) return;
+    say.textContent = r.free ? L('ph.fan_handle_free') : L('ph.fan_handle_' + (r.why || 'taken'));
+    say.className = 'fanhint ' + (r.free ? 'ok' : 'bad');
+  };
+  field.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(check, 320); });
+}
+
+function fanWireSetup(after) {
+  fanWireHandle();
+  // The epoch is re-read whenever the gallery hands the sheet back, because that is when it
+  // changed. `after` closes on this variable rather than on a copy taken at wiring time.
+  fanWirePhotoField('fa', () => { fanEpoch = sheetEpoch; });
+  fanWirePhotoField('fc', () => { fanEpoch = sheetEpoch; });
+  const go = async () => {
+    const r = await post('fanSetup', {
+      handle: byId('fh').value, name: byId('fn').value, bio: byId('fb').value,
+      avatar: byId('fa').value, cover: byId('fc').value,
+      subPrice: byId('fs') ? Math.floor(Number(byId('fs').value) || 0) : 0,
+    });
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    ui('success');
+    toast(L('ph.fan_saved'));
+    if (after) after();
+  };
+  if (byId('fansave')) byId('fansave').addEventListener('click', go);
+}
+
+/// Joining. Three screens rather than one long form.
+///
+/// The first says what the app is and what it will cost you, because an app that takes a cut
+/// should say so before somebody sets a price, not after their first sale. The second is the
+/// form. Nothing is created until the last button.
+function fanSignup() {
+  const lim = (fanData && fanData.limits) || {};
+  const cut = (lim.fee || 0) + (lim.tax || 0);
+
+  body(
+    '<div class="accthead">' + UI.appIcon('onlyfruits') +
+      '<div class="acctname">' + esc(L('app.onlyfruits')) + '</div>' +
+      '<div class="acctsub">' + esc(L('ph.fan_join_sub')) + '</div></div>' +
+    UI.group([
+      UI.row({ icon: 'images', title: L('ph.fan_join_1'), subtitle: L('ph.fan_join_1s') }),
+      UI.row({ icon: 'star', title: L('ph.fan_join_2'), subtitle: L('ph.fan_join_2s') }),
+      UI.row({ icon: 'bank', title: L('ph.fan_join_3'),
+               subtitle: cut > 0 ? L('ph.fan_join_3s').replace('{n}', String(cut))
+                                 : L('ph.fan_join_3free') }) ,
+    ]) +
+    UI.button(L('ph.fan_join_go'), 'fanjoin', 'tinted') +
+    '<div class="groupfoot">' + esc(L('ph.fan_join_foot')) + '</div>'
+  );
+  byId('fanjoin').addEventListener('click', () => {
+    body(fanSetupForm(null));
+    fanWireSetup(() => { fanTab = 'me'; RENDER.onlyfruits(); });
+  });
+}
+
+/// The sheet epoch as it stands NOW, kept in one place because the gallery changes it.
+let fanEpoch = 0;
+
+function fanEdit(me) {
+  sheet(L(me && me.handle ? 'ph.fan_edit' : 'ph.fan_setup'), fanSetupForm(me), () => {
+    fanEpoch = sheetEpoch;
+    fanWireSetup(() => { if (closeSheet(false, fanEpoch)) RENDER.onlyfruits(); });
+  });
+}
+
+function fanNewPost() {
+  if (!fanData || !fanData.me) { toast(L('ph.fan_need_profile')); return; }
+  const lim = (fanData.limits) || {};
+  sheet(L('ph.fan_new'),
+    fanPhotoField('fpi', L('ph.fan_image'), '') +
+    UI.field('fpc', L('ph.fan_caption'), '', 'maxlength="200"') +
+    UI.field('fpp', L('ph.fan_price'), '0',
+             'type="number" inputmode="numeric" min="0" max="' + (lim.maxPrice || 5000) + '"') +
+    '<div class="groupfoot">' + esc(L('ph.fan_price_hint')) + '</div>' +
+    UI.group([UI.row({ icon: 'star', title: L('ph.fan_subsonly'), toggle: false,
+                       data: { subsonly: '1' } })]) +
+    UI.button(L('ph.fan_publish'), 'fpgo', 'tinted'),
+    () => {
+      fanEpoch = sheetEpoch;
+      let subsOnly = false;
+      const toggle = byId('sheet').querySelector('[data-subsonly]');
+      if (toggle) toggle.addEventListener('click', () => {
+        subsOnly = !subsOnly;
+        const sw = toggle.querySelector('.sw');
+        if (sw) sw.classList.toggle('on', subsOnly);
+        toggle.setAttribute('aria-checked', subsOnly ? 'true' : 'false');
+      });
+      // The gallery puts the sheet back, which means a new epoch.
+      fanWirePhotoField('fpi', () => { fanEpoch = sheetEpoch; });
+      byId('fpgo').addEventListener('click', async () => {
+        const go = byId('fpgo');
+        if (go.disabled) return;          // one tap, one picture
+        go.disabled = true;
+        const r = await post('fanPost', {
+          image: byId('fpi').value.trim(),
+          caption: byId('fpc').value.trim(),
+          price: Math.floor(Number(byId('fpp').value) || 0),
+          subsOnly,
+        });
+        if (!r || !r.ok) { go.disabled = false; toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        closeSheet(false, fanEpoch);
+        ui('success');
+        toast(L('ph.fan_published'));
+        RENDER.onlyfruits();
+      });
+    });
+}
+
+async function fanCreator(handle) {
+  const r = await post('fanCreator', { handle });
+  if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+  const c = r.creator;
+  const lim = (fanData && fanData.limits) || {};
+
+  sheet(c.name || ('@' + c.handle),
+    fanProfileHead(c) +
+    (c.me ? '' :
+      UI.button(L(c.following ? 'ph.fan_unfollow' : 'ph.fan_follow'), 'fcfollow', 'plain') +
+      (c.subPrice > 0 && !c.subscribed
+        ? UI.button(L('ph.fan_subscribe') + ' ' + money(c.subPrice), 'fcsub', 'tinted') +
+          '<div class="groupfoot">' +
+            esc(L('ph.fan_sub_hint').replace('{n}', String(lim.subDays || 30))) + '</div>'
+        : (c.subscribed ? '<div class="groupfoot">' + esc(L('ph.fan_subscribed')) + '</div>' : '')) +
+      UI.button(L('ph.fan_tip'), 'fctip', 'plain')) +
+    '<div class="fanbody">' +
+      ((r.posts || []).length ? (r.posts || []).map((o) => fanCard(o, !c.me)).join('')
+                              : UI.empty(L('ph.fan_no_posts'), 'images')) +
+    '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      qrows('sheet', '[data-unlock]', (b) =>
+        b.addEventListener('click', () => fanUnlock(b.dataset.unlock, b)));
+      if (byId('fcfollow')) byId('fcfollow').addEventListener('click', async () => {
+        const res = await post('fanFollow', { handle: c.handle, on: !c.following });
+        if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+        if (closeSheet(false, epoch)) { RENDER.onlyfruits(); fanCreator(c.handle); }
+      });
+      if (byId('fcsub')) byId('fcsub').addEventListener('click', () => {
+        confirmSheet(L('ph.fan_subscribe') + ' ' + money(c.subPrice), L('ph.confirm'), async () => {
+          const res = await post('fanSubscribe', { handle: c.handle });
+          if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+          ui('money');
+          fanCreator(c.handle);
+        });
+      });
+      if (byId('fctip')) byId('fctip').addEventListener('click', () => fanTip(c.handle));
+    });
+}
+
+function fanTip(handle) {
+  const lim = (fanData && fanData.limits) || {};
+  sheet(L('ph.fan_tip'),
+    UI.field('ftv', L('ph.bank_amount'), '',
+             'type="number" inputmode="numeric" min="1" max="' + (lim.maxTip || 10000) + '"') +
+    UI.button(L('ph.confirm'), 'ftgo', 'tinted'),
+    () => {
+      const epoch = sheetEpoch;
+      byId('ftgo').addEventListener('click', async () => {
+        const go = byId('ftgo');
+        if (go.disabled) return;
+        go.disabled = true;
+        const r = await post('fanTip', { handle, amount: Math.floor(Number(byId('ftv').value) || 0) });
+        if (!r || !r.ok) { go.disabled = false; toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        if (!closeSheet(false, epoch)) return;
+        ui('money');
+        toast(L('ph.fan_tip_sent'));
+      });
+    });
+}
+
+/// Buy one picture.
+///
+/// The button is disabled before the request rather than after the answer: a second tap while
+/// the first is in flight is the ordinary way to be charged twice, and the server refusing it
+/// is a safety net rather than the plan.
+async function fanUnlock(id, btn) {
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  const r = await post('fanUnlock', { id: Number(id) });
+  if (!r || !r.ok) {
+    if (btn) btn.disabled = false;
+    toast(L('ph.err_' + ((r && r.error) || 'x')));
+    return;
+  }
+  ui('money');
+  toast(L('ph.fan_unlocked'));
+  // The picture arrives with the answer, so the card can open without another round trip.
+  const card = btn && btn.closest('.fanpost');
+  const lock = card && card.querySelector('.fanlock');
+  if (lock && r.image) {
+    lock.outerHTML = photoImg(r.image, 'pimg');
+    btn.remove();
+  } else {
+    RENDER.onlyfruits();
+  }
+}
+
+function fanPayout() {
+  confirmSheet(L('ph.fan_payout'), L('ph.confirm'), async () => {
+    const r = await post('fanPayout', {});
+    if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+    ui('money');
+    toast(L('ph.fan_paid_out') + ' ' + money(r.amount));
+    RENDER.onlyfruits();
+  });
+}
+
 RENDER.snap = () => needAccount('snap', () => socialRender('snap'));
 RENDER.hush = () => needAccount('hush', () => socialRender('hush'));
 
@@ -14474,11 +19550,29 @@ async function hushSwipe() {
             (pf.distance !== undefined && pf.distance !== null
               ? '<div class="hdist">' + svg('location') +
                 esc(hushDistanceText(pf.distance)) + '</div>' : '') +
+            (pf.job ? '<div class="hjob">' + svg('jobs') + esc(pf.job) + '</div>' : '') +
             (pf.bio ? '<div class="hbio">' + esc(pf.bio) + '</div>' : '') +
+            // What they are here for, and what the two of you have in common. A shared
+            // interest is the single most useful line a dating card can carry, and the
+            // server works it out - the page does not hold the reader's own profile.
+            (pf.looking || (pf.interests && pf.interests.length)
+              ? '<div class="htags">' +
+                (pf.looking ? '<span class="htag look">' +
+                  esc(L('ph.hush_look_' + pf.looking)) + '</span>' : '') +
+                (pf.interests || []).map((k) =>
+                  '<span class="htag' + ((pf.shared || []).indexOf(k) >= 0 ? ' shared' : '') +
+                  '">' + esc(L('ph.hush_tag_' + k)) + '</span>').join('') +
+                '</div>' : '') +
           '</div>' +
         '</div>' +
+        // The conversation starter, under the photograph rather than over it: it is the one
+        // thing on the card somebody wrote themselves, and it is unreadable on an image.
+        (pf.prompt && pf.promptAnswer
+          ? '<div class="hprompt"><b>' + esc(L('ph.hush_ask_' + pf.prompt)) + '</b>' +
+            '<span>' + esc(pf.promptAnswer) + '</span></div>' : '') +
       '</div>' +
     '</div>' +
+    hushLeftBar(r.limits) +
     '<div class="hushrow">' +
       '<button class="hushbtn back" id="hback" type="button" aria-label="' +
         esc(L('ph.hush_rewind')) + '">' + svg('refresh') + '</button>' +
@@ -14497,8 +19591,9 @@ async function hushSwipe() {
   if (photos.length > 1) {
     byId('hphoto').addEventListener('click', () => {
       shot = (shot + 1) % photos.length;
-      const el = byId('hphoto');
-      el.setAttribute('style', inlineBackground(photos[shot]));
+      // `setBackground`, not `setAttribute(inlineBackground(...))`: the second writes an HTML
+      // entity into a CSS property, which parses as nothing and leaves the card blank.
+      setBackground(byId('hphoto'), photos[shot]);
       [...byId('hbars').children].forEach((b, i) => b.classList.toggle('on', i === shot));
     });
   }
@@ -14534,6 +19629,7 @@ async function hushSwipe() {
     }
     setTimeout(() => { if (socialActive('hush', epoch)) hushSwipe(); }, 240);
   };
+  hushWireBuy();
   byId('hno').addEventListener('click', () => choose(false));
   byId('hyes').addEventListener('click', () => choose(true));
   byId('hsuper').addEventListener('click', () => choose(true, true));
@@ -14542,6 +19638,120 @@ async function hushSwipe() {
 
 // "It's a match". A sheet rather than a banner: a banner slides away while somebody is still
 // reading it, and this is the moment the whole app exists for.
+/// How many likes are left today, and the way to buy more.
+///
+/// Drawn under the deck rather than in a banner. The number is the ONLY honest place to sell a
+/// pass: a player who has just been refused knows exactly what they are buying, and one who
+/// has likes left is not being nagged.
+function hushLeftBar(limits) {
+  const lim = limits || {};
+  const left = Math.max(0, Number(lim.likes || 0) - Number(lim.likesUsed || 0));
+  const supers = Math.max(0, Number(lim.supers || 0) - Number(lim.supersUsed || 0));
+  return '<div class="hleft' + (left ? '' : ' out') + '">' +
+    '<span class="hleftn">' + esc(L('ph.hush_left').replace('{n}', String(left))) + '</span>' +
+    (supers ? '<span class="hlefts">' + svg('star') + esc(supers) + '</span>' : '') +
+    (lim.premium
+      ? '<span class="hpro">' + svg('sparkles') + esc(L('ph.hush_pro')) + '</span>'
+      : '<button class="hbuy" id="hbuy" type="button">' + esc(L('ph.hush_get')) + '</button>') +
+    '</div>';
+}
+
+/// Wire the buy button, if the bar drew one. Called after every screen that includes the bar.
+function hushWireBuy() {
+  const b = byId('hbuy');
+  if (b) b.addEventListener('click', () => hushPassSheet());
+}
+
+/// The pass, its price, and what it buys.
+///
+/// **The money leaves on the server or not at all.** This sheet asks; `hushPass` on the server
+/// takes the payment through the bridge and only then writes the expiry, so a refused debit
+/// grants nothing and a page that lies about having paid changes nothing.
+async function hushPassSheet() {
+  const me = await post('social', { op: 'hushMe' });
+  if (!me || !me.ok) { toast(L('ph.err_' + ((me && me.error) || 'x'))); return; }
+  const pass = me.pass;
+  if (!pass) { toast(L('ph.err_off')); return; }
+  const lim = me.limits || {};
+
+  const perk = (icon, text) => UI.row({ icon, tint: '#FF375F', title: text });
+  sheet(L('ph.hush_pro'),
+    '<div class="hprohero">' + svg('sparkles') +
+      '<div class="hproprice">' + esc(money(pass.price)) + '</div>' +
+      '<div class="hprofor">' +
+        esc(L('ph.hush_pro_for').replace('{h}', String(pass.hours))) + '</div>' +
+    '</div>' +
+    UI.group([
+      perk('heart', L('ph.hush_perk_likes').replace('{n}', String(pass.likes))),
+      perk('star', L('ph.hush_perk_super').replace('{n}', String(pass.supers))),
+      ...(pass.seeLikes ? [perk('contacts', L('ph.hush_perk_see'))] : []),
+      ...(pass.rewindLikes ? [perk('refresh', L('ph.hush_perk_rewind'))] : []),
+    ]) +
+    (lim.premium
+      ? '<div class="groupfoot">' + esc(L('ph.hush_pro_extend')) + '</div>'
+      : '') +
+    UI.button(L('ph.hush_buy').replace('{p}', money(pass.price)), 'hprogo') +
+    '<div class="groupfoot">' +
+      esc(L(pass.account === 'cash' ? 'ph.hush_pro_cash' : 'ph.hush_pro_bank')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      byId('hprogo').addEventListener('click', async () => {
+        const r = await post('social', { op: 'hushPass' });
+        if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+        ui('money');
+        if (!closeSheet(false, epoch)) return;
+        toast(L('ph.hush_pro_on'));
+        socialRender('hush');
+      });
+    });
+}
+
+/// Who liked you. Locked without the pass, and locked HONESTLY: the count is real and it is
+/// all the server sent, so there is nothing behind the blur to read out of the payload.
+async function hushLiked() {
+  const epoch = viewEpoch;
+  loading();
+  const r = await post('social', { op: 'hushLikedMe' });
+  if (!socialActive('hush', epoch)) return;
+  if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), 'hush')); return; }
+
+  if (!r.count) { body(UI.empty(L('ph.hush_likes_none'), 'star')); return; }
+
+  if (r.locked) {
+    body('<div class="hlock">' +
+      '<div class="hlockn">' + esc(r.count) + '</div>' +
+      '<div class="hlockt">' + esc(L('ph.hush_likes_locked')
+        .replace('{n}', String(r.count))) + '</div>' +
+      // No faces, no names, no ids - the server sent a number and nothing else, so the blur
+      // is not hiding anything a console could reveal.
+      '<div class="hlockrow">' + [0, 1, 2, 3, 4, 5].map(() =>
+        '<span class="hlockav"></span>').join('') + '</div>' +
+      '<button class="hbuy big" id="hbuy" type="button">' + esc(L('ph.hush_get')) +
+      '</button></div>');
+    hushWireBuy();
+    return;
+  }
+
+  body('<div class="hgrid">' + (r.people || []).map((pn, i) =>
+    '<button class="hgcard" type="button" data-i="' + i + '"' +
+      (pn.photo ? ' style="' + inlineBackground(pn.photo) + '"' : '') + '>' +
+      (pn.super ? '<span class="hgsuper">' + svg('star') + '</span>' : '') +
+      '<span class="hgname">' + esc(pn.name || '?') +
+        (pn.age ? ', ' + esc(pn.age) : '') + '</span>' +
+    '</button>').join('') + '</div>');
+
+  // Tapping one likes them back, which is a match by definition - they already liked you.
+  rows('.hgcard', (el) => el.addEventListener('click', async () => {
+    const pn = (r.people || [])[Number(el.dataset.i)];
+    if (!pn) return;
+    const c = await post('social', { op: 'hushChoice', ref: pn.ref, like: true });
+    if (!c || c.error) { toast(L('ph.err_' + ((c && c.error) || 'x'))); return; }
+    ui('success');
+    if (c.match) { hushMatchSheet(c); return; }
+    hushLiked();
+  }));
+}
+
 function hushMatchSheet(c) {
   sheet(L('ph.hush_match'),
     '<div class="hushmatch">' +
@@ -14621,34 +19831,154 @@ async function hushProfile() {
   const me = await post('social', { op: 'hushMe' });
   if (!socialActive('hush', epoch)) return;
   if (!me || me.error) { body(UI.empty(L('ph.err_' + ((me && me.error) || 'off')), 'hush')); return; }
-  const pf = me.profile || { bio: '', photo: '', active: true };
+  const pf = me.profile || { bio: '', photo: '', active: true, interests: [] };
+  const opt = me.options || {};
+  const lim = me.limits || {};
+
+  // Every choice below is a key from a CLOSED set the SERVER sent, not a list typed out here.
+  // A copy on the page is a copy that drifts: an option the server stopped accepting would go
+  // on being offered, and saving it would silently drop the field.
+  const looking = (opt.looking || []).slice();
+  const tags = (opt.interests || []).slice();
+  const prompts = (opt.prompts || []).slice();
+
+  // Held here and written back on save, so a half-finished edit is not a round trip per tap.
+  let active = pf.active !== false;
+  let gender = pf.gender || '';
+  let seeking = pf.seeking || 'all';
+  let look = pf.looking || '';
+  let prompt = pf.prompt || '';
+  let picked = new Set(pf.interests || []);
+
+  const chips = (list, isOn, prefix, cls) => list.map((k) =>
+    '<button class="hchip' + (isOn(k) ? ' on' : '') + ' ' + cls + '" type="button" data-k="' +
+    esc(k) + '">' + esc(L(prefix + k)) + '</button>').join('');
 
   body(
     '<div class="socprof">' +
       (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
-                : '<span class="socbigav">' + svg('hush') + '</span>') +
+                : '<span class="socbigav">' + svg('heart') + '</span>') +
       '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
+      (lim.premium
+        ? '<div class="hprobadge">' + svg('sparkles') + esc(L('ph.hush_pro')) + '</div>'
+        : '') +
     '</div>' +
+
+    // ── The three photographs ──────────────────────────────────
+    '<div class="grouphead">' + esc(L('ph.hush_photos')) + '</div>' +
+    ['', '2', '3'].map((n, i) =>
+      UI.field('hphoto' + n, L('ph.hush_photo') + (i ? ' ' + (i + 1) : ''),
+        (i === 0 ? pf.photo : i === 1 ? pf.photo2 : pf.photo3) || '', 'maxlength="300"') +
+      UI.button(L('ph.pick_photo'), 'hpick' + n, 'plain')).join('') +
+
+    // ── Who you are ───────────────────────────────────────────
+    '<div class="grouphead">' + esc(L('ph.hush_about')) + '</div>' +
     UI.field('hbio', L('ph.hush_bio'), pf.bio || '', 'maxlength="160"') +
-    UI.field('hphoto', L('ph.hush_photo'), pf.photo || '', 'maxlength="300"') +
-    UI.button(L('ph.pick_photo'), 'hpick', 'plain') +
-    UI.group(UI.row({ icon: 'hush', title: L('ph.hush_active'),
-                      toggle: pf.active !== false, data: { t: 'active' } })) +
+    UI.field('hjob', L('ph.hush_job'), pf.job || '', 'maxlength="40"') +
+    '<div class="hchips" id="hgender">' +
+      chips(['m', 'f', ''], (k) => gender === k, 'ph.hush_g_', 'g') + '</div>' +
+
+    // ── What you are here for ─────────────────────────────────
+    '<div class="grouphead">' + esc(L('ph.hush_looking')) + '</div>' +
+    '<div class="hchips" id="hlook">' +
+      chips(looking, (k) => look === k, 'ph.hush_look_', 'l') + '</div>' +
+
+    // ── What you are into. Six at most, and the count says so. ─
+    '<div class="grouphead">' + esc(L('ph.hush_interests')) + '</div>' +
+    '<div class="hchips" id="htags">' +
+      chips(tags, (k) => picked.has(k), 'ph.hush_tag_', 't') + '</div>' +
+    '<div class="groupfoot" id="htagn">' +
+      esc(L('ph.hush_interests_n').replace('{n}', String(picked.size))) + '</div>' +
+
+    // ── A question, and your answer to it ─────────────────────
+    '<div class="grouphead">' + esc(L('ph.hush_prompt')) + '</div>' +
+    '<div class="hchips" id="hprompts">' +
+      chips(prompts, (k) => prompt === k, 'ph.hush_ask_', 'p') + '</div>' +
+    UI.field('hanswer', L('ph.hush_answer'), pf.promptAnswer || '', 'maxlength="140"') +
+
+    // ── Who you want to see ───────────────────────────────────
+    '<div class="grouphead">' + esc(L('ph.hush_seeking')) + '</div>' +
+    '<div class="hchips" id="hseek">' +
+      chips(['m', 'f', 'all'], (k) => seeking === k, 'ph.hush_s_', 's') + '</div>' +
+    '<div class="hrange">' +
+      UI.field('hmin', L('ph.hush_age_min'), String(pf.minAge || 18),
+        'type="number" min="18" max="99"') +
+      UI.field('hmax', L('ph.hush_age_max'), String(pf.maxAge || 99),
+        'type="number" min="18" max="99"') +
+    '</div>' +
+
+    UI.group(UI.row({ icon: 'heart', title: L('ph.hush_active'),
+                      toggle: active, data: { t: 'active' } })) +
     '<div class="groupfoot">' + esc(L('ph.hush_active_hint')) + '</div>' +
+
+    // The pass, from the profile screen as well as from the deck: this is where somebody looks
+    // when they wonder what Hush can do.
+    UI.group(UI.row({ icon: 'sparkles', tint: '#FF375F',
+      title: L(lim.premium ? 'ph.hush_pro_on' : 'ph.hush_pro'),
+      subtitle: L(lim.premium ? 'ph.hush_pro_active' : 'ph.hush_pro_sub'),
+      chevron: true, data: { t: 'pro' } })) +
+
     UI.button(L('ph.save'), 'hsave')
   );
 
-  let active = pf.active !== false;
-  byId('hpick').addEventListener('click', () => pickPhoto((url) => { byId('hphoto').value = url; }));
+  ['', '2', '3'].forEach((n) => {
+    const b = byId('hpick' + n);
+    if (b) b.addEventListener('click', () => pickPhoto((url) => { byId('hphoto' + n).value = url; }));
+  });
+
+  /// One chip group, where exactly one chip is on. Returns nothing: it writes through the
+  /// setter it is given, which is what keeps the four groups from needing four handlers.
+  const single = (hostId, get, set) => {
+    const host = byId(hostId);
+    if (!host) return;
+    [...host.querySelectorAll('.hchip')].forEach((c) => c.addEventListener('click', () => {
+      set(c.dataset.k);
+      [...host.querySelectorAll('.hchip')].forEach((o) => o.classList.toggle('on', o.dataset.k === get()));
+      ui('toggleon');
+    }));
+  };
+  single('hgender', () => gender, (v) => { gender = v; });
+  single('hseek', () => seeking, (v) => { seeking = v; });
+  // Tapping the chip that is already on clears it: "no answer" has to be reachable, and a
+  // group with no clear option is a group you can never take back.
+  single('hlook', () => look, (v) => { look = (look === v) ? '' : v; });
+  single('hprompts', () => prompt, (v) => { prompt = (prompt === v) ? '' : v; });
+
+  const tagHost = byId('htags');
+  if (tagHost) {
+    [...tagHost.querySelectorAll('.hchip')].forEach((c) => c.addEventListener('click', () => {
+      const k = c.dataset.k;
+      if (picked.has(k)) picked.delete(k);
+      else if (picked.size >= 6) { toast(L('ph.hush_interests_max')); return; }
+      else picked.add(k);
+      c.classList.toggle('on', picked.has(k));
+      byId('htagn').textContent = L('ph.hush_interests_n').replace('{n}', String(picked.size));
+      ui('toggleon');
+    }));
+  }
+
   rows('.row[data-t="active"]', (el) => el.addEventListener('click', () => {
     active = !active;
     const knob = el.querySelector('.sw');
     if (knob) knob.classList.toggle('on', active);
     ui(active ? 'toggleon' : 'toggleoff');
   }));
+  rows('.row[data-t="pro"]', (el) => el.addEventListener('click', () => hushPassSheet()));
+
   byId('hsave').addEventListener('click', async () => {
     const r = await post('social', { op: 'hushSetup',
-      bio: byId('hbio').value, photo: byId('hphoto').value, active });
+      bio: byId('hbio').value,
+      photo: byId('hphoto').value,
+      photo2: byId('hphoto2').value,
+      photo3: byId('hphoto3').value,
+      job: byId('hjob').value,
+      gender, seeking, looking: look,
+      interests: [...picked],
+      prompt,
+      promptAnswer: byId('hanswer').value,
+      minAge: Number(byId('hmin').value) || 18,
+      maxAge: Number(byId('hmax').value) || 99,
+      active });
     if (r && r.ok) { ui('success'); toast(L('ph.saved')); }
     else toast(L('ph.err_' + ((r && r.error) || 'x')));
   });
@@ -14856,6 +20186,15 @@ const TONES = {
   chime:   [[1319, 0, .5], [1568, .12, .5], [2093, .24, .7]],
   pulse:   [[440, 0, .1], [440, .14, .1], [440, .28, .1], [660, .42, .3]],
   radar:   [[523, 0, .22], [659, .22, .22], [784, .44, .22], [1047, .66, .4]],
+  // The soft set. Long overlapping notes on a pentatonic scale, nothing under 500 Hz -
+  // a phone speaker cannot reproduce the low ones and only rattles trying.
+  drift:   [[587, 0, .6], [784, .3, .6], [880, .6, .6], [1175, .9, .9]],
+  still:   [[659, 0, 1.2], [988, .06, 1.2]],
+  cascade: [[1319, 0, .34], [1175, .16, .34], [988, .32, .34], [784, .48, .34],
+            [659, .64, .7]],
+  breeze:  [[1175, 0, .26], [1568, .1, .44]],
+  hush:    [[1568, 0, .34], [784, 0, .3]],
+  soften:  [[1568, 0, .2], [1319, .08, .4]],
   ping:    [[1568, 0, .18], [2093, .07, .22]],
   pop:     [[880, 0, .09], [1320, .05, .12]],
   tick:    [[1200, 0, .05]],
@@ -14935,8 +20274,9 @@ function stopTone() {
 // synthesised score, so a server that deleted the folder still has a phone that rings.
 const SOUND_BASE = 'https://cfx-nui-v-phone/sounds/';
 const SOUND_FILES = {
-  ring: { classic: 1, chime: 1, pulse: 1, radar: 1, signal: 1 },
-  alert: { ping: 1, pop: 1, tick: 1, note: 1 },
+  ring: { classic: 1, chime: 1, pulse: 1, radar: 1, signal: 1,
+          drift: 1, still: 1, cascade: 1 },
+  alert: { ping: 1, pop: 1, tick: 1, note: 1, breeze: 1, hush: 1, soften: 1 },
   ui: { unlock: 1, lock: 1, success: 1, error: 1, shutter: 1, boothkey: 1, boothkeyback: 1,
         alert911: 1 },
 };
@@ -14945,6 +20285,150 @@ let soundsOff = false;   // set once a file has failed, so we stop asking every 
 function soundUrl(kind, name) {
   if (soundsOff || state.soundFiles === false) return null;
   return (SOUND_FILES[kind] || {})[name] ? SOUND_BASE + kind + '_' + name + '.wav' : null;
+}
+
+// ══ The credit row ═════════════════════════════════════════════
+// Seven recordings, one per tap. They are shipped with the resource like every other sound, so
+// there is nothing to fetch and nothing to go missing at the moment somebody taps.
+const EGG_COUNT = 7;
+let eggLast = -1;
+
+// ══ The fight's own sounds ═════════════════════════════════════
+// **Its own player, and deliberately not `ui()`.**
+//
+// `ui()` reads `SOUND_FILES`, and the first file in that table that fails to load sets
+// `soundsOff` for the whole session - every ringtone and every alert falls back to synthesis
+// from then on. Naming a file there before it exists would therefore break every OTHER sound
+// in the phone the first time somebody threw a punch.
+//
+// So these are optional by construction: the file is tried, and a miss is silence for that one
+// effect and nothing else. Drop `sounds/brawl_<name>.wav` in and it plays; leave it out and
+// the synthesised score below stands in.
+const BRAWL_TONES = {
+  jab:   [[520, 0, .04], [780, .03, .06]],
+  heavy: [[180, 0, .09], [120, .06, .16]],
+  block: [[300, 0, .05], [240, .04, .09]],
+  grab:  [[420, 0, .06], [300, .05, .12]],
+  hit:   [[220, 0, .07], [160, .05, .13]],
+  hurt:  [[150, 0, .10], [110, .08, .18]],
+  win:   [[880, 0, .09], [1318, .08, .12], [1760, .17, .2]],
+  lose:  [[330, 0, .12], [220, .11, .22]],
+  bell:  [[1568, 0, .05], [1046, .06, .12]],
+};
+
+// **One voice at a time, and the queue is the whole point.**
+//
+// The first build fired each effect on a timer: the move at once, the impact 160 ms later, the
+// bell at 700. Those numbers were guesses about how long a recording lasts, and they were
+// wrong - a Grab runs 0.9 s, so the impact started while it was still going and the bell
+// arrived over the top of both. Two reports, one cause.
+//
+// Delays cannot fix that, because the right delay is a property of the FILE, and the files are
+// re-recorded. So nothing is timed: each sound is queued behind the one before it, and the
+// queue knows how long each recording really is because it asked the browser at load.
+const BRAWL_GAP = 0.07;          // a breath between two sounds, so they do not butt together
+// Past this, a sound is dropped rather than played late.
+//
+// It has to clear ONE FULL EXCHANGE and no more. The longest chain is a Grab that lands
+// followed by the next round's bell - about 2.9 seconds of audio with the shipped recordings -
+// and 2.6 silently swallowed the bell every single time, which is how "the bell fires too
+// early" turned into "the bell never fires". The ceiling is also under the shortest round a
+// server can configure (4 seconds), so a sound can never still be playing during the round
+// after the one it describes.
+const BRAWL_MAX_QUEUE = 3.6;
+
+const brawlDur = {};             // name -> real length in seconds, filled on load
+const brawlEl = {};              // name -> the loaded element, cloned to replay
+let brawlFreeAt = 0;             // when the queue is next empty, in seconds
+
+/// Load the nine recordings once, and learn how long each really is.
+///
+/// Their true lengths are what the queue schedules against, so re-recording a sound changes
+/// the timing on its own - there is no table here to keep in step with the audio folder.
+function brawlPreload() {
+  if (Object.keys(brawlEl).length) return;
+  Object.keys(BRAWL_TONES).forEach((name) => {
+    try {
+      const el = new Audio(SOUND_BASE + 'brawl_' + name + '.wav');
+      el.preload = 'auto';
+      el.addEventListener('loadedmetadata', () => {
+        if (isFinite(el.duration) && el.duration > 0) brawlDur[name] = el.duration;
+      }, { once: true });
+      // A file that is not there simply never registers a duration, and the synthesised note
+      // stands in for it with a length of its own.
+      el.addEventListener('error', () => { delete brawlEl[name]; }, { once: true });
+      brawlEl[name] = el;
+    } catch { /* no audio on this page */ }
+  });
+}
+
+/// How long this one runs. The recording if it loaded, otherwise the synthesised score's own
+/// end, so the queue is right either way.
+function brawlLength(name) {
+  if (brawlDur[name]) return brawlDur[name];
+  const score = BRAWL_TONES[name] || [];
+  let end = 0.12;
+  score.forEach(([, t, d]) => { end = Math.max(end, t + d); });
+  return end;
+}
+
+function brawlSound(name) {
+  const v = (state.prefs || {}).ringVolume;
+  const vol = v == null ? 0.7 : v;
+  if (vol <= 0) return;
+
+  const now = Date.now() / 1000;
+  const start = Math.max(now, brawlFreeAt);
+  // Somebody spamming, or a burst of pushes: better to lose a sound than to hear it a full
+  // exchange after the thing it belongs to.
+  if (start - now > BRAWL_MAX_QUEUE) return;
+  brawlFreeAt = start + brawlLength(name) + BRAWL_GAP;
+
+  const fire = () => {
+    const score = BRAWL_TONES[name];
+    let fell = false;
+    const fallback = () => {
+      if (fell || !score) return;
+      fell = true;
+      score.forEach(([f, t, d]) => note(f, t, d, 0.13 * vol, 'square'));
+    };
+    const loaded = brawlEl[name];
+    try {
+      // Cloned rather than replayed: the same element restarted mid-play would cut itself off,
+      // and two rounds close together do happen.
+      const el = loaded ? loaded.cloneNode() : new Audio(SOUND_BASE + 'brawl_' + name + '.wav');
+      el.volume = Math.max(0, Math.min(1, vol * 0.8));
+      el.addEventListener('error', fallback, { once: true });
+      el.play().catch(fallback);
+    } catch { fallback(); }
+  };
+
+  const wait = Math.max(0, (start - now) * 1000);
+  if (wait < 8) fire(); else setTimeout(fire, wait);
+}
+
+function playEgg() {
+  // `ringVolume` is the phone's ONE volume - `ui()` reads it too. There is no separate
+  // interface setting, and inventing a name for one here would have made the egg deaf to the
+  // slider that silences everything else.
+  const v = (state.prefs || {}).ringVolume;
+  const vol = v == null ? 0.7 : v;
+  if (vol <= 0) return;
+
+  // Never the same one twice running. With seven of them a plain random repeats about one tap
+  // in seven, which is exactly often enough to notice and stop finding it funny.
+  let pick = Math.floor(Math.random() * EGG_COUNT);
+  if (pick === eggLast) pick = (pick + 1) % EGG_COUNT;
+  eggLast = pick;
+
+  try {
+    const el = new Audio(SOUND_BASE + 'egg_ouch' + (pick + 1) + '.wav');
+    el.volume = Math.max(0, Math.min(1, vol * 0.85));
+    // A missing file is silence, not an error in the console: the recordings are optional and
+    // a fork that removed them should simply have a row that does nothing.
+    el.addEventListener('error', () => {}, { once: true });
+    el.play().catch(() => {});
+  } catch { /* no audio on this page */ }
 }
 
 function synth(name, gain) {
@@ -15071,6 +20555,12 @@ const UI_TONES = {
   sent:     [[1568, 0, .06], [2349, .05, .12]],
   received: [[2093, 0, .06], [1568, .06, .12]],
   shutter:  [[2400, 0, .02], [1200, .03, .05]],
+  // A flap. Very short and upward, because it plays several times a second while somebody is
+  // playing and anything longer would overlap itself into a drone.
+  flap:     [[880, 0, .018], [1318, .015, .035]],
+  // A point. A clean rising third, distinct from the flap so the two never blur into each
+  // other when a gate is cleared on the same frame as a tap.
+  point:    [[1568, 0, .04], [2093, .035, .07]],
   success:  [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
   error:    [[311, 0, .11], [233, .1, .18]],
   faceid:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
@@ -15489,11 +20979,21 @@ byId('emojipanel').addEventListener('pointercancel', () => {
     return null;
   };
 
+  // Above this, a sideways strip keeps its hands off the wheel.
+  //
+  // A chip strip is forty pixels tall: the cursor is only over it when you mean to be, so
+  // turning the wheel sideways there is help. A shelf of cards is two hundred and thirty, and
+  // it sits in the middle of a page you scroll THROUGH - so the same rule meant that scrolling
+  // the store with the pointer anywhere over Discover panned the shelf instead of moving the
+  // page, which is the opposite of help. Drag still pans them; that is the gesture for a shelf.
+  const WHEEL_MAX_STRIP_HEIGHT = 110;
+
   screen.addEventListener('wheel', (e) => {
     const s = stripOf(e.target);
     // A strip that also scrolls vertically keeps the wheel for that: turning it sideways there
     // would take away the gesture that already worked.
     if (!s || s.scrollHeight > s.clientHeight + 1) return;
+    if (s.clientHeight > WHEEL_MAX_STRIP_HEIGHT) return;
     const before = s.scrollLeft;
     s.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     if (s.scrollLeft !== before) e.preventDefault();
@@ -15751,7 +21251,10 @@ function paintNotifs() {
   const host = byId('locknotifs');
   const shown = notifs.slice(0, 4);
   host.innerHTML =
-    (notifs.length > 1
+    // Shown whenever there is anything to clear, not only past two. With one notification on
+    // the lock screen there was no button at all, which reads as the feature not existing -
+    // and one notification is the commonest case by a distance.
+    (notifs.length
       ? `<button class="lockclear" id="lockclear" type="button">${esc(L('ph.clear_all'))}</button>`
       : '') +
     shown.map((n, i) =>
@@ -16022,11 +21525,11 @@ function renderCC() {
   byId('ccnow').innerHTML =
     `<div class="nowlab">${esc(L('ph.nowplaying'))}</div>` +
     (m
-      ? `<div class="nowmid"><span class="nowart">${svg('music')}</span>` +
+      ? `<div class="nowmid"><span class="nowart">${svg('play')}</span>` +
           `<span style="min-width:0"><span class="nowt">${esc(m.title || L('ph.untitled'))}</span>` +
           `<span class="nows">${esc(L('ph.music_' + (m.kind || 'boombox')))}</span></span></div>` +
         `<div class="nowbtns"><button data-n="toggle" type="button" aria-label="${esc(L(m.paused ? 'ph.resume' : 'ph.pause'))}">${svg(m.paused ? 'play' : 'pause')}</button></div>`
-      : `<div class="nowmid"><span class="nowart">${svg('music')}</span>` +
+      : `<div class="nowmid"><span class="nowart">${svg('play')}</span>` +
           `<span class="nows">${esc(L('ph.nothing_playing'))}</span></div>`);
   if (m) byId('ccnow').querySelector('[data-n="toggle"]').addEventListener('click', async () => {
     const r = await post('music', { action: m.paused ? 'resume' : 'pause' });
@@ -16268,7 +21771,8 @@ function sdkPhotoPicker(settle) {
           const selected = photos[Number(photo.dataset.sdkPhoto)];
           sheetCancel = null;
           closeSheet();
-          settle({ ok: true, photo: selected, url: selected.url });
+          const row = photoRow(selected);
+          settle({ ok: true, photo: selected, url: photoEncode(row.url, row) });
         });
       });
     }, 'sdk-picker');
@@ -16769,6 +22273,10 @@ document.addEventListener('keydown', (e) => {
     // closes the app, because by then nothing has focus.
     if (isTyping()) { document.activeElement.blur(); return; }
 
+    // The photograph is above everything, so it goes first. Anything else would close the
+    // screen behind a picture that is still covering it.
+    if (closePhoto()) return;
+
     const hadTransient = anyOverlayOpen() || byId('auth').classList.contains('on') ||
       byId('folderview').classList.contains('on') ||
       byId('emojipanel').classList.contains('on') || editing || !!arr;
@@ -16916,12 +22424,9 @@ window.addEventListener('message', (e) => {
                           String(m.group) === String(threadGroup.id)) ||
                          (!m.group && thread && m.from === thread);
     if (inOpenThread) {
-      const el = byId('thread');
-      if (el) {
-        el.insertAdjacentHTML('beforeend', bubbleHtml({ mine: false, body: m.body, kind: m.kind, attachment: m.attachment, from: m.from }));
-        wireLocButtons();
-        byId('appbody').scrollTop = byId('appbody').scrollHeight;
-      }
+      appendMessage({ id: m.id, mine: false, body: m.body, kind: m.kind,
+                      attachment: m.attachment, from: m.from, reply: m.reply,
+                      at: Date.now() });
     } else {
       const groupId = m.group;
       const groupName = m.groupName || L('ph.groups');
@@ -16945,10 +22450,17 @@ window.addEventListener('message', (e) => {
     applyPower(d.power);
   } else if (d.action === 'banner') {
     banner(d.banner || {});
+  } else if (d.action === 'brawl') {
+    brawlPush(d.view);
   } else if (d.action === 'appRefresh') {
     // Only the app on screen, and only if it knows how to draw itself. Redrawing something the
     // player is not looking at throws away wherever they had scrolled to for nothing.
-    if (openApp && openApp.id === d.app && typeof RENDER[d.app] === 'function') RENDER[d.app]();
+    if (openApp && openApp.id === d.app && typeof RENDER[d.app] === 'function') { RENDER[d.app](); }
+    // **A dropped-in app has no `RENDER` entry** - it lives in an iframe - so this event was a
+    // no-op for exactly the apps most likely to need it. `Phone.on('refresh', ...)` is wired in
+    // sdk.js and documented in DEVELOPERS.md, and until now nothing on the server or in the page
+    // ever fired it: a documented hook with no producer.
+    else if (openApp && openApp.id === d.app && byId('appframe')) frameEvent('refresh', { app: d.app });
   } else if (d.action === 'socialRefresh') {
     // Only if that app is what is on screen. Redrawing a social view the player is not
     // looking at would throw away wherever they had scrolled to for nothing.
@@ -17091,6 +22603,25 @@ window.addEventListener('message', (e) => {
     // The other side unsent it. Reopening the thread is how the screen agrees with the server,
     // and it only happens when this conversation is the one on screen.
     if (openApp && openApp.id === 'messages' && thread) openThread(thread);
+  } else if (d.action === 'msgReact') {
+    // Only if that message is on the screen. A reaction on a thread that is not open is
+    // already stored, and will be on the bubble when the thread is next read.
+    const mark = d.mark || {};
+    if (openApp && openApp.id === 'messages' &&
+        threadMsgs.some((m) => m && String(m.id) === String(mark.id))) {
+      applyReaction(mark.id, mark.reactions);
+    }
+  } else if (d.action === 'msgSeen') {
+    // They read what you sent. Every one of yours in this thread is read, not only the last:
+    // the server marks the whole conversation at once, because that is what opening it means.
+    if (openApp && openApp.id === 'messages' && thread && String(d.from) === String(thread)) {
+      threadMsgs.forEach((m) => { if (m && m.mine) m.seen = true; });
+      paintTail();
+    }
+  } else if (d.action === 'typing') {
+    const forThis = (threadGroup && d.group != null && String(d.group) === String(threadGroup.id)) ||
+                    (!d.group && thread && String(d.from) === String(thread));
+    if (openApp && openApp.id === 'messages' && forThis) typingSet(d.from, !d.stop);
   } else if (d.action === 'download') {
     // The server's own clock, ticking once a second. The page never counts anything itself:
     // a download survives the phone being pocketed, and a local timer would not.
@@ -17128,9 +22659,20 @@ window.addEventListener('message', (e) => {
       // report success, and the home screen would never learn a download was running.
       if (openApp && openApp.id === 'store') {
         if (!storeBarShow(dl.app)) RENDER.store();
-      } else {
-        renderHome();
       }
+      // **And nothing at all anywhere else.**
+      //
+      // This called `renderHome()` on every tick - once a second, for the whole download. The
+      // home screen draws NO progress: no bar, no percentage, nothing that a tick changes. So
+      // it rebuilt every page, the dock and all of their click wiring to produce a screen
+      // identical to the one already there, and the tiles replayed their staggered entrance
+      // each time. That is the flicker.
+      //
+      // The two moments the home screen genuinely has to catch up are already covered: the
+      // start, where `storeInstall` redraws because a new tile may appear, and the finish,
+      // where the `dl.done` branch above refreshes the catalogue and redraws.
+      //
+      // Same lesson the store learned three lines up, one screen later.
     }
   } else if (d.action === 'outbox') {
     // The whole queue, as the handset holds it. A list rather than a diff: it is a handful of

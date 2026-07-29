@@ -5,6 +5,218 @@ one coming back.
 
 ---
 
+## [2026-07-29 20:40] - A control that was drawn, was hit, and did nothing
+
+**Context:** shipping the home-screen widget strip. The minus badge that removes a widget, the
+button that adds one, and the long press that starts arranging were all reported dead by the
+player, twice, after an in-page assertion said all three worked.
+
+**Error:** pressing the minus removed nothing and silently left arrange mode. Holding the strip
+did nothing. Dragging a widget did nothing.
+
+**Root cause:** two separate faults, and the second is the interesting one.
+
+1. The widget strip is a sibling of `#pages`, so the app grid's pointerup handler saw a press on
+   it as a press on neither a tile nor a tile's page - which it reads as "tapped the wallpaper"
+   and answers by leaving arrange mode. That repainted the strip and destroyed the badge before
+   its own `click` could fire.
+2. The fix for (1) was a flag set in the strip's own `pointerdown` handler. **The minus badge
+   calls `stopPropagation()` on `pointerdown`** - it has to, or the widget underneath starts a
+   drag the moment the badge is touched - so the flag was never set for the one gesture it
+   existed to protect. The badge went on being treated as a tap on the wallpaper.
+
+**Fix:** the flag is set from a CAPTURE-phase listener on the strip, which runs before any child
+listener and therefore before any `stopPropagation`. The empty-strip case was fixed alongside it:
+an empty Lua table serialises as a JSON object rather than an array, so removing the last widget
+came back as "never arranged these" and the defaults were put straight back.
+
+**Prevention:** **a test that dispatches an event at an element is not a test that a player can
+press it.** `el.click()` and `el.dispatchEvent(new PointerEvent(...))` skip hit testing entirely:
+they arrive whatever is drawn on top, whatever `pointer-events` says, and whatever the real
+target under that pixel would have been. The in-page assertion passed against completely dead
+controls, three times, and only stopped passing when it was pointed at a bug it had been written
+to catch. `tools/probe-input.js` drives the page with `Input.dispatchMouseEvent` through the
+compositor's own hit test, the same as a finger, and found both faults on its first run. Any
+control whose failure mode could be "nothing happened" is checked there, not in make-shots.js.
+
+---
+
+## [2026-07-29 21:05] - Six syntax errors from one character
+
+**Context:** writing shot scripts and assertions in tools/make-shots.js.
+
+**Error:** `SyntaxError: Unexpected identifier 'fitGrid'`, and five more like it, each found by
+running the file.
+
+**Root cause:** every shot is `script: ` followed by a template literal, and the natural way to
+write a comment about a function is to put its name in backticks - which CLOSES the literal and
+turns the rest of the shot into JavaScript that happens to read like prose.
+
+**Fix:** the stray backticks were stripped, and `tools/check.py` gained `check_shot_backticks`,
+which reports the line rather than leaving it to be discovered by `node --check`.
+
+**Prevention:** the checker now refuses the file. Six round trips on one character is what an
+un-automated rule costs.
+
+---
+
+## [2026-07-29 21:30] - Three defects in code written the same hour
+
+**Context:** the Hush Premium day pass, sent through an adversarial audit immediately after it
+was written.
+
+**Error:** (1) the pass was paid for out of the wallet of whoever was HOLDING the phone, so under
+a staff phone-view session the staff member paid and the held character got the pass. (2) Two
+taps on the buy button in the same second both passed the checks, were both charged, and both
+wrote the same expiry - one day, paid for twice. (3) `RaiseAlert`, the export other resources use,
+never invalidated the widget cache the player-facing path does.
+
+**Root cause:** (1) every paying path in this resource resolves the actor through
+`PhoneActingSource` first and this one used `src` directly. (2) reading the expiry into Lua,
+adding a day and writing it back is a check-then-act across three awaits. (3) the cache was
+invalidated at the two call sites that existed when it was written, and the export is a third.
+
+**Fix:** `PhoneActingSource(src)` for the debit; an in-flight set keyed by citizen id; and the
+extension done inside the UPDATE with `GREATEST(COALESCE(premium_until,0), UNIX_TIMESTAMP()) + ?`
+so nothing can interleave.
+
+**Prevention:** new code is not safer than old code. An audit that skips what was written this
+session skips the part nobody has run yet - all three of these were in the newest file in the
+round, and all three were found by pointing the same adversarial pass at it.
+
+---
+
+## [2026-07-29 20:15] — a test that could not fail, and the bug it let through
+
+**Context:** a visual and security audit, eight lenses over the resource, every candidate handed
+to a separate agent whose only job was to refute it. 47 candidates, 32 survived.
+
+**Error:** the worst finding was about the tooling written earlier in the same session. Every
+assertion added to `tools/make-shots.js` reported a broken invariant as `SKIPPED` and let the
+process exit 0. Six probes, each carefully measuring something real, none of which could fail a
+run. I had been reading the SKIPPED lines by eye and calling that a test.
+
+**Root cause of the worst BUG it let through:** `storyViewer` assigned `host.innerHTML` where
+`host` is `#folderview` - the shared overlay - and cleared it on close. Its three children exist
+only in `html/index.html` and nothing rebuilds them. So viewing one Snapmatic story deleted the
+folder overlay permanently: every folder on the home screen answered "folder gone" for the rest
+of the session, and every app inside one was unreachable. One tap, total loss of a feature, and
+nothing in the checks noticed.
+
+**Fix:** the story markup is now its own `.storyview` child, created or replaced, and only that
+child is removed on close. `make-shots.js` gained an `assert: true` flag: a marked shot that
+throws is collected, printed as FAILED, and sets a non-zero exit code. Proven both directions -
+with the old `close()` restored the assertion reports "the story viewer destroyed 3 of the folder
+overlay" and node exits 1; with the fix it passes and exits 0.
+
+**Two smaller ones, same shape.** `.hud` and `.sheet.dragging` both used `animation: none` to
+suppress an animation. Removing a name from the animation list and putting it back is a NEW
+animation, so both replayed their entrance at the moment they were dismissed - the volume pill
+faded back in and jumped 77 pixels 1.4 seconds after being pressed, and a plain tap on a sheet's
+grab bar threw it off the bottom of the screen and sprang it back. `animation-duration: 0s`
+freezes without ever unsetting the name.
+
+**Prevention:** three rules.
+
+*A test that cannot fail is not a test.* Check the exit code, not the output. Twice in this
+session I read `$?` after a pipe and got `tail`'s status instead of the program's.
+
+*Never assign innerHTML to an element you did not create.* `#folderview`, `#app`, `#screen` and
+`#device` are shared and their children come from index.html. Build a child and own that.
+
+*`animation: none` is not a pause.* To suppress an animation while keeping it from restarting,
+set its duration to zero.
+
+---
+
+## [2026-07-29 18:40] — an audit that killed thirty-nine of its own forty-eight findings
+
+**Context:** a whole-resource performance pass. Six agents were sent at six dimensions - client
+per-frame work, server SQL, server ticks, page rendering, CSS paint, and leaks - and every
+candidate they raised was handed to a separate agent whose only instruction was to REFUTE it.
+
+**Error:** none, in the shipped code. The interesting number is the survival rate: 48 candidates,
+9 confirmed, 7 rated safe to apply. Thirty-nine plausible findings did not survive contact with
+the file they described.
+
+**Root cause of the near-misses.** Three shapes recurred, and all three are worth naming because
+they are what a reading-only analysis produces:
+
+*Code that was not there.* One report proposed deleting `ratingOf` in server/repair.lua on the
+grounds that grep showed no other caller. There is one, at line 563, in the review-submit path.
+Deleting it would have broken that callback outright.
+
+*Frequency asserted rather than traced.* Several findings called a path hot without following who
+calls it. The Repair 15-second poll turned out to run only on one tab; the real hot caller was an
+undebounced search box in Contacts, which nobody had proposed touching.
+
+*A fix that changes what a player sees.* One proposed reading the phone's own name projection
+instead of the framework's. On ESX and standalone that projection falls back to the FiveM display
+name - so the "optimisation" would have published players' Steam names on public donation pages,
+bank confirmations and police lookups.
+
+**Fix:** the seven survivors were applied by hand, each verified at its own source first rather
+than on the agent's word - several agents had run without their safety classifier. Behaviour
+equivalence was then PROVEN in real Lua for the three items that are pure logic: the swapped
+predicates in `ensureNumber` agree on all six input combinations, the copied rounding expression
+agrees on 33 value pairs, and the name cache's `false` sentinel stops a nil answer being
+re-queried for ever.
+
+**Prevention:** two rules.
+
+*A finding is a file and a line you have opened, or it is a guess.* Every one of the three shapes
+above dissolves the moment somebody reads the surrounding code. The refute pass is what forced
+that reading, and it is worth more than the finders.
+
+*Prove the equivalence, do not argue it.* "Swapping these two conditions cannot change the
+outcome" is a claim with six cases, and enumerating them in real Lua takes a minute. The same
+goes for a rounding expression: `math.floor(x * 10 + 0.5) / 10` and any other route to one
+decimal disagree at the halfway point, and a 4.25 that redraws as 4.3 is a visible change.
+
+---
+
+## [2026-07-29 16:05] — a regex that rewrote one block and deleted two others
+
+**Context:** the GIF shelf ships a starter library in `config.lua`. `tools/gif-pack.py --write`
+generates it: it fetches candidates, checks each one really is a GIF, and substitutes the result
+into the `packs = { }` block.
+
+**Error:** `@v-phone/server/main.lua:96: attempt to index a nil value (field 'Calls')` on boot,
+reported by the operator restarting the resource. `config.lua` still compiled cleanly.
+
+**Root cause:** the substitution was
+
+    re.sub(r'(packs = \{
+).*?(
+        \})', ...)
+
+The opening group ends with `
+`, so it consumes the newline after `packs = {`. The closing
+pattern then has to find a DIFFERENT line beginning with eight spaces and a brace - and the pack
+list was empty, so there was none nearby. The lazy match ran on for two hundred lines and found
+one inside `Config.Calls.badSignal`. Everything in between - the close of `Config.Messages`, all
+of `Config.Cipher`, and the top of `Config.Calls` - was swallowed by the substitution.
+
+It compiled because what remained was still balanced Lua. It was simply a different file.
+
+**Fix:** the block is now located by counting braces from `packs = {`, stepping over strings, so
+the end of the list is found structurally instead of by pattern. After building the new text the
+tool reassembles what lies outside the block and refuses to write unless it is byte-identical to
+what was there before. The two lost sections were restored verbatim from `git show HEAD:config.lua`.
+
+**Prevention:** two rules, and the second is the one that would have caught it.
+
+*Never delimit a Lua or JSON block with a lazy regex.* Nested braces are not a pattern; matching
+them is counting. A regex that appears to work does so until the block it is aiming at is empty.
+
+*Verify the whole artefact, not the part that was edited.* The check run straight afterwards
+counted 18 categories and 108 URLs inside the new block and passed - it was reading the one region
+that was certainly correct. Loading `config.lua` in real Lua and comparing the top-level key set
+against `HEAD` takes one second and says `Cipher` and `Calls` are gone. Every generator that
+rewrites a file in place now has to answer for the rest of that file too.
+
+---
+
 ## [2026-07-29 04:20] — the right measurement, taken of the wrong thing
 
 **Context:** 1.5.5 grew the emoji picker from four categories to ten. The tab strip no longer fit,

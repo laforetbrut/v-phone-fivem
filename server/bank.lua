@@ -479,6 +479,19 @@ end)
 -- ══════════════════════════════════════════════════════════════
 -- Transfers
 -- ══════════════════════════════════════════════════════════════
+--- Characters with a transfer in flight, so a second one cannot start beside it.
+---
+--- **The daily ceiling is counted from rows, and the row is written last.** Everything between
+--- `sentToday` and that write is a yield, so two requests issued in the same tick both read the
+--- same total, both passed, and both went through - the limit only ever bounded a player who
+--- waited. One at a time per character makes the check and the write atomic with respect to each
+--- other, which is the whole of it.
+---
+--- A lock rather than a claimed amount: a claim has to be given back on every exit path and this
+--- handler has a dozen, so a leaked claim would lock somebody out of their own allowance for the
+--- session. This is set in one place and cleared in one.
+local TransferBusy = {}
+
 V.Callback('v-phone:bank:transfer', function(src, resolve, data)
     if not transfersOn() then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
@@ -493,6 +506,16 @@ V.Callback('v-phone:bank:transfer', function(src, resolve, data)
     local amount = math.floor(num(data and data.amount, 0))
     if amount < minAmount() then resolve({ error = 'toosmall' }) return end
     if maxAmount() > 0 and amount > maxAmount() then resolve({ error = 'toobig' }) return end
+
+    if TransferBusy[p.citizenid] then resolve({ error = 'busy' }) return end
+    TransferBusy[p.citizenid] = true
+    -- Every path out of this handler from here down goes through `answer`, so the lock cannot
+    -- be left behind by a refusal.
+    local function answer(res)
+        TransferBusy[p.citizenid] = nil
+        resolve(res)
+    end
+    resolve = answer
 
     local limit = dailyLimit()
     if limit > 0 and sentToday(p.citizenid) + amount > limit then
@@ -913,3 +936,35 @@ function Bridge.BankBoot()
             :format(reader, transfersOn() and 'on' or 'off', keeping))
     end)
 end
+
+-- ══════════════════════════════════════════════════════════════
+-- The home screen widget
+-- ══════════════════════════════════════════════════════════════
+-- Two numbers and nothing else. Deliberately NOT `v-phone:bank:data`, which settles escrow,
+-- reads the statement, counts what was sent today and fetches the beneficiaries - four trips to
+-- the database to draw one figure on a home screen.
+--
+-- **The figure is masked unless the player asked for it.** A bank balance on a screen held in
+-- the street, in a game where people get robbed, is a reason to be robbed. The default draws
+-- four dots; `Settings > Home screen > Show the balance` turns it into a number. The masking is
+-- done HERE rather than on the page: a number that is not sent cannot be read out of the
+-- payload by somebody with the developer console open.
+WidgetSource('bank', 'bank', function(src, p)
+    if not enabled() then return nil end
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    local ok, balances = pcall(function()
+        return Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(acting)
+    end)
+    -- "The balance cannot be read" is a sentence the tile knows how to say. A confident zero
+    -- is not, and would be a lie on any server whose banking script the bridge cannot see.
+    if not ok or type(balances) ~= 'table' then return { ok = false } end
+
+    -- See the note in server/widgets.lua: `prefsOf` is not reachable from here.
+    local prefs = (PhonePrefs and PhonePrefs(p)) or {}
+    if prefs.widgetMoney ~= true then return { ok = true, masked = true } end
+    return {
+        ok = true,
+        bank = math.floor(tonumber(balances.bank) or 0),
+        cash = math.floor(tonumber(balances.cash) or 0),
+    }
+end)

@@ -678,3 +678,43 @@ exports('GetExportPrice', function(item, market)
     end
     return nil
 end)
+
+-- ══════════════════════════════════════════════════════════════
+-- The home screen widget
+-- ══════════════════════════════════════════════════════════════
+-- The biggest mover on the player's market. **No query and no provider call**: the board is
+-- already in memory, refreshed by the poll above, and that is the entire point of the cache -
+-- twenty phones drawing this tile is twenty table reads.
+WidgetSource('export', 'export', function(src)
+    if not enabled() or not ready then return { ok = false } end
+    -- Whichever market they last had open, else the first one configured. Watching[src] is set
+    -- when the app opens and cleared when it closes, so this follows the player without asking.
+    local market = knownMarket(tostring(Watching[src] or ''))
+    local board = Board[market]
+    if not board then return { ok = false } end
+
+    -- One pass for the largest absolute move, up or down. Absolute rather than signed: a
+    -- market that has fallen twelve percent is exactly as worth knowing about as one that rose.
+    local top, best = nil, 0
+    local moved = 0
+    for _, c in ipairs(board.categories) do
+        for _, it in ipairs(c.items) do
+            local pct = tonumber(it.percent)
+            if pct and pct ~= 0 then
+                moved = moved + 1
+                if math.abs(pct) > best then best = math.abs(pct); top = it end
+            end
+        end
+    end
+
+    local out = { ok = true, market = market, moved = moved,
+                  shop = WidgetText(board.shop, 28),
+                  nextIn = select(1, nextChangeIn(market)),
+                  estimated = docMode() or nil }
+    if top then
+        out.item = WidgetText(phrase(src, top.label or top.name), 24)
+        out.price = math.floor(tonumber(top.price) or 0)
+        out.percent = tonumber(top.percent)
+    end
+    return out
+end)

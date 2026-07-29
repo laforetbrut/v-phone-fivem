@@ -69,16 +69,35 @@ end
 ---
 --- A key missing from the chosen language falls back to English, exactly as `L` does, so a
 --- half-translated locale file shows English rather than raw keys.
+--- Built once per language, not once per lookup.
+---
+--- `L()` calls this, and `L()` is called from inside `Wait(0)` loops - the camera viewfinder
+--- draws four help strings every frame. On a server whose language is not the fallback, that
+--- was a fresh two-and-a-half-thousand-key table merged from two others, several times a
+--- frame, all of it garbage a moment later. On a French server the old code already returned
+--- the shared table, so this changes nothing there.
+---
+--- The key is the LANGUAGE, so the state-bag handler that notices `lang` changing
+--- invalidates this for free: the next call sees a different key and rebuilds.
+local stringsCache, stringsCacheLang = nil, nil
+
 local function strings()
     local lang = PhoneLang()
+    if stringsCache and stringsCacheLang == lang then return stringsCache end
     local chosen = Locales[lang]
-    if not chosen then return Locales[LOCALE_FALLBACK] or Locales.fr or {} end
-    if lang == LOCALE_FALLBACK then return chosen end
-    local base = Locales[LOCALE_FALLBACK] or Locales.fr or {}
-    local merged = {}
-    for k, v in pairs(base) do merged[k] = v end
-    for k, v in pairs(chosen) do merged[k] = v end
-    return merged
+    local built
+    if not chosen then
+        built = Locales[LOCALE_FALLBACK] or Locales.fr or {}
+    elseif lang == LOCALE_FALLBACK then
+        built = chosen
+    else
+        local base = Locales[LOCALE_FALLBACK] or Locales.fr or {}
+        built = {}
+        for k, v in pairs(base) do built[k] = v end
+        for k, v in pairs(chosen) do built[k] = v end
+    end
+    stringsCache, stringsCacheLang = built, lang
+    return built
 end
 local function L(k) return strings()[k] or k end
 
@@ -1454,6 +1473,10 @@ local APP_SOURCE = {
     wallet   = 'v-phone:wallet:data',
     jobs     = 'v-phone:jobs:data',
     property = 'v-phone:property:data',
+    onlyfruits = 'v-phone:fan:open',
+    fruitee    = 'v-phone:fund:open',
+    flappy     = 'v-phone:arcade:open',
+    brawl      = 'v-phone:brawl:open',
     -- Music is answered locally by `musicAppData` below: a player's tracks are their own
     -- phone storage, so there is nothing to ask the server for.
 }
@@ -1561,7 +1584,49 @@ RegisterNUICallback('contactSave',   relay('v-phone:contactSave'))
 RegisterNUICallback('contactDelete', relay('v-phone:contactDelete'))
 RegisterNUICallback('groupCreate',   relay('v-phone:groupCreate'))
 RegisterNUICallback('groupMembers',  relay('v-phone:groupMembers'))
+-- OnlyFruits. Relays, every one: the price of a picture, who owns it and whether the buyer
+-- can afford it are all server decisions, so there is nothing here worth checking and nothing
+-- this side could usefully lie about.
+-- Fruitee. Relays on purpose: the amount is bounded, the fee, the tax and the page's own
+-- rules are all decided on the server, so there is nothing for this side to check.
+-- FlappyFruit. The score is checked on the server - a ceiling, a time check and a cooldown -
+-- because the game runs in a browser and this side cannot vouch for a number it was handed.
+-- FruitBrawl. Every one of these is a relay: the whole fight is resolved on the server and
+-- this side has nothing to check and nothing it could usefully decide.
+RegisterNUICallback('brawlInvite',  relay('v-phone:brawl:invite'))
+RegisterNUICallback('brawlAnswer',  relay('v-phone:brawl:answer'))
+RegisterNUICallback('brawlQueue',   relay('v-phone:brawl:queue'))
+RegisterNUICallback('brawlSolo',    relay('v-phone:brawl:solo'))
+RegisterNUICallback('brawlPick',    relay('v-phone:brawl:pick'))
+RegisterNUICallback('brawlForfeit', relay('v-phone:brawl:forfeit'))
+
+RegisterNUICallback('arcadeNick',   relay('v-phone:arcade:nick'))
+RegisterNUICallback('arcadeScore',  relay('v-phone:arcade:score'))
+
+RegisterNUICallback('fundSetup',    relay('v-phone:fund:setup'))
+RegisterNUICallback('fundSlug',     relay('v-phone:fund:slug'))
+RegisterNUICallback('fundPage',     relay('v-phone:fund:page'))
+RegisterNUICallback('fundGive',     relay('v-phone:fund:give'))
+RegisterNUICallback('fundClose',    relay('v-phone:fund:close'))
+RegisterNUICallback('fundDelete',   relay('v-phone:fund:delete'))
+RegisterNUICallback('fundPayout',   relay('v-phone:fund:payout'))
+
+RegisterNUICallback('fanHandle',    relay('v-phone:fan:handle'))
+RegisterNUICallback('fanSetup',     relay('v-phone:fan:setup'))
+RegisterNUICallback('fanPost',      relay('v-phone:fan:post'))
+RegisterNUICallback('fanDelete',    relay('v-phone:fan:delete'))
+RegisterNUICallback('fanCreator',   relay('v-phone:fan:creator'))
+RegisterNUICallback('fanFollow',    relay('v-phone:fan:follow'))
+RegisterNUICallback('fanUnlock',    relay('v-phone:fan:unlock'))
+RegisterNUICallback('fanSubscribe', relay('v-phone:fan:subscribe'))
+RegisterNUICallback('fanTip',       relay('v-phone:fan:tip'))
+RegisterNUICallback('fanPayout',    relay('v-phone:fan:payout'))
 RegisterNUICallback('groupLeave',    relay('v-phone:groupLeave'))
+-- The store's ratings. Relays: who may review what is a server decision, and the average is
+-- computed there from rows this side never sees.
+RegisterNUICallback('storeReviews',      relay('v-phone:store:reviews'))
+RegisterNUICallback('storeReview',       relay('v-phone:store:review'))
+RegisterNUICallback('storeReviewDelete', relay('v-phone:store:reviewDelete'))
 RegisterNUICallback('calls',         relay('v-phone:calls'))
 RegisterNUICallback('airdropScan',    relay('v-phone:airdropScan'))
 RegisterNUICallback('airdropSend',    relay('v-phone:airdropSend'))
@@ -2018,6 +2083,10 @@ local SOCIAL_OPS = {
     me = true, setup = true, feed = true, post = true, like = true,
     hushMe = true, hushSetup = true, hushNext = true, hushChoice = true, hushMatches = true,
     hushRewind = true, hushUnmatch = true,
+    -- The premium pass, and the people it reveals. `hushPass` MOVES MONEY, so it is here on
+    -- the same footing as everything else: the client permits the name, the server decides
+    -- whether the character may do it and takes the payment before granting anything.
+    hushPass = true, hushLikedMe = true,
     -- Hush's own conversation. It does NOT go through the Messages app: a dating app that hands
     -- over a phone number to say hello is a directory, and a number cannot be taken back.
     hushChat = true, hushSay = true,
@@ -2027,6 +2096,9 @@ local SOCIAL_OPS = {
     resetCode = true, resetPassword = true,
     -- People: a profile, the directory, following.
     profile = true, search = true, follow = true,
+    -- And the people behind the numbers: who liked a post, who follows an account and who it
+    -- follows. Every count in the app was a dead end before these.
+    likers = true, follows = true,
     -- What a post can carry beyond a like.
     comments = true, comment = true, uncomment = true, repost = true, delete = true,
     -- What happened to you, what people are talking about, and one tag's posts.
@@ -2112,6 +2184,42 @@ RegisterNUICallback('ambient', function(_, cb)
         hours = GetClockHours(), minutes = GetClockMinutes(),
         day = GetClockDayOfMonth(), month = GetClockMonth() + 1,
     })
+end)
+
+--- Everything the home screen widgets need, in one answer.
+---
+--- The ambient half is free - it is the same reading `ambient` above returns, from the game
+--- itself. The server half is only asked for when the page says at least one widget on the strip
+--- needs it, and **a phone showing only the weather and the calendar never reaches the server at
+--- all**, which is how the strip cost nothing before widgets could be chosen and how it has to
+--- keep costing nothing for anybody who does not choose one.
+---
+--- The page's `only` list can narrow the answer and can never widen it: which widgets a
+--- character has enabled is read on the server, from the server's own copy of their preferences.
+RegisterNUICallback('widgets', function(data, cb)
+    local ambient = {
+        weather = tostring(GlobalState.vweather or GetPrevWeatherTypeHashName() or 'CLEAR'),
+        hours = GetClockHours(), minutes = GetClockMinutes(),
+        day = GetClockDayOfMonth(), month = GetClockMonth() + 1,
+    }
+    if not (type(data) == 'table' and data.server == true) then
+        cb({ ok = true, ambient = ambient })
+        return
+    end
+    V.Request('v-phone:widgets', function(res)
+        -- **`served` is the difference between two failures that looked identical.**
+        --
+        -- A widget whose builder said "I cannot read a balance on this framework" and a widget
+        -- whose server never answered at all both arrived at the page as a missing key, and
+        -- both drew the word "unavailable". The second one is the one an operator can fix -
+        -- the callback is not registered, which on a live server means the resource has not
+        -- been restarted since server/widgets.lua was added - and it was wearing the first
+        -- one's message.
+        local ok = type(res) == 'table' and res.ok == true
+        cb({ ok = true, ambient = ambient, served = ok,
+             w = (ok and res.w) or {},
+             at = ok and res.at or nil })
+    end, { only = type(data.only) == 'table' and data.only or nil })
 end)
 
 --- Take a picture.
@@ -2366,10 +2474,58 @@ RegisterNUICallback('camFacing', function(data, cb)
     if camActive then frontCam(data and data.front == true) end
 end)
 
+--- Nothing on the screen but the world, for as long as a capture takes.
+---
+--- The camera's own loop already calls `HideHudAndRadarThisFrame` every frame, and that is not
+--- enough for two reasons. The first is that the grab is done by ANOTHER resource - screencapture
+--- has its own NUI and its own timing - so a frame can be taken at a moment this resource is not
+--- the one deciding what the screen looks like. The second is bigger: that native hides the
+--- GAME's hud. A minimap drawn by a HUD resource in its own browser layer is not the game's hud,
+--- and a screen grab composites every layer.
+---
+--- So three things at once. The natives, held for the whole capture rather than for one frame;
+--- `DisplayRadar(false)` outright, in case something switched it back on; and an event any other
+--- resource can listen to in order to take its own overlay down. The event is the only part that
+--- can cover a third-party minimap, and it is documented for that reason.
+---
+---     AddEventHandler('v-phone:camera:capturing', function(on) MyHud.SetVisible(not on) end)
+local camQuiet = false
+local camQuietRadar = false
+
+local function cameraQuiet(on)
+    if on == camQuiet then return end
+    camQuiet = on
+    TriggerEvent('v-phone:camera:capturing', on)
+    if not on then
+        if camQuietRadar then DisplayRadar(true) end
+        camQuietRadar = false
+        return
+    end
+    camQuietRadar = not IsRadarHidden()
+    if camQuietRadar then DisplayRadar(false) end
+    CreateThread(function()
+        -- A ceiling, so a capture that never answers cannot leave a player with no hud at all.
+        local waited = 0
+        while camQuiet and waited < 20000 do
+            HideHudAndRadarThisFrame()
+            HideHudComponentThisFrame(6)
+            HideHudComponentThisFrame(7)
+            HideHudComponentThisFrame(8)
+            HideHudComponentThisFrame(9)
+            HideHudComponentThisFrame(19)
+            Wait(0)
+            waited = waited + 16
+        end
+        if camQuiet then cameraQuiet(false) end
+    end)
+end
+
 RegisterNUICallback('shoot', function(_, cb)
     local finished = false
     local focusReleased = false
     local captureRequest = openRequest
+    -- Down before anything is asked for, up again in `finish` whichever way the capture ends.
+    cameraQuiet(true)
     -- Held here rather than in the key handler so both routes to a photograph - the Enter key
     -- and the on-screen shutter - keep the help box out of the frame for the whole capture.
     if camActive then camShooting = true end
@@ -2383,6 +2539,7 @@ RegisterNUICallback('shoot', function(_, cb)
 
         -- The photograph is taken: the viewfinder may show its instructions again.
         camShooting = false
+        cameraQuiet(false)
         ClearHelp(true)
 
         -- Not while the camera is framing. In camera mode Lua has deliberately taken the
@@ -3119,6 +3276,72 @@ RegisterNUICallback('msgDelete', function(data, cb)
     V.Request('v-phone:messages:delete', function(res) cb(res or { error = 'x' }) end, data or {})
 end)
 
+--- Somebody put a reaction on a message, or took theirs off.
+---
+--- Dropped when the phone is away, rather than raised as a notification. A reaction is a small
+--- mark on a bubble that is already there: it is worth seeing when you look, and it is not
+--- worth a buzz in somebody's pocket. It will be on the message when the thread is next opened,
+--- because it is read back with the thread.
+RegisterNetEvent('v-phone:client:msgReact', function(d)
+    if not isOpen or type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'msgReact', mark = d })
+end)
+
+--- They read what you sent. Never announced - it is a line under a bubble, not a notification -
+--- so it is dropped entirely unless the phone is open to see it.
+RegisterNetEvent('v-phone:client:msgSeen', function(d)
+    if not isOpen or type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'msgSeen', from = tostring(d.from or '') })
+end)
+
+--- Three dots. Same rule as a read receipt: it means nothing to a phone in a pocket.
+RegisterNetEvent('v-phone:client:typing', function(d)
+    if not isOpen or type(d) ~= 'table' then return end
+    SendNUIMessage({ action = 'typing', from = tostring(d.from or ''),
+                     group = tonumber(d.group), stop = d.stop == true })
+end)
+
+--- Put a reaction on a message, or take yours off.
+RegisterNUICallback('msgReact', function(data, cb)
+    V.Request('v-phone:msgReact', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
+--- Somebody's own map pins. Adding one sends NO position: the server reads it off the ped,
+--- which is the only side that knows where the player really is.
+RegisterNUICallback('pins', function(data, cb)
+    V.Request('v-phone:pins', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
+--- Reminders. The list, an edit, a tick and a delete all go through one callback, because they
+--- all answer with the same thing: the whole list as it now stands.
+RegisterNUICallback('reminders', function(data, cb)
+    V.Request('v-phone:reminders', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
+--- The GIF shelf, and a search across it.
+RegisterNUICallback('gifs', function(_, cb)
+    V.Request('v-phone:gifs', function(res) cb(res or { error = 'x' }) end)
+end)
+
+RegisterNUICallback('gifSearch', function(data, cb)
+    V.Request('v-phone:gifSearch', function(res) cb(res or { error = 'x' }) end, data or {})
+end)
+
+--- "I am writing to you." Fire and forget, on purpose.
+---
+--- `TriggerServerEvent` rather than `V.Request`: there is no answer worth waiting for, and a
+--- callback would give the page a way to ask "does this number exist" once per keystroke. The
+--- page is told nothing either way.
+RegisterNUICallback('typing', function(data, cb)
+    cb({ ok = true })
+    if not isOpen then return end
+    TriggerServerEvent('v-phone:typing', {
+        number = tostring((data and data.number) or ''),
+        group = tonumber(data and data.group),
+        stop = (data and data.stop) == true,
+    })
+end)
+
 RegisterNUICallback('call', function(data, cb)
     -- The failure used to be announced here as a framework notification, outside the phone,
     -- and nowhere else - so the page said nothing and made no sound. The page owns it now: it
@@ -3420,6 +3643,15 @@ end)
 ---
 --- Same shape as the social one, and the same restraint: it does nothing unless the phone is open
 --- AND that app is the one on screen, so it is a redraw the player is watching or nothing at all.
+--- The state of a duel, pushed as it changes.
+---
+--- Sent whatever app is open and whether or not the phone is out: a round resolving is not a
+--- notification, it is the game, and a page that only learned about it while it happened to be
+--- on screen would have players staring at a stale round.
+RegisterNetEvent('v-phone:client:brawl', function(view)
+    SendNUIMessage({ action = 'brawl', view = view })
+end)
+
 RegisterNetEvent('v-phone:client:appRefresh', function(app)
     if not isOpen then return end
     SendNUIMessage({ action = 'appRefresh', app = tostring(app or '') })
@@ -3551,7 +3783,10 @@ end
 RegisterNetEvent('v-phone:client:peerTorch', function(who, on)
     who = tonumber(who)
     if not who then return end
-    peerTorch[who] = on and true or nil
+    -- The TIME it was last asserted, not a boolean. The server re-announces every lit torch
+    -- in range every two seconds; an entry nobody has refreshed since is somebody who walked
+    -- out of range, and forgetting them is what lets the draw loop drop back to Wait(300).
+    peerTorch[who] = on and GetGameTimer() or nil
 end)
 
 --- Draw one torch at one ped.
@@ -3572,13 +3807,26 @@ CreateThread(function()
         local anyone = next(peerTorch) ~= nil
         if mine or anyone then
             if mine then drawTorch(PlayerPedId()) end
-            for id in pairs(peerTorch) do
+            -- Three missed heartbeats plus margin. **This number is tied to the server's
+            -- re-assert tick** - two seconds, in the torch broadcast - and an operator who
+            -- lengthened that tick would have to lengthen this with it.
+            --
+            -- It also closes a rendering bug: switching a torch off while the other player
+            -- is already out of range means they never receive the `false`, and the
+            -- re-assert only ever sends `true`. They drew a light around an unlit phone
+            -- until they reconnected.
+            local now = GetGameTimer()
+            for id, seen in pairs(peerTorch) do
+                if now - seen > 7000 then
+                    peerTorch[id] = nil
+                else
                 local other = GetPlayerFromServerId(id)
                 local ped = other ~= -1 and GetPlayerPed(other) or 0
                 -- Out of scope or gone: forget them rather than looking every frame for
                 -- somebody on the far side of the map.
                 if ped and ped ~= 0 and DoesEntityExist(ped) then drawTorch(ped)
                 else peerTorch[id] = nil end
+                end
             end
             Wait(0)
         else

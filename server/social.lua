@@ -105,6 +105,15 @@ local function imageAllowed(url)
     return false
 end
 
+--- The same gate, for the other apps that accept a picture.
+---
+--- Published rather than copied: a server that widens `socialImageHosts` widens it everywhere at
+--- once. A second copy of this function is a second list to forget to update, and the symptom
+--- would be one app refusing a photograph the app beside it accepts.
+function PhoneImageAllowed(url)
+    return imageAllowed(url)
+end
+
 -- ══════════════════════════════════════════════════════════════
 -- Accounts
 -- ══════════════════════════════════════════════════════════════
@@ -769,6 +778,103 @@ end)
 -- ══════════════════════════════════════════════════════════════
 local function hushOn() return socOn() and V.SettingBool('socialHush', SOC.hush.enabled) end
 
+--- What a profile may say about itself, as closed sets.
+---
+--- **Every one of these is drawn on a stranger's screen.** Free text there is free text in
+--- somebody else's markup, and it is also untranslatable - the page turns `hobby_cars` into
+--- whatever the reader's language calls it, which a typed string could never do. A key that is
+--- not in the set is dropped rather than refused: an older page sending an option this build
+--- removed should lose that one field, not fail to save a profile.
+local HUSH_LOOKING = { serious = true, casual = true, friends = true, unsure = true }
+local HUSH_INTERESTS = {
+    cars = true, music = true, food = true, gym = true, films = true, games = true,
+    nights = true, beach = true, hiking = true, art = true, animals = true, travel = true,
+    fishing = true, bikes = true, coffee = true, dancing = true, cooking = true, guns = true,
+}
+--- The conversation starters. The KEY is the question and the player writes the answer, which
+--- is the one piece of free text on a Hush card - capped, stripped, and escaped by the page.
+local HUSH_PROMPTS = {
+    perfect_night = true, never_again = true, order_at_bar = true, worst_habit = true,
+    find_me = true, deal_breaker = true, sunday = true, brag = true,
+}
+
+--- A stored `interests` column back into a list, dropping anything not in the set.
+---
+--- Filtered on the way OUT as well as on the way in. A row written by an older build, by hand,
+--- or by an operator's own migration can hold a key this build does not know, and the page turns
+--- a key into a translated chip - so an unknown one would draw a locale key on a stranger's
+--- profile.
+local function hushSplit(csv)
+    local out = {}
+    for key in tostring(csv or ''):gmatch('([^,]+)') do
+        if HUSH_INTERESTS[key] and #out < 6 then out[#out + 1] = key end
+    end
+    return out
+end
+
+--- The keys of a closed set, sorted, so the page's picker is in the same order every time it
+--- is drawn. `pairs` has no order, and a picker whose rows move between visits is a picker
+--- nobody can build a habit with.
+local function hushKeys(set)
+    local out = {}
+    for key in pairs(set) do out[#out + 1] = key end
+    table.sort(out)
+    return out
+end
+
+--- How much a day of Hush Premium costs, and what it buys. Read through `V.Setting` so an
+--- operator can move the price with a convar on a live server.
+local function hushPass()
+    local cfg = (SOC.hush and SOC.hush.premium) or {}
+    return {
+        on = cfg.enabled ~= false,
+        price = math.max(0, math.floor(num(V.Setting('socialHushPrice', cfg.price), 50))),
+        account = (cfg.account == 'cash') and 'cash' or 'bank',
+        hours = math.max(1, math.floor(num(cfg.hours, 24))),
+        likes = math.max(1, math.floor(num(cfg.likes, 25))),
+        supers = math.max(0, math.floor(num(cfg.superLikes, 5))),
+        seeLikes = cfg.seeLikes ~= false,
+        rewindLikes = cfg.rewindLikes ~= false,
+    }
+end
+
+--- Characters with a pass purchase in flight, so a second tap cannot start another.
+---
+--- Keyed by citizen id rather than by source: a staff member holding somebody's phone acts as
+--- that character, and it is the CHARACTER who may only be buying one pass at a time.
+local HushBuying = {}
+
+--- Is this character's pass still running, and until when?
+---
+--- Read from the database on every call rather than cached. A cache here would have to be
+--- invalidated by a purchase, by the clock, and by a character switch, and the read is a scalar
+--- on the primary key.
+local function hushPremiumUntil(cid)
+    local until_ = MySQL.scalar.await(
+        'SELECT premium_until FROM vphone_hush_profiles WHERE citizenid = ?', { cid })
+    until_ = math.floor(num(until_, 0))
+    return (until_ > os.time()) and until_ or 0
+end
+
+--- The like ceiling for this character today: the free one, or the pass's.
+local function hushLikeCaps(cid)
+    local pass = hushPass()
+    local premium = pass.on and hushPremiumUntil(cid) > 0
+    if premium then return pass.likes, pass.supers, true end
+    return math.max(0, math.floor(num(V.Setting('socialDailyLikes', SOC.hush.dailyLikes), 3))),
+           math.max(0, math.floor(num(SOC.hush.dailySuper, 1))), false
+end
+
+--- How many likes and super likes this character has spent in the last day.
+local function hushSpent(cid)
+    local row = MySQL.single.await([[SELECT
+            SUM(liked = 1) AS likes,
+            SUM(liked = 1 AND super = 1) AS supers
+        FROM vphone_hush_likes
+        WHERE from_cid = ? AND at > DATE_SUB(NOW(), INTERVAL 1 DAY)]], { cid }) or {}
+    return math.floor(num(row.likes, 0)), math.floor(num(row.supers, 0))
+end
+
 --- The current year, for the age arithmetic in SQL. Read once: it is a constant for any
 --- session short enough to matter, and calling os.date per row would be silly.
 local THIS_YEAR = tonumber(os.date('%Y')) or 2026
@@ -805,13 +911,150 @@ V.Callback('v-phone:soc:hushMe', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
     local row = MySQL.single.await([[SELECT bio, photo, photo2, photo3, gender, seeking,
-        min_age, max_age, active FROM vphone_hush_profiles WHERE citizenid = ?]], { p.citizenid })
-    resolve({ ok = true, profile = row and {
-        bio = row.bio, photo = row.photo, photo2 = row.photo2, photo3 = row.photo3,
-        gender = row.gender, seeking = row.seeking,
-        minAge = num(row.min_age, 18), maxAge = num(row.max_age, 99),
-        active = truthy(row.active),
-    } or nil })
+        min_age, max_age, active, job, looking, interests, prompt, prompt_answer,
+        premium_until FROM vphone_hush_profiles WHERE citizenid = ?]], { p.citizenid })
+
+    local pass = hushPass()
+    local until_ = math.floor(num(row and row.premium_until, 0))
+    if until_ <= os.time() then until_ = 0 end
+    local likeCap, superCap, premium = hushLikeCaps(p.citizenid)
+    local likesUsed, supersUsed = hushSpent(p.citizenid)
+
+    resolve({
+        ok = true,
+        profile = row and {
+            bio = row.bio, photo = row.photo, photo2 = row.photo2, photo3 = row.photo3,
+            gender = row.gender, seeking = row.seeking,
+            minAge = num(row.min_age, 18), maxAge = num(row.max_age, 99),
+            active = truthy(row.active),
+            job = row.job, looking = row.looking, prompt = row.prompt,
+            promptAnswer = row.prompt_answer,
+            interests = hushSplit(row.interests),
+        } or nil,
+        -- What this player may still do today, so the page can say "2 likes left" instead of
+        -- letting them find out by being refused.
+        limits = {
+            likes = likeCap, likesUsed = likesUsed,
+            supers = superCap, supersUsed = supersUsed,
+            premium = premium, until_ = until_,
+        },
+        -- The shop window for the pass. Sent whether or not they have one: the page draws the
+        -- price on the buy button and the renewal date on the badge from the same fields.
+        pass = pass.on and {
+            price = pass.price, account = pass.account, hours = pass.hours,
+            likes = pass.likes, supers = pass.supers,
+            seeLikes = pass.seeLikes, rewindLikes = pass.rewindLikes,
+        } or nil,
+        -- The closed sets, so the page builds its pickers from what the server will accept
+        -- rather than from a copy that drifts.
+        options = { looking = hushKeys(HUSH_LOOKING), interests = hushKeys(HUSH_INTERESTS),
+                    prompts = hushKeys(HUSH_PROMPTS) },
+    })
+end)
+
+--- Buy a day of Hush Premium.
+---
+--- **The money moves before the pass is granted, and a debit that cannot be confirmed grants
+--- nothing.** `Bridge.RemoveMoney` answers false on every framework it supports when the
+--- balance will not cover it, and the operator's own hook is asked first - so this works on
+--- qb-core, qbx_core, ox_core, ESX and anything wired through `Config.Compat.hooks.removeMoney`
+--- without a branch here per framework.
+V.Callback('v-phone:soc:hushPass', function(src, resolve)
+    if not hushOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local pass = hushPass()
+    if not pass.on then resolve({ error = 'off' }) return end
+
+    -- A profile has to exist first: the pass is a column on it, and buying a pass for a
+    -- profile nobody can be shown is spending money on nothing.
+    local has = MySQL.scalar.await(
+        'SELECT 1 FROM vphone_hush_profiles WHERE citizenid = ?', { p.citizenid })
+    if not has then resolve({ error = 'noprofile' }) return end
+
+    -- **One purchase at a time per character.**
+    --
+    -- Everything below yields: the debit, the update, the read back. Two taps on the buy
+    -- button in the same second both got past the checks, both were charged, and both wrote
+    -- the same expiry - so the player paid twice for one day. The flag is cleared on every
+    -- exit path below, including the refusal.
+    if HushBuying[p.citizenid] then resolve({ error = 'busy' }) return end
+    HushBuying[p.citizenid] = true
+
+    -- **The money comes off the phone's OWNER, not off whoever is holding it.**
+    --
+    -- Under a staff phone-view session `Core.GetPlayer(src)` answers with the held character -
+    -- that is the whole point of admin view - but `src` is still the staff member. So the
+    -- purchase was granted to the character on screen and paid for out of the wallet of the
+    -- person looking at it. Every other paying path in this resource resolves the actor
+    -- through `PhoneActingSource` first, and this one did not.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+
+    if pass.price > 0 then
+        local paid = Bridge.RemoveMoney(acting, pass.price, pass.account, 'Hush Premium')
+        if paid ~= true then
+            HushBuying[p.citizenid] = nil
+            resolve({ error = 'nomoney' })
+            return
+        end
+    end
+
+    -- **The extension is computed in SQL, against the stored value.**
+    --
+    -- Reading the expiry into Lua, adding a day and writing the result back is a check-then-act
+    -- across three awaits. `GREATEST` does the same arithmetic inside the statement, where
+    -- nothing can interleave.
+    MySQL.query.await([[UPDATE vphone_hush_profiles
+        SET premium_until = GREATEST(COALESCE(premium_until, 0), UNIX_TIMESTAMP()) + ?
+        WHERE citizenid = ?]], { pass.hours * 3600, p.citizenid })
+    HushBuying[p.citizenid] = nil
+    local until_ = hushPremiumUntil(p.citizenid)
+    Core.Log('social', ('hush premium %s for %dh (%d)')
+        :format(p.citizenid, pass.hours, pass.price), nil, p.citizenid)
+
+    local likeCap, superCap = hushLikeCaps(p.citizenid)
+    local likesUsed, supersUsed = hushSpent(p.citizenid)
+    resolve({ ok = true, until_ = until_,
+              limits = { likes = likeCap, likesUsed = likesUsed, supers = superCap,
+                         supersUsed = supersUsed, premium = true, until_ = until_ } })
+end)
+
+--- Who has liked you and is waiting for an answer. **The pass buys this.**
+---
+--- Without it the page is told how many there are and nothing else, which is the honest version
+--- of the tease every dating app runs: the count is real, and paying reveals the faces rather
+--- than inventing them.
+V.Callback('v-phone:soc:hushLikedMe', function(src, resolve)
+    if not hushOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    -- Only people I have not already judged. Somebody I passed on is not waiting for me.
+    local rows = MySQL.query.await([[SELECT h.citizenid, h.photo, h.job, h.bio, l.super,
+               c.firstname, c.dob
+        FROM vphone_hush_likes l
+        JOIN vphone_hush_profiles h ON h.citizenid = l.from_cid AND h.active = 1
+        JOIN vphone_characters c ON c.citizenid = l.from_cid
+        WHERE l.to_cid = ? AND l.liked = 1
+          AND NOT EXISTS (SELECT 1 FROM vphone_hush_likes m
+                          WHERE m.from_cid = ? AND m.to_cid = l.from_cid)
+        ORDER BY l.super DESC, l.at DESC LIMIT 30]], { p.citizenid, p.citizenid }) or {}
+
+    local pass = hushPass()
+    local premium = pass.on and pass.seeLikes and hushPremiumUntil(p.citizenid) > 0
+    if not premium then
+        -- The COUNT and nothing else. No name, no photograph, no citizen id - a payload that
+        -- carries them and a page that blurs them is a payload anybody can read.
+        resolve({ ok = true, locked = true, count = #rows })
+        return
+    end
+
+    local out = {}
+    for i, r in ipairs(rows) do
+        out[i] = { ref = r.citizenid, name = r.firstname, age = ageFrom(r.dob),
+                   photo = r.photo, job = r.job, bio = r.bio, super = truthy(r.super) }
+    end
+    resolve({ ok = true, locked = false, count = #out, people = out })
 end)
 
 V.Callback('v-phone:soc:hushSetup', function(src, resolve, data)
@@ -843,14 +1086,45 @@ V.Callback('v-phone:soc:hushSetup', function(src, resolve, data)
     local maxAge = math.max(18, math.min(99, math.floor(num(data and data.maxAge, 99))))
     if minAge > maxAge then minAge, maxAge = maxAge, minAge end
 
+    -- What they do. The one free-text field besides the bio and the prompt answer, and it is
+    -- a job title rather than a sentence - forty characters, stripped of control codes.
+    local job = tostring((data and data.job) or ''):gsub('%c', ' '):gsub('%s+', ' ')
+    job = job:gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 40)
+
+    -- Closed sets from here down. An unknown key is DROPPED rather than refused, so a page a
+    -- build behind loses one field instead of failing to save the profile at all.
+    local looking = tostring((data and data.looking) or '')
+    if not HUSH_LOOKING[looking] then looking = '' end
+
+    local interests = {}
+    local seenTag = {}
+    for _, key in ipairs((data and type(data.interests) == 'table' and data.interests) or {}) do
+        key = tostring(key or '')
+        if HUSH_INTERESTS[key] and not seenTag[key] and #interests < 6 then
+            seenTag[key] = true
+            interests[#interests + 1] = key
+        end
+    end
+
+    local prompt = tostring((data and data.prompt) or '')
+    if not HUSH_PROMPTS[prompt] then prompt = '' end
+    local answer = tostring((data and data.promptAnswer) or ''):gsub('%c', ' '):gsub('%s+', ' ')
+    answer = answer:gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 140)
+    -- An answer with no question is a line of text nothing introduces, and a question with no
+    -- answer is a blank on the card. Neither is kept.
+    if prompt == '' or answer == '' then prompt, answer = '', '' end
+
     MySQL.query.await([[INSERT INTO vphone_hush_profiles
-            (citizenid, bio, photo, photo2, photo3, gender, seeking, min_age, max_age, active)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+            (citizenid, bio, photo, photo2, photo3, gender, seeking, min_age, max_age, active,
+             job, looking, interests, prompt, prompt_answer)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON DUPLICATE KEY UPDATE bio=VALUES(bio), photo=VALUES(photo), photo2=VALUES(photo2),
             photo3=VALUES(photo3), gender=VALUES(gender), seeking=VALUES(seeking),
-            min_age=VALUES(min_age), max_age=VALUES(max_age), active=VALUES(active)]],
+            min_age=VALUES(min_age), max_age=VALUES(max_age), active=VALUES(active),
+            job=VALUES(job), looking=VALUES(looking), interests=VALUES(interests),
+            prompt=VALUES(prompt), prompt_answer=VALUES(prompt_answer)]],
         { p.citizenid, bio, photos[1], photos[2], photos[3], gender, seeking,
-          minAge, maxAge, active })
+          minAge, maxAge, active, job, looking, table.concat(interests, ','), prompt, answer })
     resolve({ ok = true })
 end)
 
@@ -884,6 +1158,7 @@ V.Callback('v-phone:soc:hushNext', function(src, resolve)
 
     local row = MySQL.single.await(([[
         SELECT h.citizenid, h.bio, h.photo, h.photo2, h.photo3, h.gender,
+               h.job, h.looking, h.interests, h.prompt, h.prompt_answer,
                c.firstname, c.dob
         FROM vphone_hush_profiles h
         JOIN vphone_characters c ON c.citizenid = h.citizenid
@@ -910,9 +1185,31 @@ V.Callback('v-phone:soc:hushNext', function(src, resolve)
         if url and url ~= '' then photos[#photos + 1] = tostring(url) end
     end
 
-    resolve({ ok = true, profile = {
+    -- What the two of them have in common, worked out here rather than on the page: the page
+    -- does not hold the reader's own profile while a card is on screen, and a shared interest
+    -- is the single most useful thing a dating card can say.
+    local mineTags = {}
+    for _, key in ipairs(hushSplit(MySQL.scalar.await(
+        'SELECT interests FROM vphone_hush_profiles WHERE citizenid = ?', { p.citizenid }))) do
+        mineTags[key] = true
+    end
+    local theirTags, shared = hushSplit(row.interests), {}
+    for _, key in ipairs(theirTags) do
+        if mineTags[key] then shared[#shared + 1] = key end
+    end
+
+    local likeCap, superCap, premium = hushLikeCaps(p.citizenid)
+    local likesUsed, supersUsed = hushSpent(p.citizenid)
+
+    resolve({ ok = true,
+      limits = { likes = likeCap, likesUsed = likesUsed, supers = superCap,
+                 supersUsed = supersUsed, premium = premium },
+      profile = {
         ref = row.citizenid, name = row.firstname, age = ageFrom(row.dob),
         bio = row.bio, photo = row.photo, photos = photos,
+        job = row.job, looking = row.looking,
+        interests = theirTags, shared = shared,
+        prompt = row.prompt, promptAnswer = row.prompt_answer,
         -- How far away, in metres, when they are connected. A dating app without distance is a
         -- pen-pal service, and on a server the answer is genuinely useful.
         distance = hushDistance(src, row.citizenid),
@@ -936,12 +1233,27 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
 
     -- A super like is capped hard and separately from ordinary likes. That cap IS the feature:
     -- a signal everybody can send at will says nothing.
-    if super then
-        local cap = math.max(0, math.floor(num(SOC.hush.dailySuper, 1)))
-        local used = num(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_hush_likes
-            WHERE from_cid = ? AND super = 1 AND at > DATE_SUB(NOW(), INTERVAL 1 DAY)]],
-            { p.citizenid }), 0)
-        if used >= cap then resolve({ error = 'superlimit' }) return end
+    -- **Both ceilings are read BEFORE the row is written**, not after.
+    --
+    -- The like ceiling used to be checked by inserting the row and counting afterwards, then
+    -- deleting it again when the count came out too high. That is a write, a read and a write
+    -- to answer a question the first read could have answered - and it left a window in which
+    -- a second request saw the row that was about to be removed. The pass moves both numbers,
+    -- so this is also where the pass earns its money.
+    local likeCap, superCap = hushLikeCaps(p.citizenid)
+    if liked then
+        local likesUsed, supersUsed = hushSpent(p.citizenid)
+        -- Already judged? Then this is a change of mind on a card that came round again, and
+        -- it does not spend a second like.
+        local already = MySQL.scalar.await([[SELECT liked FROM vphone_hush_likes
+            WHERE from_cid = ? AND to_cid = ?]], { p.citizenid, target })
+        local spends = num(already, 0) ~= 1
+        if spends and likesUsed >= likeCap then
+            resolve({ error = 'limit', cap = likeCap, premium = false }) return
+        end
+        if super and supersUsed >= superCap then
+            resolve({ error = 'superlimit', cap = superCap }) return
+        end
     end
 
     -- A pass is recorded too, or the same face comes back every time the app opens. It
@@ -953,15 +1265,14 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
             at = CURRENT_TIMESTAMP]],
         { p.citizenid, target, liked and 1 or 0, super and 1 or 0 })
 
-    if not liked then resolve({ ok = true, match = false }) return end
+    -- What is left, so the page can count down without asking again.
+    local likesLeft, supersLeft = hushSpent(p.citizenid)
+    likesLeft = math.max(0, likeCap - likesLeft)
+    supersLeft = math.max(0, superCap - supersLeft)
 
-    -- The daily ceiling counts LIKES, not passes: saying no is free.
-    local today = num(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_hush_likes
-        WHERE from_cid = ? AND liked = 1 AND at > DATE_SUB(NOW(), INTERVAL 1 DAY)]],
-        { p.citizenid }), 0)
-    if today > math.floor(num(V.Setting('socialDailyLikes', SOC.hush.dailyLikes), 30)) then
-        MySQL.query.await('DELETE FROM vphone_hush_likes WHERE from_cid = ? AND to_cid = ?', { p.citizenid, target })
-        resolve({ error = 'limit' }) return
+    if not liked then
+        resolve({ ok = true, match = false, left = likesLeft, supersLeft = supersLeft })
+        return
     end
 
     local mutual = MySQL.scalar.await(
@@ -979,7 +1290,8 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
     local them = MySQL.single.await('SELECT firstname FROM vphone_characters WHERE citizenid = ?', { target })
 
     Core.Log('social', ('hush match %s <-> %s'):format(p.citizenid, target), nil, p.citizenid)
-    resolve({ ok = true, match = true, name = them and them.firstname or '?', super = super })
+    resolve({ ok = true, match = true, name = them and them.firstname or '?', super = super,
+              left = likesLeft, supersLeft = supersLeft })
 end)
 
 --- Undo the last pass.
@@ -1039,6 +1351,20 @@ V.Callback('v-phone:soc:hushMatches', function(src, resolve)
         ORDER BY mine.at DESC LIMIT 50
     ]], { p.citizenid }) or {}
 
+    -- Every unread count in one grouped read, instead of one query per match inside the loop
+    -- below. Same predicates, same key - `inbox_idx (app, to_cid, seen)` serves this directly,
+    -- where the per-row form probed an index that does not carry `seen`.
+    --
+    -- It counts unread from ANYBODY, not only from matches; the extra keys are simply never
+    -- looked up, because the only reader is `unread[r.cid]` and `r.cid` is always a match.
+    local unread = {}
+    for _, u in ipairs(MySQL.query.await([[
+        SELECT from_cid AS other, COUNT(*) AS n FROM vphone_social_dm
+        WHERE app = 'hush' AND to_cid = ? AND seen = 0
+        GROUP BY from_cid]], { p.citizenid }) or {}) do
+        unread[u.other] = num(u.n, 0)
+    end
+
     local out = {}
     for _, r in ipairs(rows) do
         -- **No phone number.** A match is two people who liked a first name and a photograph;
@@ -1056,9 +1382,7 @@ V.Callback('v-phone:soc:hushMatches', function(src, resolve)
             bio = r.bio or '',
             photo = r.photo or '',
             at = r.at,
-            unread = math.floor(num(MySQL.scalar.await([[SELECT COUNT(*) FROM vphone_social_dm
-                WHERE app = 'hush' AND from_cid = ? AND to_cid = ? AND seen = 0]],
-                { r.cid, p.citizenid }), 0)),
+            unread = math.floor(unread[r.cid] or 0),
         }
     end
     resolve({ ok = true, matches = out })
@@ -1673,6 +1997,101 @@ V.Callback('v-phone:soc:storyViewers', function(src, resolve, data)
 end)
 
 -- ══════════════════════════════════════════════════════════════
+-- People behind a number
+-- ══════════════════════════════════════════════════════════════
+-- Every count in this app was a dead end. A post said how many likes it had and there was no
+-- way to find out whose; a profile said how many followers and the number was the whole
+-- answer. On a roleplay server those lists ARE the app - who follows whom is the social map,
+-- and a like is somebody telling you they were there.
+
+--- One person, shaped the way every list in this app shapes a person.
+---
+--- Written once because there are now four lists - viewers, likers, followers, following - and
+--- four copies of the same six fields is four chances for one of them to start including a
+--- citizen id.
+local function personRow(r)
+    return {
+        handle = tostring(r.handle),
+        displayname = r.displayname and tostring(r.displayname) or nil,
+        avatar = r.avatar and tostring(r.avatar) or nil,
+        verified = truthy(r.verified),
+    }
+end
+
+--- Who liked a post.
+---
+--- Public, deliberately. A like is a public act: the count is already on the card and the
+--- author is already told who it was. Hiding the list while showing the number is the shape of
+--- privacy without any of it.
+V.Callback('v-phone:soc:likers', function(src, resolve, data)
+    if not socOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+
+    local id = math.floor(num(data and data.id, 0))
+    if id <= 0 then resolve(false) return end
+    -- The post has to exist AND belong to this app: a Bleeter id asked for as a Snapmatic post
+    -- would otherwise answer with the likes of somebody else's post.
+    local exists = MySQL.scalar.await(
+        'SELECT 1 FROM vphone_social_posts WHERE id = ? AND app = ? LIMIT 1', { id, app })
+    if not exists then resolve({ error = 'gone' }) return end
+
+    local rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+        FROM vphone_social_likes l
+        JOIN vphone_social_accounts a ON a.citizenid = l.citizenid AND a.app = ?
+        WHERE l.post_id = ?
+        ORDER BY l.citizenid = ? DESC, a.handle
+        LIMIT 200]], { app, id, p.citizenid }) or {}
+
+    local out = {}
+    for _, r in ipairs(rows) do out[#out + 1] = personRow(r) end
+    resolve({ ok = true, people = out })
+end)
+
+--- Who follows an account, or who it follows.
+---
+--- `which` is one of two words and is checked against both rather than pasted into the query:
+--- the direction decides which COLUMN is joined, and a column name coming from the client is
+--- how a list turns into a way to read the table.
+V.Callback('v-phone:soc:follows', function(src, resolve, data)
+    if not socOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    local app = appOf(data)
+    if not accountOf(p.citizenid, app) then resolve({ error = 'noaccount' }) return end
+
+    local handle = tostring((data and data.handle) or '')
+    local cid = handle ~= '' and cidOfHandle(app, handle) or p.citizenid
+    if not cid then resolve({ error = 'nouser' }) return end
+
+    local which = tostring((data and data.which) or 'followers')
+    if which ~= 'followers' and which ~= 'following' then which = 'followers' end
+
+    -- Two whole statements rather than one with a column pasted in. It is four more lines and
+    -- it cannot be turned into a different query by anything the client sends.
+    local rows
+    if which == 'followers' then
+        rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+            FROM vphone_social_follows f
+            JOIN vphone_social_accounts a ON a.citizenid = f.from_cid AND a.app = ?
+            WHERE f.app = ? AND f.to_cid = ?
+            ORDER BY f.at DESC LIMIT 200]], { app, app, cid })
+    else
+        rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+            FROM vphone_social_follows f
+            JOIN vphone_social_accounts a ON a.citizenid = f.to_cid AND a.app = ?
+            WHERE f.app = ? AND f.from_cid = ?
+            ORDER BY f.at DESC LIMIT 200]], { app, app, cid })
+    end
+
+    local out = {}
+    for _, r in ipairs(rows or {}) do out[#out + 1] = personRow(r) end
+    resolve({ ok = true, people = out, which = which })
+end)
+
+-- ══════════════════════════════════════════════════════════════
 -- Verification
 -- ══════════════════════════════════════════════════════════════
 --- Grant or revoke the badge on one account.
@@ -2019,8 +2438,8 @@ function SocialBoot(core)
         print('[v-phone] social: added vphone_social_accounts.cover')
     end
 
-    -- Accounts made before credentials existed keep working: they are marked verified and
-    -- given the handle as a display name, so nobody is locked out by the upgrade.
+    -- Accounts made before credentials existed keep working: they are given the handle as a
+    -- display name, so nobody is left with a blank one by the upgrade.
     for col, ddl in pairs({
         displayname = "ADD COLUMN `displayname` VARCHAR(40) NOT NULL DEFAULT ''",
         phone       = "ADD COLUMN `phone` VARCHAR(20) NOT NULL DEFAULT ''",
@@ -2032,7 +2451,27 @@ function SocialBoot(core)
               AND COLUMN_NAME = ? LIMIT 1]], { col })
         if not has then MySQL.query.await('ALTER TABLE `vphone_social_accounts` ' .. ddl) end
     end
-    MySQL.query.await("UPDATE `vphone_social_accounts` SET `verified` = 1 WHERE `verified` = 0 AND `password` = ''")
+    -- **The blue tick is NOT handed out here, and the line that did it is gone.**
+    --
+    -- It read `SET verified = 1 WHERE verified = 0 AND password = ''`, and the comment above it
+    -- called that "keeps working". Two different things share the word: signing up verifies
+    -- your NUMBER, and the `verified` COLUMN is the badge staff grant with
+    -- `/phoneadmin verify @handle`. The sign-up path has a long comment about exactly this
+    -- confusion because the same mistake was made there once and fixed; this copy survived.
+    --
+    -- It was not a one-time migration either. It ran on EVERY boot, so any account with an
+    -- empty password - one seeded by a script, imported from elsewhere, or created by another
+    -- resource - was badged at the next restart, for ever. A badge everybody has is not a
+    -- badge; telling accounts apart is the one thing it is for.
+    --
+    -- Nothing replaces it. An account with no password is not locked out: `resetGate` texts a
+    -- code to the number on the account and lets a new password be set, which is the path that
+    -- already existed and the one that actually solves being unable to sign in. `verified` was
+    -- never consulted for authentication at all - it is drawn, and nothing else.
+    --
+    -- Badges already granted by this line are left alone: they are somebody else's database
+    -- and taking them back is not an update's decision. `exports['v-phone']:ClearVerified()`
+    -- is there for an operator who wants them gone.
     MySQL.query.await("UPDATE `vphone_social_accounts` SET `displayname` = `handle` WHERE `displayname` = ''")
 
     -- A database created before accounts were per-app is migrated in place: existing
@@ -2151,6 +2590,19 @@ function SocialBoot(core)
     hushColumn('seeking', "VARCHAR(3) NOT NULL DEFAULT 'all'")
     hushColumn('min_age', 'TINYINT UNSIGNED NOT NULL DEFAULT 18')
     hushColumn('max_age', 'TINYINT UNSIGNED NOT NULL DEFAULT 99')
+    -- A profile that is a photograph and one line is a profile nobody can decide anything
+    -- from. These five are what an actual dating app asks for, and every one of them is drawn
+    -- on the card rather than stored and forgotten.
+    hushColumn('job', "VARCHAR(40) NOT NULL DEFAULT ''")
+    hushColumn('looking', "VARCHAR(8) NOT NULL DEFAULT ''")
+    -- A comma-separated list of keys from a CLOSED set, never free text. Free text here would
+    -- be a chip drawn on a stranger's screen, and a closed set also means the two sides of a
+    -- match can be told they have something in common.
+    hushColumn('interests', "VARCHAR(120) NOT NULL DEFAULT ''")
+    hushColumn('prompt', "VARCHAR(16) NOT NULL DEFAULT ''")
+    hushColumn('prompt_answer', "VARCHAR(140) NOT NULL DEFAULT ''")
+    -- When the premium pass runs out, as a unix timestamp. NULL is "never had one".
+    hushColumn('premium_until', 'INT UNSIGNED NULL DEFAULT NULL')
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_hush_likes` (
         `from_cid` VARCHAR(16) NOT NULL,

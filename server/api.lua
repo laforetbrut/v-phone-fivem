@@ -746,3 +746,82 @@ exports('ImportPhone', function(citizenid, data, replace)
     if target and target.source then TriggerClientEvent('v-phone:client:close', target.source) end
     return true
 end)
+
+
+-- ══════════════════════════════════════════════════════════════
+-- Resolving somebody, and reaching them
+-- ══════════════════════════════════════════════════════════════
+
+--- Turn a source id, a phone number or a citizen id into a citizen id.
+---
+---     local cid = exports['v-phone']:WhoIs(source)          --> 'ABC12345' or nil
+---     local cid = exports['v-phone']:WhoIs('555-0142')
+---
+--- **Every other export here takes a citizen id**, and until now each caller had to work out
+--- which of the three they were holding - a source is a small integer and a citizen id is not,
+--- which is the kind of guess that is right until somebody's identifier is numeric. This is the
+--- resolution the phone uses internally, exported once so nobody has to write it again.
+exports('WhoIs', function(target)
+    return PhoneWhoIs(target)
+end)
+
+--- A service message with a PICTURE attached.
+---
+---     exports['v-phone']:SendServiceMedia(cid, 'Benny s',
+---         'Your car is ready.', 'https://i.imgur.com/abc.png')
+---
+--- Answers `true, id` or `false, reason`. The same rules as `SendServiceMessage`: the name is cut
+--- to twelve characters and the body to the configured maximum. **The URL goes through the same
+--- host gate a player's own picture does** - a host the operator has not allowed loses the
+--- attachment and keeps the text, because the sentence is worth delivering either way.
+---
+--- For a mechanic sending a photograph of the finished car, a dealership sending the listing
+--- shot, an MDT sending a mugshot to a responding unit, a courier sending the drop.
+exports('SendServiceMedia', function(who, label, body, imageUrl)
+    return PhoneServiceMessage(who, label, body, imageUrl)
+end)
+
+--- Leave a voicemail, as though the call had gone unanswered.
+---
+---     exports['v-phone']:LeaveVoicemail('555-0142', '555-0100', 'Call me back.')
+---
+--- Answers `true` or `false, reason` - `'off'`, `'nonumber'` or `'empty'`. The recipient is
+--- bannered if they are connected and reads it in the app if they are not, exactly as a
+--- voicemail left by a player behaves.
+---
+--- For an answering-machine business, an NPC fixer who leaves a message rather than ringing, a
+--- job board following up a missed call.
+exports('LeaveVoicemail', function(toNumber, fromNumber, body)
+    return PhoneLeaveVoicemail(toNumber, fromNumber, body)
+end)
+
+--- Set a reminder on somebody's phone.
+---
+---     exports['v-phone']:AddReminder(cid, os.time() + 7200,
+---         'Impound fee due', 'Bay 3, Davis')
+---
+--- Answers the row id, or `false, reason`. It goes off through the phone's own sweep, so it
+--- survives a restart and arrives whether or not the app is open - which is the whole reason to
+--- use this rather than a timer of your own.
+---
+--- For "your lease renews tomorrow", "court at 19:00", "your impound fee is due in two hours".
+exports('AddReminder', function(citizenid, atEpoch, text, note)
+    if not PhoneAddReminder then return false, 'off' end
+    return PhoneAddReminder(citizenid, atEpoch, text, note)
+end)
+
+--- Tell a player's open app to redraw itself.
+---
+---     exports['v-phone']:RefreshApp(source, 'my_dispatch')
+---
+--- Answers true if the player was told. **A dropped-in app lives in an iframe**, so this reaches
+--- it through the SDK's `refresh` event - which DEVELOPERS.md has always documented and which
+--- nothing had ever fired. An app shipped in another resource can now update its own screen when
+--- something happens, instead of polling.
+exports('RefreshApp', function(src, appId)
+    src = tonumber(src)
+    appId = tostring(appId or '')
+    if not src or appId == '' then return false end
+    TriggerClientEvent('v-phone:client:appRefresh', src, appId)
+    return true
+end)

@@ -45,23 +45,23 @@
 --
 --  WHAT IS WHERE
 --  ─────────────
---  Line numbers, so any section is one jump away:
+--  Line numbers, so any section is one jump away. **Regenerate this rather than editing
+--  it**: every entry was wrong by up to a thousand lines the last time it was checked by
+--  hand, which is what a hand-maintained index does. tools/check.py could own it.
 --
---    66    COMPATIBILITY                2223  A PHONE HEARD RINGING
---    319   SETTINGS                     2333  EXTERNAL CHARGING
---    455   LICENCE NAMES                2355  POLICE FORENSICS
---    515   HOW A NUMBER IS DISPLAYED    2357  THE HEALTH RECORD
---    1245  WRITING A POSITION           2397  HOSPITALS
---    1324  PAID CHARGING                2425  PROPERTY
---    1414  ADMIN                        2456  GARAGES
---    1420  LOGGING                      2475  BANK
---    1669  BANK PRO                     2671  MEDIA
---    1765  ZUBER                        2748  FACETIME
---    1959  TAXI                         2778  PAYPHONES
---    2054  LOTTERY                      2957  MUSIC
---    2162  THE CLOCK                    3088  VEHICLE REMOTE
---    2178  THE NETS UNDER THE PHONE     3157  FRUITSTORE
---
+--    79    COMPATIBILITY          3653  HOW LONG THE PHONE KEEPS THINGS
+--    426   SETTINGS               3715  HOME SCREEN WIDGETS
+--    562   LICENCE NAMES          3756  THE UPDATE CHECK
+--    622   HOW A NUMBER IS DISPLAYED 3788  A PHONE HEARD RINGING
+--    1736  WRITING A POSITION     3844  COMMANDS
+--    2324  PAID CHARGING          3866  THE SDK EXAMPLE APP
+--    2414  ADMIN                  4038  EXTERNAL CHARGING
+--    2420  LOGGING                4060  POLICE FORENSICS
+--    2430  911                    4062  THE HEALTH RECORD
+--    2669  BANK PRO               4102  HOSPITALS
+--    3335  THE CLOCK              4130  PROPERTY
+--    3351  THE NETS UNDER THE PHONE 4161  GARAGES
+--    3396  ONLYFRUITS             4180  BANK
 --
 --  IF SOMETHING DOES NOT BEHAVE
 --  ────────────────────────────
@@ -119,6 +119,39 @@ Config.PhoneItem = 'phone'
 --- How much charge it returns is `Config.Settings.powerbankCharge`.
 Config.PowerbankItem = 'powerbank'
 
+-- ══════════════════════════════════════════════════════════════
+-- Two notifications for one payment
+-- ══════════════════════════════════════════════════════════════
+-- A paycheck lands and you are told twice: once by the phone, once by your framework's own
+-- notification in the corner of the screen.
+--
+-- **The phone cannot switch the other one off, and no setting here will.** That is not a
+-- missing feature, it is how FiveM works: an event handler belongs to the resource that
+-- registered it, nothing can unregister another resource's, and `GetCoreObject()` hands every
+-- resource its OWN copy of the core table - so overwriting `Notify` here would only ever
+-- change it for this phone. Anything claiming otherwise in this file would be a lie.
+--
+-- What DOES work is routing the framework's notification INTO the phone, which is one line in
+-- a file you already own. The phone publishes the export for exactly this:
+--
+--     exports['v-phone']:Notify(source, 'bank', title, body)
+--     exports['v-phone']:NotifyMoney(source, 250, 'Overtime')
+--
+-- **Everything through the phone** - qb-core, in `qb-core/client/functions.lua`, inside
+-- `QBCore.Functions.Notify`. Replace the body with a phone banner and every script on the
+-- server that notifies is suddenly notifying on the handset:
+--
+--     function QBCore.Functions.Notify(text, texttype, length)
+--         local body = type(text) == 'table' and (text.text or text.caption) or text
+--         TriggerServerEvent('v-phone:compat:notify', tostring(body or ''), texttype)
+--     end
+--
+-- **Only the paycheck** - if you would rather keep the corner notification for everything else,
+-- find the paycheck loop in `qb-core/server/main.lua` and delete only its `Notify` line. The
+-- phone already announces the deposit through `Config.Bank`.
+--
+-- Either way it is a change in qb-core, not here, and it survives a v-phone update precisely
+-- because it is not in v-phone.
 Config.Compat = {
     -- ── Which script answers what ──────────────────────────────
     -- Each of these is `auto`, `off`, or the exact resource name to use.
@@ -643,6 +676,11 @@ Config.RequiredContacts = {
     -- More lines, if your server has numbers people should not have to remember. A plain entry
     -- with no `app` is an ordinary contact: calling it dials the number.
     -- { name = 'Taxi dispatch', number = '555-0100' },
+
+    -- Garages are NOT listed here. When doc-mechanicmdt is on the server the Repair app
+    -- already asks it for them - names, opening state, ratings and the callout queue -
+    -- and Contacts shows that same list under a Garages heading. A second copy in this
+    -- file would be a second set of names to keep in step with the first.
     -- { name = 'Mechanic', number = '555-0200', favourite = false },
 }
 
@@ -677,6 +715,194 @@ Config.Messages = {
         -- limit. A number that does not exist does not start existing, so that answer is
         -- final the first time.
         tries = 6,
+    },
+
+    -- ── GIFs ───────────────────────────────────────────────────
+    -- A picture chosen from a shelf instead of pasted as a link. It is sent as an ordinary
+    -- image message, so anything that already understands an image - the thread, the
+    -- conversation list, the export API, forensics - understands this too.
+    --
+    -- **The library is yours to edit.** Every entry is a plain link to a public CDN, exactly
+    -- like `Config.WallpaperHosts` above: no account, no key, nothing phoned home. Add your
+    -- own categories, remove ones you would rather not have on your server, point them at
+    -- your own host if you host your own.
+    --
+    -- Links rot. `python tools/gif-pack.py --check` says which of these have stopped
+    -- answering, and `--write` rebuilds the whole list from scratch.
+    gifs = {
+        enabled = true,
+
+        -- How many of the ones somebody actually used are kept at the front of the picker.
+        -- Recents are per character and stored with the rest of that character's app data.
+        recent = 12,
+
+        -- ── Search ─────────────────────────────────────────────
+        -- Off unless the operator has an API key of their own. When it is on, the phone shows
+        -- a search field over the shelf below.
+        --
+        -- **The key is read on the server and never reaches the page.** The phone asks the
+        -- server for "cats", the server asks the provider, and only the pictures come back.
+        -- A key handed to a NUI page is a key published: the page is a browser, and anything
+        -- shipped to a browser can be read out of it.
+        --
+        -- Put the key in a server convar rather than in this file if you can:
+        --     set vphone_gifKey "..."
+        -- The file is the fallback for servers that do not use convars.
+        search = {
+            provider = 'tenor',     -- tenor | giphy
+            key      = '',          -- empty means the search field is simply not shown
+            limit    = 24,
+        },
+
+        -- The shelf itself. Category keys are looked up as `ph.gif_<key>` in the locales and
+        -- fall back to the key, so a category you invent shows its own name without needing
+        -- a translation first.
+        packs = {
+            { key = 'hello', gifs = {
+                'https://media.tenor.com/6wDQsQ-l15oAAAAM/lizard-wave.gif',
+                'https://media.tenor.com/JU01jvKaGe8AAAAM/h2di-bear-wave.gif',
+                'https://media.tenor.com/-gy6QqbevJsAAAAM/byeeeee.gif',
+                'https://media.tenor.com/voCtc5JOpV0AAAAM/hola.gif',
+                'https://media.tenor.com/92MplgQwb80AAAAM/cat-meme-wave-emoji.gif',
+                'https://media.tenor.com/RAMLS3DEhBsAAAAM/hi-hello.gif',
+            } },
+            { key = 'yes', gifs = {
+                'https://media.tenor.com/Y0P12w6gXTYAAAAM/yes-sir.gif',
+                'https://media.tenor.com/Q57oQ1ZhTpkAAAAM/spongebob-thumbsup.gif',
+                'https://media.tenor.com/fQNpnuaHvcoAAAAM/yesonavax.gif',
+                'https://media.tenor.com/ZzHXw1AChVQAAAAM/funny-yes.gif',
+                'https://media.tenor.com/eLYYNHG9bOEAAAAM/yes.gif',
+                'https://media.tenor.com/6pW81ZZj-1MAAAAM/yes-wink.gif',
+            } },
+            { key = 'no', gifs = {
+                'https://media.tenor.com/59D5FDlZ8QYAAAAM/nope-brennan-huff.gif',
+                'https://media.tenor.com/UNJpp7xMZw8AAAAM/absolutely-not-david-rose.gif',
+                'https://media.tenor.com/DMwkzZwkeW4AAAAM/its-always-sunny-in-philadelphia-danny-devito.gif',
+                'https://media.tenor.com/U4nwKcWlsfUAAAAM/no-no-no-meme.gif',
+                'https://media.tenor.com/miR4wugcxz4AAAAM/wendy-conrad-your-happy-workplace.gif',
+                'https://media.tenor.com/10i4quIbVEoAAAAM/absolutely-not-nope.gif',
+            } },
+            { key = 'haha', gifs = {
+                'https://media.tenor.com/rL4hulhuEIYAAAAM/funny-laughing.gif',
+                'https://media.tenor.com/SqcnSSG9bR8AAAAM/laughing-hysterically-laughing.gif',
+                'https://media.tenor.com/b_fyEAmO4oYAAAAM/laughing-laughing-hysterically.gif',
+                'https://media.tenor.com/WGdyB0HjFVIAAAAM/lmao-meme.gif',
+                'https://media.tenor.com/VqWZm3PIj0UAAAAM/lmfao.gif',
+                'https://media.tenor.com/B02qN3SZx0cAAAAM/kahkaha-komik.gif',
+            } },
+            { key = 'love', gifs = {
+                'https://media.tenor.com/h4xoDN1uoh4AAAAM/love-love-you.gif',
+                'https://media.tenor.com/nQA0BABq2jcAAAAM/i-love-you-gif-by-good-vibes-club-love.gif',
+                'https://media.tenor.com/yn-a32f7FhkAAAAM/love-big-heart.gif',
+                'https://media.tenor.com/nSy6cX3Fpf0AAAAM/shannon-irenes-pics.gif',
+                'https://media.tenor.com/Ga2qH3V9UnoAAAAM/grupa-pingwina-pingwin.gif',
+                'https://media.tenor.com/vj-A8Cp8l8sAAAAM/cute-kawaii.gif',
+            } },
+            { key = 'sad', gifs = {
+                'https://media1.tenor.com/m/WPVDmrCGWlMAAAAC/soucis.gif',
+                'https://media.tenor.com/WPVDmrCGWlMAAAAM/soucis.gif',
+                'https://media.tenor.com/vLhEp8uCJq4AAAAM/dean-winchester-jensen-ackles.gif',
+                'https://media.tenor.com/OxfxlNNDIv4AAAAM/baby-puoting.gif',
+                'https://media.tenor.com/jDXNIPAp7h4AAAAM/sad-dog-sad-face.gif',
+                'https://media.tenor.com/n5_sc1mZeW4AAAAM/sad-crying.gif',
+            } },
+            { key = 'angry', gifs = {
+                'https://media.tenor.com/vui2TXEoHasAAAAM/the-shining-jack-nicholson.gif',
+                'https://media.tenor.com/BqTqDtZurg8AAAAM/mad-angry.gif',
+                'https://media.tenor.com/kxQa7QwKt-MAAAAM/gachiakuta-zanka-mad.gif',
+                'https://media.tenor.com/E_dGt94zz18AAAAM/megumi-megumi-fushiguro.gif',
+                'https://media.tenor.com/B42KQtAgI9IAAAAM/shibuya-station-haru.gif',
+                'https://media.tenor.com/e8VVRoYhy74AAAAM/omori-aubrey.gif',
+            } },
+            { key = 'wow', gifs = {
+                'https://media.tenor.com/rKLBka9zl5UAAAAM/yeah-excellent.gif',
+                'https://media.tenor.com/b5wsBjj47BgAAAAM/shocked-plastique-tiara.gif',
+                'https://media.tenor.com/8dGugqxC4sAAAAAM/shocked-surprised.gif',
+                'https://media.tenor.com/kn7SlZ31CHEAAAAM/jt-futurama.gif',
+                'https://media.tenor.com/VWEN3FFupVkAAAAM/stunned-rdcworld1.gif',
+                'https://media.tenor.com/0B45HGy7R18AAAAM/finn-wolfhard-surprised-face.gif',
+            } },
+            { key = 'ok', gifs = {
+                'https://media1.tenor.com/m/juQyVDrXZSsAAAAC/ok-okay.gif',
+                'https://media.tenor.com/juQyVDrXZSsAAAAM/ok-okay.gif',
+                'https://media.tenor.com/XCZpSf7vWYsAAAAM/okrealsam-ok-real-sam.gif',
+                'https://media.tenor.com/BbCxxH64TBcAAAAM/havana-mahoney-sts.gif',
+                'https://media.tenor.com/_sUJ-vcM3C4AAAAM/cash-sign-lloyd-ostertag.gif',
+                'https://media.tenor.com/OifIck4oXcUAAAAM/crash-landing-on-you-cloy.gif',
+            } },
+            { key = 'please', gifs = {
+                'https://media.tenor.com/XhK036RdGdUAAAAM/jerry-beg.gif',
+                'https://media.tenor.com/l9Qh626faNgAAAAM/puss-in-boots-shrek.gif',
+                'https://media.tenor.com/pdgnDeta63YAAAAM/oggy-and-the-cockroaches-joey.gif',
+                'https://media.tenor.com/guT_aX7923MAAAAM/cat-cute.gif',
+                'https://media.tenor.com/MLzzYNBYgUMAAAAM/begging-pretty-please.gif',
+                'https://media.tenor.com/4IckGuTqWeYAAAAM/spongebob-squarepants-begging.gif',
+            } },
+            { key = 'waiting', gifs = {
+                'https://media.tenor.com/lJurJjK0ZcgAAAAM/so-bored.gif',
+                'https://media.tenor.com/pdkCOdMH2MkAAAAM/waiting-waiting-patiently.gif',
+                'https://media.tenor.com/lwEsb6h8inQAAAAM/i-am-waiting-waiting.gif',
+                'https://media.tenor.com/b_4MO5WiulkAAAAM/ill-waiting.gif',
+                'https://media.tenor.com/G4MU0XavB_gAAAAM/shots-dead.gif',
+                'https://media.tenor.com/onjjYkqW-mYAAAAM/ateu.gif',
+            } },
+            { key = 'bye', gifs = {
+                'https://media1.tenor.com/m/YqEHtON6HioAAAAC/nope-done.gif',
+                'https://media.tenor.com/uYtTfRovjnIAAAAM/leaving-work-office.gif',
+                'https://media.tenor.com/jqnwErfOmjQAAAAM/farewell-so-long-farewell.gif',
+                'https://media.tenor.com/BPeHQcyK-PsAAAAM/farewell-so-long-farewell.gif',
+                'https://media.tenor.com/ug8Q28zOsfoAAAAM/bye-byebye.gif',
+                'https://media.tenor.com/r80iIC3mTEAAAAAM/sad-goodbye.gif',
+            } },
+            { key = 'dance', gifs = {
+                'https://media.tenor.com/iZ8Lzt3GRakAAAAM/sisters-amy-poehler.gif',
+                'https://media.tenor.com/biJT5MNqaGIAAAAM/plongus-mcnyale.gif',
+                'https://media.tenor.com/Lty_QiyKuGsAAAAM/shbt.gif',
+                'https://media.tenor.com/LCxY8-T5tc8AAAAM/happy-dance-party.gif',
+                'https://media.tenor.com/ZSJUq8mj2jkAAAAM/madonna-madonna-louise.gif',
+                'https://media.tenor.com/qfSQK9wmLqUAAAAM/dropteeth-big-bird.gif',
+            } },
+            { key = 'money', gifs = {
+                'https://media.tenor.com/UuHswEH6oxUAAAAM/smol-smolcat.gif',
+                'https://media.tenor.com/qy51r4zbQBUAAAAM/money-bags.gif',
+                'https://media.tenor.com/8-RgyxeBIG0AAAAM/money-show.gif',
+                'https://media.tenor.com/YpkZWDSvM2UAAAAM/currency-cash.gif',
+                'https://media.tenor.com/G5c6HZ1c9pcAAAAM/broke-make-it-rain.gif',
+                'https://media.tenor.com/wYwyA0dnxxkAAAAM/levy-daniel-levy.gif',
+            } },
+            { key = 'police', gifs = {
+                'https://media1.tenor.com/m/wNnalIwS0ygAAAAC/polis-police.gif',
+                'https://media.tenor.com/wNnalIwS0ygAAAAM/polis-police.gif',
+                'https://media.tenor.com/8g4NTHFm9rYAAAAM/police-cops.gif',
+                'https://media.tenor.com/Wx3bGh80AWkAAAAM/siren-cat.gif',
+                'https://media.tenor.com/G_93pif7k8YAAAAM/busted-police.gif',
+                'https://media.tenor.com/A7xgbELh5NsAAAAM/pink-alert.gif',
+            } },
+            { key = 'car', gifs = {
+                'https://media1.tenor.com/m/5OPXGb_gisgAAAAC/cat-driving-focused.gif',
+                'https://media.tenor.com/5OPXGb_gisgAAAAM/cat-driving-focused.gif',
+                'https://media.tenor.com/7l0jZbo5vaUAAAAM/cat-dog.gif',
+                'https://media.tenor.com/WJCo609LMNEAAAAM/hamster-and-gretel-disney.gif',
+                'https://media.tenor.com/6sjRkt015mMAAAAM/birthday.gif',
+                'https://media.tenor.com/Uc2_BwjPXxYAAAAM/duck-with.gif',
+            } },
+            { key = 'cheers', gifs = {
+                'https://media.tenor.com/uHnBTpPvCx0AAAAM/cheers-red-city-radio.gif',
+                'https://media.tenor.com/XIer_fPZ3rUAAAAM/cheers-gif-happy-birthday.gif',
+                'https://media.tenor.com/YHSJcphBVHIAAAAM/cheers-heather-mcmahan.gif',
+                'https://media.tenor.com/XHZdHOmVT9oAAAAM/cheers-mimosa.gif',
+                'https://media.tenor.com/UvaepeJOMO8AAAAM/bia-drinking-beer.gif',
+                'https://media.tenor.com/reT9aDxX1iMAAAAM/cheers-gabriella-demartino.gif',
+            } },
+            { key = 'shrug', gifs = {
+                'https://media1.tenor.com/m/LNh-Ey5hATAAAAAC/elmo-shrug.gif',
+                'https://media.tenor.com/LNh-Ey5hATAAAAAM/elmo-shrug.gif',
+                'https://media.tenor.com/F9vttl6vl4oAAAAM/whatever-shrug.gif',
+                'https://media.tenor.com/XonaUFJ5xBkAAAAM/colin-farrell-shrugs.gif',
+                'https://media.tenor.com/w4E6pW0KnFEAAAAM/eh-meh.gif',
+                'https://media.tenor.com/BdN0MtOuilcAAAAM/colin-bridgerton-bridgerton.gif',
+            } },
+        },
     },
 }
 
@@ -901,6 +1127,34 @@ Config.Apps = {
       optional = true, category = 'social' },
     { id = 'hush',     label = 'app.hush',     icon = 'hush',     owner = 'v-phone', slot = 21,
       optional = true, category = 'social' },
+    -- Photographs somebody pays to see: a page, followers, subscriptions and tips.
+    --
+    -- `optional`, so it is NOT on a new phone and has to be found in the store, and it is the
+    -- one shipped app with a price on it. Charged once, against the character: removing it and
+    -- installing it again later is free, because a player pays for an app rather than for a
+    -- download. The debit goes through `Bridge.RemoveMoney`, which fails closed - no money, no
+    -- app - and 100 is a number to change, not a rule.
+    { id = 'onlyfruits', label = 'app.onlyfruits', icon = 'sparkles', owner = 'v-phone', slot = 22,
+      optional = true, category = 'social', price = 100, account = 'bank' },
+    -- FruitBrawl: a duel against somebody else on the server. A DOWNLOAD at $200 - the
+    -- dearest app in the catalogue, and the only one that needs a second person to be worth
+    -- anything, which is the reason it is priced where somebody has to want it.
+    { id = 'brawl', label = 'app.brawl', icon = 'shield', owner = 'v-phone',
+      optional = true, category = 'entertainment', price = 200, account = 'bank' },
+    -- FlappyFruit: one button, one fruit, and a scoreboard the whole server shares. A
+    -- DOWNLOAD at $50 - cheap on purpose, because the thing it sells is a name on a board
+    -- that other people read, and a board nobody is on is not worth anything to the first
+    -- person who buys it.
+    { id = 'flappy', label = 'app.flappy', icon = 'sparkles', owner = 'v-phone',
+      optional = true, category = 'entertainment', price = 50, account = 'bank' },
+    -- Fruitee: donation pages. A DOWNLOAD, and a paid one - $750 from the bank. It is kept
+    -- out of `Config.Home.installed` below, which is what actually decides shipped or sold;
+    -- the price here is what the store charges once somebody goes looking for it.
+    --
+    -- The debit runs through `Bridge.RemoveMoney`, which fails closed: no money, no app. 750
+    -- is a number to change, not a rule.
+    { id = 'fruitee', label = 'app.fruitee', icon = 'heart', owner = 'v-phone',
+      optional = true, category = 'finance', price = 750, account = 'bank' },
     { id = 'store',    label = 'app.store',    icon = 'store',    owner = 'v-phone',    slot = 22,
       required = true, category = 'essentials' },
     { id = 'settings', label = 'app.settings', icon = 'settings', owner = 'v-phone',    slot = 23, dock = true,
@@ -1054,6 +1308,26 @@ Config.AppMetadata = {
                      'Paiement des bornes payantes', 'Acceptation automatique',
                      'Plafond de prix' },
         keywords = { 'recharge', 'borne', 'batterie', 'payant', 'electrique' },
+    },
+    brawl = {
+        features = { 'Duel contre un autre joueur', 'Quatre coups, choix simultanés',
+                     "Endurance et lecture de l'adversaire", 'Défi par numéro ou file rapide',
+                     'Palmarès et classement du serveur' },
+        keywords = { 'combat', 'duel', 'bagarre', 'versus', 'multijoueur', 'pvp' },
+    },
+    flappy = {
+        features = { 'Un bouton, une seule règle', 'Classement partagé du serveur',
+                     "Pseudo d'arcade", 'Record personnel', 'Physique fluide à 120 Hz' },
+        keywords = { 'jeu', 'arcade', 'flappy', 'score', 'classement', 'oiseau' },
+    },
+    -- Fruitee. It is bought from the store, so this is the page somebody reads before paying
+    -- 750 for it. French, like every other entry here: the features are the operator's own
+    -- wording and are not translated.
+    fruitee = {
+        features = { 'Page de dons personnalisée', 'Objectif et barre de progression',
+                     'Montants suggérés', 'Dons anonymes et messages',
+                     'Retrait vers la banque' },
+        keywords = { 'don', 'cagnotte', 'collecte', 'tipeee', 'financement', 'charité' },
     },
     lottery = {
         features = { 'Cagnotte en direct', 'Grille tactile 1-35', 'Flash (grille aléatoire)',
@@ -1209,13 +1483,40 @@ Config.Social = {
     -- ── Hush ───────────────────────────────────────────────────
     hush = {
         enabled = true,
-        dailyLikes = 30,    -- a ceiling, so liking everybody is not a strategy
+
+        -- Likes a day WITHOUT the premium pass. Three, deliberately: the ceiling is what makes
+        -- a like mean something, and it is also what the pass below sells. Set it to 25 and
+        -- turn the pass off for a server that does not want the money in it at all.
+        dailyLikes = 3,
+
         -- Super likes per day. The cap IS the feature: a signal anybody can send at will says
         -- nothing at all. One is what Tinder gives away.
         dailySuper = 1,
+
         -- How long a pass is remembered before that profile can come round again. 0 means
         -- never show them twice.
         passDays = 7,
+
+        -- ── Hush Premium ───────────────────────────────────────
+        -- A day pass, bought from inside the app. The money goes through the bridge, so
+        -- qb-core, qbx_core, ox_core and ESX all work without a branch - and so does anything
+        -- wired through `Config.Compat.hooks.removeMoney`.
+        --
+        -- **It fails closed.** If the debit cannot be confirmed the pass is not granted.
+        --
+        -- Buying again while one is running EXTENDS it. Somebody who pays twice gets two days.
+        premium = {
+            enabled = true,
+            price = 50,          -- per pass. `set phone_socialHushPrice 75` overrides it live
+            account = 'bank',    -- 'bank' or 'cash'
+            hours = 24,          -- how long one lasts
+
+            -- What it buys.
+            likes = 25,          -- instead of dailyLikes above
+            superLikes = 5,      -- instead of dailySuper above
+            seeLikes = true,     -- see WHO liked you, not just how many
+            rewindLikes = true,  -- undo a like, not only a pass
+        },
     },
 
     -- Avatars, Snapmatic shots and Hush photos are URLs other clients will fetch, so the
@@ -1247,6 +1548,11 @@ Config.WallpaperHosts = {
     'i.imgur.com', 'imgur.com',
     'cdn.discordapp.com', 'media.discordapp.net',
     'i.ibb.co', 'raw.githubusercontent.com',
+    -- The GIF picker's own hosts. A picture chosen from the shelf is sent as an ordinary
+    -- image message and passes the same gate as a pasted link, so a shelf pointing at a host
+    -- that is not on this list would be a grid of pictures that refuse to send. Take these
+    -- out and the shelf goes with them, which is a supported way to turn the feature off.
+    'tenor.com', 'giphy.com',
 }
 
 -- How a linked image is fitted. `cover` fills the screen and crops; `contain` shows all of
@@ -1365,8 +1671,11 @@ Config.Mail = {
 Config.Sounds = {
     -- `signal` and `note` are the two that only exist as shipped files; everything else
     -- has a synthesised fallback of the same name.
-    ringtones = { 'classic', 'chime', 'pulse', 'radar', 'signal', 'none' },
-    alerts    = { 'ping', 'pop', 'tick', 'note', 'none' },
+    -- The soft three come FIRST, because the first entry is what a phone nobody has
+    -- touched rings with, and a handset should be pleasant before it is loud.
+    ringtones = { 'drift', 'still', 'cascade',
+                  'classic', 'chime', 'pulse', 'radar', 'signal', 'none' },
+    alerts    = { 'breeze', 'hush', 'soften', 'ping', 'pop', 'tick', 'note', 'none' },
 
     -- Use the WAV files in `sounds/` rather than synthesising the tones in the browser.
     -- They are generated, not sampled: `python tools/make-sounds.py` rebuilds all of
@@ -1634,6 +1943,45 @@ normalisePlaces(Config.Places)
 -- An app used to appear the instant it was tapped, which made the store the one part of the
 -- phone where the network did not exist - everything else here refuses without bars.
 Config.Store = {
+    -- ── Where the money goes ───────────────────────────────────
+    -- What a player spends on a paid app used to leave the economy: debited from them and
+    -- credited to nobody. Name a society or business account here and it arrives somewhere -
+    -- the state, a tech company somebody roleplays, whatever the server's fiction is.
+    --
+    -- `account` is the account name your banking script knows, exactly as `Config.Chargers`
+    -- and Bank Pro use it. Empty means nowhere, which is what happened before and stays the
+    -- default: a server that has not thought about it should not suddenly start feeding an
+    -- account it did not create.
+    --
+    -- `percent` is how much of the price arrives. 100 is all of it. Rounded DOWN, so the house
+    -- never rounds up. A credit that fails - a misspelled account, a banking script that is
+    -- not running - does NOT cancel the sale: the player still gets the app they paid for,
+    -- because an operator's typo is not the player's problem.
+    revenue = {
+        account = '',
+        percent = 100,
+    },
+
+    -- ── Ratings and reviews ────────────────────────────────────
+    -- What the store showed before was a hash of each app's own id - the same 4.5 stars and
+    -- the same few thousand ratings on every server, for ever. These are what your players
+    -- actually think.
+    --
+    -- One review per character per app, and writing a second one EDITS the first rather than
+    -- adding a second opinion from the same person.
+    reviews = {
+        enabled = true,
+
+        -- May somebody rate an app they do not have? Off, and it should stay off: a rating is
+        -- a claim about having used something, and a store where anybody can score anything is
+        -- a store whose scores answer nothing. Removing an app later keeps the review - you
+        -- did use it.
+        requireInstalled = true,
+
+        -- How long a review may be. A store review is a paragraph, not an essay.
+        maxLength = 300,
+    },
+
     download = {
         enabled = true,
 
@@ -1850,7 +2198,7 @@ Config.Repair = {
     garages = {
         { job = 'mechanic',  label = 'Los Santos Customs',
           coords = vector3(-359.96, -125.28, 38.7), open = true },
-        { job = 'mechanic2', label = "Casey's Garage",
+        { job = 'mechanic2', label = 'Route 68 Garage',
           coords = vector3(563.54, 2737.71, 42.06), open = true },
         { job = 'mechanic3', label = "Benny's Original Motorworks",
           coords = vector3(-237.06, -1326.69, 31.3), open = true },
@@ -3045,6 +3393,398 @@ Config.Log = {
 }
 
 -- ══════════════════════════════════════════════════════════════
+--  ONLYFRUITS
+-- ══════════════════════════════════════════════════════════════
+-- Photographs somebody pays to see.
+--
+-- A creator takes a picture with the phone's camera, puts a price on it and posts it. Other
+-- people follow for free, subscribe by the month, buy one picture, or tip. The money is real:
+-- it leaves a bank account and arrives in a balance the creator withdraws.
+--
+-- Every price below is a CEILING, not a price. What something costs is the creator's decision;
+-- these are the bounds the server refuses to go outside, so a modified client cannot post a
+-- picture at nine million and wait for somebody to mis-tap.
+-- ══════════════════════════════════════════════════════════════
+-- FruitBrawl: the duel
+-- ══════════════════════════════════════════════════════════════
+-- Two players, four choices a round, both revealed at once.
+--
+-- Everything below is balance. The numbers that decide who beats whom live in
+-- `server/brawl.lua` as a written-out table rather than here, on purpose: a fighting game's
+-- balance is a set of specific numbers, and a config that let each of them be changed
+-- independently would let a server make an action that beats everything.
+Config.Brawl = {
+    enabled = true,
+
+    -- Health each, and how long a fight therefore runs. At 100 with the shipped damage a duel
+    -- is roughly eight to fourteen rounds, which is long enough to read somebody and short
+    -- enough to want another.
+    health = 100,
+
+    -- Stamina: the ceiling, and what each fighter starts on. This is the whole economy - Heavy
+    -- costs 3, Grab 2, Jab 1, and Block gives 2 back. Raise the ceiling and the game becomes
+    -- less about recovering; lower it and Block dominates.
+    stamina = 6,
+    startStamina = 4,
+
+    -- Seconds to choose. Somebody who does not choose covers up, which is both the safe
+    -- default and the honest one: a fighter who has stopped deciding is guarding.
+    roundSeconds = 10,
+
+    -- How long a challenge waits before it lapses.
+    inviteSeconds = 45,
+
+    -- ── Money on the fight ─────────────────────────────────────
+    -- Both stakes are taken BEFORE the first round and held by the match; the winner takes the
+    -- pot and a draw gives each side their own back. Nothing is promised out of a balance that
+    -- might not be there when the fight ends - a bet settled afterwards against an empty
+    -- account is a bet one side simply does not pay.
+    --
+    -- The debit and the payout go through the same bridge as every other app, so this works
+    -- the same on qb-core, on ESX and with doc-banking.
+    --
+    -- `false` removes the whole thing: no stake buttons, and the callbacks ignore any amount
+    -- sent to them.
+    stakes = true,
+
+    -- The most one fighter may put up. The pot is therefore twice this. The app offers four
+    -- amounts - nothing, a quarter, a half and the maximum - rather than a number box, because
+    -- a box only invites somebody to type a fortune and be refused.
+    --
+    -- Fights against the practice bot are never for money, whatever this says: betting against
+    -- a machine the server controls is not a bet.
+    maxStake = 100,
+}
+
+-- ══════════════════════════════════════════════════════════════
+-- FlappyFruit: the arcade board
+-- ══════════════════════════════════════════════════════════════
+-- One row per character holding their best, and a board the whole server reads.
+--
+-- **The game runs in a browser, so the score is written by the player's own machine.** There is
+-- no version of this where that is not true, and the settings below do not pretend otherwise:
+-- they make the cheap lies fail. A ceiling, so nobody is ever first with a number nothing could
+-- produce; a time check, so a score has to have taken as long as it would take to play; and a
+-- cooldown, so the board cannot be hammered. What that catches is somebody opening the console.
+-- What nothing server-side can catch is somebody slowing the game down on their own computer.
+--
+-- It is a scoreboard, not a bank - no money moves on it - which is why it is allowed to be only
+-- this careful. If you ever pay out for a high score, put the payout behind a staff check.
+Config.Arcade = {
+    enabled = true,
+
+    -- How many rows the board shows. Anybody below it is still told their own rank.
+    boardSize = 25,
+
+    -- The ceiling on a single score. Set it a good way above what a very good player reaches,
+    -- not just above: this is here to make an absurd number impossible, not to cap skill.
+    maxScore = 9999,
+
+    -- The shortest time ONE point can honestly take, in milliseconds. In FlappyFruit a point is
+    -- one gate, and the gates arrive at a fixed rate, so the fastest possible run is exactly
+    -- that rate - about 1500 ms at the shipped speed. This is set below it on purpose: a
+    -- browser that dropped frames reports slightly less elapsed time than it lived through, and
+    -- an honest player must never be told their run was impossible.
+    --
+    -- Raise it and you catch more fakes and start refusing real runs. Lower it and the opposite.
+    msPerPoint = 900,
+
+    -- Seconds between two submissions from one character.
+    submitCooldown = 3,
+
+    -- How long an arcade name may be. It is NOT the character's name, deliberately: somebody
+    -- who wants to be `xX_Fruit_Xx` on an arcade board is doing what an arcade board is for.
+    -- The row still carries the citizenid, so staff can always tell who a name belongs to.
+    nickMin = 2,
+    nickMax = 12,
+}
+
+-- ══════════════════════════════════════════════════════════════
+-- Fruitee: donation pages
+-- ══════════════════════════════════════════════════════════════
+-- Somebody opens a page - a name, a picture, a few lines about what the money is for, and a
+-- target - and other people give to it. Bought from the store rather than shipped: see the
+-- catalogue entry's `price`, and `Config.Home.installed` for which apps come with the handset.
+--
+-- The money goes through the same bridge as every other app, so it works the same on qb-core,
+-- on ESX and with doc-banking.
+Config.Fundraise = {
+    enabled = true,
+
+    -- The floor and the ceiling on ONE gift. The ceiling is the important one: a gift amount
+    -- is the only number in this phone that a player types and the server then spends, so it
+    -- is bounded rather than trusted. A page's suggested tiers are suggestions and are never
+    -- read as a price.
+    minGift = 1,
+    maxGift = 100000,
+
+    -- The largest target a page may set. 0 for no limit. A goal is only ever a display, so
+    -- this is about a page saying something ridiculous rather than about money.
+    goalMax = 1000000,
+
+    -- How many suggested amounts a page may offer. 0 turns tiers off and leaves only the
+    -- "other amount" field.
+    maxTiers = 4,
+
+    -- May a giver leave a message, and may they give without their name? Both are per page as
+    -- well - the owner chooses on their own page - and these two switches are the server
+    -- saying whether the choice exists at all.
+    messages = true,
+    anonymous = true,
+
+    -- Seconds between two gifts from the same character. Buying a picture is protected by a
+    -- primary key; giving is not, because giving the same page 50 twice is a real thing. This
+    -- is what stops a double click being a double gift.
+    giftCooldown = 3,
+
+    -- ── The two cuts ───────────────────────────────────────────
+    -- Every gift is split three ways and the app names all three: what Fruitee keeps, what the
+    -- state takes, and what is left for the page. Thirty percent in total by default, which is
+    -- the figure the two lines below have to add up to if you want to keep it.
+    --
+    -- **The percentage is always taken. The account only says where it lands.**
+    --
+    -- The rate is printed on the screen somebody reads before giving, so it has to be true. A
+    -- rate that silently did nothing because a field further down was blank would be the app
+    -- lying about money. With no account named the cut is a SINK: it leaves the economy, which
+    -- is a thing plenty of servers want. Set a percentage to 0 to not take it at all.
+    --
+    -- Both come off the same gross rather than one off what is left after the other, so 5 and
+    -- 25 take exactly 30 and not 28.75.
+    --
+    -- `account` is a society or job account your framework already knows: qb-banking and
+    -- doc-banking take a job account name, ESX a society.
+    taxes = {
+        -- The app's own cut. Small, and it is the one that usually has no account: an app
+        -- taking a fee is not a company anybody can visit.
+        platform   = { percent = 5,  account = '' },
+        -- The state's. Point it at whatever your server calls the treasury.
+        government = { percent = 25, account = '' },
+    },
+
+    -- Photographs taken with the phone's own camera only, for the cover and the avatar. The
+    -- default is off, which means the ordinary host gate every other picture in the phone
+    -- passes. Turn it on for a server that wants no links to the open internet on its pages.
+    inGameOnly = false,
+
+    -- How long a page stays LISTED, in real days. 0 keeps them for ever. A page past its day
+    -- is hidden from the browse list, never deleted, and its own author always sees it - a
+    -- page that vanished from under somebody with no explanation is a support ticket.
+    pageDays = 0,
+
+    -- The least an owner may withdraw at once.
+    payoutMin = 1,
+
+    -- What a page can be about. Shown as a chip on the card and as a filter in the list.
+    -- Every one of these needs a `ph.fund_cat_<name>` line in locales/, in both languages.
+    categories = { 'community', 'medical', 'business', 'memorial', 'event', 'other' },
+}
+
+Config.OnlyFruits = {
+    enabled = true,
+
+    -- The most a single picture may cost, and the most a monthly subscription may.
+    maxPrice = 5000,
+    maxSubPrice = 10000,
+
+    -- The most one tip may be. Tips are the easiest thing in an app like this to lose a
+    -- fortune to by typing a zero too many, which is the only reason there is a cap at all.
+    maxTip = 10000,
+
+    -- How long a subscription lasts, in real days. Subscribing again EXTENDS what is left
+    -- rather than replacing it, so paying early is never paying for nothing.
+    subDays = 30,
+
+    -- Does a subscription also open the individually PRICED pictures, or only the
+    -- subscriber-only ones? Off is the honest default: a picture with a price on it was put
+    -- up to be bought, and a subscription that silently included everything would make every
+    -- price on the page a lie.
+    subsUnlockPaid = false,
+
+    -- What the platform keeps, as a percentage of every sale, subscription and tip, rounded
+    -- down so the house never rounds up. 0 for none.
+    --
+    -- This is taken off what the CREATOR receives. It is not the same thing as the tax below:
+    -- the fee is the app's own cut and simply disappears, the tax arrives in an account.
+    feePercent = 0,
+
+    -- ── Tax ────────────────────────────────────────────────────
+    -- A share of every sale, subscription and tip, into an account the operator names - the
+    -- state, a revenue service, whatever the server calls it.
+    --
+    -- Taken from the SAME gross amount as the fee, not from what is left after it, so setting
+    -- both to 10 takes exactly 20 in total rather than 19. Two percentages that quietly
+    -- compound are two percentages nobody can predict from the config file.
+    --
+    -- Empty account, or zero percent, means no tax. A credit that fails leaves the money with
+    -- the creator rather than destroying it: unpaid tax is recoverable, vanished money is not.
+    tax = {
+        account = '',
+        percent = 0,
+    },
+
+    -- ── What a creator may do ──────────────────────────────────
+    -- How long a picture stays up, in real days. 0 keeps them for ever. A picture past its
+    -- day is not deleted - it stops being listed, which means a creator who lowers this and
+    -- raises it again gets their back catalogue back instead of having burned it.
+    postDays = 0,
+
+    -- The most pictures one creator may have listed at once, and the most they may post in a
+    -- day. Both 0 for no limit. These are the two knobs that decide whether the app is a
+    -- portfolio or a firehose.
+    maxPosts = 100,
+    maxPerDay = 20,
+
+    -- A handle has to be long enough to be somebody. Three is the shortest that is not a
+    -- land-grab; twenty is what the column holds.
+    minHandle = 3,
+
+    -- Turn off the parts a server does not want. Everything else still works: with
+    -- subscriptions off, pictures are still sold one at a time; with tips off, the button is
+    -- not drawn and the callback refuses.
+    subscriptions = true,
+    tips = true,
+
+    -- The least a creator may withdraw at once. Stops a payout of 3 being a database write.
+    payoutMin = 1,
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  HOW LONG THE PHONE KEEPS THINGS
+-- ══════════════════════════════════════════════════════════════
+-- A phone that never forgets is a database that only grows. Every message, call, post, comment
+-- and bank line stays until something removes it, and on a server that has been up for months
+-- that is the table everybody's Messages app has to read through.
+--
+-- Everything here is in DAYS. 0 means keep for ever.
+--
+-- **These supersede the old per-feature keys and do not override them.** A server that set
+-- `Config.Messages.retentionDays = 90` two versions ago still keeps ninety days: leaving a
+-- value here as `nil` means "whatever that feature already said". Set one and it wins.
+--
+-- **Nothing is deleted in one statement.** A `DELETE` over a million rows takes a lock and
+-- holds it, and every player opening Messages waits behind it - which on a busy server is what
+-- the first prune after a long uptime looks like from the outside. The sweep works in batches
+-- with a pause between them: slower on the clock, invisible to everybody.
+Config.Retention = {
+    enabled = true,
+
+    -- How often to sweep, in minutes, and how long after the server starts to do the first
+    -- one. Not at boot: a server starting up has a hundred things to do and this is none of
+    -- them.
+    everyMinutes = 60,
+    firstRunSeconds = 300,
+
+    -- Rows per batch, and the most one pass will remove before leaving the rest for the next
+    -- one. A pass that stops early is not a failure - it carries on in an hour, and nothing
+    -- was going to be read in the meantime anyway.
+    batchSize = 500,
+    maxPerPass = 20000,
+
+    -- ── What, and for how long ─────────────────────────────────
+    messages       = 30,   -- texts, including pictures sent in them
+    calls          = 30,   -- the call log
+    voicemail      = 30,
+
+    socialPosts    = 30,   -- Bleeter and Snapmatic
+    socialComments = 30,
+    socialMessages = 30,   -- social direct messages
+    socialStories  = 1,    -- a story's whole life is a day
+    socialNotifs   = 14,
+
+    mail           = 30,   -- a letter nobody saved. Saved mail is kept whatever its age,
+                           -- because saving it is somebody saying to keep it.
+
+    bank           = 60,   -- the phone's own statement lines
+    alerts         = 7,
+    reviews        = 0,    -- store reviews are kept: a rating with a shelf life is a rating
+                           -- that quietly resets, and nobody would understand why.
+
+    -- Fruitee's gift log. Kept, on purpose: the money history of a donation page is the last
+    -- thing an operator wants swept by accident. The PAGES are never touched by retention at
+    -- all - a page is somebody's fundraiser and its balance is money they can still withdraw.
+    fundGifts      = 0,
+
+    -- Rows whose only job is to point at something else - a like on a deleted post, a delivery
+    -- for a letter that is gone. Swept after their parents, never before: until the parent is
+    -- gone they are not orphans, they are the reason it still works.
+    orphans = true,
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  HOME SCREEN WIDGETS
+-- ══════════════════════════════════════════════════════════════
+-- The strip above the app grid. A player picks what goes there from the phone itself: hold the
+-- home screen to enter arrange mode, then use the widget button.
+--
+-- Everything is on by default. Turning one off here removes it from the picker AND stops the
+-- server ever building it, so a widget an operator does not want is not a widget somebody can
+-- put back with a modified page.
+--
+-- **A widget only appears for a player who has its app.** That is checked per request, not
+-- stored, so uninstalling an app takes its widget with it.
+--
+-- Half of these never touch the server. `weather`, `calendar`, `messages`, `music`, `battery`
+-- and `store` are drawn from what the phone already knows, and a strip built only from those
+-- makes no request at all.
+Config.Widgets = {
+    enabled = true,
+
+    -- What a phone that has never been arranged shows. Two, exactly as every build before
+    -- widgets could be chosen - an update that rearranges somebody's home screen is a
+    -- regression however good the new tiles are.
+    default = { 'weather', 'calendar' },
+
+    -- ── Free, no server request ────────────────────────────────
+    weather   = true,    -- the in-game weather and clock
+    calendar  = true,    -- the real date
+    messages  = true,    -- how many unread, and who from. Never the message itself
+    music     = true,    -- what is playing, and where it comes out
+    battery   = true,    -- the ring, and whether it is charging
+    store     = true,    -- a download in progress, or updates waiting
+
+    -- ── Answered by one shared request ─────────────────────────
+    bank      = true,    -- the balance, masked until the player unmasks it in Settings
+    vitals    = true,    -- hunger, thirst, stress
+    garage    = true,    -- how many vehicles, and where the interesting one is
+    reminders = true,    -- what is due next
+    export    = true,    -- the biggest mover on the market
+    alerts    = true,    -- the newest public alert standing over the city
+}
+
+-- ══════════════════════════════════════════════════════════════
+--  THE UPDATE CHECK
+-- ══════════════════════════════════════════════════════════════
+-- Asks GitHub, shortly after the server starts, whether a newer release has been published, and
+-- prints one block in the console if so. Nothing is downloaded and nothing is changed; it is a
+-- notice, and acting on it stays the operator's decision.
+--
+-- **Only the console ever sees it.** Telling a player which version the server runs tells
+-- anybody looking for a known bug exactly which one to look for, so the answer stops at the
+-- console. Nothing here is reachable from a client.
+--
+-- The version and the repository both come from `fxmanifest.lua`, so a fork is checked against
+-- its own releases without editing anything, and a copy with the repository line removed is not
+-- checked at all.
+Config.UpdateCheck = {
+    enabled = true,
+
+    -- Seconds after boot before asking. A server starting up has better things to do.
+    firstRunSeconds = 20,
+
+    -- Ask again every N hours, or 0 for once per start. Most servers restart often enough that
+    -- once is plenty; a machine that stays up for weeks might want 12.
+    everyHours = 0,
+
+    -- Announce prereleases too. Off: a prerelease is published for people who asked for it.
+    prerelease = false,
+
+    -- Override the repository to watch. Normally left nil, which means the `repository` line in
+    -- fxmanifest.lua. Only github.com is understood.
+    repository = nil,
+}
+
+-- ══════════════════════════════════════════════════════════════
 --  A PHONE HEARD RINGING
 -- ══════════════════════════════════════════════════════════════
 -- A ringing phone is a sound in the room, not a private notification. Somebody standing next to
@@ -4172,5 +4912,19 @@ Config.StoreApps = {
     --
     --     features = { 'Live fare', 'Shift total' },
     --     permissions = { 'Location' },
+    --
+    --     -- What the store page shows above the description. Up to three.
+    --     --
+    --     -- Without these the page draws little abstract shapes standing in for a screen -
+    --     -- honest placeholders, and they look like placeholders. A recording of the app
+    --     -- actually running beats any drawing of one.
+    --     --
+    --     -- `.webm` and `.mp4` play as a muted, looping, inline clip - a store preview is a
+    --     -- silent three-second loop, never something that asks permission. Anything else is
+    --     -- treated as a still. Same allowed hosts as every other picture in the phone.
+    --     previews = {
+    --         'https://your-cdn.tld/taxi-meter/fare.webm',
+    --         'https://your-cdn.tld/taxi-meter/shift.png',
+    --     },
     -- },
 }

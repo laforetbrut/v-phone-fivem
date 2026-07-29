@@ -9,7 +9,7 @@ Read it before changing anything.
 |---|---|
 | Project name | v-phone (in-game brand: **iFruit**) |
 | Resource name | `v-phone` |
-| Version | `1.5.6` (single source: `fxmanifest.lua`) |
+| Version | Whatever `fxmanifest.lua` says. Do not restate it here — a second copy is a copy that goes stale, and this row was 1.5.6 on the day 1.6.0 shipped. |
 | Tech stack | Lua 5.4 (`lua54 'yes'`), vanilla JS + CSS for the NUI, MySQL via oxmysql |
 | Author | vyrriox |
 | Licence | See `LICENSE`. Attribution in Settings › About is **required** and must not be removed. |
@@ -154,7 +154,21 @@ test-procedures/        Local QA artefacts. GITIGNORED — never commit.
 
 ## 6. Testing Checklist
 
-There is no test runner in the repo. These are the checks that exist — run them.
+Run these before anything is committed.
+
+```bash
+python tools/check.py            # nine static checks: callbacks, social ops, locale keys,
+                                 # css classes, icons, sounds, sql parameters, shot
+                                 # scripts, cross-file locals
+python tools/check.py --selftest # each check, shown a fault it must catch
+python tools/make-preview.py --lang fr && node tools/make-shots.js
+                                 # the screenshots, and every `assert: true` shot
+node tools/probe-input.js        # the phone driven with real mouse input, through the
+                                 # browser's own hit testing
+node tools/probe.js              # can a cursor actually reach every control?
+```
+
+And these by hand.
 
 - [ ] **Lua parses.** `python -c "from luaparser import ast; ast.parse(open('FILE').read())"`
       for every changed `.lua` (`pip install luaparser`).

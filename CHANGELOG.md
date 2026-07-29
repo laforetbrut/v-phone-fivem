@@ -4,6 +4,149 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.6.0] - 2026-07-29
+
+### Added (English first)
+
+- **Home screen widgets, twelve of them, arranged from the phone.** The strip above the app grid
+  was two fixed tiles; it is now a four-column surface a player fills themselves. Hold anywhere on
+  the home screen to arrange it, then use the minus on a tile to remove one, the plus to open the
+  gallery, and drag to reorder. Weather, Calendar, Messages, Music, Battery, iFruit Store, Bank,
+  Health, Garage, Reminders, Market and Alerts. **Six of them never touch the server** - they are
+  drawn from what the phone already holds - and the other six share ONE request, made only when at
+  least one of them is on the strip. A phone left as it ships makes no extra request at all.
+  `Config.Widgets` turns any of them off, and a widget only ever appears for a player who has its
+  app.
+- **The Messages widget shows the sender and never the message.** A widget that flattens a text to
+  one line puts a private conversation on a screen anybody standing behind the player can read.
+  The Bank widget draws four dots until `Settings > Display > Show the bank balance` is turned on,
+  and the figure does not leave the server while it is off.
+- **An update check in the server console.** `server/update.lua` asks GitHub, twenty seconds after
+  the server starts, whether a newer release has been published, and prints one block if so.
+  Nothing is downloaded. The version and the repository both come from `fxmanifest.lua`, so a fork
+  is checked against its own releases. Console only: telling a player which version the server runs
+  tells anybody looking for a known bug exactly which one to look for. `vphone_update` re-runs it
+  by hand. Everything GitHub sends is stripped of control characters and colour codes before it is
+  printed, because a release title is free text on their side.
+- **Hush Premium: a day pass, bought inside the app.** Three likes a day without it, twenty-five
+  with, five super likes instead of one, the faces behind "somebody liked you", and undoing a like
+  rather than only a pass. 50 dollars for 24 hours, all of it configurable in
+  `Config.Social.hush.premium`. The money goes through the bridge, so qb-core, qbx_core, ox_core and
+  ESX all work without a branch, and **it fails closed**: a debit that cannot be confirmed grants
+  nothing. Buying again while one is running extends it rather than resetting it.
+- **A Hush profile that is actually a profile.** The server has stored three photographs, a gender,
+  who the profile is seeking and an age range since 1.4.x, and the editor offered a bio and one
+  photograph - so the deck's own matching filters could never be filled in by anybody. All of it is
+  editable now, plus a job, what you are looking for, up to six interests from a closed set, and a
+  conversation starter. A card shows which interests the two of you share, worked out on the server.
+- **Six soft tones**, and a renderer that makes every tone softer. Drift, Still and Cascade for
+  ringing; Breeze, Hush and Soften for notifications. The change that matters is in the envelope:
+  the attack is a raised cosine rather than a ramp, so a note fades in instead of switching on, the
+  third harmonic is gone (it is the partial the ear reads as edge), notes decay past their own
+  length so they overlap, and there is a small room around them. Notifications now land 3 dB below
+  a ringtone and interface sounds 5 dB below that - measured, not asserted.
+- **`tools/probe-input.js`** - the phone driven with real mouse input through the browser's own hit
+  testing. Every assertion in `make-shots.js` runs *inside* the page, and dispatching an event at an
+  element is not the same thing as a player being able to press it: it arrives whatever is drawn on
+  top and whatever `pointer-events` says. This is the check that found the widget controls dead.
+- **Two new static checks.** `cross-file locals` catches a file calling another file's top-level
+  `local` - which compiles, lints, and is nil at runtime inside whatever pcall is nearest. It found
+  three real bugs the first time it ran. `shot scripts` refuses a backtick inside a shot script,
+  which closes the template literal holding it.
+
+### Fixed
+
+- **`prefsOf`, `requireItem` and `batteryOf` were being called from files that cannot see them.**
+  All three are `local` at the top of `server/main.lua` and assigned further down, which reads like
+  a global definition and is not. `prefsOf` made every server-backed widget report "unavailable".
+  `requireItem` was guarded as `if not requireItem or requireItem(src)` in Music and Reminders -
+  always true when the name is nil, so Music never checked that the player was carrying a phone.
+  `batteryOf` in the charging offer was guarded the same way and always read 0, so the "a nearly
+  full phone is not a customer" skip never skipped anybody. Its comment asserted the name was a
+  global. Three named accessors now exist, and the checker refuses the pattern.
+- **The widget minus and plus were drawn, were hit, and did nothing.** The strip is a sibling of
+  `#pages`, so the app grid read a press on it as a tap on the wallpaper and left arrange mode -
+  repainting the badge out of existence before its own click could fire. The flag that fixes it is
+  set on the CAPTURE phase, because the badge stops propagation on pointerdown and would otherwise
+  never set it.
+- **Removing the last widget put the defaults straight back.** An empty Lua table serialises as a
+  JSON object rather than an array, so "I removed them all" read as "never arranged these".
+- **Dragging an app resized every icon on the page.** `fitGrid` measures and shrinks up to fourteen
+  times, and it was re-running on every seam the finger crossed - where the placeholder gap can push
+  the last row over and pull it back. The grid does not change while a tile is in the air.
+- **The lock screen clock's preview lied about `stack`.** The picker has always drawn its demo in
+  two elements so the hours can sit over the minutes; the real clock was one text node, and a text
+  node cannot be stacked however the CSS is written. Both are the same markup now. The face picker
+  also moved from Privacy to Display, where somebody would look for it.
+- **Paying yourself from Bank Pro was an unlimited withdrawal.** Naming your own citizen id as the
+  payee moved company money into your own account through the wages path, which has no daily
+  ceiling and does not check `allowWithdraw`. The account branch has always refused a self-target;
+  this one never did.
+- **Any on-duty taxi driver could name themselves the payee for anybody's ride.** An existing
+  unsettled pairing now belongs to the driver who made it, and the two of them have to be within
+  twenty metres.
+- **A finished taxi ride could never be paid for or rated.** `myRide` only returned rides that were
+  still live, and a finished one is not - so the moment the driver pressed finish the passenger's
+  app forgot it existed. The `due` field the payload has always carried for this case was
+  unreachable.
+- **AirDrop of a saved map pin always failed.** The preview line concatenates a name and a number,
+  and a pin has neither.
+- **On ox_core a bank charge came out of the player's pockets** while the matching credit went to
+  their bank account - the two arms of the account choice were the same string.
+- **Renewed-Banking servers showed every player as carrying no cash**, because that branch returned
+  a hardcoded zero. The framework's own figure is read now, through one function both branches
+  share.
+- **A resource named in `Config.Compat` was lower-cased before it was matched.** Every consumer
+  compares against exact-case constants - `Renewed-Banking`, `okokBanking`, `okokGarage` - so an
+  operator who followed the config's own instructions got a silently dead integration while the
+  resource was plainly running.
+- **Two social screens had no staleness guard at all.** `beginView()` returns nothing, and both
+  wrote `const epoch = beginView()` - so they captured `undefined` and guarded with the live global
+  instead, which makes the test `viewEpoch === viewEpoch`. Tapping two profiles in a row could leave
+  the second one's name on a screen showing the first one's, and in a DM thread the send button was
+  bound to the wrong person.
+- **A location button gained a listener per message received.** Six messages later, tapping it sent
+  six waypoint requests.
+- **A custom wallpaper URL went into `url()` unguarded**, so a quote or a backslash in the path
+  killed the wallpaper with nothing to say why.
+- **Three defects in the Hush pass, found the hour it was written.** It debited whoever was
+  *holding* the phone rather than its owner, so under a staff phone-view session the staff member
+  paid. Two taps in the same second were both charged for one day. And `RaiseAlert`, the export
+  other resources use, never invalidated the cache the player-facing path does.
+
+### Ajouts et correctifs (miroir francais)
+
+- **Douze widgets sur l ecran d accueil, organises depuis le telephone.** Maintenez l ecran d
+  accueil pour reorganiser, le moins retire une tuile, le plus ouvre la galerie, le glissement
+  reordonne. Six d entre eux ne touchent jamais au serveur et les six autres partagent UNE seule
+  requete, faite uniquement si l un d eux est present. `Config.Widgets` desactive ce que vous
+  voulez. Le widget Messages affiche l expediteur, jamais le message ; le widget Banque affiche
+  quatre points tant que vous ne l affichez pas dans les reglages, et le montant ne quitte meme pas
+  le serveur.
+- **Une verification de mise a jour dans la console serveur.** Vingt secondes apres le demarrage,
+  le serveur demande a GitHub si une release plus recente existe et l affiche. Rien n est
+  telecharge. Console uniquement. `vphone_update` la relance a la main.
+- **Hush Premium : un passe a la journee, achete dans l application.** Trois likes par jour sans,
+  vingt-cinq avec, cinq super likes, voir qui vous a aime, et revenir sur un like. 50 dollars pour
+  24 heures, configurable. L argent passe par le bridge : qb-core, qbx_core, ox_core et ESX
+  fonctionnent, et un debit non confirme n accorde rien.
+- **Un profil Hush qui en est vraiment un.** Trois photos, metier, ce que vous cherchez, six
+  centres d interet et une question a laquelle repondre. Le serveur calcule ce que vous avez en
+  commun avec la personne affichee.
+- **Six sonneries douces**, et un rendu plus doux pour toutes les autres : attaque en cosinus
+  releve, harmonique dure supprimee, notes qui se chevauchent, et une petite piece autour. Les
+  notifications sont 3 dB sous une sonnerie, les sons d interface 5 dB sous cela.
+- **Correctifs.** Le moins et le plus des widgets ne faisaient rien ; deplacer une application
+  redimensionnait toutes les icones ; l apercu de l horloge empilee mentait ; se payer soi-meme
+  depuis Bank Pro etait un retrait sans plafond ; n importe quel chauffeur pouvait se declarer
+  payeur de la course d autrui ; une course terminee ne pouvait plus etre payee ni notee ; le
+  partage AirDrop d un point de carte echouait toujours ; sur ox_core un debit bancaire sortait des
+  poches ; Renewed-Banking affichait tout le monde sans liquide ; une ressource nommee dans
+  `Config.Compat` etait mise en minuscules avant d etre comparee ; et deux ecrans sociaux n avaient
+  aucune protection contre une reponse en retard.
+
+---
+
 ## [1.5.6] - 2026-07-29
 
 ### Fixed (English first)

@@ -1,0 +1,446 @@
+{
+  "alerts": {
+    "light": {
+      "previews": [
+        "previews/alerts.light.webm"
+      ],
+      "poster": "previews/alerts.light.jpg"
+    },
+    "previews": [
+      "previews/alerts.webm"
+    ],
+    "poster": "previews/alerts.jpg"
+  },
+  "bank": {
+    "light": {
+      "previews": [
+        "previews/bank.light.webm"
+      ],
+      "poster": "previews/bank.light.jpg"
+    },
+    "previews": [
+      "previews/bank.webm"
+    ],
+    "poster": "previews/bank.jpg"
+  },
+  "bankpro": {
+    "light": {
+      "previews": [
+        "previews/bankpro.light.webm"
+      ],
+      "poster": "previews/bankpro.light.jpg"
+    },
+    "previews": [
+      "previews/bankpro.webm"
+    ],
+    "poster": "previews/bankpro.jpg"
+  },
+  "bleeter": {
+    "light": {
+      "previews": [
+        "previews/bleeter.light.webm"
+      ],
+      "poster": "previews/bleeter.light.jpg"
+    },
+    "previews": [
+      "previews/bleeter.webm"
+    ],
+    "poster": "previews/bleeter.jpg"
+  },
+  "calc": {
+    "light": {
+      "previews": [
+        "previews/calc.light.webm"
+      ],
+      "poster": "previews/calc.light.jpg"
+    },
+    "previews": [
+      "previews/calc.webm"
+    ],
+    "poster": "previews/calc.jpg"
+  },
+  "camera": {
+    "light": {
+      "previews": [
+        "previews/camera.light.webm"
+      ],
+      "poster": "previews/camera.light.jpg"
+    },
+    "previews": [
+      "previews/camera.webm"
+    ],
+    "poster": "previews/camera.jpg"
+  },
+  "charging": {
+    "light": {
+      "previews": [
+        "previews/charging.light.webm"
+      ],
+      "poster": "previews/charging.light.jpg"
+    },
+    "previews": [
+      "previews/charging.webm"
+    ],
+    "poster": "previews/charging.jpg"
+  },
+  "cipher": {
+    "light": {
+      "previews": [
+        "previews/cipher.light.webm"
+      ],
+      "poster": "previews/cipher.light.jpg"
+    },
+    "previews": [
+      "previews/cipher.webm"
+    ],
+    "poster": "previews/cipher.jpg"
+  },
+  "contacts": {
+    "light": {
+      "previews": [
+        "previews/contacts.light.webm"
+      ],
+      "poster": "previews/contacts.light.jpg"
+    },
+    "previews": [
+      "previews/contacts.webm"
+    ],
+    "poster": "previews/contacts.jpg"
+  },
+  "emergency": {
+    "light": {
+      "previews": [
+        "previews/emergency.light.webm"
+      ],
+      "poster": "previews/emergency.light.jpg"
+    },
+    "previews": [
+      "previews/emergency.webm"
+    ],
+    "poster": "previews/emergency.jpg"
+  },
+  "export": {
+    "light": {
+      "previews": [
+        "previews/export.light.webm"
+      ],
+      "poster": "previews/export.light.jpg"
+    },
+    "previews": [
+      "previews/export.webm"
+    ],
+    "poster": "previews/export.jpg"
+  },
+  "gallery": {
+    "light": {
+      "previews": [
+        "previews/gallery.light.webm"
+      ],
+      "poster": "previews/gallery.light.jpg"
+    },
+    "previews": [
+      "previews/gallery.webm"
+    ],
+    "poster": "previews/gallery.jpg"
+  },
+  "garage": {
+    "light": {
+      "previews": [
+        "previews/garage.light.webm"
+      ],
+      "poster": "previews/garage.light.jpg"
+    },
+    "previews": [
+      "previews/garage.webm"
+    ],
+    "poster": "previews/garage.jpg"
+  },
+  "health": {
+    "light": {
+      "previews": [
+        "previews/health.light.webm"
+      ],
+      "poster": "previews/health.light.jpg"
+    },
+    "previews": [
+      "previews/health.webm"
+    ],
+    "poster": "previews/health.jpg"
+  },
+  "hush": {
+    "light": {
+      "previews": [
+        "previews/hush.light.webm"
+      ],
+      "poster": "previews/hush.light.jpg"
+    },
+    "previews": [
+      "previews/hush.webm"
+    ],
+    "poster": "previews/hush.jpg"
+  },
+  "jobs": {
+    "light": {
+      "previews": [
+        "previews/jobs.light.webm"
+      ],
+      "poster": "previews/jobs.light.jpg"
+    },
+    "previews": [
+      "previews/jobs.webm"
+    ],
+    "poster": "previews/jobs.jpg"
+  },
+  "lottery": {
+    "light": {
+      "previews": [
+        "previews/lottery.light.webm"
+      ],
+      "poster": "previews/lottery.light.jpg"
+    },
+    "previews": [
+      "previews/lottery.webm"
+    ],
+    "poster": "previews/lottery.jpg"
+  },
+  "mail": {
+    "light": {
+      "previews": [
+        "previews/mail.light.webm"
+      ],
+      "poster": "previews/mail.light.jpg"
+    },
+    "previews": [
+      "previews/mail.webm"
+    ],
+    "poster": "previews/mail.jpg"
+  },
+  "maps": {
+    "light": {
+      "previews": [
+        "previews/maps.light.webm"
+      ],
+      "poster": "previews/maps.light.jpg"
+    },
+    "previews": [
+      "previews/maps.webm"
+    ],
+    "poster": "previews/maps.jpg"
+  },
+  "mdt": {
+    "light": {
+      "previews": [
+        "previews/mdt.light.webm"
+      ],
+      "poster": "previews/mdt.light.jpg"
+    },
+    "previews": [
+      "previews/mdt.webm"
+    ],
+    "poster": "previews/mdt.jpg"
+  },
+  "messages": {
+    "light": {
+      "previews": [
+        "previews/messages.light.webm"
+      ],
+      "poster": "previews/messages.light.jpg"
+    },
+    "previews": [
+      "previews/messages.webm"
+    ],
+    "poster": "previews/messages.jpg"
+  },
+  "music": {
+    "light": {
+      "previews": [
+        "previews/music.light.webm"
+      ],
+      "poster": "previews/music.light.jpg"
+    },
+    "previews": [
+      "previews/music.webm"
+    ],
+    "poster": "previews/music.jpg"
+  },
+  "notes": {
+    "light": {
+      "previews": [
+        "previews/notes.light.webm"
+      ],
+      "poster": "previews/notes.light.jpg"
+    },
+    "previews": [
+      "previews/notes.webm"
+    ],
+    "poster": "previews/notes.jpg"
+  },
+  "onlyfruits": {
+    "light": {
+      "previews": [
+        "previews/onlyfruits.light.webm"
+      ],
+      "poster": "previews/onlyfruits.light.jpg"
+    },
+    "previews": [
+      "previews/onlyfruits.webm"
+    ],
+    "poster": "previews/onlyfruits.jpg"
+  },
+  "phone": {
+    "light": {
+      "previews": [
+        "previews/phone.light.webm"
+      ],
+      "poster": "previews/phone.light.jpg"
+    },
+    "previews": [
+      "previews/phone.webm"
+    ],
+    "poster": "previews/phone.jpg"
+  },
+  "property": {
+    "light": {
+      "previews": [
+        "previews/property.light.webm"
+      ],
+      "poster": "previews/property.light.jpg"
+    },
+    "previews": [
+      "previews/property.webm"
+    ],
+    "poster": "previews/property.jpg"
+  },
+  "reminders": {
+    "light": {
+      "previews": [
+        "previews/reminders.light.webm"
+      ],
+      "poster": "previews/reminders.light.jpg"
+    },
+    "previews": [
+      "previews/reminders.webm"
+    ],
+    "poster": "previews/reminders.jpg"
+  },
+  "repair": {
+    "light": {
+      "previews": [
+        "previews/repair.light.webm"
+      ],
+      "poster": "previews/repair.light.jpg"
+    },
+    "previews": [
+      "previews/repair.webm"
+    ],
+    "poster": "previews/repair.jpg"
+  },
+  "settings": {
+    "light": {
+      "previews": [
+        "previews/settings.light.webm"
+      ],
+      "poster": "previews/settings.light.jpg"
+    },
+    "previews": [
+      "previews/settings.webm"
+    ],
+    "poster": "previews/settings.jpg"
+  },
+  "snap": {
+    "light": {
+      "previews": [
+        "previews/snap.light.webm"
+      ],
+      "poster": "previews/snap.light.jpg"
+    },
+    "previews": [
+      "previews/snap.webm"
+    ],
+    "poster": "previews/snap.jpg"
+  },
+  "store": {
+    "light": {
+      "previews": [
+        "previews/store.light.webm"
+      ],
+      "poster": "previews/store.light.jpg"
+    },
+    "previews": [
+      "previews/store.webm"
+    ],
+    "poster": "previews/store.jpg"
+  },
+  "taxi": {
+    "light": {
+      "previews": [
+        "previews/taxi.light.webm"
+      ],
+      "poster": "previews/taxi.light.jpg"
+    },
+    "previews": [
+      "previews/taxi.webm"
+    ],
+    "poster": "previews/taxi.jpg"
+  },
+  "wallet": {
+    "light": {
+      "previews": [
+        "previews/wallet.light.webm"
+      ],
+      "poster": "previews/wallet.light.jpg"
+    },
+    "previews": [
+      "previews/wallet.webm"
+    ],
+    "poster": "previews/wallet.jpg"
+  },
+  "zuber": {
+    "light": {
+      "previews": [
+        "previews/zuber.light.webm"
+      ],
+      "poster": "previews/zuber.light.jpg"
+    },
+    "previews": [
+      "previews/zuber.webm"
+    ],
+    "poster": "previews/zuber.jpg"
+  },
+  "fruitee": {
+    "previews": [
+      "previews/fruitee.webm"
+    ],
+    "poster": "previews/fruitee.jpg",
+    "light": {
+      "previews": [
+        "previews/fruitee.light.webm"
+      ],
+      "poster": "previews/fruitee.light.jpg"
+    }
+  },
+  "flappy": {
+    "previews": [
+      "previews/flappy.webm"
+    ],
+    "poster": "previews/flappy.jpg",
+    "light": {
+      "previews": [
+        "previews/flappy.light.webm"
+      ],
+      "poster": "previews/flappy.light.jpg"
+    }
+  },
+  "brawl": {
+    "previews": [
+      "previews/brawl.webm"
+    ],
+    "poster": "previews/brawl.jpg",
+    "light": {
+      "previews": [
+        "previews/brawl.light.webm"
+      ],
+      "poster": "previews/brawl.light.jpg"
+    }
+  }
+}
