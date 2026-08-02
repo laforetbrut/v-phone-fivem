@@ -684,6 +684,28 @@ Config.RequiredContacts = {
     -- { name = 'Mechanic', number = '555-0200', favourite = false },
 }
 
+-- ── Blocking ───────────────────────────────────────────────────
+-- **A player's own list of people who cannot reach them.**
+--
+-- Blocked numbers cannot call, cannot be added to a call, and cannot text. Nothing tells them:
+-- a call reports the phone as off, which is what they would have seen had it simply been put
+-- away, and a text is written to the sender's own thread and delivered nowhere.
+--
+-- Two things are deliberate and worth knowing before turning it off:
+--
+--   Everything in `Config.RequiredContacts` is unblockable. 911 blocked in a temper, with an
+--   emergency an hour later, is the phone making the game worse.
+--
+--   A block is stored against the CHARACTER as well as the number, so `/phoneadmin renumber`
+--   neither breaks it nor turns it into a mute on whoever is handed that number next.
+--
+-- Group messages are NOT filtered. A group is a room somebody joined, and a member who cannot
+-- read half of it is a worse experience than the one this is meant to fix.
+Config.Blocking = {
+    enabled = true,
+    max     = 50,       -- numbers one character may block
+}
+
 -- ── Messages ───────────────────────────────────────────────────
 Config.Messages = {
     maxLength   = 250,      -- characters

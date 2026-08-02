@@ -695,7 +695,15 @@ WidgetSource('export', 'export', function(src)
 
     -- One pass for the largest absolute move, up or down. Absolute rather than signed: a
     -- market that has fallen twelve percent is exactly as worth knowing about as one that rose.
+    --
+    -- **And a headline for when nothing has moved at all**, which is the ordinary state of this
+    -- board rather than the exception: `percent` is only non-zero when a price changed between
+    -- the last two polls, and under doc-shops those are twenty minutes apart. The widget used
+    -- to say "nothing has moved" and stop there, so on most servers it never showed a price at
+    -- all. The dearest item is the fallback - it is stable, it is the one worth running, and it
+    -- is a real answer rather than an apology.
     local top, best = nil, 0
+    local head, dearest = nil, -1
     local moved = 0
     for _, c in ipairs(board.categories) do
         for _, it in ipairs(c.items) do
@@ -704,8 +712,12 @@ WidgetSource('export', 'export', function(src)
                 moved = moved + 1
                 if math.abs(pct) > best then best = math.abs(pct); top = it end
             end
+            local price = tonumber(it.price) or 0
+            if price > dearest then dearest = price; head = it end
         end
     end
+    -- The mover if there is one, the headline otherwise.
+    top = top or head
 
     local out = { ok = true, market = market, moved = moved,
                   shop = WidgetText(board.shop, 28),
@@ -714,7 +726,10 @@ WidgetSource('export', 'export', function(src)
     if top then
         out.item = WidgetText(phrase(src, top.label or top.name), 24)
         out.price = math.floor(tonumber(top.price) or 0)
-        out.percent = tonumber(top.percent)
+        -- Sent only when it is a real movement. A headline item carries no percent, and the
+        -- page draws the difference rather than printing a confident "0%".
+        local pct = tonumber(top.percent)
+        out.percent = (pct and pct ~= 0) and pct or nil
     end
     return out
 end)

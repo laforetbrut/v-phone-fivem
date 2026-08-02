@@ -120,6 +120,58 @@ local function urlFromResponse(resp)
 end
 
 -- ══════════════════════════════════════════════════════════════
+-- When an upload fails, say what usually causes it
+-- ══════════════════════════════════════════════════════════════
+-- The player is told "it did not upload", which is all they can act on. The OPERATOR is the one
+-- who can fix it, and until now the only thing in the console was screencapture's own stack
+-- trace - accurate, and silent about which of the three usual causes it was.
+--
+-- Throttled hard: an upload that fails once fails for everybody, and a line per attempt is a
+-- log nobody reads.
+local lastTrouble = 0
+
+local function uploadTrouble(reason)
+    local now = GetGameTimer()
+    if lastTrouble ~= 0 and (now - lastTrouble) < 300000 then return end
+    lastTrouble = now
+    print(('[v-phone] media: an upload failed (%s).'):format(tostring(reason or 'unknown')))
+    print('[v-phone] media: the three usual causes, in order of likelihood - the API key is '
+          .. 'rejected, the account is out of quota, or the file is larger than the plan '
+          .. 'allows.')
+    print('[v-phone] media: `write EPIPE` from the host means it closed the connection part '
+          .. 'way through the upload. That is nearly always the key. Check `phone_media_key`.')
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- One upload at a time, and a floor between them
+-- ══════════════════════════════════════════════════════════════
+-- Every upload below spends the OPERATOR'S quota, with the operator's key, and on a paid plan
+-- the operator's money. Neither callback had a rate limit nor an in-flight guard, so a loop was
+-- a bill. This is the same arrangement server/gifs.lua uses for the search field, and for the
+-- same reason: the thing being spent does not belong to the player spending it.
+--
+-- Two seconds is far below anything a person does with a camera - a shot, look at it, another -
+-- and far above what a loop needs to be useless.
+local Uploading, UploadLast = {}, {}
+local UPLOAD_EVERY = 2000
+
+--- May this player start an upload? Returns false and the reason, or true and a release
+--- function that must be called on every exit path.
+local function takeUploadSlot(src)
+    if Uploading[src] then return false, 'busy' end
+    local now = GetGameTimer()
+    if UploadLast[src] and (now - UploadLast[src]) < UPLOAD_EVERY then return false, 'toosoon' end
+    Uploading[src] = true
+    UploadLast[src] = now
+    return true, function() Uploading[src] = nil end
+end
+
+AddEventHandler('playerDropped', function()
+    Uploading[source] = nil
+    UploadLast[source] = nil
+end)
+
+-- ══════════════════════════════════════════════════════════════
 -- Photo: capture and upload
 -- ══════════════════════════════════════════════════════════════
 -- The camera calls this. It captures the player's screen through screencapture, uploads
@@ -134,6 +186,16 @@ V.Callback('v-phone:media:photo', function(src, resolve)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
 
+    local allowed, release = takeUploadSlot(src)
+    if not allowed then resolve({ error = release }) return end
+    -- Four exits from here - the upload failed, it worked, the capture resource never answered,
+    -- the timeout fired - and the slot has to come back on all of them. Wrapping `resolve` is
+    -- the only arrangement where a path added later cannot forget.
+    do
+        local answer = resolve
+        resolve = function(res) release(); answer(res) end
+    end
+
     -- screencapture's server export uploads for us and calls back with the host response.
     local done = false
     -- The fifth argument is the one that matters, and leaving it off is why every upload
@@ -146,6 +208,13 @@ V.Callback('v-phone:media:photo', function(src, resolve)
     -- Guarded. An export that throws - a screencapture build whose signature moved, a client
     -- that dropped mid-capture - never reaches its callback, and an unguarded call takes the
     -- error with it, leaving the caller waiting on a request that can no longer be answered.
+    -- **Armed before the call it protects, not after it.** An export that throws unwinds
+    -- past everything below it, and a timeout registered down there would never have been
+    -- registered at all - so the one failure the guard exists for is the one it misses.
+    SetTimeout(8000, function()
+        if not done then done = true; uploadTrouble('timeout'); resolve({ error = 'timeout' }) end
+    end)
+
     local started = pcall(function()
     exports['screencapture']:remoteUpload(src, MEDIA.endpoint, {
         encoding = MEDIA.imageEncoding or 'webp',
@@ -155,7 +224,7 @@ V.Callback('v-phone:media:photo', function(src, resolve)
         if done then return end
         done = true
         local url = urlFromResponse(response)
-        if not url then resolve({ error = 'upload' }) return end
+        if not url then uploadTrouble('no url in the response'); resolve({ error = 'upload' }) return end
         remember(p.citizenid, url, 'image', { id = idFromResponse(response) })
 
         -- Store it here rather than sending the client back round through `v-phone:photo`
@@ -180,18 +249,13 @@ V.Callback('v-phone:media:photo', function(src, resolve)
 
     if not started then
         if not done then done = true; resolve({ error = 'noupload' }) end
-        return
     end
-
-    -- A capture that never calls back must not hang the caller for ever.
-    --
-    -- **Under the caller's own patience, not over it.** This was fifteen seconds against a
-    -- request that gives up at ten, so the guard could only ever fire after the client had
-    -- already printed "no answer from the server" - the one line it exists to prevent.
-    SetTimeout(8000, function()
-        if not done then done = true; resolve({ error = 'timeout' }) end
-    end)
 end)
+
+-- The timeout above is eight seconds and that is deliberate: **under the caller's own patience,
+-- not over it.** It was fifteen once, against a request that gives up at ten, so the guard could
+-- only ever fire after the client had already printed "no answer from the server" - the one line
+-- it exists to prevent.
 
 -- ══════════════════════════════════════════════════════════════
 -- Video: record for N seconds, upload, return the URL
@@ -205,10 +269,31 @@ V.Callback('v-phone:media:video', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
 
+    -- A video is a bigger upload than a photograph and the same quota. Same slot.
+    local vAllowed, vRelease = takeUploadSlot(src)
+    if not vAllowed then resolve({ error = vRelease }) return end
+    do
+        local answer = resolve
+        resolve = function(res) vRelease(); answer(res) end
+    end
+
     local cap = math.max(1, math.min(30, num(MEDIA.video and MEDIA.video.maxSeconds, 15)))
     local seconds = math.max(1, math.min(cap, math.floor(num(data and data.seconds, cap))))
 
     local done = false
+
+    -- **Armed first, and the export guarded.** Neither was true here, and the pair of
+    -- omissions cost more than a lost clip: `startVideoCaptureUpload` throwing unwound past the
+    -- SetTimeout that used to sit below it, so the timeout was never registered and the wrapped
+    -- `resolve` that gives the upload slot back was never called. `Uploading[src]` stayed true
+    -- until that player disconnected and every later upload answered `busy` - a camera that
+    -- stops working for the rest of the session, with nothing said. The photo path above has
+    -- been guarded since it was written; this one was simply missed.
+    SetTimeout((seconds + 25) * 1000, function()
+        if not done then done = true; uploadTrouble('video timeout'); resolve({ error = 'timeout' }) end
+    end)
+
+    local vStarted = pcall(function()
     exports['screencapture']:startVideoCaptureUpload(src, MEDIA.endpoint, {
         duration = seconds,
         maxWidth = num(MEDIA.video and MEDIA.video.maxWidth, 1280),
@@ -218,17 +303,21 @@ V.Callback('v-phone:media:video', function(src, resolve, data)
     }, function(result)
         if done then return end
         done = true
-        if not result or result.error then resolve({ error = result and result.error or 'capture' }) return end
+        if not result or result.error then
+            uploadTrouble(result and result.error or 'capture')
+            resolve({ error = result and result.error or 'capture' })
+            return
+        end
         local url = urlFromResponse(result.response) or urlFromResponse(result)
-        if not url then resolve({ error = 'upload' }) return end
+        if not url then uploadTrouble('no url in the response'); resolve({ error = 'upload' }) return end
         remember(p.citizenid, url, 'video', { id = idFromResponse(result.response) })
         resolve({ ok = true, url = url, seconds = seconds })
     end)
-
-    -- Recording plus upload can take a while; the timeout is the clip length plus slack.
-    SetTimeout((seconds + 25) * 1000, function()
-        if not done then done = true; resolve({ error = 'timeout' }) end
     end)
+
+    if not vStarted then
+        if not done then done = true; resolve({ error = 'noupload' }) end
+    end
 end)
 
 -- ══════════════════════════════════════════════════════════════

@@ -594,6 +594,240 @@ def check_cross_file_locals(report):
     return not problems
 
 
+def check_prefs_round_trip(report):
+    """Every preference the setter WRITES has to be one `prefsOf` sends BACK.
+
+    The page does `state.prefs = res.prefs` after every save, so a key the setter stores and the
+    getter omits is a setting that saves to the database and vanishes from the screen. That is
+    indistinguishable, from the player's side, from a setting that does not save at all - and it
+    is what happened to all five My Card fields.
+
+    Secrets are exempt by name: a passcode digest is stored and deliberately never sent.
+    """
+    src = read(os.path.join(ROOT, 'server', 'main.lua'))
+
+    # What prefsOf returns: the keys of the table it hands back.
+    start = src.find('prefsOf = function(')
+    if start < 0:
+        report('prefs round trip', 'prefsOf not found', [])
+        return True
+    # prefsOf builds  and returns the name, rather than returning a
+    # table literal. Anchoring on  found a different function four hundred lines away.
+    ret = src.find('local prefs = {', start)
+    depth, i = 0, ret + len('local prefs = ')
+    while i < len(src):
+        if src[i] == '{':
+            depth += 1
+        elif src[i] == '}':
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    returned = set(re.findall(r'(?m)^\s{8}([A-Za-z_][A-Za-z0-9_]*)\s*=', src[ret:i]))
+
+    # What the setter writes. Both shapes it uses: a direct assignment, and a loop over a list
+    # of names.
+    cb = src.find("V.Callback('v-phone:prefs'")
+    if cb < 0:
+        report('prefs round trip', "no v-phone:prefs callback", [])
+        return True
+    end = src.find("V.Callback('", cb + 10)
+    body = src[cb:end if end > 0 else len(src)]
+
+    written = set(re.findall(r'\bprefs\.([A-Za-z_][A-Za-z0-9_]*)\s*=', body))
+    for group in re.findall(r'ipairs\(\{([^}]*)\}\)', body):
+        written |= set(re.findall(r"'([A-Za-z_][A-Za-z0-9_]*)'", group))
+
+    # Stored on purpose and never sent to a page.
+    SECRET = {'passcodeHash'}
+    # Written as the resolved twin of another key rather than as a setting of its own.
+    MIRROR = {'dark'}
+
+    problems = []
+    for key in sorted(written - returned - SECRET - MIRROR):
+        problems.append('prefs.%s is written by v-phone:prefs and never returned by prefsOf - '
+                        'it saves and then disappears from the page' % key)
+
+    report('prefs round trip', '%d written, %d returned' % (len(written), len(returned)),
+           problems)
+    return not problems
+
+
+def check_relay_ops(report):
+    """Every `op` the page sends, against the client relay that has to let it through.
+
+    A NUI callback that branches on `data.op` is a relay with an allowlist, whether or not the
+    allowlist has a name. The page posts an op, the client decides whether that op exists, and
+    an op the client has never heard of is refused there - answered with the generic error,
+    which on screen is indistinguishable from the server failing.
+
+    That is how the Health app's Patients tab shipped unreachable: `v-phone:health:nearby` and
+    `v-phone:health:read` were implemented in full, and `RegisterNUICallback('health')`
+    permitted `get` and `set`.
+
+    `check_callbacks` cannot see it - it matches `post('health')` against
+    `RegisterNUICallback('health')` and stops at the name. `check_social_ops` covers exactly one
+    relay by hand. This covers the rest.
+    """
+    app = read(os.path.join(ROOT, 'html', 'app.js'))
+    client = read(os.path.join(ROOT, 'client', 'main.lua'))
+
+    # Which callbacks the page sends an `op` to, and which ops.
+    asked = {}
+    for m in re.finditer(r"post\(\s*'([A-Za-z0-9_]+)'\s*,\s*\{", app):
+        window = app[m.end():m.end() + 300]
+        found = re.search(r"\bop\s*:\s*'([A-Za-z0-9_]+)'", window)
+        if found:
+            asked.setdefault(m.group(1), set()).add(found.group(1))
+
+    # The body of each client relay, so its op names can be read out of it.
+    bodies = {}
+    for m in re.finditer(r"RegisterNUICallback\(\s*'([A-Za-z0-9_]+)'", client):
+        nxt = client.find('RegisterNUICallback(', m.end())
+        bodies[m.group(1)] = client[m.start():nxt if nxt > 0 else len(client)]
+
+    # `social` has its own check, with the allowlist and the server side as well.
+    SKIP = {'social'}
+
+    problems = []
+    checked = 0
+    for name in sorted(asked):
+        if name in SKIP or name not in bodies:
+            continue
+        body = bodies[name]
+        # A relay that forwards `data` wholesale and never names an op is not gating on one.
+        if not re.search(r"\bop\b", body):
+            continue
+        checked += 1
+        for op in sorted(asked[name]):
+            # The op has to appear as a literal somewhere in the relay - in a comparison, a
+            # table of allowed names, or a concatenation guarded by one.
+            if not re.search(r"'" + re.escape(op) + r"'", body):
+                problems.append("the page posts %s with op '%s', and the client relay for %s "
+                                "never names it - refused before it leaves the machine"
+                                % (name, op, name))
+
+    report('relay ops', '%d relay(s) with an op gate' % checked, problems)
+    return not problems
+
+
+def check_and_nil_or(report):
+    """`cond and nil or value` is `value` in BOTH branches. It is never what was meant.
+
+    Lua's `a and b or c` only behaves like a conditional when `b` is truthy. `nil` is not, so
+    `cond and nil` is nil whatever `cond` is and the `or` always takes over. Written as an
+    intent - "nil when this is true, the value when it is not" - it does the opposite of the
+    first half and nothing at all of the second.
+
+    Five of these were in the resource. The worst withheld an anonymous donor's name and sent it
+    anyway, in a function whose own comment promised it would not: the page drew "Anonymous" off
+    the flag, so nothing looked wrong, and the real name sat in the payload.
+
+    The correct shape is `(not cond) and value or nil`, which is unambiguous because the middle
+    term is the one that can be truthy.
+    """
+    import glob
+
+    files = sorted(glob.glob(os.path.join(ROOT, 'server', '*.lua')) +
+                   glob.glob(os.path.join(ROOT, 'client', '*.lua')) +
+                   glob.glob(os.path.join(ROOT, 'bridge', '*', '*.lua')) +
+                   [os.path.join(ROOT, 'config.lua')])
+
+    problems = []
+    for path in files:
+        for n, line in enumerate(read(path).split(chr(10)), 1):
+            if line.lstrip().startswith('--'):
+                continue
+            code = line.split('--')[0]
+            if re.search(r'\band\s+nil\s+or\b', code):
+                problems.append('%s:%d  `and nil or` is always the right-hand side - write '
+                                '`(not cond) and value or nil`'
+                                % (os.path.relpath(path, ROOT).replace(os.sep, '/'), n))
+
+    report('and nil or', '%d lua file(s)' % len(files), problems)
+    return not problems
+
+
+def check_zero_is_true(report):
+    """`0` is TRUE in Lua, so `data.flag and 1 or 0` is `1` when the page sent a zero.
+
+    Lua has exactly two false values, `nil` and `false`. Every number is true, `0` included -
+    which is the one rule from C and JavaScript that does not carry over, and the one a page
+    talking to a Lua server walks into. `local n = (data and data.favourite) and 1 or 0` reads
+    as "one when it is set"; what it does is answer 1 for `0`, `""` and `-1` alike.
+
+    It cost a real bug the moment it was reachable: the contact editor never sent `favourite`,
+    so the expression only ever saw `nil` and looked correct for as long as the feature was
+    dead. Sending the field - the fix for a different bug, where saving a contact silently
+    unstarred it - would have starred every contact anybody saved.
+
+    Flagged only when the PAGE can send a zero for that field, which is what makes it a bug
+    rather than a boolean written the short way.
+    """
+    import glob
+
+    page = read(os.path.join(ROOT, 'html', 'app.js'))
+    files = sorted(glob.glob(os.path.join(ROOT, 'server', '*.lua')) +
+                   glob.glob(os.path.join(ROOT, 'bridge', 'server', '*.lua')))
+
+    problems = []
+    for path in files:
+        for n, line in enumerate(read(path).split(chr(10)), 1):
+            if line.lstrip().startswith('--'):
+                continue
+            code = line.split('--')[0]
+            for field in re.findall(r'data\.([A-Za-z_][A-Za-z0-9_]*)\)?\s+and\s+1\s+or\s+0',
+                                    code):
+                # Does the page ever put a number in that field? A `? 1 : 0`, a literal 0, a
+                # `Number(...)` or a `|| 0` all reach the server as something that can be zero.
+                sends = re.findall(r'\b' + re.escape(field) + r':\s*([^,\n}]+)', page)
+                numeric = [v for v in sends
+                           if re.search(r'\?\s*1\s*:\s*0|Number\(|\|\|\s*0|^\s*0\s*$', v)]
+                if numeric:
+                    problems.append(
+                        '%s:%d  `data.%s and 1 or 0` answers 1 for a zero - the page sends '
+                        '`%s: %s`. Read the value: '
+                        '`(tonumber(x) or 0) ~= 0 and 1 or 0`'
+                        % (os.path.relpath(path, ROOT).replace(os.sep, '/'), n, field,
+                           field, numeric[0].strip()))
+
+    report('zero is true', '%d lua file(s)' % len(files), problems)
+    return not problems
+
+
+def check_app_descriptions(report):
+    """Every app the phone ships needs its own store description.
+
+    `storeDesc` falls back to `ph.desc_generic` - "a third-party app, its maker did not write a
+    description" - for anything with no `ph.desc_<id>` string. Nine of the thirty-seven shipped
+    apps had none, so nine apps the phone ships advertised themselves in its own store as
+    somebody else's unfinished work.
+
+    Nothing else notices: the fallback is a real, translated string, so the locale check sees
+    every key it is asked for and answers happily.
+    """
+    cfg = read(os.path.join(ROOT, 'config.lua'))
+    start = cfg.find('Config.Apps')
+    end = cfg.find('Config.StoreApps')
+    if start < 0 or end < 0:
+        report('app descriptions', 'Config.Apps not found', [])
+        return True
+
+    ids = [a for a in re.findall(r"\{ id = '([a-z0-9_]+)'", cfg[start:end])
+           if not a.startswith(('ch_', 'dz_'))]
+
+    problems = []
+    for name in ('fr', 'en'):
+        loc = read(os.path.join(ROOT, 'locales', name + '.lua'))
+        for app in ids:
+            if ("['ph.desc_%s']" % app) not in loc:
+                problems.append("%s has no ph.desc_%s, so the store calls it a third-party app "
+                                "with no description" % (name + '.lua', app))
+
+    report('app descriptions', '%d app(s) x 2 locale(s)' % len(ids), problems)
+    return not problems
+
+
 CHECKS = [
     ('callbacks', check_callbacks),
     ('social ops', check_social_ops),
@@ -604,6 +838,11 @@ CHECKS = [
     ('sql parameters', check_sql),
     ('shot scripts', check_shot_backticks),
     ('cross-file locals', check_cross_file_locals),
+    ('prefs round trip', check_prefs_round_trip),
+    ('relay ops', check_relay_ops),
+    ('and nil or', check_and_nil_or),
+    ('app descriptions', check_app_descriptions),
+    ('zero is true', check_zero_is_true),
 ]
 
 
@@ -642,6 +881,16 @@ def selftest():
 
     hit = not _object_body('const OTHER = { a: 1 };', 'TONES')
     print('  sounds    ' + ('reads only the table it was asked for' if hit else 'FAILED'))
+    ok = ok and hit
+
+    # `0` is true in Lua, so this pattern is a bug wherever the page can send a zero.
+    line = 'local fav = (data and data.favourite) and 1 or 0'
+    fields = re.findall(r'data\.([A-Za-z_][A-Za-z0-9_]*)\)?\s+and\s+1\s+or\s+0', line)
+    sample = 'favourite: fav ? 1 : 0,'
+    numeric = re.search(r'\?\s*1\s*:\s*0|Number\(|\|\|\s*0', sample)
+    hit = fields == ['favourite'] and bool(numeric)
+    print('  zero      ' + ('catches `data.x and 1 or 0` against a numeric field'
+                            if hit else 'FAILED'))
     ok = ok and hit
 
     print('')

@@ -353,7 +353,13 @@ local function giftsFor(pageId, limit)
             amount = math.floor(num(r.amount, 0)),
             body = tostring(r.body or ''),
             anon = hidden,
-            name = hidden and nil or ownerName(r.donor),
+            -- **`hidden and nil or name` sends the name in both branches.** `nil` is
+            -- falsy, so the `and` fails whatever `hidden` is and the `or` always wins.
+            -- This function's own comment two lines up says an anonymous gift comes back
+            -- with no name at all; for as long as it has existed it came back with one.
+            -- The page draws "Anonymous" from the flag, so nothing looked wrong and the
+            -- real name sat in the payload for anybody with a console open.
+            name = (not hidden) and ownerName(r.donor) or nil,
             ts = r.at,
         }
     end

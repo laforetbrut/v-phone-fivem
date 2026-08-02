@@ -682,7 +682,21 @@ exports('CreateAlert', function(o)
 end)
 
 --- Read a service's live queue, for a dispatch board or an MDT of your own.
+---
+--- **`GetAlerts` is registered twice.** `server/alerts.lua` exports the same name for CIVIL
+--- alerts and is loaded after this file, so it is the one that answers. Renaming either would
+--- break whichever integration currently works, so both stay and `GetEmergencyQueue` below is
+--- the name that unambiguously means this one.
 exports('GetAlerts', function(serviceId)
+    local live = queueFor(tostring(serviceId or ''))
+    return live
+end)
+
+--- The 911 queue for a service, under a name nothing else claims.
+---
+--- Same answer as `GetAlerts` above, reachable. Prefer it: `GetEmergencyServices` sits beside
+--- it, so a dispatch board reads as one pair rather than two unrelated calls.
+exports('GetEmergencyQueue', function(serviceId)
     local live = queueFor(tostring(serviceId or ''))
     return live
 end)

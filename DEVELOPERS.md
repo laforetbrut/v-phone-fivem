@@ -20,10 +20,15 @@ Ou manuellement :
 2. Renommer le dossier avec l’identifiant de l’application.
 3. Modifier `app.lua`.
 4. Construire l’interface dans `index.html`.
-5. Redémarrer `v-phone`. L’application apparaît automatiquement dans le FruitStore.
+5. Ajouter deux lignes à `fxmanifest.lua` : `apps/mon_app/app.lua` dans
+   `shared_scripts`, et `apps/mon_app/index.html` dans `files`.
+6. Redémarrer `v-phone`. L’application apparaît dans le FruitStore.
 
-Il n’est pas nécessaire de modifier `fxmanifest.lua`, `config.lua`, le client ou le
-serveur du téléphone. Les motifs `apps/*` chargent automatiquement le nouveau dossier.
+Il n’est pas nécessaire de modifier `config.lua`, le client ou le serveur du téléphone.
+Les fichiers sont nommés et non globalisés, et c’est voulu : `apps/_loader.lua` explique
+pourquoi. Un motif qui ne correspond à rien avertit à chaque redémarrage, et un motif ne
+se résout pas du tout à travers une jonction, ce qui est la façon dont la ressource est
+installée par quiconque développe dessus.
 
 ```text
 apps/

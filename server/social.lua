@@ -844,6 +844,25 @@ end
 --- that character, and it is the CHARACTER who may only be buying one pass at a time.
 local HushBuying = {}
 
+--- Likes and super likes this character has claimed but not yet written.
+---
+--- **The cap is counted from rows, and the row is written last.** `hushLikeCaps`, `hushSpent`
+--- and the "already judged?" read are three awaits before the INSERT, so every request issued
+--- in the same tick read the same count and every one of them passed - which on the free tier
+--- turns three likes a day into as many as the page cares to fire, and the cap is precisely
+--- what the premium pass is sold to raise.
+---
+--- A lock would have closed it and refused a legitimate second swipe while the first was still
+--- in flight, which on a swipe deck IS the feature breaking. Counting the writes in flight
+--- refuses nothing extra: the count is read and the claim taken with no yield between them, and
+--- Lua only interleaves coroutines at a yield, so those two lines are atomic.
+local HushFlight = {}
+
+AddEventHandler('playerDropped', function()
+    local p = Core.GetPlayer(source)
+    if p and p.citizenid then HushFlight[p.citizenid] = nil end
+end)
+
 --- Is this character's pass still running, and until when?
 ---
 --- Read from the database on every call rather than cached. A cache here would have to be
@@ -1231,6 +1250,19 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
     local liked = data and data.like == true
     local super = liked and (data and data.super == true) or false
 
+    -- Set when a like is claimed against the in-flight count below, and given back the moment
+    -- the row it was claiming for has been written - or the request has failed.
+    local claimed = false
+    local function unclaim()
+        if not claimed then return end
+        claimed = false
+        local held = HushFlight[p.citizenid]
+        if not held then return end
+        held.likes = held.likes - 1
+        held.supers = held.supers - (super and 1 or 0)
+        if held.likes <= 0 and held.supers <= 0 then HushFlight[p.citizenid] = nil end
+    end
+
     -- A super like is capped hard and separately from ordinary likes. That cap IS the feature:
     -- a signal everybody can send at will says nothing.
     -- **Both ceilings are read BEFORE the row is written**, not after.
@@ -1248,11 +1280,21 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
         local already = MySQL.scalar.await([[SELECT liked FROM vphone_hush_likes
             WHERE from_cid = ? AND to_cid = ?]], { p.citizenid, target })
         local spends = num(already, 0) ~= 1
-        if spends and likesUsed >= likeCap then
+
+        -- **No yield from here to the claim below**, which is what makes this hold.
+        local flight = HushFlight[p.citizenid] or { likes = 0, supers = 0 }
+        if spends and (likesUsed + flight.likes) >= likeCap then
             resolve({ error = 'limit', cap = likeCap, premium = false }) return
         end
-        if super and supersUsed >= superCap then
+        if super and (supersUsed + flight.supers) >= superCap then
             resolve({ error = 'superlimit', cap = superCap }) return
+        end
+        if spends then
+            HushFlight[p.citizenid] = {
+                likes = flight.likes + 1,
+                supers = flight.supers + (super and 1 or 0),
+            }
+            claimed = true
         end
     end
 
@@ -1264,6 +1306,9 @@ V.Callback('v-phone:soc:hushChoice', function(src, resolve, data)
         ON DUPLICATE KEY UPDATE liked = VALUES(liked), super = VALUES(super),
             at = CURRENT_TIMESTAMP]],
         { p.citizenid, target, liked and 1 or 0, super and 1 or 0 })
+
+    -- The row exists, so the claim is redundant: `hushSpent` counts it from here on.
+    unclaim()
 
     -- What is left, so the page can count down without asking again.
     local likesLeft, supersLeft = hushSpent(p.citizenid)

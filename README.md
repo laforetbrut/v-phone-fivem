@@ -68,6 +68,15 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **Notifications, three levels per app**: on, silent (the banner and the card arrive, the sound does not) or off. The middle one is the difference between an app you silence and an app you switch off and then miss something important from. Alerts is the one app that cannot be silenced, and it says so rather than ignoring the tap.
 - **Messages over more than one line**: Enter sends, Shift+Enter breaks the line, and the box grows with the text.
 - **An outbox**: a message written with no signal is held by the handset and sent when the bars come back, one at a time, in order.
+- **Blocking a number**: a blocked number cannot call, cannot add you to a call, and cannot
+  text - and is told none of it. A call reports the phone as off, which is what they would have
+  seen had it simply been put away, and a text is written to the sender's own thread and
+  delivered nowhere: no sound, no banner, no unread badge, and their own copy never turns
+  "Read". Reachable from a contact, from holding a conversation, and from Settings > Privacy,
+  which is also where a number that was never saved can be blocked. Everything in
+  `Config.RequiredContacts` is unblockable, 911 included, and a block is stored against the
+  CHARACTER as well as the number so `/phoneadmin renumber` neither breaks it nor turns it into
+  a mute on whoever is handed that number next. `Config.Blocking`.
 - **Apps take time to arrive**: ten seconds on four bars, a minute on one. The server owns the clock, so a download keeps running with the phone in a pocket, and walking out of a tunnel speeds it up.
 - **`/phonedebug doctor`**: a static check run from inside the game. It reads the resource's own shipped files and reports the seams - a page route with no client callback, an app with no renderer, a locale key missing in one language, an icon that does not exist, a server callback nothing answers.
 - **A theme in one place**: `Config.Theme` sets the accent and the whole system palette without editing a stylesheet inside somebody else's resource. Unset colours keep the phone's own.

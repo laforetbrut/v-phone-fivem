@@ -4,6 +4,226 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.6.1] - 2026-08-02
+
+### Added
+
+- **Blocking a number.** A blocked number cannot call, cannot add you to a call and cannot text,
+  and is told none of it. Reachable from a contact, from holding a conversation in Messages, and
+  from Settings > Privacy - which is also the only place to block a number nobody saved.
+  Everything in `Config.RequiredContacts` is unblockable, 911 included. A block is stored
+  against the CHARACTER as well as the number, so an admin renumber neither breaks it nor turns
+  it into a mute on whoever is handed that number next. Four exports: `GetBlocked`, `IsBlocked`,
+  `BlockNumber`, `UnblockNumber`. Group messages are deliberately not filtered.
+
+### Fixed (second audit round)
+
+- **The tap on the home indicator did nothing, in the shipped release.** `#screen` captures the
+  pointer for any press starting in the bottom thirty-four pixels, so the bar's own pointerup
+  never fired, and the gesture handler that did receive it returns early on anything that is not
+  a swipe. Only the swipe ever worked, which is why nobody noticed. Found by driving real mouse
+  input through the compositor; a synthetic click would have passed the whole time.
+- **Content scrolled under the home indicator's invisible hit target.** That target is the
+  bottom forty pixels of the screen. On an app with a tab bar the footer covers it; on an app
+  without one the body ran to the bottom of the screen, so rows, fields and buttons passed
+  through the band and a tap on one went to the home screen. The strip is reserved now, the way
+  iOS reserves its safe area, and nothing can enter it at any scroll position.
+- **Cancelling "leave without saving?" in Notes disarmed the chevron**, so the next press closed
+  the app and took the note with it.
+- **Health: after the Record tab the chevron read "Health" and did nothing**, on every other tab,
+  for the rest of the visit.
+- **Six positions outlived the app they belonged to.** Zuber reopened on a restaurant's menu,
+  the Gallery inside an album, Music inside a playlist. Worse: a stale `repairOpenJob` or
+  `alertsOpenId` is read by their push handlers as "a detail page is open, do not redraw", so one
+  that survived a close silenced live updates for the rest of the session - on the two screens
+  whose entire purpose is watching something change.
+- **The highlighted tab in Bleeter and Snapmatic was a dead button** on a stranger's profile, on
+  Saved and on a hashtag timeline: the tab bar was still the one the root drew, and re-tapping
+  your own tab is a deliberate no-op.
+- **`Phone.badge()` could not outlive the next refresh**, which on a phone in use is seconds.
+- **A restore onto a connected character was silently thrown away.** `ImportPhone` writes
+  `vphone_kv` behind a cache that is only dropped on disconnect, so the player kept reading their
+  pre-import prefs and the next thing they changed in Settings wrote the stale copy back over the
+  row just restored. `Bridge.KvForget` is the fix, and it is on the bridge for anybody else
+  writing that table by hand.
+- **Four exports were documented wrong**, which is worse than not documenting them: the reader
+  writes the call and gets `false`, an empty table, or a delivery to the wrong player, with no
+  error to follow. `FindByNumber` answers with a citizen id, not a source. `QbMail` takes two
+  arguments, and calling it the documented way now says so in the console. `AdminViewOpen` takes
+  two sources. `GetZuberOrders` takes a restaurant id.
+
+### Security
+
+- **A failed media upload could stop the camera working for the rest of the session.** The
+  video path called screencapture's export unguarded, and armed its timeout after it: an export
+  that throws unwinds past both, so the wrapped `resolve` that gives the upload slot back never
+  ran and every later upload answered `busy`, silently. Both paths now arm the guard before the
+  call it protects, and both are wrapped. `ph.err_capture` existed as an error code with no
+  sentence behind it in either language, so a player would have been shown the raw key.
+- **A failed upload now says what usually causes it, in the console, once every five minutes.**
+  `write EPIPE` from the host means it closed the connection part way through the upload, which
+  is nearly always a rejected API key - and until now the only thing in the log was
+  screencapture's own stack trace, which is accurate and silent about which of the three usual
+  causes it was.
+
+- **Voicemail `leave` was an unrated number oracle with side effects.** It answered "does anybody
+  hold this number", one uncached query per probe, at whatever rate the caller chose - and a
+  probe carrying a body also wrote a voicemail row and buzzed the victim's handset, without
+  limit. It now has the same three gates `v-phone:lookup` was given for exactly this reason.
+- **The city-wide alert cooldown was checked before an await and written after it**, so a burst
+  arriving in one tick all passed and all reached a full-server broadcast. Closed with an
+  in-flight lock rather than by moving the stamp, because three refusals sit between the two and
+  an author must not lose thirty seconds to a typo.
+
+### Changed
+
+- `RunRetention` returns `removed, done`. `done == false` means the sweep outlived its wait and
+  the count is what it had removed so far, not a final figure.
+- `tools/probe.js` judges a control at its centre rather than its edges, so a row half over the
+  fold is no longer reported as unreachable when one flick of the wheel reveals it. Proven still
+  to fail against a real cover before the change was trusted.
+- `tools/probe-input.js` gained the home indicator band: no control may sit in it at any scroll
+  position, and a press on the pill must still go home.
+- `tools/check.py` gained a fourteenth check, `zero is true`: `0` is TRUE in Lua, so
+  `data.flag and 1 or 0` answers 1 for a zero wherever the page can send a number.
+
+### Fixed (English first)
+
+- **Saving a contact silently unstarred it, and Favourites was empty on every phone.** The
+  Favourites tab filters on a column the page never sent, so the server wrote a zero on every
+  edit. The field travels now, there is an Add to favourites button in the contact sheet, and
+  the server reads the value instead of testing it for truth. `0` is TRUE in Lua, so the
+  obvious `data.favourite and 1 or 0` would have starred every contact anybody saved;
+  `tools/check.py` has a `zero is true` check that catches the pattern against a numeric field.
+- **Wallet threw on any server with no configured licences.** `wireCard()` was called inside
+  the empty-list branch and declared after it, so the one path that had only the identity card
+  to show raised a ReferenceError and drew the error screen instead.
+- **MDT Lookup answered nothing unless v-police was running.** The page read a shape only
+  v-police sends; the phone's own lookup answers with the rows that matched. Both are drawn now.
+- **Leaving a note discarded everything typed into it, with no prompt.** The chevron went
+  straight back to the list.
+- **A backup carried the lock-screen passcode.** `ExportPhone` read `vphone_kv` directly, so it
+  bypassed the rule `prefsOf` already follows and put the digest in every backup, transfer and
+  support dump. A restore still keeps an existing code, because `savePhonePrefs` re-merges it.
+- **`WipePhone` did not wipe a connected character, and the data came back.** The rows went;
+  the in-memory KV cache did not, and the next prefs write put it straight back.
+- **`Phone.storage.setJSON` did not serialise.** An array reached the server as a Lua table and
+  came back an object, which broke the flagship example in DEVELOPERS.md. Oversized values are
+  refused rather than truncated into invalid JSON.
+- **`GetAlerts` is registered twice and the emergency one loses.** `GetEmergencyQueue` is the
+  new, unambiguous name for the 911 queue. Neither existing name changes, so nothing that works
+  today stops working; API.md now says which is which.
+- **The Charging app never showed the battery level**, on an app named after it. The status bar
+  and the battery widget were already drawing the same number.
+- **Lottery: the chevron on My lines said "Lottery" and closed the app.**
+- **The store drew a chevron on a privacy card that does not open.**
+
+### Changed
+
+- **Nine screens stopped rebuilding themselves when one number moved.** A push-driven redraw
+  empties `#appbody`, which drops the scroll and replays the entrance animation of the whole
+  screen. Now: a lottery draw repaints from the push instead of asking the server once per
+  ball; a Settings switch flips in place rather than redrawing its page; the 911 queue inserts
+  the alert that arrived with the event; a taxi fare in somebody else's queue no longer
+  re-enters the app; the mechanic's queue skips its fifteen-second redraw when nothing moved;
+  Notes and the trading board repaint only the list under the search field; and any redraw the
+  server asked for puts the reader back where they were.
+- **A queued message going out no longer empties the composer.** The outbox push repainted the
+  whole conversation, which is exactly what somebody who was in a dead zone is typing into.
+- **An incoming public alert no longer destroys the alert composer.**
+- **Choosing a wallpaper framing no longer wipes the URL being typed above it.**
+- **The app switcher wired six listeners to its strip every time it opened**, and `close()`
+  reopens it after a card is flicked away, so one wheel notch eventually scrolled several times
+  as far. Bound once now.
+
+### Security
+
+- **`v-phone:music:play` broadcast a page-supplied URL to every client with no host check.**
+  `Config.Music.hosts` is enforced on the server. An empty list still means any host, as the
+  config documents.
+- **A paid app was charged again on every reinstall.** The purchase was recorded on a table
+  `grant()` deliberately throws away, so `purchased` never reached the database.
+- **`v-phone:brawl:invite` was an unlimited phone-number oracle** that answered with the
+  holder's name. Rate limited, and it now requires owning the app.
+- **Photo and video uploads had no rate limit and no in-flight guard**, on the operator's CDN
+  quota with the operator's key.
+- **Hush counted its daily like cap from rows written after three awaits**, so requests issued
+  in the same tick all passed the cap the premium pass exists to raise.
+
+### Documentation
+
+- `html/sdk.js`'s own quick start pointed at two URLs that 404.
+- DEVELOPERS.md promised a glob `apps/_loader.lua` says was removed on purpose.
+- `tools/new-app.ps1` emitted the one meta tag `apps/example/index.html` warns against.
+- The `VehicleRemote` comment named two of the four things the export bypasses.
+
+### Correctifs (miroir francais)
+
+- **Blocage de numeros.** Un numero bloque ne peut plus appeler, ni vous ajouter a un appel, ni
+  ecrire - et n en est pas informe. Accessible depuis une fiche contact, en maintenant une
+  conversation dans Messages, et depuis Reglages > Confidentialite, seul endroit pour bloquer un
+  numero jamais enregistre. Tout ce qui est dans Config.RequiredContacts est inblocable, 911
+  compris. Un blocage retient le PERSONNAGE en plus du numero, donc un renumerotage admin ne le
+  casse pas et ne le transforme pas en sourdine sur quelqu un d autre. Quatre exports :
+  GetBlocked, IsBlocked, BlockNumber, UnblockNumber. Les messages de groupe ne sont
+  volontairement pas filtres.
+- **L appui sur la barre d accueil ne faisait rien**, dans la version publiee. #screen capture le
+  pointeur des qu un appui demarre dans les 34 px du bas, donc le pointerup de la barre n
+  arrivait jamais, et le gestionnaire qui le recevait ignore tout ce qui n est pas un balayage.
+  Seul le balayage fonctionnait, ce qui explique que personne ne l ait vu.
+- **Du contenu defilait sous la zone tactile invisible de la barre d accueil**, soit les 40
+  derniers pixels de l ecran. Sur une application sans barre d onglets, un appui sur une ligne
+  qui passait dans cette bande renvoyait a l ecran d accueil. La bande est reservee maintenant,
+  comme iOS reserve sa zone de securite.
+- **Annuler « quitter sans enregistrer ? » dans Notes desarmait le chevron** : l appui suivant
+  fermait l application et emportait la note.
+- **Sante : apres l onglet Dossier, le chevron affichait « Sante » et ne faisait rien**, sur tous
+  les autres onglets, pour le reste de la visite.
+- **Six positions survivaient a l application qu elles concernaient.** Zuber rouvrait sur le menu
+  d un restaurant, la Galerie dans un album, Musique dans une playlist. Pire : un repairOpenJob
+  ou un alertsOpenId obsolete est lu comme « une fiche est ouverte, ne pas redessiner », donc les
+  mises a jour en direct restaient muettes pour le reste de la session.
+- **L onglet surligne de Bleeter et Snapmatic etait un bouton mort** sur un profil, sur
+  Enregistres et sur un fil de hashtag.
+- **Une restauration sur un personnage connecte etait jetee en silence.** ImportPhone ecrit
+  derriere un cache qui n est vide qu a la deconnexion.
+- **Quatre exports etaient mal documentes**, ce qui est pire que pas documentes du tout :
+  FindByNumber, QbMail, AdminViewOpen, GetZuberOrders.
+- **Securite :** la messagerie vocale etait un annuaire de numeros sans limite qui ecrivait une
+  ligne et faisait vibrer la victime a chaque essai ; et le delai entre deux alertes municipales
+  etait verifie avant un await et ecrit apres, donc une rafale passait entierement.
+
+- **Enregistrer un contact retirait son etoile, et l onglet Favoris etait vide sur tous les
+  telephones.** La page n envoyait jamais la colonne, donc le serveur ecrivait un zero a chaque
+  modification. Le champ voyage maintenant, un bouton Ajouter aux favoris est dans la fiche, et
+  le serveur lit la valeur au lieu de la tester. `0` est VRAI en Lua : l ecriture evidente aurait
+  mis en favori tous les contacts enregistres. `tools/check.py` a un controle `zero is true`.
+- **Le portefeuille plantait sur tout serveur sans permis configure**, sur le seul chemin qui n
+  avait que la carte d identite a montrer.
+- **La recherche MDT ne repondait rien sans v-police.** Les deux formes de reponse sont dessinees.
+- **Quitter une note jetait tout ce qui venait d etre ecrit**, sans aucune question.
+- **Une sauvegarde emportait le code de verrouillage.** `ExportPhone` lisait la table directement
+  et contournait la regle que `prefsOf` applique deja. Une restauration conserve un code existant.
+- **`WipePhone` n effacait pas un personnage connecte** : le cache memoire survivait et la
+  prochaine ecriture des preferences le remettait en base.
+- **`Phone.storage.setJSON` ne serialisait pas.** Un tableau revenait en objet.
+- **`GetAlerts` est enregistre deux fois.** `GetEmergencyQueue` est le nom sans ambiguite pour la
+  file du 911. Aucun nom existant ne change.
+- **L application Recharge n affichait jamais le niveau de batterie.**
+- **Loterie : le chevron de Mes grilles disait "Loterie" et fermait l application.**
+- **Neuf ecrans ne se reconstruisent plus quand un seul chiffre bouge** : un tirage, un
+  interrupteur des reglages, la file du 911, une course taxi, la file du garagiste, Notes et le
+  marche. Un redessin demande par le serveur remet le lecteur ou il etait.
+- **Un message en attente qui part ne vide plus la zone de saisie.**
+- **Une alerte publique ne detruit plus le formulaire d alerte en cours d ecriture.**
+- **Choisir un cadrage de fond d ecran n efface plus l adresse en train d etre tapee.**
+- **Securite :** l URL de la musique est verifiee sur le serveur et non sur la page ; une
+  application payante n est plus facturee a chaque reinstallation ; l invitation Fruit Brawl
+  n est plus un annuaire de numeros ; les envois photo et video ont une limite ; et le quota de
+  likes de Hush ne peut plus etre depasse par deux requetes dans le meme tick.
+
+---
+
 ## [1.6.0] - 2026-07-29
 
 ### Added (English first)

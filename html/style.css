@@ -504,8 +504,28 @@ input { font: inherit; }
    app that toolbar is the app's own surface, not glass. */
 .navbar.collapsed { box-shadow: 0 .5px 0 var(--app-sep); background: var(--app-bg); }
 
+/* The bottom inset is a variable because two things depend on it and they must agree: the
+   scroll padding here, and the negative margin a dropped-in app uses to take it back. */
 .appbody { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  padding: 0 16px 34px; -webkit-overflow-scrolling: touch; }
+  --appbody-pb: 34px;
+  padding: 0 16px var(--appbody-pb); -webkit-overflow-scrolling: touch; }
+
+/* **The home indicator gets a strip of its own, and content never enters it.**
+
+   `.homebar::before` stretches an invisible hit target 26px above the five-pixel pill and 14px
+   below it, so the bottom FORTY pixels of the screen belong to the indicator whatever is drawn
+   under them. Measured rather than guessed: `elementFromPoint` was walked up from the bottom
+   edge and the bar answered for exactly 40px.
+
+   On an app with a tab bar that costs nothing - #appfoot is above the indicator and wins the
+   hit test. On an app WITHOUT one, #appfoot collapsed to nothing and the body ran to the
+   bottom of the screen, so rows, fields and buttons scrolled straight through the band and a
+   tap on one went to the home screen instead. That is the worst wrong destination there is,
+   and padding could not fix it: padding only adds space after the LAST row, and the problem is
+   every row that passes through the band on the way past.
+
+   Reserving the strip is what iOS does with its safe area, and it is one rule. */
+.app:not(.hasfoot) #appfoot { height: 40px; }
 .appbody::-webkit-scrollbar { width: 0; }
 
 /* ══ iOS list rows ════════════════════════════════════════════
@@ -1344,8 +1364,14 @@ input { font: inherit; }
 /* ══ Folders ══════════════════════════════════════════════════
    A folder is drawn as the four icons it holds, shrunk into one tile, so you can
    tell two folders apart without opening them. */
+/* **Two rows, always, whatever the folder holds.** Without `grid-template-rows` the rows are
+   implicit and sized by content, so a folder with one or two apps has exactly ONE row - which
+   stretches to the full height of the box and draws its icons as tall narrow rectangles,
+   measured at 22x48 where they should be square. Three or four apps make two rows and look
+   almost right, which is why it went unseen: the broken case is the one you get the instant you
+   drag one app onto another, which is how every folder is made. Issue #9. */
 .tile .folder { width: 60px; height: 60px; border-radius: 13.5px; display: grid;
-  grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; }
+  grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 4px; padding: 6px; }
 .tile .folder span { border-radius: 4.5px; overflow: hidden; display: block; }
 .tile .folder span .ic { width: 100%; height: 100%; border-radius: 4.5px; box-shadow: none; }
 .tile .folder span .ic svg { width: 62%; height: 62%; }
@@ -1411,7 +1437,13 @@ input { font: inherit; }
 .widget .wbig { font-family: var(--ios-num); font-size: 34px; font-weight: 500;
   letter-spacing: -.02em; }
 .widget .wsub { font-size: 12px; color: rgba(255,255,255,.8); }
-.widget .wicon svg { width: 20px; height: 20px; }
+/* **The icon serves the title; it does not compete with it.**
+   Twenty pixels of pure white against a thirteen-pixel label is the wrong way round - the icon
+   read louder than the thing it labels, and its own line box pushed it off the text's optical
+   centre. Fifteen pixels is about the cap height of the label beside it, and the flex box
+   centres the glyph itself rather than the line it sits on. */
+.widget .wicon { display: flex; align-items: center; opacity: .78; }
+.widget .wicon svg { width: 15px; height: 15px; }
 .widget.w-calendar .wday { font-size: 12px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ios-red); }
 .widget.w-calendar .wnum { font-family: var(--ios-num); font-size: 40px; font-weight: 500; line-height: 1; }
@@ -1891,7 +1923,7 @@ input { font: inherit; }
    column, spilling off the grid. The rules are the same shape as the ones above, deliberately -
    the ghost is meant to look like the thing it lifted. */
 .dragghost .folder { width: 60px; height: 60px; border-radius: 13.5px; display: grid;
-  grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; }
+  grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 4px; padding: 6px; }
 .dragghost .folder span { border-radius: 4.5px; overflow: hidden; display: block; }
 .dragghost .folder span .ic { width: 100%; height: 100%; border-radius: 4.5px;
   box-shadow: none; }
@@ -3034,7 +3066,8 @@ input { font: inherit; }
 
 /* A drop-in app owns its whole surface, so it takes the padding back off. CEF has no
    :has(), so the frame cancels the inset itself rather than the body suppressing it. */
-.appframe { margin: -14px -15px -34px; width: calc(100% + 30px); height: calc(100% + 48px); }
+.appframe { margin: -14px -15px calc(-1 * var(--appbody-pb, 46px));
+  width: calc(100% + 30px); height: calc(100% + 14px + var(--appbody-pb, 46px)); }
 
 .appbody::before {
   content: '';
@@ -13420,3 +13453,10 @@ body.inframe.dark .uisearch {
 .hchip.on { background: #FF375F; color: #fff; font-weight: 650; }
 .hrange { display: flex; gap: 10px; }
 .hrange > * { flex: 1; }
+/* A market that is sitting still. Not an error and not a blank: the price is still true, so it
+   is drawn, and this is the word beside it. Issue #10. */
+.widget .wpct.flat { color: rgba(255,255,255,.62); font-weight: 600; }
+/* The verification chip's host. Always present so a code that arrives after the screen was
+   drawn has somewhere to appear - which is the ordinary case, since the screen is drawn at the
+   moment the code is asked for. Empty until then, and an empty inline element takes no room. */
+.codefillhost { display: contents; }

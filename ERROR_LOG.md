@@ -5,6 +5,332 @@ one coming back.
 
 ---
 
+## [2026-08-02 18:40] - The home indicator's tap had never worked, and every test agreed it did
+
+**Context:** the reachability sweep reported three controls under the home bar. Chasing them.
+
+**Error:** a real mouse press on the home indicator did nothing at all. Only the swipe worked.
+
+**Root cause:** `#screen`'s pointerdown calls `setPointerCapture` for any press that starts in
+the bottom thirty-four pixels, and the indicator lives there. From that moment every pointer
+event for that gesture belongs to `#screen`, so `#homebar`'s own `pointerup` and `click` never
+fire - the counters said `down 1, up 0, click 0`. And `#screen`'s own pointerup returns early on
+`a tap, not a swipe`. Neither half was wrong on its own; nothing owned the case between them.
+
+**Fix:** the tap is decided where the events actually arrive. `#screen` records whether the
+press began on the bar and, on a tap, goes home. The bar's own handlers stay as the fallback for
+an input method that emits no pointer events, with a comment saying so.
+
+**Prevention:** two handlers for one gesture, in two files, with a capture between them, is a
+gap nobody reads their way to. The rule that found it: a control is only proven by real input
+through the compositor. A synthetic `.click()` on that bar passes today and always would have -
+the handler is fine, it simply never runs.
+
+---
+
+## [2026-08-02 17:55] - Padding cannot fix a band that content scrolls through
+
+**Context:** the same three findings. The first fix raised `.appbody`'s bottom padding from 34px
+to 46px so the last row would clear the indicator's forty-pixel hit target.
+
+**Error:** the sweep still reported the same controls. The measurement said the padding had
+applied.
+
+**Root cause:** padding adds space after the LAST row. The problem is every row that passes
+through the band on its way past, at every scroll position in between - which padding cannot
+reach. Fixing the end of a list is not fixing the middle of it.
+
+**Fix:** reserve the strip instead. `#appfoot` collapses to nothing on an app with no tab bar,
+so the body ran to the bottom of the screen; it now has a forty-pixel floor, which is what iOS
+does with its safe area. `.app:not(.hasfoot) #appfoot { height: 40px; }` and the body ends
+exactly where the band begins.
+
+**Prevention:** before writing a fix, say out loud which instances it covers. "The last row"
+and "any row" are different sets, and the measurement that confirmed the padding had applied was
+answering a question nobody needed answered.
+
+---
+
+## [2026-08-02 16:20] - A probe that reported three controls as lost, and a probe that would have missed a real one
+
+**Context:** `tools/probe.js` asks `elementFromPoint` what is under each control's centre.
+
+**Error:** three controls reported unreachable that one flick of the wheel reveals.
+
+**Root cause:** the scrolled-away test asked whether an element was ENTIRELY outside its
+scroller. A row straddling the fold - top inside, centre below - passed that test and was then
+judged at a pixel belonging to whatever is painted under the scroller.
+
+**Fix:** judge at the centre, since the centre is the point being asked about.
+
+**Prevention:** a rule that is loosened has to be shown to still fail against the thing it exists
+for, or it has stopped being a rule. A fixed opaque panel was dropped over the middle of the
+phone and the sweep reported controls under it in twenty apps; the panel was removed and the
+sweep came back clean. Only then was the change kept.
+
+---
+
+## [2026-07-31 15:20] - ffmpeg read and wrote the same file, and eight images went missing
+
+**Context:** moving scratch screenshots out of the repository, so they stop being committed.
+
+**Error:** eight shots printed ENCODE FAILED on every run. No stack, no ffmpeg output, and the
+assertions in the same range kept passing - so it read as flaky rather than broken.
+
+**Root cause:** the move sent scratch output to the temporary directory that already holds the
+full-size capture, under the same file name. ffmpeg was handed one path as both input and
+output and refused. It had been failing since the change, silently.
+
+**Fix:** scratch shots encode into a `shots/` subdirectory beside the captures.
+
+**Prevention:** when a change moves an output path, check it against the input path. And an
+"ENCODE FAILED" line that carries no reason is a line that will be read as noise: the harness
+prints ffmpeg's stderr when it is worth reading.
+
+---
+
+## [2026-07-31 15:05] - An assertion that passed alone and failed in a batch
+
+**Context:** the same screenshot run. `crop-slider` failed with "cannot read properties of null",
+then passed when run on its own.
+
+**Root cause:** every shot shares ONE page, so module state a shot writes is state the next shot
+inherits. `gallery-albums` leaves `galleryTab = 'albums'`; `crop-slider` then opened a gallery
+with no thumbnails in it and its first `querySelector('.shot')` was null.
+
+**Fix:** the shot sets the state it depends on rather than assuming a default.
+
+**Prevention:** a shot may not rely on module state it did not set. An assertion whose result
+depends on what ran before it is worse than no assertion, because it teaches everybody to
+re-run the suite until it goes green.
+
+---
+
+## [2026-07-31 14:10] - A debug probe reached a live server, because the server IS the working tree
+
+**Context:** a full audit of the page, run by agents that measure real rendered styles.
+
+**Error:** the owner saw a JSON panel over their game reading `emitted_class`, `actual_color`,
+`intended_rule`, with an annotation "(what `.emergencycard .uibtn` would look like)". Nothing of
+the sort exists in the repository.
+
+**Root cause:** an audit agent wrote a diagnostic probe into `html/` to read a computed style,
+read it, and removed it. The test server is a junction onto this working tree, so for the few
+seconds the probe existed on disk it was being served to a running game.
+
+**Fix:** nothing to revert - the probe was already gone, confirmed by `git status` and a
+repository-wide search for all four strings.
+
+**Prevention:** a probe never goes in a file the live server serves. Measure in the preview
+build under the scratchpad, or in a copy. The working tree is somebody's server.
+
+---
+
+## [2026-07-31 13:40] - `0` is true in Lua, so the fix for one bug was about to cause another
+
+**Context:** the contact editor never sent `favourite`, so the Favourites tab was empty on every
+phone and every save wrote a zero over the flag. The fix is one field in one payload.
+
+**Error:** none observed. Caught by reading `server/main.lua` before shipping the page change.
+
+**Root cause:** `local fav = (data and data.favourite) and 1 or 0`. Lua has two false values,
+`nil` and `false`; every number is true. The expression reads as "one when it is set" and
+answers `1` for `0`. It had been correct for as long as nothing sent the field at all - so the
+dead feature was hiding the trap, and fixing the feature would have armed it. Sending
+`favourite: 0` for an unstarred contact would have starred every contact anybody saved.
+
+**Fix:** `local fav = (rawFav == true or (tonumber(rawFav) or 0) ~= 0) and 1 or 0`. Tested under
+real Lua against nil, 0, 1, true, false, "0" and "1".
+
+**Prevention:** `tools/check.py` gained a `zero is true` check: any `data.<field> and 1 or 0` in
+server Lua is flagged when the page can send a number for that field. Proven to fire against the
+original line before being trusted.
+
+---
+
+## [2026-07-31 13:05] - A search box that rebuilt the screen it was in
+
+**Context:** the page audit, looking for redraws that cost more than they are worth.
+
+**Error:** Notes and the trading board replayed the whole screen's entrance animation on every
+keystroke, and had focus-and-caret restoration code to survive their own destruction.
+
+**Root cause:** both called their full render from the `input` handler, and every render ends in
+`body()`, which assigns `#appbody.innerHTML` and deliberately restarts `view-enter`. The
+restoration hack is the tell: code that puts the caret back is code that knows the field it is
+typing into is being destroyed.
+
+**Fix:** the list under the field is its own host, repainted alone. The field is never
+destroyed, so the focus code, the caret code and the `holdInput` sent per character all went
+with it. The GIF picker and Music search were already doing it this way.
+
+**Prevention:** a repaint driven by typing must not touch the element being typed into. If the
+fix needs `.focus()` afterwards, the repaint is too wide.
+
+---
+
+## [2026-07-31 02:30] - "Sometimes clicking somewhere takes you to another page"
+
+**Context:** a player report with no steps and no error, about Settings "and other apps".
+
+**Error:** exactly what it says. A tap lands the player on a screen they did not choose.
+
+**Root cause: two of them, found by pointing five agents at five different ways a handler goes
+wrong and then having each finding attacked by a skeptic. Thirty candidates, twenty-four
+survived, and they collapse into two.**
+
+**A. `data-full` is the phone-wide open-a-photograph attribute, and the widget picker used it as
+a boolean flag.** A capture-phase delegate on #screen matches `[data-full]` anywhere, calls
+`stopPropagation` and opens the full-screen viewer. #sheet is inside #screen. So tapping a
+widget row that would not fit opened a black viewer on the string "1", rotated the handset to
+landscape and disabled the bezel buttons - after the delegate's `stopPropagation` had killed the
+row's own "not enough room" toast. Written this session; the flag is `data-nofit` now.
+
+The same delegate was also silently killing double-tap-to-like on a feed photograph, because the
+second tap never reached the image. It is narrow now: it only fires for a value that starts
+`http:` or `data:`, and only swallows the event when it is going to act on it.
+
+**B. Every control in Settings redrew with `RENDER.settings()`, which draws the FRONT page.**
+Twenty-two call sites used it as "redraw after a change", so flipping a switch on Display,
+choosing a wallpaper, setting a passcode or picking a ringtone all threw the player back to the
+top of Settings one tap after arriving. `settingsAt` now records which screen is open and
+`settingsRedraw()` redraws that one; `RENDER.settings()` keeps its real meaning, which the back
+chevron and the app launcher want.
+
+**Six narrower ones with the same shape**, all of them a screen that draws a new body without
+setting its own nav bar - and the bar lives outside #appbody, so it keeps whatever the last
+screen bound to it:
+
+- pull-to-refresh, bound to #appbody once at boot, always called the app's ROOT render, so
+  pulling down inside any sub-page threw the player out of it
+- Music's Favourites and Albums: the chevron closed the whole app
+- Hush: leaving a conversation kept the top-right button, which unmatches - so the corner
+  unmatched the person whose thread you had just left
+- Bleeter/Snapmatic: a foreign profile wrote `SOC.tab = 'me'`, which made the Profile tab dead
+  afterwards (the tab handler returns early when the tab is unchanged) and highlighted the wrong
+  tab while a stranger's page was on screen
+- Lottery: a chevron labelled "Lottery" with no closure behind it, so it closed the app
+- the FruitStore's own async first render painted over the detail page "view in the FruitStore"
+  had just drawn, and the Gallery replaced the photograph you were looking at with the grid,
+  underneath the still-open edit sheet
+
+**Prevention:** the `nav-stays` assertion drives both root causes - a refused widget row must
+toast rather than open the viewer, a real photograph must still open, and a switch flipped on a
+Settings sub-page must leave the player on that sub-page. Both halves were proven to fail
+against the code as it shipped.
+
+**The lesson worth keeping:** an attribute selector on a delegated listener is a namespace, and
+`data-full` had no owner written down anywhere. The second user of a name that means something
+to a listener three thousand lines away cannot know that. Where a delegate claims an attribute,
+the attribute needs a comment saying so - which it now has.
+
+---
+
+## [2026-07-31 01:15] - "Use the code 1111" next to a text saying 2222
+
+**Context:** signing up in Hush, and in every other app that verifies by SMS.
+
+**Error:** the code screen offered a code that was not the one the text had just delivered.
+Players with no earlier code saw no chip at all, however long they waited.
+
+**Root cause:** the chip is built as part of the markup for the code screen, and that screen is
+drawn at the moment the player ASKS for a code - before the text exists. `latestCode()` therefore
+searched a conversation list without the new code in it, found an older one from a previous
+sign-up or another app, and rendered that. The text landed a second later, the inbound handler
+called `refresh()` and quietly updated the list, and **nothing redrew the chip**.
+
+A second, narrower cause on top: the field is `maxlength="4"` and the detector accepted four to
+eight digits, so a longer number elsewhere could be offered and then silently truncated by the
+field - offered and entered would not have been the same string either.
+
+**Fix:** `codeFillChip` emits an empty HOST, so a code arriving later has somewhere to appear.
+`refreshCodeChips()` rebuilds it from the live conversation list, reading the digit count off the
+real field. It is called after the body is drawn, and again from the message handler.
+
+**Two mistakes made while fixing it, both caught by the assertion rather than by reading:**
+
+1. The first version read `maxlength` inside `codeFillChip`. That markup is concatenated with
+   the field and assigned in one go, so at that moment the field is not in the document and the
+   attribute is null - the length check silently did nothing. The assertion caught it by offering
+   an eight-digit number to a four-digit field.
+2. The second version had `wireCodeFill` call `refreshCodeChips` and `refreshCodeChips` call
+   `wireCodeFill`. With no code to show, neither ever reached a state the other accepted, and it
+   recursed until the stack ran out. Wiring and refreshing are separate functions now.
+
+**Prevention:** the `code-chip` assertion drives the whole sequence - no code, an old code, the
+new one arriving, the fill, the length rule, and five refreshes in a row to prove the listener
+does not stack. Every step of it failed against one of the three versions of this code.
+
+---
+
+## [2026-07-31 00:30] - A finished feature nobody could reach
+
+**Context:** a player reported "something went wrong" on the Patients tab of the Health app.
+
+**Error:** every visit to that tab drew the generic error empty state. Tapping a patient would
+have done the same.
+
+**Root cause:** `RegisterNUICallback('health')` in client/main.lua forwarded `get` and `set` to
+the server and answered **every other op with `{ error = 'x' }`**. The page asks that tab for
+`op = 'nearby'` and asks a patient row for `op = 'read'`, so both were refused on the player's
+own machine and never left it.
+
+Both server callbacks were complete and had been all along: `v-phone:health:nearby` and
+`v-phone:health:read` check the reader's job and grade, measure the distance at the listing AND
+again at the moment of reading, refuse a target who has walked away, notify the patient that
+their record was read, and log it. None of that had ever run once.
+
+**Fix:** the two ops routed through the relay, still as a closed set - the op is compared against
+the two names before it is used to build the callback name, so the page cannot ask for a third.
+
+**Prevention:** `tools/check.py` gained `relay ops`. A NUI callback that branches on `data.op` is
+an allowlist whether or not the allowlist has a name; the check reads every `op` the page posts
+and every op each client relay mentions, and reports the difference. Reverting the fix makes it
+name both `nearby` and `read`.
+
+`check_social_ops` already did exactly this for the one relay that has a NAMED allowlist. The
+lesson is that the named one got a check and the six unnamed ones did not - a check written for
+one instance of a pattern should be written for the pattern.
+
+**Also worth recording:** nothing else was wrong behind it. This path had never executed, which
+is where a nil global hides, so `coordsOf`, `healthMayRead` and `mailJobQualifies` were each
+checked for scope before the fix was called done. All three are declared above their use in the
+same file.
+
+---
+
+## [2026-07-30 22:40] - A setting that saved perfectly and vanished
+
+**Context:** a player reported that editing My Card in Contacts did not save.
+
+**Error:** the job, address, birthday, note and photograph were typed in, saved, and the card
+came back empty. Every time, on every server.
+
+**Root cause:** `v-phone:prefs` accepted all five fields, validated them and wrote them to the
+character's metadata correctly. **`prefsOf` never returned them.** The page does
+`state.prefs = res.prefs` after every save, so the fields were written to the database and wiped
+off the screen in the same breath - and `v-phone:open` sends the same `prefsOf`, so they were
+still absent on the next connection. Nothing was ever lost; nothing was ever sent back.
+
+The same omission broke a second feature nobody had connected to it: AirDrop card sharing reads
+`prefsOf(me)` too (server/main.lua:4374, :4386, :4419), so handing somebody your whole card sent
+your name, your number and your email address and **none of the five extra lines the feature
+exists for**.
+
+**Fix:** the five keys added to the table `prefsOf` returns.
+
+**Prevention:** `tools/check.py` gained `prefs round trip`, which compares every key
+`v-phone:prefs` WRITES against every key `prefsOf` RETURNS and reports the difference. Secrets
+(`passcodeHash`) are exempt by name. Reverting the fix makes it name all five.
+
+**And a note about why no page test covers this.** The preview harness answers a prefs save with
+`Object.assign(DB.prefs, body); return { ok: true, prefs: DB.prefs }` - it echoes back whatever
+it was handed, so it is strictly more permissive than the real server and would have passed
+against the broken code. An in-page assertion here would have been a test that cannot fail. The
+static check is the honest one, and it is the one that discriminates.
+
+---
+
 ## [2026-07-29 20:40] - A control that was drawn, was hit, and did nothing
 
 **Context:** shipping the home-screen widget strip. The minus badge that removes a widget, the

@@ -80,7 +80,7 @@ told; it does nothing if that app is not the one on screen.
 local phone = exports['v-phone']
 
 phone:GetNumber(citizenid)              --> '555-0182' | nil
-phone:FindByNumber(number)              --> source | nil      (online only)
+phone:FindByNumber(number)              --> citizenid | nil   (offline included)
 phone:CitizenOfNumber(number)           --> citizenid | nil   (offline included)
 phone:IsOnline(number)                  --> boolean
 phone:IsOnCall(src)                     --> boolean
@@ -148,6 +148,30 @@ phone:IsOnCall(source)                                 --> boolean
 phone:AddContact(citizenid, name, number, favourite)  --> true | false, 'exists'
 phone:RemoveContact(citizenid, number)                --> boolean
 phone:GetContacts(citizenid)                          --> { { name, number, favourite } }
+```
+
+### Blocked numbers
+
+A player's own list of people who cannot reach them. A blocked number cannot call, cannot add
+them to a call, and cannot text - and is told none of it: a call reports the phone as off, and
+a text is written to the sender's own thread and delivered nowhere.
+
+Two things are worth knowing before you build on it. Everything in `Config.RequiredContacts` is
+unblockable, 911 included. And an entry stores the CHARACTER as well as the number, so
+`/phoneadmin renumber` neither breaks a block nor turns it into a mute on whoever is handed
+that number next. Group messages are deliberately not filtered.
+
+```lua
+-- Everything a character has blocked. `c` is absent when nobody held the number at the time.
+phone:GetBlocked(citizenid)              --> { { n = '555-0142', c = 'ABC12345' | nil }, ... }
+
+-- Would a call or a text get through? Pass whichever of the two you have; both is better.
+phone:IsBlocked(citizenid, fromNumber, fromCitizenid)  --> boolean
+
+-- Block or unblock on a character's behalf - a staff tool acting on a report, without asking
+-- the victim to go and do it themselves. Neither needs the character to be online.
+phone:BlockNumber(citizenid, number)     --> true | false, 'args' | 'off' | 'required'
+phone:UnblockNumber(citizenid, number)   --> true when it was there
 ```
 
 ### Mail
@@ -254,12 +278,18 @@ that raised an alert nobody received may want to do something else as well, and 
 is the only way to know. On failure it returns `false` and a reason.
 
 ```lua
-phone:GetAlerts('police')            --> the live queue, newest first
+phone:GetEmergencyQueue('police')    --> the live queue, newest first
 phone:CloseAlert(id)                 --> true when it was there to close
 phone:GetEmergencyServices()         --> { { id, label, jobs }, ... }
 ```
 
-Each alert in `GetAlerts` carries `id`, `service`, `reason`, `detail`, `at`, `state`
+> **`GetAlerts` is registered twice, and this is not the one that answers.** The civil-alerts
+> section further down exports the same name from a file loaded later, so a dispatch board
+> written against `phone:GetAlerts('police')` receives civil alerts, or `nil`. Use
+> `GetEmergencyQueue`. Both names are kept because retiring either would break whichever
+> integration currently works.
+
+Each alert in `GetEmergencyQueue` carries `id`, `service`, `reason`, `detail`, `at`, `state`
 (`open` / `taken` / `closed`), `anonymous`, `takenBy`, and — unless the caller asked to stay
 anonymous — `caller` and `number`. **Coordinates are deliberately not in it.** An alert list
 that carried positions would be a way to read every emergency on the map from anywhere.
@@ -428,6 +458,8 @@ phone:GetRepairCalls('mechanic')             --> { { id, name, message, x, y, st
 --
 -- nil on a server running doc-civilalerte: the alerts are ITS rows, and a second function
 -- answering the same question from a different table is how the two start disagreeing.
+-- This is the name that wins: `server/alerts.lua` is loaded after `server/emergency.lua`,
+-- which exports `GetAlerts` too. For the 911 queue call `GetEmergencyQueue` instead.
 phone:GetAlerts()                            --> { { id, category, title, message, job, jobLabel, author, at, until_, active }, ... } | nil
 
 -- Broadcast one from a script rather than from a phone: a weather system, a scripted disaster,
@@ -466,7 +498,9 @@ phone:GetTaxiDrivers()                       --> how many drivers are on duty
 
 ```lua
 phone:GetZuberRestaurants()                  --> the config provider's restaurants
-phone:GetZuberOrders(citizenid)              --> that character's orders
+phone:GetZuberOrders(restaurantId)           --> that restaurant's orders in flight
+-- Omit the argument for every order in flight. Config-provider orders only: on a server
+-- running doc-restaurant the orders are ITS rows and this answers an empty table.
 
 -- Move an order along from your own kitchen script: 'accepted', 'cooking', 'delivering',
 -- 'completed', 'cancelled'. The customer is notified and the app's tracker follows.
@@ -502,7 +536,7 @@ phone:SetChargePaid(src, true)               --> boolean
 ```lua
 -- What `/phoneadmin hold` uses. While a staff member holds a phone, every read and every
 -- purchase is made AS the held character - see server/adminview.lua.
-phone:AdminViewOpen(staffSrc, targetCitizenid) --> boolean
+phone:AdminViewOpen(staffSrc, targetSrc)       --> boolean   (both are SOURCES)
 phone:AdminViewTarget(staffSrc)                --> citizenid | nil
 phone:AdminViewClose(staffSrc)
 ```
@@ -512,7 +546,12 @@ phone:AdminViewClose(staffSrc)
 ```lua
 -- The mail entry point a stock qb-core server's scripts already call. Kept under its old name
 -- so those scripts work unchanged.
-phone:QbMail({ sender = 'LSPD', subject = '...', message = '...' })
+phone:QbMail(citizenid, { sender = 'LSPD', subject = '...', message = '...' })
+
+-- From a client script, addressed to the caller's own character - the recipient is always
+-- the source, which is why this one takes no citizen id:
+TriggerServerEvent('qb-phone:server:sendNewMail',
+                   { sender = 'LSPD', subject = '...', message = '...' })
 ```
 
 ## Client exports
@@ -673,7 +712,7 @@ Trois règles valent partout :
 local phone = exports['v-phone']
 
 phone:GetNumber(citizenid)              --> '555-0182' | nil
-phone:FindByNumber(number)              --> source | nil      (en ligne uniquement)
+phone:FindByNumber(number)              --> citizenid | nil   (hors ligne compris)
 phone:CitizenOfNumber(number)           --> citizenid | nil   (hors ligne compris)
 phone:IsOnline(number)                  --> booleen
 phone:IsOnCall(src)                     --> booleen
@@ -742,6 +781,31 @@ phone:IsOnCall(source)                                 --> booleen
 phone:AddContact(citizenid, name, number, favourite)  --> true | false, 'exists'
 phone:RemoveContact(citizenid, number)                --> booleen
 phone:GetContacts(citizenid)                          --> { { name, number, favourite } }
+```
+
+### Numeros bloques
+
+La liste des personnes qui ne peuvent plus joindre un joueur. Un numero bloque ne peut ni
+appeler, ni ajouter a un appel, ni ecrire - et n en est pas informe : un appel indique que le
+telephone est eteint, et un message est ecrit dans le fil de l expediteur et livre nulle part.
+
+Deux points a connaitre. Tout ce qui est dans `Config.RequiredContacts` est inblocable, 911
+compris. Et une entree retient le PERSONNAGE en plus du numero, donc `/phoneadmin renumber` ne
+casse pas un blocage et ne le transforme pas en sourdine sur celui qui recoit ce numero
+ensuite. Les messages de groupe ne sont volontairement pas filtres.
+
+```lua
+-- Tout ce qu un personnage a bloque. `c` est absent si personne ne detenait le numero alors.
+phone:GetBlocked(citizenid)              --> { { n = '555-0142', c = 'ABC12345' | nil }, ... }
+
+-- Un appel ou un message passerait-il ? Donnez celui des deux que vous avez ; les deux valent
+-- mieux.
+phone:IsBlocked(citizenid, fromNumber, fromCitizenid)  --> boolean
+
+-- Bloquer ou debloquer au nom d un personnage - un outil staff agissant sur un signalement,
+-- sans demander a la victime de le faire elle-meme. Aucun des deux n exige qu il soit connecte.
+phone:BlockNumber(citizenid, number)     --> true | false, 'args' | 'off' | 'required'
+phone:UnblockNumber(citizenid, number)   --> true s il y etait
 ```
 
 ### Mail
@@ -931,6 +995,8 @@ phone:GetRepairCalls('mechanic')             --> { { id, name, message, x, y, st
 -- nil sur un serveur qui fait tourner doc-civilalerte : les alertes sont SES lignes, et une
 -- seconde fonction repondant a la meme question depuis une autre table est le debut d un
 -- desaccord entre les deux.
+-- C est ce nom qui l emporte : server/alerts.lua est charge apres server/emergency.lua, qui
+-- exporte GetAlerts lui aussi. Pour la file du 911, appeler GetEmergencyQueue.
 phone:GetAlerts()                            --> { { id, category, title, message, job, jobLabel, author, at, until_, active }, ... } | nil
 
 -- Diffuser depuis un script plutot que depuis un telephone : un systeme meteo, une catastrophe
@@ -970,7 +1036,10 @@ phone:GetTaxiDrivers()                       --> nombre de chauffeurs en service
 
 ```lua
 phone:GetZuberRestaurants()                  --> les restaurants du fournisseur config
-phone:GetZuberOrders(citizenid)              --> les commandes de ce personnage
+phone:GetZuberOrders(restaurantId)           --> les commandes en cours de ce restaurant
+-- Sans argument, toutes les commandes en cours. Commandes du fournisseur config uniquement :
+-- sur un serveur qui fait tourner doc-restaurant, les commandes sont SES lignes et ceci
+-- renvoie une table vide.
 
 -- Faire avancer une commande depuis votre propre script de cuisine : 'accepted', 'cooking',
 -- 'delivering', 'completed', 'cancelled'. Le client est notifie et le suivi de l app suit.
@@ -1006,7 +1075,7 @@ phone:SetChargePaid(src, true)               --> boolean
 ```lua
 -- Ce que `/phoneadmin hold` utilise. Pendant qu un membre du staff tient un telephone, chaque
 -- lecture et chaque achat se font AU NOM du personnage tenu - voir server/adminview.lua.
-phone:AdminViewOpen(staffSrc, targetCitizenid) --> boolean
+phone:AdminViewOpen(staffSrc, targetSrc)       --> boolean   (both are SOURCES)
 phone:AdminViewTarget(staffSrc)                --> citizenid | nil
 phone:AdminViewClose(staffSrc)
 ```
@@ -1016,7 +1085,12 @@ phone:AdminViewClose(staffSrc)
 ```lua
 -- Le point d entree courrier que les scripts d un serveur qb-core appellent deja. Conserve sous
 -- son ancien nom pour que ces scripts fonctionnent sans modification.
-phone:QbMail({ sender = 'LSPD', subject = '...', message = '...' })
+phone:QbMail(citizenid, { sender = 'LSPD', subject = '...', message = '...' })
+
+-- Depuis un script client, adresse au personnage de l appelant - le destinataire est
+-- toujours la source, c est pourquoi celui-ci ne prend pas de citizenid :
+TriggerServerEvent('qb-phone:server:sendNewMail',
+                   { sender = 'LSPD', subject = '...', message = '...' })
 ```
 
 ## Exports client

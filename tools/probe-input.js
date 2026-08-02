@@ -219,6 +219,87 @@ async function widgetStrip(cdp) {
   await cdp.eval('try { exitArrange(); } catch (e) {}');
 }
 
+/// Nothing a player can press may sit in the home indicator's band.
+///
+/// The indicator is a five pixel pill with an invisible hit target stretching twenty-six pixels
+/// above it, because a swipe that starts slightly high still has to count. That band is the
+/// bottom forty pixels of the screen. On an app with a tab bar it costs nothing - the footer is
+/// above the indicator and wins the hit test. On an app WITHOUT one the footer used to collapse
+/// to nothing, the body ran to the bottom of the screen, and every row scrolled straight
+/// through the band on its way past: a tap on one went to the home screen instead, which is the
+/// worst wrong destination the phone has.
+///
+/// The fix reserves the strip, so this asserts the property rather than any handler: Settings
+/// has no tab bar, and at EVERY scroll position nothing pressable may have its centre in the
+/// band. Then the bar is shown to still do its own job.
+async function homeBand(cdp) {
+  console.log('');
+  console.log('the home indicator band');
+
+  await cdp.eval(`
+    try { if (typeof unlock === 'function') unlock(); } catch (e) {}
+    // The grid probe above leaves the home screen in arrange mode, and the FIRST thing the
+    // home indicator does in arrange mode is leave it - so without this the press below would
+    // be spent on that instead of on going home, and the check would fail for the probe's own
+    // reason rather than the phone's.
+    if (typeof editing !== 'undefined' && editing) exitArrange();
+    await new Promise((r) => setTimeout(r, 500));
+    const app = (state.apps || []).find((a) => a.id === 'settings');
+    await enterApp(app, null);
+    await new Promise((r) => setTimeout(r, 800));
+  `);
+
+  const swept = await cdp.eval(`
+    const body = document.getElementById('appbody');
+    const bar = document.getElementById('homebar');
+    const br = bar.getBoundingClientRect();
+    const bandTop = br.top - 26, bandBottom = br.bottom + 14;
+    const sel = 'button, a, input, textarea, select, .row, [role="switch"]';
+    const caught = [];
+    let steps = 0;
+    // Smooth scrolling animates an assignment, so a value read back a few milliseconds later
+    // is still the old one. Turned off for the sweep and put back after.
+    const wasBehaviour = body.style.scrollBehavior;
+    body.style.scrollBehavior = 'auto';
+    const bodyBox = () => body.getBoundingClientRect();
+    for (let at = 0; at <= body.scrollHeight; at += 11) {
+      body.scrollTop = at;
+      await new Promise((r) => setTimeout(r, 4));
+      steps += 1;
+      const bb = bodyBox();
+      for (const el of body.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const cy = r.top + r.height / 2;
+        // Only what is actually ON SCREEN. A row scrolled past the fold still has a layout
+        // box down there; the scroller clips it, and a clipped row is not something a finger
+        // can land on. Judging it would be the same mistake the reachability sweep made.
+        if (cy < bb.top || cy > bb.bottom) continue;
+        if (cy > bandTop && cy < bandBottom) {
+          caught.push((el.textContent || el.id || el.tagName).trim().slice(0, 20));
+        }
+      }
+      if (body.scrollTop < at - 1) break;   // reached the end
+    }
+    body.style.scrollBehavior = wasBehaviour;
+    return { steps: steps, caught: caught.slice(0, 4), n: caught.length,
+             bodyBottom: Math.round(body.getBoundingClientRect().bottom),
+             bandTop: Math.round(bandTop) };
+  `);
+  check(swept.n === 0, 'no control ever scrolls into the band  (Settings, ' + swept.steps + ' positions)',
+    swept.n ? swept.n + ' caught, e.g. ' + swept.caught.join(', ') : 'body ends at ' +
+      swept.bodyBottom + ', band starts at ' + swept.bandTop);
+
+  // And the bar still does its own job. Pressed for real, through the compositor: this is
+  // the check that found the tap was dead in the first place, and a synthetic click would
+  // have passed the whole time - the bar's own handler is fine, it simply never runs.
+  const pill = await cdp.eval(AT('#homebar'));
+  await cdp.press(pill.x, pill.y, 90);
+  await sleep(700);
+  const home = await cdp.eval("return openApp ? openApp.id : null;");
+  check(home === null, 'a press on the pill still goes home', 'openApp is ' + String(home));
+}
+
 async function appGrid(cdp) {
   console.log('');
   console.log('the app grid');
@@ -295,6 +376,7 @@ async function appGrid(cdp) {
   try {
     await widgetStrip(cdp);
     await appGrid(cdp);
+    await homeBand(cdp);
   } catch (e) {
     check(false, 'the probe ran to the end', e.message);
   }

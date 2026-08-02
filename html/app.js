@@ -124,6 +124,13 @@ let page = 0;
 let notifs = [];        // the notification centre, newest first
 let notifSeq = 0;       // stable ids so a card can be dismissed by hand
 let notificationOwner = null;
+/// Badges a dropped-in app has set on itself, by app id.
+///
+/// `Phone.badge(n)` writes onto the app row in `state.apps`, and `refresh()` replaces that
+/// whole array with the server's - so a badge lasted until the next thing that refreshed, which
+/// on a phone in use is seconds. Kept here as well and re-applied after every refresh, because
+/// the server has no idea a dropped-in app has anything to count.
+const sdkBadges = {};
 let shadeManage = false;
 
 // An app id from whatever the banner carried. Most callers name the app; the SDK path
@@ -550,7 +557,7 @@ function passcodeSheet() {
           const res = await post('prefs', { passcode: second, securityEnabled: true });
           if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return false; }
           state.prefs = res.prefs;
-          RENDER.settings();
+          settingsRedraw();
           toast(L('ph.sec_passcode_done'));
           return true;
         }), 120);
@@ -587,7 +594,7 @@ function faceIdSheet() {
           byId('secfacestatus').textContent = L('ph.setup_faceid_ready');
           state.prefs = res.prefs;
           ui('faceid');
-          setTimeout(() => { if (closeSheet(false, epoch)) RENDER.settings(); }, 700);
+          setTimeout(() => { if (closeSheet(false, epoch)) settingsRedraw(); }, 700);
         } else {
           scan.classList.add('failed');
           byId('secfacestatus').textContent = L('ph.faceid_failed');
@@ -2252,13 +2259,22 @@ const WIDGETS = {
     units: 2, app: 'export', srv: true, icon: 'export', tint: '#4B34E0',
     paint: (w) => {
       if (!w || w.ok === false) return wOffline(wHead('export', L('app.export')), 'ph.w_exp_off');
-      if (!w.item) return wHead('export', L('app.export')) + wEmpty(L('ph.w_exp_flat'));
-      const up = Number(w.percent) > 0;
+      // A board with nothing on it at all. Distinct from a board that simply has not moved,
+      // which is the ordinary state and which now draws a price like any other day.
+      if (!w.item) return wOffline(wHead('export', L('app.export')), 'ph.w_exp_flat');
+      const pct = Number(w.percent);
+      const moved = Number.isFinite(pct) && pct !== 0;
+      const up = pct > 0;
       return wHead('export', L('app.export')) +
         '<div><div class="wttl">' + esc(w.item) + '</div>' +
         '<div class="wrow2"><span class="wbig sm">' + esc(money(w.price || 0)) + '</span>' +
-        '<span class="wpct ' + (up ? 'up' : 'down') + '">' +
-        esc((up ? '+' : '') + (Number(w.percent) || 0) + '%') + '</span></div></div>';
+        (moved
+          ? '<span class="wpct ' + (up ? 'up' : 'down') + '">' +
+            esc((up ? '+' : '') + pct + '%') + '</span>'
+          // No movement is not an error and not a blank: it is the word for a market that is
+          // sitting still, next to a price that is still true.
+          : '<span class="wpct flat">' + esc(L('ph.w_exp_steady')) + '</span>') +
+        '</div></div>';
     },
   },
 
@@ -2579,7 +2595,23 @@ function widgetPicker() {
   const left = WIDGET_MAX_UNITS - used;
   const size = (u) => L(u >= 4 ? 'ph.w_size_l' : 'ph.w_size_m');
 
-  const body = (choices.length
+  // **What is already on the home screen, first.**
+  //
+  // This sheet used to list only what could be ADDED, so a widget the player already had
+  // appeared nowhere in Settings - which reads exactly like the widget not existing, and is
+  // what issue #10 reported. The strip is shown first, with a way to take one off, and the
+  // gallery underneath.
+  const on = widgetIds();
+  const mine = on.length
+    ? '<div class="grouphead">' + esc(L('ph.w_pick_on')) + '</div>' +
+      UI.group(on.map((id) => UI.row({
+        icon: WIDGETS[id].icon, tint: WIDGETS[id].tint, title: L('ph.w_' + id),
+        value: size(WIDGETS[id].units), data: { drop: id },
+      })), { footer: L('ph.w_pick_drop') })
+    : '';
+
+  const body = mine + '<div class="grouphead">' + esc(L('ph.w_pick_add')) + '</div>' +
+    (choices.length
     ? UI.group(choices.map((id) => {
         const def = WIDGETS[id];
         // A widget that will not fit in what is left is shown and refused rather than hidden:
@@ -2587,7 +2619,11 @@ function widgetPicker() {
         const fits = def.units <= left;
         return UI.row({
           icon: def.icon, tint: def.tint, title: L('ph.w_' + id), subtitle: L('ph.w_' + id + '_d'),
-          value: size(def.units), data: fits ? { add: id } : { full: '1' },
+          // **Not `full`.** `data-full` is the phone-wide "this carries a photograph"
+          // attribute, matched by a capture-phase delegate on #screen - so a row marked with
+          // it opened the full-screen photo viewer on the string "1" and rotated the handset,
+          // after killing this row's own handler with stopPropagation.
+          value: size(def.units), data: fits ? { add: id } : { nofit: '1' },
         });
       }))
     : '<div class="grouphead">' + esc(L('ph.w_pick_none')) + '</div>') +
@@ -2604,8 +2640,19 @@ function widgetPicker() {
         renderWidgets();
       });
     });
-    [...byId('sheet').querySelectorAll('.row[data-full]')].forEach((b) => {
+    [...byId('sheet').querySelectorAll('.row[data-nofit]')].forEach((b) => {
       b.addEventListener('click', () => toast(L('ph.w_pick_full')));
+    });
+    // Taking one off from here, so the strip can be managed without going back to the home
+    // screen and holding it.
+    [...byId('sheet').querySelectorAll('.row[data-drop]')].forEach((b) => {
+      b.addEventListener('click', async () => {
+        await saveWidgets(widgetIds().filter((x) => x !== b.dataset.drop));
+        ui('toggleoff');
+        closeSheet(true);
+        renderWidgets();
+        if (openApp && openApp.id === 'settings') settingsRedraw();
+      });
     });
   });
 }
@@ -2657,6 +2704,25 @@ function enterApp(a, tile) {
   threadGroup = null;
   navBackAction = null;
 
+  // **A sub-screen is not a place to be put back into.**
+  //
+  // The TAB an app was left on is worth remembering. The restaurant, the album, the playlist
+  // and the price detail inside it are not: reopening Zuber on somebody's menu reads as the
+  // app having failed to close. Two of these are worse than untidy - `repairOpenJob` and
+  // `alertsOpenId` are read by their push handlers as "a detail page is open, do not redraw
+  // under the reader", so one that survived a close silenced live updates for the rest of the
+  // session, on the two screens whose whole purpose is watching something change.
+  //
+  // Cleared HERE and not in `closeApp` because the app switcher swaps one app for another
+  // without closing anything, and `enterApp` is the one door every render comes through.
+  zuberOpenId = null;
+  galleryAlbum = '';
+  galleryKind = '';
+  musicPlaylistOpen = null;
+  exportOpenItem = null;
+  repairOpenJob = null;
+  alertsOpenId = null;
+
   // **Opening an app clears its notifications.**
   //
   // Every notification already carries the app it belongs to - that is how tapping one knows
@@ -2692,6 +2758,7 @@ function enterApp(a, tile) {
   byId('screen').classList.add('app-open');
   setNav(L(a.label), null);
   byId('appfoot').innerHTML = '';
+  byId('app').classList.remove('hasfoot');
 
   if (a.page) {
     // A third-party app only receives a URL after Lua has bound this exact app id to
@@ -3078,7 +3145,21 @@ const body = (html) => {
   void host.offsetWidth;
   host.classList.add('view-enter');
 };
-const foot = (html) => { byId('appfoot').innerHTML = html || ''; };
+/// The app's footer, and the one thing that knows whether there IS one.
+///
+/// **The home indicator has an invisible hit area forty pixels tall.** It is drawn as a five
+/// pixel pill and its `::before` stretches a real target around it, because a gesture needs
+/// one - so the bottom forty pixels of the screen belong to the bar, whatever is under them.
+/// The body's bottom padding cleared thirty-four of those, which left the last few pixels of
+/// the last row of every app with no tab bar sitting under a target that CLOSES THE APP.
+///
+/// A screen with a footer does not need the room: the tab bar is above the indicator and wins
+/// the hit test, so it keeps the tighter inset it has always had.
+const foot = (html) => {
+  const markup = html || '';
+  byId('appfoot').innerHTML = markup;
+  byId('app').classList.toggle('hasfoot', markup !== '');
+};
 /// The spinner, and only when it is the honest thing to show.
 ///
 /// A render that already has content on screen for this app leaves it alone: whatever it fetches
@@ -3142,6 +3223,12 @@ byId('appbody').addEventListener('pointerup', (event) => {
   appPull = null;
   byId('appbody').classList.remove('pull-ready');
   if (dy <= 68 || dx >= 45 || !openApp || openApp.page) return;
+  // **Not on a sub-page.** This gesture is bound to #appbody once at boot and calls the app's
+  // ROOT render, so pulling down inside a conversation, a settings category, a photograph or a
+  // profile threw the player back to the top of the app - which is not what a refresh means
+  // anywhere. `navBackAction` is exactly the flag for "there is a screen above this one":
+  // `setNav` sets it when a back closure is given and clears it otherwise.
+  if (navBackAction) return;
   const render = RENDER[openApp.id];
   if (!render) return;
   byId('appbody').classList.add('refreshing');
@@ -3372,7 +3459,8 @@ RENDER.notes = async () => {
   paintNotes();
 };
 
-function paintNotes() {
+/// The list alone, so a search can repaint it without touching the field being typed into.
+function noteResultsHtml() {
   const found = notes.filter((n) => noteMatches(n, noteQuery));
   const pinned = found.filter((n) => n.pinned);
   const rest = found.filter((n) => !n.pinned);
@@ -3393,6 +3481,21 @@ function paintNotes() {
       '<div class="notelist">' + list.map(card).join('') + '</div>'
     : '';
 
+  return found.length
+    ? section(L('ph.note_pinned'), pinned) +
+      section(pinned.length ? L('ph.note_others') : L('ph.notes_all'), rest)
+    : UI.empty(L(noteQuery ? 'ph.note_nofind' : 'ph.no_notes'), 'note');
+}
+
+/// The rows are recreated by every repaint of the list, so their listeners are too.
+function wireNoteRows() {
+  rows('.noterow', (el) => el.addEventListener('click', () => {
+    const n = notes.find((x) => String(x.id) === el.dataset.id);
+    if (n) noteEdit(n);
+  }));
+}
+
+function paintNotes() {
   body(
     // The search field is always there, not only once there are enough notes to need it: a
     // control that appears at some threshold is one nobody learns is available.
@@ -3401,34 +3504,48 @@ function paintNotes() {
           'value="' + esc(noteQuery) + '" placeholder="' + esc(L('ph.search')) + '" ' +
           'aria-label="' + esc(L('ph.search')) + '" /></div>'
       : '') +
-    (found.length
-      ? section(L('ph.note_pinned'), pinned) +
-        section(pinned.length ? L('ph.note_others') : L('ph.notes_all'), rest)
-      : UI.empty(L(noteQuery ? 'ph.note_nofind' : 'ph.no_notes'), 'note'))
+    '<div id="noteresults">' + noteResultsHtml() + '</div>'
   );
 
   const q = byId('nq');
   if (q) {
+    // **Only the list is repainted.** Rebuilding the body destroyed the field on every letter,
+    // so the focus and caret had to be restored by hand, the entrance animation of the whole
+    // screen replayed once per keystroke, and the client was sent a `holdInput` for each one.
+    // The field is never destroyed now, so none of that is needed.
     q.addEventListener('input', () => {
       noteQuery = q.value;
-      // Redrawn in place and the focus put back: rebuilding the body drops the caret, and a
-      // search box that loses focus on the first letter can only ever take one letter.
-      const at = q.selectionStart;
-      paintNotes();
-      const again = byId('nq');
-      if (again) { again.focus(); again.setSelectionRange(at, at); }
+      const host = byId('noteresults');
+      if (!host) return;
+      host.innerHTML = noteResultsHtml();
+      wireNoteRows();
     });
   }
-  rows('.noterow', (el) => el.addEventListener('click', () => {
-    const n = notes.find((x) => String(x.id) === el.dataset.id);
-    if (n) noteEdit(n);
-  }));
+  wireNoteRows();
 }
 
 function noteEdit(n) {
   if (!openApp || openApp.id !== 'notes') return;
   beginView();
   let pinned = n.pinned === 1 || n.pinned === true;
+
+  /// Leaving, with a question when there is something to lose.
+  ///
+  /// **It re-arms itself.** The chevron handler reads `navBackAction`, sets it to null and
+  /// THEN calls what it read - which every other closure in the phone survives, because every
+  /// other one navigates somewhere that calls `setNav` again. This one can raise a sheet and
+  /// leave the player exactly where they were, so without the line below the next press of a
+  /// chevron still reading "Notes" fell through to closing the app, and the note with it.
+  /// `navBackAction` also gates pull-to-refresh, which would otherwise discard the text with
+  /// no question at all.
+  const onNoteBack = () => {
+    const t = byId('ntitle'), b = byId('nbody');
+    const dirty = t && b &&
+      (t.value !== String(n.title || '') || b.value !== String(n.body || ''));
+    if (!dirty) { RENDER.notes(); return; }
+    navBackAction = onNoteBack;
+    confirmSheet(L('ph.note_leave_sure'), L('ph.note_leave_go'), () => RENDER.notes());
+  };
 
   // Pinning is the header's job rather than a button at the bottom, because it is the one
   // thing here that is true of the note rather than a change to its text: it takes effect on
@@ -3446,7 +3563,10 @@ function noteEdit(n) {
       toast(L(pinned ? 'ph.note_pinned_on' : 'ph.note_pinned_off'));
       setNavBar();
     } } : null,
-    () => RENDER.notes());
+    // **Asked about rather than discarded.** The chevron used to go straight back to the list,
+    // so everything typed since the last Save was gone with no prompt - on the one screen in
+    // the phone whose whole purpose is text somebody wrote.
+    onNoteBack);
   setNavBar();
 
   body(
@@ -4032,12 +4152,25 @@ function closePhoto() {
 byId('photoview').addEventListener('click', () => closePhoto());
 
 // One delegated listener for the whole phone, so no app has to remember to wire it.
+//
+// **It matches an attribute, on the CAPTURE phase, over the entire screen.** That is a lot of
+// reach for one convenience, and it has cost twice: the widget picker used `data-full` as a
+// boolean flag and every refused row opened a black photo viewer, and `stopPropagation` here
+// silently kills the double-tap-to-like on a feed photograph because the second tap never
+// reaches it.
+//
+// So it is narrow now. It only fires for an element that actually carries a URL, and it only
+// swallows the event when it is going to act on it - an element with its own handler keeps it.
 byId('screen').addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('[data-full]');
   if (!el) return;
+  const url = String(el.dataset.full || '').trim();
+  // A flag is not a photograph. Anything that is not a link or a data URI is somebody else's
+  // attribute and none of this listener's business.
+  if (!/^(https?:|data:)/i.test(url)) return;
   e.preventDefault();
   e.stopPropagation();
-  openPhoto(el.dataset.full, el.dataset.fullcap || '');
+  openPhoto(url, el.dataset.fullcap || '');
 }, true);
 
 // An <img> that honours the recipe, for the places that use a real element rather than a
@@ -4636,10 +4769,26 @@ RENDER.messages = async () => {
       timer = setTimeout(() => {
         timer = null;
         const key = r.dataset.n;
-        confirmSheet(L('ph.thread_delete'), L('ph.delete'), async () => {
-          const res = await post('threadDelete', { other: key });
-          if (res && res.ok) { await refresh(); RENDER.messages(); }
-        });
+        // Two things, not one. Deleting a conversation removes the record and changes
+        // nothing about the person; blocking is the one that stops them writing again, and a
+        // player holding a thread from somebody they want gone means the second.
+        const service = String(key || '').indexOf('svc:') === 0;
+        const on = !service && numberBlocked(key);
+        sheet(nameOfNumber(key) || maskNum(key),
+          (service ? '' : UI.button(L(on ? 'ph.unblock' : 'ph.block'), 'thblock', 'plain')) +
+          UI.button(L('ph.thread_delete'), 'thdel', 'destructive'),
+          () => {
+            const epoch = sheetEpoch;
+            if (byId('thblock')) byId('thblock').addEventListener('click', async () => {
+              if (!await blockSet(key, !on)) return;
+              closeSheet(false, epoch);
+            });
+            byId('thdel').addEventListener('click', async () => {
+              if (!closeSheet(false, epoch)) return;
+              const res = await post('threadDelete', { other: key });
+              if (res && res.ok) { await refresh(); RENDER.messages(); }
+            });
+          });
       }, 550);
     });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => r.addEventListener(e, cancel));
@@ -5961,6 +6110,84 @@ function contactCard(c) {
     });
 }
 
+// ══════════════════════════════════════════════════════════════
+// Blocked numbers
+// ══════════════════════════════════════════════════════════════
+// The page holds the list only to DRAW it. Every enforcement is on the server, on the paths a
+// blocked person would arrive by, because a check made here is a check anybody with the
+// developer tools open can remove.
+
+/// This character's block list, as the server last sent it.
+function blockedList() {
+  return farr(state.prefs && state.prefs.blocked);
+}
+
+/// Is this number blocked? Matched on the number, which is what the page has - the server
+/// stores a citizen id beside it and matches on that, which is what makes a block survive
+/// somebody's number being changed.
+function numberBlocked(number) {
+  const n = String(number || '').trim();
+  if (!n) return false;
+  return blockedList().some((e) => String(e && e.n) === n);
+}
+
+/// Block or unblock, and keep the local copy in step with the answer.
+async function blockSet(number, on) {
+  const res = await post('block', { op: on ? 'add' : 'remove', number: String(number || '') });
+  if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return false; }
+  if (state.prefs) state.prefs.blocked = farr(res.blocked);
+  toast(L(on ? 'ph.blocked_done' : 'ph.unblocked_done'));
+  ui(on ? 'toggleoff' : 'toggleon');
+  return true;
+}
+
+/// The list, and a field for a number that was never saved as a contact.
+///
+/// A sheet rather than a Settings page: Settings has two levels and one wiring function, and a
+/// third level would be a third thing to keep in step for a list that is usually empty.
+function blockedSheet() {
+  const draw = () => {
+    const list = blockedList();
+    return (list.length
+      ? UI.group(list.map((e) => UI.row({
+          icon: 'lockshut', tint: '#FF453A',
+          // Their name as THIS player wrote it, if they saved them. Resolved here rather than
+          // on the server: the phone already holds the contacts, and the name somebody gave a
+          // number is the name they will recognise.
+          title: nameOfNumber(e.n) || maskNum(e.n),
+          subtitle: nameOfNumber(e.n) ? maskNum(e.n) : '',
+          value: L('ph.unblock'), data: { unblock: String(e.n) },
+        })), { header: L('ph.blocked') })
+      : UI.empty(L('ph.blocked_none'), 'lockshut')) +
+      '<div class="groupfoot">' + esc(L('ph.blocked_hint')) + '</div>' +
+      UI.field('blocknum', L('ph.block_add'), '', 'maxlength="20"') +
+      UI.button(L('ph.block'), 'blockadd', 'plain');
+  };
+
+  const wire = () => {
+    // Redrawn in place. `sheet()` writes the grab handle and the title into #sheet along with
+    // the body, so repainting #sheet itself would rebuild the sheet under the player's finger;
+    // the list lives in a host of its own for exactly that reason.
+    const repaint = () => {
+      const host = byId('blocklist');
+      if (!host) return;
+      host.innerHTML = draw();
+      wire();
+    };
+    qrows('sheet', '[data-unblock]', (r) => r.addEventListener('click', async () => {
+      if (await blockSet(r.dataset.unblock, false)) repaint();
+    }));
+    const add = byId('blockadd');
+    if (add) add.addEventListener('click', async () => {
+      const n = (byId('blocknum') || {}).value || '';
+      if (!n.trim()) { toast(L('ph.err_empty')); return; }
+      if (await blockSet(n.trim(), true)) repaint();
+    });
+  };
+
+  sheet(L('ph.blocked'), '<div id="blocklist">' + draw() + '</div>', wire);
+}
+
 /// The form. Reached from Edit, or from the plus button for somebody new.
 function contactEdit(c) {
   contactSheet(c || {});
@@ -5971,6 +6198,9 @@ function contactSheet(c) {
   // thing there was ever anything to show.
   if (c.system) { contactCard(c); return; }
   const isNew = !c.id;
+  // The star, tracked here because the sheet's buttons are wired after the markup is built and
+  // the payload below has to read whatever the last tap left.
+  let fav = Number(c.favourite) === 1;
   sheet(isNew ? L('ph.new_contact') : L('ph.c_edit'),
     // The card, not just a name and a number: a face, a way to write, where they are,
     // when it is their birthday, and whatever you needed to remember about them.
@@ -5989,6 +6219,12 @@ function contactSheet(c) {
     // Writing to them is only offered when there is an address to write to. A button that
     // opens an empty composer would be a worse answer than no button.
     ((isNew || !c.email) ? '' : UI.button(L('ph.c_email_send'), 'cmail', 'plain')) +
+    // Nothing anywhere wrote this flag, so the Favourites tab beside Recents was empty on
+    // every phone on every server while the column, the query and the sort all already used it.
+    (isNew ? '' : UI.button(L(fav ? 'ph.export_unstar' : 'ph.export_star'), 'cfav', 'plain')) +
+    // Blocking somebody you saved. Above Delete because it is the reversible one of the two.
+    (isNew ? '' : UI.button(L(numberBlocked(c.number) ? 'ph.unblock' : 'ph.block'),
+                            'cblock', 'plain')) +
     (isNew ? '' : UI.button(L('ph.airdrop_share'), 'cshare', 'plain')) +
     (isNew ? '' : UI.button(L('ph.delete'), 'cdel', 'destructive')),
     () => {
@@ -5998,7 +6234,11 @@ function contactSheet(c) {
         const payload = { id: c.id, name: byId('cname').value, number: byId('cnum').value,
           photo: byId('cphoto').value.trim(), email: byId('cmail_field').value.trim(),
           address: byId('caddr').value.trim(), birthday: byId('cbday').value.trim(),
-          note: byId('cnote').value.trim() };
+          note: byId('cnote').value.trim(),
+          // **Sent back, not dropped.** The server writes whatever arrives here, so leaving it
+          // out was not "unchanged" - it was a zero, and saving a phone number silently
+          // unstarred the contact.
+          favourite: fav ? 1 : 0 };
         const res = await post('contactSave', payload);
         if (res && res.ok) {
           if (closeSheet(false, epoch)) { await refresh(); RENDER.contacts(); }
@@ -6008,6 +6248,21 @@ function contactSheet(c) {
       byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
       byId('cshare').addEventListener('click', () => airdropShare('contact', { name: c.name, number: c.number }));
       byId('cmsg').addEventListener('click', () => { closeSheet(); messageTo(c.number); });
+      // Relabelled in place rather than redrawn: the sheet holds seven fields somebody may
+      // have typed into, and rebuilding it to move one word would empty them.
+      byId('cfav').addEventListener('click', () => {
+        fav = !fav;
+        byId('cfav').textContent = L(fav ? 'ph.export_unstar' : 'ph.export_star');
+        toast(L(fav ? 'ph.export_star' : 'ph.export_unstar'));
+      });
+      // Relabelled in place for the same reason the star is: this sheet holds seven fields
+      // somebody may have typed into, and rebuilding it to move one word would empty them.
+      byId('cblock').addEventListener('click', async () => {
+        const on = !numberBlocked(c.number);
+        if (!await blockSet(c.number, on)) return;
+        const b = byId('cblock');
+        if (b) b.textContent = L(on ? 'ph.unblock' : 'ph.block');
+      });
       // The address as it stands in the field, not as it was when the sheet opened: somebody
       // who has just typed one expects the button to use it.
       if (byId('cmail')) byId('cmail').addEventListener('click', () => {
@@ -6450,8 +6705,13 @@ function emergency911Alert(d) {
     body: [what, a.detail, a.street].filter(Boolean).join(' - '),
   });
 
-  // And if they are looking at the queue, it appears in it.
-  if (openApp && openApp.id === 'emergency') RENDER.emergency();
+  // And if they are looking at the queue, it appears in it - inserted rather than refetched,
+  // because the whole row travelled with the event.
+  if (emergencyData) {
+    const q = farr(emergencyData.queues).filter((x) => x.id === (a.service || s.id))[0];
+    if (q) q.live = [a].concat(farr(q.live).filter((x) => x.id !== a.id));
+  }
+  if (openApp && openApp.id === 'emergency') RENDER.emergency(!!emergencyData);
 }
 
 /// The other end of it: the caller being told that somebody picked their alert up, or closed
@@ -7149,12 +7409,9 @@ RENDER.wallet = async () => {
     // can be asked to show is a privacy problem, not a feature.
   ].filter(Boolean), { header: L('ph.id_card') }) : '';
 
-  if (!list.length) {
-    body(cardHtml + idHtml +
-      UI.empty(L(d.readable === false ? 'ph.err_nolicences' : 'ph.no_licenses'), 'wallet'));
-    wireCard();
-    return;
-  }
+  // **Declared before the branch that calls it.** `const` is not hoisted into a usable state,
+  // so with this below the `if` the no-licences path threw a ReferenceError - and that is the
+  // path every server with no configured licences takes.
   const wireCard = () => {
     const el = document.querySelector('.bankcard');
     if (el && card && card.card) {
@@ -7162,6 +7419,13 @@ RENDER.wallet = async () => {
       el.addEventListener('click', () => copyText(card.card, L('ph.card_copied')));
     }
   };
+
+  if (!list.length) {
+    body(cardHtml + idHtml +
+      UI.empty(L(d.readable === false ? 'ph.err_nolicences' : 'ph.no_licenses'), 'wallet'));
+    wireCard();
+    return;
+  }
   body(cardHtml + idHtml + UI.group(list.map((l) => UI.row({
     // A translation if there is one, then the label the server resolved, and last the bare
     // identifier with its separators tidied - `weapon_license` reads as `Weapon License`
@@ -7276,8 +7540,9 @@ const SETTING_TOGGLES = {
   peek:           { key: 'peek', defaultOn: true },
   // The strip has to be redrawn, and redrawn from the SERVER: whether the balance is masked is
   // decided there, and the figure is simply not in the payload while it is off - so flipping
-  // this cannot be a repaint of what the page already holds.
-  widgetmoney:    { key: 'widgetMoney', after: () => renderWidgets() },
+  // this cannot be a repaint of what the page already holds. `redraw` is what says so: every
+  // other row here flips its own switch in place and leaves the page alone.
+  widgetmoney:    { key: 'widgetMoney', redraw: true, after: () => renderWidgets() },
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -7339,8 +7604,8 @@ function settingsSection(id) {
     // server rather than about where a tile sits.
     '<div class="grouphead">' + esc(L('ph.set_widgets')) + '</div>' +
     UI.group([
-      UI.row({ icon: 'add', tint: '#0A84FF', title: L('ph.w_pick'), chevron: true,
-        data: { t: 'widgets' } }),
+      UI.row({ icon: 'add', tint: '#0A84FF', title: L('ph.set_widgets_manage'),
+        value: String(widgetIds().length), chevron: true, data: { t: 'widgets' } }),
       UI.row({ icon: 'bank', tint: '#1E9E52', title: L('ph.set_widget_money'),
         toggle: !!p.widgetMoney, data: { t: 'widgetmoney' } }),
     ], { footer: L('ph.set_widget_money_hint') + ' ' + L('ph.set_widget_hint') }) +
@@ -7424,6 +7689,9 @@ function settingsSection(id) {
       UI.row({ icon: 'id', tint: '#64D2FF', title: L('ph.show_server_id'),
         subtitle: L('ph.show_server_id_sub'), toggle: p.showServerId !== false,
         data: { t: 'serverid' } }),
+      // The list, and the only place to block a number that was never saved as a contact.
+      UI.row({ icon: 'lockshut', tint: '#FF453A', title: L('ph.blocked'),
+        value: String(farr(p.blocked).length || ''), chevron: true, data: { t: 'blocked' } }),
     ], { header: L('ph.calls_privacy'),
          footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }));
   if (id === 'security') return (
@@ -7463,11 +7731,42 @@ function settingsSection(id) {
   return '';
 }
 
+/// Which Settings screen is open: a page id, or null for the front page.
+///
+/// **Settings is the only app with two levels and one wiring function**, and every control in it
+/// redrew by calling `settingsRedraw()` - which draws the FRONT page. So flipping a switch on
+/// Display, choosing a wallpaper, or setting a passcode all threw the player back to the top of
+/// Settings, one tap after arriving. Twenty call sites did it.
+///
+/// `settingsRedraw()` below is what those call sites want: redraw whatever is on screen.
+let settingsAt = null;
+
+/// Redraw Settings and put back what somebody had typed but not yet applied.
+///
+/// The wallpaper page holds a live URL field directly above the framing buttons and the
+/// built-in wallpapers, and tapping either of those redraws. The field came back holding the
+/// STORED wallpaper, so choosing a framing threw away the address in the box.
+function settingsRedrawKeepDraft() {
+  const before = byId('wurl');
+  const typed = before ? before.value : null;
+  settingsRedraw();
+  const after = byId('wurl');
+  if (after && typed !== null) after.value = typed;
+}
+
+/// Redraw the Settings screen that is open, rather than jumping to its front page.
+function settingsRedraw() {
+  if (!openApp || openApp.id !== 'settings') return;
+  if (settingsAt) settingsPage(settingsAt);
+  else RENDER.settings();
+}
+
 /// One category, on its own screen.
 function settingsPage(id) {
   if (!openApp || openApp.id !== 'settings') return;
   const page = SETTINGS_PAGES.find((x) => x.id === id);
   if (!page) return;
+  settingsAt = id;
   beginView();
   setNav(L(page.label), L('app.settings'), null, () => RENDER.settings());
   body(settingsSection(id));
@@ -7475,6 +7774,8 @@ function settingsPage(id) {
 }
 
 RENDER.settings = () => {
+  // Opening Settings, or coming back to it with the chevron, means the front page.
+  settingsAt = null;
   const p = state.prefs || {};
   setNav(L('app.settings'), null, null);
   body(
@@ -7503,23 +7804,23 @@ function wireSettings() {
   const wa = byId('wapply');
   if (wa) wa.addEventListener('click', async () => {
     const res = await post('prefs', { wallpaperUrl: byId('wurl').value.trim() });
-    if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); RENDER.settings(); }
+    if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedraw(); }
     else toast(L('ph.err_' + ((res && res.error) || 'x')));
   });
   const wc = byId('wclear');
   if (wc) wc.addEventListener('click', async () => {
     const res = await post('prefs', { wallpaperUrl: '' });
-    if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); RENDER.settings(); }
+    if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedraw(); }
   });
   [...byId('appbody').querySelectorAll('[data-fit]')].forEach((b) =>
     b.addEventListener('click', async () => {
       const res = await post('prefs', { wallFit: b.dataset.fit });
-      if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); RENDER.settings(); }
+      if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedrawKeepDraft(); }
     }));
   [...byId('appbody').querySelectorAll('[data-side]')].forEach((b) =>
     b.addEventListener('click', async () => {
       const res = await post('prefs', { side: b.dataset.side });
-      if (res && res.ok) { state.prefs = res.prefs; applyDevice(); RENDER.settings(); }
+      if (res && res.ok) { state.prefs = res.prefs; applyDevice(); settingsRedraw(); }
     }));
   const gl = byId('glass');
   if (gl) {
@@ -7539,7 +7840,9 @@ function wireSettings() {
   rows('.row', (r) => r.addEventListener('click', async () => {
     if (r.dataset.w) {
       const res = await post('prefs', { wallpaper: r.dataset.w });
-      if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); RENDER.settings(); }
+      if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedrawKeepDraft(); }
+    } else if (r.dataset.t === 'blocked') {
+      blockedSheet();
     } else if (r.dataset.clock) {
       lockClockSheet();
     } else if (r.dataset.copy) {
@@ -7556,7 +7859,7 @@ function wireSettings() {
           const epoch = sheetEpoch;
           const res = await post('prefs', { ownerName, deviceName });
           if (!closeSheet(false, epoch)) return;
-          if (res && res.ok) { state.prefs = res.prefs; RENDER.settings(); }
+          if (res && res.ok) { state.prefs = res.prefs; settingsRedraw(); }
         }));
       return;
     } else if (r.dataset.t === 'passcode') {
@@ -7569,7 +7872,7 @@ function wireSettings() {
         const check = await post('unlock', { passcode: current });
         if (!check || !check.ok) { toast(L('ph.wrong_passcode')); return false; }
         const res = await post('prefs', { securityEnabled: false, faceId: false });
-        if (res && res.ok) { state.prefs = res.prefs; RENDER.settings(); toast(L('ph.sec_off_done')); }
+        if (res && res.ok) { state.prefs = res.prefs; settingsRedraw(); toast(L('ph.sec_off_done')); }
         return true;
       });
       return;
@@ -7586,7 +7889,7 @@ function wireSettings() {
           const epoch = sheetEpoch;
           const res = await post('prefs', { gridCols: Number(el.dataset.gc), gridRows: Number(el.dataset.gr) });
           if (!closeSheet(false, epoch)) return;
-          if (res && res.ok) { state.prefs = res.prefs; renderHome(); RENDER.settings(); }
+          if (res && res.ok) { state.prefs = res.prefs; renderHome(); settingsRedraw(); }
         })));
       return;
     } else if (r.dataset.t === 'theme') {
@@ -7601,12 +7904,12 @@ function wireSettings() {
           const epoch = sheetEpoch;
           const res2 = await post('prefs', { darkMode: el.dataset.m });
           if (!closeSheet(false, epoch)) return;
-          if (res2 && res2.ok) { state.prefs = res2.prefs; applyTheme(); RENDER.settings(); }
+          if (res2 && res2.ok) { state.prefs = res2.prefs; applyTheme(); settingsRedraw(); }
         })));
       return;
     } else if (r.dataset.t === 'vibrate') {
       const res2 = await post('prefs', { vibrate: !((state.prefs || {}).vibrate !== false) });
-      if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+      if (res2 && res2.ok) { state.prefs = res2.prefs; settingsRedraw(); }
       return;
     } else if (r.dataset.t === 'faceid') {
       // Turning it ON is an enrolment, not a boolean: the same scan the first-run assistant
@@ -7614,7 +7917,7 @@ function wireSettings() {
       // it off is just the flag.
       if ((state.prefs || {}).faceId) {
         const res2 = await post('prefs', { faceId: false });
-        if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+        if (res2 && res2.ok) { state.prefs = res2.prefs; settingsRedraw(); }
       } else {
         faceIdSheet();
       }
@@ -7628,7 +7931,16 @@ function wireSettings() {
       const res2 = await post('prefs', { [spec.key]: !now });
       if (res2 && res2.ok) {
         state.prefs = res2.prefs;
-        RENDER.settings();
+        // **Flipped in place.** A redraw destroys this `.sw` and builds a new one already in
+        // its final state, so the knob teleports rather than sliding and the whole page
+        // replays its entrance animation. `spec.redraw` is for the rows whose flip changes
+        // what ELSE is on the page.
+        const sw = r.querySelector('.sw');
+        if (spec.redraw || !sw) settingsRedraw();
+        else {
+          sw.classList.toggle('on', !now);
+          r.setAttribute('aria-checked', (!now) ? 'true' : 'false');
+        }
         // The lock screen is drawn on open, so a switch that changes what it says - the
         // server id, or streamer mode masking the number - has to repaint it now.
         paintLockMeta();
@@ -7662,7 +7974,7 @@ function wireSettings() {
             const epoch = sheetEpoch;
             playTone(tone, null, (state.prefs || {}).ringVolume, false);
             const res = await post('prefs', isRing ? { ringtone: tone, ringUrl: '' } : { alertTone: tone, alertUrl: '' });
-            if (res && res.ok && closeSheet(false, epoch)) { state.prefs = res.prefs; RENDER.settings(); }
+            if (res && res.ok && closeSheet(false, epoch)) { state.prefs = res.prefs; settingsRedraw(); }
           }));
           const setBtn = byId('toneset');
           if (setBtn) setBtn.addEventListener('click', async () => {
@@ -7681,7 +7993,7 @@ function wireSettings() {
           if (delBtn) delBtn.addEventListener('click', async () => {
             const epoch = sheetEpoch;
             const res = await post('prefs', isRing ? { ringUrl: '' } : { alertUrl: '' });
-            if (res && res.ok && closeSheet(false, epoch)) { state.prefs = res.prefs; RENDER.settings(); }
+            if (res && res.ok && closeSheet(false, epoch)) { state.prefs = res.prefs; settingsRedraw(); }
           });
         });
       return;
@@ -7695,23 +8007,23 @@ function wireSettings() {
           const epoch = sheetEpoch;
           const res2 = await post('prefs', { ringVolume: Number(el.dataset.v) });
           if (!closeSheet(false, epoch)) return;
-          if (res2 && res2.ok) { state.prefs = res2.prefs; RENDER.settings(); }
+          if (res2 && res2.ok) { state.prefs = res2.prefs; settingsRedraw(); }
         })));
       return;
     } else if (r.dataset.t === 'dark') {
       const res = await post('prefs', { dark: !(state.prefs || {}).dark });
-      if (res && res.ok) { state.prefs = res.prefs; applyTheme(); RENDER.settings(); }
+      if (res && res.ok) { state.prefs = res.prefs; applyTheme(); settingsRedraw(); }
     } else if (r.dataset.act) {
       // Tapping the app already chosen clears it, so there is a way back to "nothing".
       const next = (state.prefs || {}).actionApp === r.dataset.act ? '' : r.dataset.act;
       const res = await post('prefs', { actionApp: next });
-      if (res && res.ok) { state.prefs = res.prefs; RENDER.settings(); }
+      if (res && res.ok) { state.prefs = res.prefs; settingsRedraw(); }
     } else if (r.dataset.t === 'dnd') {
       const res = await post('prefs', { dnd: !(state.prefs || {}).dnd });
       if (res && res.ok) {
         state.prefs = res.prefs;
         syncDndAudio();
-        RENDER.settings();
+        settingsRedraw();
       }
     }
   }));
@@ -8404,6 +8716,10 @@ function musicFoot(model) {
     button.addEventListener('click', () => {
       musicTab = button.dataset.mtab;
       musicPlayerOpen = false;
+      // Leaving the Playlists tab leaves the playlist too. Without this, switching away and
+      // back re-entered whichever one was open, which is the same defect `enterApp` fixes for
+      // the close-and-reopen route.
+      musicPlaylistOpen = null;
       musicSearch = '';
       RENDER.music();
     }));
@@ -9020,6 +9336,10 @@ RENDER.music = async (quiet) => {
   const emptyAdd = byId('mlibemptyadd');
   if (emptyAdd) emptyAdd.addEventListener('click', () => musicAdd());
   byId('mlibfav').addEventListener('click', () => {
+    // **Its own nav bar.** Without this the chevron kept whatever the Library left there, so
+    // the way out of Favourites closed the whole app instead of going back one screen.
+    beginView();
+    setNav(L('ph.favourites'), L('app.music'), null, () => RENDER.music(true));
     body(musicSection(L('ph.favourites')) +
       (favourites.length ? '<div class="musictracklist">' +
         favourites.map((track, index) => musicTrackRow(track, index)).join('') + '</div>'
@@ -9027,6 +9347,8 @@ RENDER.music = async (quiet) => {
     musicWireTracks(favourites, favourites);
   });
   byId('mlibalbums').addEventListener('click', () => {
+    beginView();
+    setNav(L('ph.albums'), L('app.music'), null, () => RENDER.music(true));
     const albums = [];
     model.library.forEach((track) => {
       if (!albums.some((row) => row.album === track.album)) albums.push(track);
@@ -9231,6 +9553,18 @@ RENDER.mdt = async (cached) => {
       const res = await post('mdt', { op: 'lookup', query });
       if (seq !== mdtLookupSeq || byId('mres') !== host) return;
       if (!res || res.error) { host.innerHTML = UI.empty(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+      // **Two providers, two shapes.** v-police answers with one person and their record;
+      // the phone's own lookup answers with the people who matched. Only v-police ever sends
+      // `records`, so this branch cannot take work away from it.
+      if (Array.isArray(res.rows)) {
+        host.innerHTML = res.rows.length
+          ? UI.group(res.rows.map((r) => UI.row({
+              icon: 'id', title: r.name || '',
+              subtitle: maskNum(r.phone || ''), mono: true,
+            })), { header: L('ph.record') })
+          : UI.empty(L('ph.no_record'));
+        return;
+      }
       host.innerHTML =
         UI.group([UI.row({ icon: 'id', title: res.name || '', subtitle: res.cid || '' })]) +
         ((res.records || []).length
@@ -9519,6 +9853,9 @@ byId('screen').addEventListener('pointerdown', (e) => {
     'button,input,textarea,select,[role="slider"],.ccslider,.ncard,.row'
   ));
   g = { x0: p.x, y0: p.y, t0: Date.now(), w: p.w, h: p.h,
+         // Whether this press began on the home indicator. Recorded here because the capture
+         // below is about to take the rest of the gesture away from the bar itself.
+         onHomeBar: !!(e.target.closest && e.target.closest('.homebar')),
          fromBottom: p.y > p.h - EDGE, fromTop: p.y < EDGE_TOP, fromLeft: p.x < 18,
          insideOverlay: !!(e.target.closest && e.target.closest(
            '#sheet,#shade,#cc,#switcher,#auth,#folderview,#emojipanel,#setup'
@@ -9624,6 +9961,14 @@ byId('screen').addEventListener('pointerup', (e) => {
     return;
   }
 
+  // **A tap on the home indicator, which nothing else is in a position to see.**
+  //
+  // The pointerdown above captures the pointer on #screen for ANY press that starts in the
+  // bottom edge zone, and the indicator sits inside that zone - so the bar's own pointerup
+  // never fired and its tap-to-go-home did nothing at all. Only the swipe worked, which is
+  // why it went unnoticed: the gesture people use most is the one that still worked.
+  if (gg.onHomeBar && Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) { goHome(); return; }
+
   if (Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) return;   // a tap, not a swipe
 
   // Bottom edge, upwards: home. Held for a moment first: the app switcher. That pause is
@@ -9677,6 +10022,47 @@ byId('screen').addEventListener('pointercancel', () => {
 });
 
 // ══ App switcher ═══════════════════════════════════════════════
+/// Bound once, to the strip that outlives every redraw of its children.
+///
+/// The cards are recreated by the innerHTML write below, so their own listeners must be
+/// re-attached each time. The STRIP is not, so its listeners must not - and `panned` has to
+/// live out here because a card's `pointerup` reads it across that boundary.
+let switcherWired = false;
+let switcherPanned = false;
+
+function wireSwitcherStrip() {
+  if (switcherWired) return;
+  switcherWired = true;
+  const strip = byId('cards');
+
+  strip.addEventListener('wheel', (e) => {
+    // A vertical wheel is what a player has, and sideways is the only axis here.
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    strip.scrollLeft += e.deltaY;
+  }, { passive: false });
+
+  // Drag to pan. `switcherPanned` is what keeps a drag from also being read as a tap on the
+  // card it started on, and the card's own flick-up-to-close still wins on the vertical axis.
+  let panX = null, panY = null, panFrom = 0;
+  strip.addEventListener('pointerdown', (e) => {
+    panX = e.clientX; panY = e.clientY; panFrom = strip.scrollLeft; switcherPanned = false;
+  });
+  strip.addEventListener('pointermove', (e) => {
+    if (panX === null) return;
+    const dx = e.clientX - panX;
+    // A mostly-VERTICAL drag is the card being flicked away, not the strip being panned.
+    // Without this test any sideways drift at all claimed the gesture, and the flick was
+    // then discarded as "a drag that moved the strip".
+    if (!switcherPanned && Math.abs(e.clientY - panY) > Math.abs(dx)) return;
+    if (!switcherPanned && Math.abs(dx) < 6) return;
+    switcherPanned = true;
+    strip.scrollLeft = panFrom - dx;
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
+    strip.addEventListener(ev, () => { panX = null; panY = null; }));
+}
+
 function openSwitcher() {
   const list = recents
     .map((id) => (state.apps || []).find((a) => a.id === id))
@@ -9694,34 +10080,9 @@ function openSwitcher() {
 
   // The strip scrolls, but nothing was making it scroll. `overflow-x: auto` is enough on a
   // touchscreen and useless with a mouse: there is no horizontal wheel and no drag, so the
-  // cards past the second one were unreachable. Both are wired here.
+  // cards past the second one were unreachable. Both are wired above, once.
   const strip = byId('cards');
-  strip.addEventListener('wheel', (e) => {
-    // A vertical wheel is what a player has, and sideways is the only axis here.
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    e.preventDefault();
-    strip.scrollLeft += e.deltaY;
-  }, { passive: false });
-
-  // Drag to pan. `panned` is what keeps a drag from also being read as a tap on the card it
-  // started on, and the card's own flick-up-to-close still wins on the vertical axis.
-  let panX = null, panY = null, panFrom = 0, panned = false;
-  strip.addEventListener('pointerdown', (e) => {
-    panX = e.clientX; panY = e.clientY; panFrom = strip.scrollLeft; panned = false;
-  });
-  strip.addEventListener('pointermove', (e) => {
-    if (panX === null) return;
-    const dx = e.clientX - panX;
-    // A mostly-VERTICAL drag is the card being flicked away, not the strip being panned.
-    // Without this test any sideways drift at all claimed the gesture, and the flick was
-    // then discarded as "a drag that moved the strip".
-    if (!panned && Math.abs(e.clientY - panY) > Math.abs(dx)) return;
-    if (!panned && Math.abs(dx) < 6) return;
-    panned = true;
-    strip.scrollLeft = panFrom - dx;
-  });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
-    strip.addEventListener(ev, () => { panX = null; panY = null; }));
+  wireSwitcherStrip();
 
   [...strip.querySelectorAll('.card')].forEach((c) => {
     let y0 = null, dragging = false;
@@ -9772,9 +10133,9 @@ function openSwitcher() {
 
     c.addEventListener('pointerup', (e) => {
       const flicked = y0 !== null && e.clientY - y0 < -60;
-      const wasPanned = panned;
+      const wasPanned = switcherPanned;
       settle();
-      panned = false;
+      switcherPanned = false;
       // A drag that panned the strip sideways is not a tap on a card.
       if (wasPanned) return;
       if (flicked) { close(); return; }
@@ -10417,7 +10778,9 @@ function storeDetail(a) {
     '<div class="stprivacy"><div class="stprivacyicon">' + svg('lockshut') + '</div>' +
       '<div><b>' + esc(L('ph.store_privacy')) + '</b><span>' +
         esc(a.id === 'cipher' ? L('ph.cipher_server_blind') : L('ph.store_privacy_body')) +
-        '</span></div>' + svg('chevron') + '</div>' +
+        // No chevron: this card is a statement, not a link. Drawing the arrow promised a page
+        // that does not exist and never had a handler.
+        '</span></div></div>' +
     (permissions.length
       ? '<div class="grouphead">' + esc(L('ph.store_permissions')) + '</div>' +
         '<div class="stpermissions">' + permissions.map((permission) =>
@@ -10702,12 +11065,18 @@ function storeBarShow(id) {
 }
 
 RENDER.store = async () => {
+  // **The staleness guard every other async render has.** This one awaits a file read before it
+  // draws, and `storeDetail` is called synchronously right after `enterApp` elsewhere - so the
+  // detail page was drawn first and this painted the front page over it a moment later. "View
+  // in the FruitStore" landed on the shop window every time.
+  const epoch = beginView();
   setNav(L('app.store'), null);
 
   // Settled before anything draws, so the detail page never swaps a drawn mock-up for a real
   // recording a moment after somebody has looked at it. It is one local file, fetched once for
   // the whole session; the list below is what pays for it, and it pays once.
   await loadShippedPreviews();
+  if (epoch !== viewEpoch || !openApp || openApp.id !== 'store') return;
 
   // Deduplicated by id: the registry is a config seed merged with the operator's rows, and
   // a duplicate there used to surface as the same app listed twice in the store.
@@ -10982,6 +11351,12 @@ RENDER.health = async (cached) => {
   // again on the server.
   if (healthReader) tabs.push({ id: 'patients', icon: 'contacts', label: 'ph.patients' });
   tabbar(tabs, healthTab, (t) => { healthTab = t; RENDER.health(true); });
+  // **Every tab here is root level.** `healthRecord` leaves a back label and a back closure
+  // behind and nothing on the Today or Hospitals path clears them, so the chevron kept reading
+  // "Health" and doing nothing. Reset before dispatching: the two branches that want their own
+  // nav call `setNav` again in the same synchronous task and still win. Guarded on the app
+  // because this function has an await above it with no re-entry check.
+  if (openApp && openApp.id === 'health') setNav(L('app.health'), null, null);
   if (healthTab === 'record') { healthRecord(); return; }
   if (healthTab === 'hospitals') { healthHospitalList(); return; }
   if (healthTab === 'patients') { healthPatients(); return; }
@@ -11804,7 +12179,11 @@ function photoSheet(shots, i, albums) {
         dirty();
         ui('shutter');
         toast(L('ph.crop_saved'));
-        RENDER.gallery();
+        // The screen the sheet was raised from, not the app root. Saving from the viewer used
+        // to drop the grid in behind the still-open sheet, so closing it revealed a different
+        // screen from the one that was there a second earlier.
+        if (viewRows.length && openApp && openApp.id === 'gallery') paintViewer();
+        else RENDER.gallery();
       });
 
       byId('srevert').addEventListener('click', () => {
@@ -12928,7 +13307,12 @@ function alertsArrived(alert) {
     // the one moment the two clocks are known to agree.
     alertsData.now = Math.max(alertsData.now, Number(alert.at) || alertsData.now);
   }
-  if (openApp && openApp.id === 'alerts' && !alertsOpenId) RENDER.alerts(true);
+  // Not while somebody is writing one. `alertsCompose` ends in body(), which destroys the
+  // focused textarea and drops the caret - and the alert that just arrived is on another tab,
+  // so there is nothing on this screen for the redraw to bring up to date.
+  if (openApp && openApp.id === 'alerts' && !alertsOpenId && alertsTab !== 'send') {
+    RENDER.alerts(true);
+  }
 }
 
 function alertsWithdrawn(id) {
@@ -13239,24 +13623,6 @@ RENDER.export = async (cached) => {
 
   setNav(L('app.export'), null, null);
 
-  const items = exportItems();
-  const cats = farr(d.categories);
-  const q = exportQuery.trim().toLowerCase();
-  // Searching looks through the WHOLE board, not the chosen category: somebody typing "gold"
-  // wants gold, and being told there is none because they were on Metals is the app arguing
-  // with them. The category chips are hidden while a search is running, for the same reason.
-  const shown = (q
-    ? items.filter((it) => (it.label + ' ' + it.name + ' ' + (it.catLabel || ''))
-        .toLowerCase().includes(q))
-    : (exportCat ? items.filter((it) => it.cat === exportCat) : items));
-
-  // Movers first, then everything else. A board sorted alphabetically is a list; a board with
-  // what changed at the top is the thing somebody opened the app for.
-  const movers = items.filter((it) => it.percent !== undefined && it.percent !== null)
-    .slice()
-    .sort((a, b) => Math.abs(Number(b.percent)) - Math.abs(Number(a.percent)))
-    .slice(0, 3);
-
   body(
     // The market switcher, only when there is more than one board to switch between.
     (farr(d.markets).length > 1
@@ -13276,7 +13642,59 @@ RENDER.export = async (cached) => {
 
     '<div class="exsearchpad">' + UI.search('exq', L('ph.export_search'), exportQuery) + '</div>' +
 
-    (movers.length && !q
+    '<div id="exresults">' + exportResultsHtml() + '</div>'
+  );
+
+  // **Only what is below the field is repainted.** Re-running the whole render per letter
+  // replayed the entrance animation of the entire screen, recreated every lazy picture, and
+  // restarted the countdown's one-second interval before it had ever ticked - so the "next
+  // change in" clock stood still while somebody typed. The field, the switcher and the
+  // countdown are never destroyed now, so the focus and caret restoration went with them.
+  const box = byId('exq');
+  if (box) {
+    box.addEventListener('input', () => {
+      exportQuery = box.value;
+      exportPaintResults();
+    });
+  }
+  exportStartClock();
+
+  rows('[data-mkt]', (b) => b.addEventListener('click', () => {
+    if (b.dataset.mkt === exportMarket) return;
+    exportMarket = b.dataset.mkt;
+    exportCat = null;
+    RENDER.export();
+  }));
+  exportWireResults();
+};
+
+/// The movers, the chips and the rows: everything a search or a category chip changes, and
+/// nothing that it does not.
+///
+/// Built from `exportData` and the current query, so it can be redrawn with no request and
+/// without touching the search field being typed into.
+function exportResultsHtml() {
+  const d = exportData;
+  if (!d) return '';
+  const items = exportItems();
+  const cats = farr(d.categories);
+  const q = exportQuery.trim().toLowerCase();
+  // Searching looks through the WHOLE board, not the chosen category: somebody typing "gold"
+  // wants gold, and being told there is none because they were on Metals is the app arguing
+  // with them. The category chips are hidden while a search is running, for the same reason.
+  const shown = (q
+    ? items.filter((it) => (it.label + ' ' + it.name + ' ' + (it.catLabel || ''))
+        .toLowerCase().includes(q))
+    : (exportCat ? items.filter((it) => it.cat === exportCat) : items));
+
+  // Movers first, then everything else. A board sorted alphabetically is a list; a board with
+  // what changed at the top is the thing somebody opened the app for.
+  const movers = items.filter((it) => it.percent !== undefined && it.percent !== null)
+    .slice()
+    .sort((a, b) => Math.abs(Number(b.percent)) - Math.abs(Number(a.percent)))
+    .slice(0, 3);
+
+  return (movers.length && !q
       ? '<div class="grouphead">' + esc(L('ph.export_movers')) + '</div>' +
         '<div class="exmovers">' + movers.map((it) =>
           '<button class="exmover ' + exportTone(it) + '" type="button" data-item="' +
@@ -13305,39 +13723,30 @@ RENDER.export = async (cached) => {
       : UI.empty(L(q ? 'ph.export_no_hits' : 'ph.export_none'), 'export')) +
 
     '<div class="groupfoot">' + esc(L('ph.export_updated')
-      .replace('{n}', String(Math.max(1, Math.round((Number(d.every) || 120) / 60))))) + '</div>'
-  );
+      .replace('{n}', String(Math.max(1, Math.round((Number(d.every) || 120) / 60))))) + '</div>';
+}
 
-  // Typing filters the list in place. `RENDER.export(true)` redraws from the cache with no
-  // request at all, and the caret is put back where it was - a search box that loses focus on
-  // the second letter is a search box nobody finishes a word in.
-  const box = byId('exq');
-  if (box) {
-    box.addEventListener('input', () => {
-      exportQuery = box.value;
-      const pos = box.selectionStart;
-      RENDER.export(true);
-      const again = byId('exq');
-      if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (e) { /* */ } }
-    });
-  }
-  exportStartClock();
+/// Redraw the results and rewire them. Returns false when the host is gone, which is how a
+/// caller knows the board is no longer the screen.
+function exportPaintResults() {
+  const host = byId('exresults');
+  if (!host) return false;
+  host.innerHTML = exportResultsHtml();
+  exportWireResults();
+  return true;
+}
 
-  rows('[data-mkt]', (b) => b.addEventListener('click', () => {
-    if (b.dataset.mkt === exportMarket) return;
-    exportMarket = b.dataset.mkt;
-    exportCat = null;
-    RENDER.export();
-  }));
+/// The chips and the rows are recreated by every repaint, so their listeners are too.
+function exportWireResults() {
   rows('[data-cat]', (b) => b.addEventListener('click', () => {
     exportCat = b.dataset.cat || null;
-    RENDER.export(true);
+    if (!exportPaintResults()) RENDER.export(true);
   }));
   rows('[data-item]', (b) => b.addEventListener('click', () => {
     const it = exportItem(b.dataset.item);
     if (it) exportDetail(it);
   }));
-};
+}
 
 /// One item: where the price is, where it has been, and what to do about it.
 function exportDetail(it) {
@@ -13923,25 +14332,42 @@ function repairMineTab() {
   }));
 
   // The tracker is the one screen where waiting is the whole activity, so it refreshes itself.
-  repairPoll(() => repairRefreshQuiet());
+  repairPoll(() => repairRefreshQuiet(true));
 }
+
+/// What the queue markup depends on, as one comparable string.
+///
+/// A poll that fetched exactly what is already on screen must not redraw it: `body()` empties
+/// `#appbody`, which drops the scroll and replays the entrance animation, so an unchanged queue
+/// was bouncing a reader to the top every fifteen seconds for nothing.
+function repairSig(list) {
+  return JSON.stringify(farr(list).map((c) => [
+    c.id, c.status, c.by, c.name, c.message, c.x, c.y,
+  ]));
+}
+
+/// The signature of what is currently drawn, so only the POLL can decide to skip. A tab switch
+/// or a fresh entry must always draw, because there may be nothing on screen to keep.
+let repairDrawnSig = null;
 
 /// A refresh that does not flash.
 ///
 /// The tracker and the queue both poll, and a poll that calls `RENDER.repair()` would paint the
 /// loading state every few seconds - the exact reload effect an audit was spent removing. This
 /// refetches and redraws from the cache instead.
-async function repairRefreshQuiet() {
+async function repairRefreshQuiet(fromPoll) {
   const d = await repairFetch();
   if (!d || d.error || !repairLive()) return;
   repairData = d;
-  if (repairTab === 'mine' && !repairOpenJob) repairMineTab();
+  if (repairTab !== 'mine' || repairOpenJob) return;
+  const sig = repairSig(farr(d.garages).filter((g) => g.call).map((g) => g.call));
+  if (fromPoll && repairDrawnSig === sig) return;
+  repairDrawnSig = sig;
+  repairMineTab();
 }
 
 /// The mechanic's side: the callouts waiting, and what to do about each.
-async function repairQueueTab() {
-  setNav(L('ph.repair_tab_queue'), null, null);
-
+async function repairQueueTab(fromPoll) {
   const d = repairData;
   const r = d.doc
     ? await post('repairDoc', { op: 'queue' })
@@ -13952,6 +14378,12 @@ async function repairQueueTab() {
     return;
   }
   repairQueue = farr(r.calls);
+  const sig = repairSig(repairQueue);
+  // Nothing moved since the last poll, so nothing is redrawn. `setNav` is below this for the
+  // same reason: it un-collapses the large title, which is its own jump.
+  if (fromPoll && repairDrawnSig === sig) return;
+  repairDrawnSig = sig;
+  setNav(L('ph.repair_tab_queue'), null, null);
 
   body(repairQueue.length
     ? '<div class="rqueue">' + repairQueue.map((c) =>
@@ -14023,7 +14455,7 @@ async function repairQueueTab() {
       }));
   });
 
-  repairPoll(() => { if (repairTab === 'queue') repairQueueTab(); });
+  repairPoll(() => { if (repairTab === 'queue') repairQueueTab(true); });
 }
 
 RENDER.lottery = async (cached) => {
@@ -14299,7 +14731,11 @@ function lotteryWirePicker(s) {
 
 /// Past draws, public and anonymous.
 function lotteryResults(s) {
-  setNav(L('ph.lottery_tab_results'), L('app.lottery'), null);
+  // **The label needs a closure to match it.** `setNav` draws "< Lottery" from the second
+  // argument and takes the behaviour from the fourth; without one the chevron falls back to
+  // closing the app, so a button that says "back to Lottery" put the player on the home screen.
+  setNav(L('ph.lottery_tab_results'), L('app.lottery'), null,
+    () => { lotteryTab = 'play'; RENDER.lottery(true); });
 
   body(
     lotteryLiveStrip(s) +
@@ -14339,7 +14775,8 @@ function lotteryResults(s) {
 /// its home screen and past results did not exist anywhere. "Have I ever won anything" is the
 /// second question anybody asks of a lottery app.
 function lotteryMineTab(s) {
-  setNav(L('ph.lottery_tab_mine'), L('app.lottery'), null);
+  setNav(L('ph.lottery_tab_mine'), L('app.lottery'), null,
+    () => { lotteryTab = 'play'; RENDER.lottery(true); });
 
   const live = s.myTickets.map((t, i) => '<div class="lotticket">' +
     '<div class="lotticketrow">' + lotteryBalls(t.numbers, 'chosen') +
@@ -15284,19 +15721,35 @@ RENDER.charging = async () => {
   const atPaid = d.atCharger && Number(d.atCharger.price) > 0;
   const paying = d.session && (!d.atCharger || d.session === d.atCharger.id);
 
+  // **The level, on the app named after it.** Read from the same place the status bar and the
+  // battery widget read it, with the same guard: absent means the hero says what it always
+  // said rather than saying nothing.
+  const pw = state._power || {};
+  const battRaw = Number(pw.battery);
+  const batt = Number.isFinite(battRaw)
+    ? String(Math.max(0, Math.min(100, Math.round(battRaw)))) + '%'
+    : null;
+
   const header = d.session
     ? UI.hero({ appicon: 'charging', eyebrow: L('ph.charge_status'),
-                value: L('ph.charge_active'), subtitle: labelOf(d.session) || (d.atCharger || {}).label || '' })
+                value: batt || L('ph.charge_active'),
+                subtitle: [L('ph.charge_active'),
+                           labelOf(d.session) || (d.atCharger || {}).label || '']
+                  .filter(Boolean).join('  ·  ') })
     : (atPaid
       ? UI.hero({ appicon: 'charging', eyebrow: d.atCharger.label,
                   value: money(d.atCharger.price), subtitle: L('ph.charge_here_pay') })
       : UI.hero({ appicon: 'charging', eyebrow: L('app.charging'),
-                  value: (d.plug && d.plug.on) ? L('ph.charge_active') : L('ph.charge_idle'),
-                  subtitle: (d.plug && d.plug.on)
-                    ? L('ph.charge_src_' + (d.plug.source || 'charger'))
-                    : ((d.plug && d.plug.source && d.plug.needs)
-                      ? L('ph.charge_unplugged_hint')
-                      : L('ph.charge_idle_hint')) }));
+                  value: batt ||
+                    ((d.plug && d.plug.on) ? L('ph.charge_active') : L('ph.charge_idle')),
+                  subtitle: [
+                    (d.plug && d.plug.on) ? L('ph.charge_active') : L('ph.charge_idle'),
+                    (d.plug && d.plug.on)
+                      ? L('ph.charge_src_' + (d.plug.source || 'charger'))
+                      : ((d.plug && d.plug.source && d.plug.needs)
+                        ? L('ph.charge_unplugged_hint')
+                        : L('ph.charge_idle_hint')),
+                  ].filter(Boolean).join('  ·  ') }));
 
   const payBtn = (atPaid && !paying)
     ? UI.button(L('ph.charge_pay').replace('{price}', String(d.atCharger.price)), 'chgpay', 'tinted')
@@ -15484,19 +15937,26 @@ function airdropOffer(o) {
 // number or a price does not sprout a "copy code" button.
 const CODE_WORDS = /(code|verification|verif|vérification)/i;
 
-function codeInText(body) {
+function codeInText(body, want) {
   const text = String(body || '');
   if (!CODE_WORDS.test(text)) return null;
-  const m = text.match(/(?:^|[^0-9])([0-9]{4,8})(?:[^0-9]|$)/);
+  // `want` is the field's own maxlength when the caller knows it. Without it the chip could
+  // offer an eight-digit number to a four-digit field, which the field then truncates in
+  // silence - so what was offered and what was entered were not the same string either.
+  const n = Number(want);
+  const run = Number.isFinite(n) && n >= 4 && n <= 8
+    ? '[0-9]{' + n + '}'
+    : '[0-9]{4,8}';
+  const m = text.match(new RegExp('(?:^|[^0-9])(' + run + ')(?:[^0-9]|$)'));
   return m ? m[1] : null;
 }
 
 // The newest code the phone has been sent, for the fill button on a code field. Reads the
 // conversation list, which already holds each thread's last message, so this needs no extra
 // server call - and it is ordered newest first by the server.
-function latestCode() {
+function latestCode(want) {
   for (const c of (state.conversations || [])) {
-    const code = codeInText(c.body);
+    const code = codeInText(c.body, want);
     if (code) return code;
   }
   return null;
@@ -15504,22 +15964,79 @@ function latestCode() {
 
 // A one-tap chip that puts the code into a field. Rendered only when there is a code to
 // put there, so it never sits in the way promising something it cannot do.
-function codeFillChip(fieldId) {
-  const code = latestCode();
-  if (!code) return '';
+/// The chip's markup, on its own, so the host below can rebuild it when a code arrives.
+function codeFillButton(code, fieldId) {
   return '<button class="linkbtn codefill" type="button" data-fill="' + esc(code) +
     '" data-into="' + esc(fieldId) + '">' + esc(L('ph.use_code')) + ' ' + esc(code) + '</button>';
 }
 
-function wireCodeFill() {
-  rows('[data-fill]', (b) => b.addEventListener('click', () => {
+/// A one-tap chip that puts the code into a field.
+///
+/// **It emits a HOST even when there is no code yet**, and that is the whole fix. This screen is
+/// drawn at the moment the player asks for a code, which is before the text arrives - so the
+/// chip used to be built from a conversation list that did not contain the new code, offer an
+/// older one, and never be redrawn when the real one landed. A player who had never been sent a
+/// code got no chip at all and no chip ever appeared.
+///
+/// `refreshCodeChips()` fills the host in when the message handler sees a text come in.
+/// **An empty host, and nothing else.**
+///
+/// It cannot decide what to draw yet: this returns markup that is concatenated with the field
+/// it belongs to and assigned in one go, so at this moment the field is not in the document and
+/// its `maxlength` cannot be read. Trying anyway is how the length check silently did nothing.
+///
+/// `wireCodeFill()` runs immediately after the body is drawn and fills it in, by which time the
+/// field is real - and `refreshCodeChips()` runs again whenever a message arrives.
+function codeFillChip(fieldId) {
+  return '<span class="codefillhost" data-codefor="' + esc(fieldId) + '"></span>';
+}
+
+/// Re-read the newest code and rebuild every chip on screen.
+///
+/// Called when a message arrives, after `refresh()` has updated the conversation list. Cheap:
+/// at most one host is on screen, and it only touches its own subtree - the field the player
+/// may already be typing in is not redrawn.
+function refreshCodeChips() {
+  const hosts = [...document.querySelectorAll('.codefillhost')];
+  if (!hosts.length) return;
+  hosts.forEach((host) => {
+    const fieldId = host.dataset.codefor;
+    // Read from the LIVE field. How many digits it accepts is the only honest guide to how many
+    // the code has, and it is only knowable once the field is in the document.
+    const field = byId(fieldId);
+    const code = latestCode(field ? field.getAttribute('maxlength') : null);
+    const want = code ? codeFillButton(code, fieldId) : '';
+    if (host.innerHTML !== want) host.innerHTML = want;
+  });
+  wireCodeChips();
+}
+
+/// Attach the tap handler to whatever chips are on screen.
+///
+/// **Separate from `refreshCodeChips`, and it must stay separate.** Having the refresh call the
+/// wiring and the wiring call the refresh was an unbounded recursion the moment there was no
+/// code to show: neither ever reached a state the other would accept.
+function wireCodeChips() {
+  rows('[data-fill]', (b) => {
+    // Guarded: `refreshCodeChips` may rewire, and a chip that survived the rebuild must not
+    // gain a second listener each time a message arrives.
+    if (b.dataset.wired === '1') return;
+    b.dataset.wired = '1';
+    b.addEventListener('click', () => {
     const el = byId(b.dataset.into);
     if (!el) return;
-    el.value = b.dataset.fill;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.focus();
-  }));
+      el.value = b.dataset.fill;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.focus();
+    });
+  });
 }
+
+/// What the two code screens call after drawing their body.
+///
+/// One name for "the field exists now, work out what the chip should say and wire it", because
+/// that is the only thing either of them wants.
+function wireCodeFill() { refreshCodeChips(); }
 
 // ══ Clipboard ══════════════════════════════════════════════════
 // navigator.clipboard needs a secure context, and cfx-nui:// is not one, so this is the
@@ -16743,7 +17260,13 @@ function socialTabs(appId, tabs) {
       (SOC.tab[appId] === t.id ? 'true' : 'false') + '">' + svg(t.icon) +
       (t.badge ? '<i class="socdot"></i>' : '') + '</button>').join('') + '</nav>');
   qrows('appfoot', '.soctab', (b) => b.addEventListener('click', () => {
-    if (SOC.tab[appId] === b.dataset.tab) return;
+    // A tab ROOT has no screen above it, so re-tapping its own tab is a no-op on purpose.
+    // On a sub-screen reached FROM a tab - a stranger's profile, Saved, a hashtag timeline -
+    // the bar is still the one the root drew, so the highlighted tab is the way back to that
+    // root, and returning early made it a dead button. `navBackAction` is the flag this file
+    // already uses for "there is a screen above this one"; `setNav` sets it only when a back
+    // closure was given, which no tab root does.
+    if (SOC.tab[appId] === b.dataset.tab && !navBackAction) return;
     SOC.tab[appId] = b.dataset.tab;
     SOC.handle[appId] = '';
     ui('sheet');
@@ -17048,12 +17571,27 @@ async function socialFollow(appId, handle, pill) {
 // ── A profile ──────────────────────────────────────────────────
 async function socialProfile(appId, handle) {
   const epoch = beginView();
-  SOC.tab[appId] = 'me';
-  SOC.handle[appId] = handle || '';
+  // **Somebody else's profile is not the Profile TAB.**
+  //
+  // Writing `SOC.tab = 'me'` for a foreign profile told the router the Profile tab was already
+  // showing, so afterwards pressing that tab did nothing at all - `socialTabs` returns early
+  // when the tab is unchanged. And the tab bar highlighted "me" while a stranger's page was on
+  // screen. Only a visit to your OWN profile is the tab.
+  const mine = !handle;
+  if (mine) {
+    SOC.tab[appId] = 'me';
+    SOC.handle[appId] = '';
+  }
   loading();
   const r = await post('social', { op: 'profile', handle: handle || '', app: appId });
   if (!socialActive(appId, epoch)) return;
   if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), APP_ICON[appId])); return; }
+
+  // Its own nav bar. Without one the chevron kept whatever the feed left there, so the way out
+  // of a stranger's profile was whatever the previous screen had bound.
+  setNav(mine ? L('app.' + appId) : '@' + ((r.account || {}).handle || ''),
+    mine ? null : L('app.' + appId), null,
+    mine ? null : () => { SOC.handle[appId] = ''; socialRender(appId); });
 
   const a = r.account, c = r.counts || {};
   const grid = appId === 'snap';
@@ -20010,6 +20548,10 @@ function hushOnboard() {
 /// lived in the Messages app.
 async function hushMatches() {
   const epoch = viewEpoch;
+  // Its own header and tabs. Reached from the router this is redundant; reached from anywhere
+  // else - and `hushUnmatch` ends here - it is the difference between a correct screen and one
+  // wearing the last screen's buttons.
+  setNav(L('app.hush'), null, null);
   loading();
   const r = await post('social', { op: 'hushMatches' });
   if (!socialActive('hush', epoch)) return;
@@ -20052,7 +20594,12 @@ async function hushChat(match) {
   const title = (r.name || match.name || '?') + (r.age ? ', ' + r.age : '');
   setNav(title, L('app.hush'), {
     icon: 'xmark', label: L('ph.hush_unmatch'), onClick: () => hushUnmatch(match),
-  }, () => hushMatches());
+    // **Back through the ROUTER, not straight to the list.** `hushMatches()` draws a body and
+    // nothing else, so the nav bar kept this screen's title and - worse - its top-right button,
+    // which unmatches. Leaving a conversation and then pressing the corner unmatched the person
+    // whose thread you had just left. `socialRender` sets the footer, the nav and the tabs, in
+    // that order, which is exactly what coming back needs.
+  }, () => { SOC.tab.hush = 'matches'; socialRender('hush'); });
 
   const draw = (messages) => {
     body('<div class="thread hushthread" id="hushthread">' +
@@ -21976,7 +22523,9 @@ window.addEventListener('message', async (e) => {
   if (d.op === 'badge') {
     const a = (state.apps || []).find((x) => x.id === appId);
     if (a) {
-      a.badge = Number(d.data && d.data.count) || 0;
+      const n = Number(d.data && d.data.count) || 0;
+      if (n > 0) sdkBadges[appId] = n; else delete sdkBadges[appId];
+      a.badge = n;
       // Repaint, or the count only appears the next time something else happens to
       // rebuild the grid - which from the app's side looks like badge() did nothing.
       renderHome();
@@ -22020,6 +22569,10 @@ window.addEventListener('message', async (e) => {
 async function refresh() {
   const res = await post('refresh');
   if (res && res.ok) Object.assign(state, res);
+  // The apps array that just arrived is the server's, and the server does not know what a
+  // dropped-in app is counting. Put those badges back, or `Phone.badge()` lasts until the
+  // next refresh and no longer.
+  (state.apps || []).forEach((a) => { if (sdkBadges[a.id] != null) a.badge = sdkBadges[a.id]; });
   // A session can open, expire or be handed back between two refreshes, so the banner is
   // repainted from whatever just arrived rather than only when the phone is set up.
   applyAdminView();
@@ -22072,6 +22625,13 @@ byId('lock').addEventListener('click', unlock);
     if (dy > 8 || (quick && dx < 14 && Math.abs(dy) < 14)) trigger();
   };
 
+  // **These only run when nothing captured the pointer first.**
+  //
+  // `#screen`'s own pointerdown calls `setPointerCapture` for any press starting in the
+  // bottom edge zone, and this bar lives in that zone - so for a real press the bar sees the
+  // pointerdown and never the pointerup. The tap is decided in that handler instead, where
+  // the events actually arrive. What is left here is the fallback for an input method that
+  // emits no pointer events at all.
   bar.addEventListener('pointerdown', down);
   bar.addEventListener('pointermove', move);
   bar.addEventListener('pointerup', up);
@@ -22342,7 +22902,14 @@ window.addEventListener('message', (e) => {
     torchPending = false;
     resetTransientUI();
     S = d.strings || {};
-    if (notificationOwner && notificationOwner !== d.number) notifs = [];
+    // A different character is holding this phone - a switch, or staff looking at somebody
+    // else's. Their notifications go, and so do the badges an app set for the last one:
+    // a count belonging to one character on another character's home screen is a new bug
+    // traded for the old one.
+    if (notificationOwner && notificationOwner !== d.number) {
+      notifs = [];
+      for (const k in sdkBadges) delete sdkBadges[k];
+    }
     notificationOwner = d.number || null;
     state = d;
     available = d.available || d.apps || [];
@@ -22442,7 +23009,12 @@ window.addEventListener('message', (e) => {
           if (groupId) openGroup(groupId, groupName);
           else messageTo(m.from);
         } });
-      refresh().then(() => { if (!openApp) renderHome(); });
+      refresh().then(() => {
+        if (!openApp) renderHome();
+        // A verification code arrives while the player is staring at the field it belongs in,
+        // which is precisely when the chip was still showing an older one.
+        refreshCodeChips();
+      });
     }
   } else if (d.action === 'cipher') {
     cipherReceive(d.packet || {});
@@ -22455,7 +23027,18 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'appRefresh') {
     // Only the app on screen, and only if it knows how to draw itself. Redrawing something the
     // player is not looking at throws away wherever they had scrolled to for nothing.
-    if (openApp && openApp.id === d.app && typeof RENDER[d.app] === 'function') { RENDER[d.app](); }
+    if (openApp && openApp.id === d.app && typeof RENDER[d.app] === 'function') {
+      const at = (byId('appbody') || {}).scrollTop || 0;
+      const drew = RENDER[d.app]();
+      // Put them back where they were reading. Only if the same app is still on screen: a
+      // redraw somebody navigated away from during must not scroll whatever replaced it.
+      if (at > 0) {
+        Promise.resolve(drew).then(() => {
+          const host = byId('appbody');
+          if (host && openApp && openApp.id === d.app) host.scrollTop = at;
+        }, () => {});
+      }
+    }
     // **A dropped-in app has no `RENDER` entry** - it lives in an iframe - so this event was a
     // no-op for exactly the apps most likely to need it. `Phone.on('refresh', ...)` is wired in
     // sdk.js and documented in DEVELOPERS.md, and until now nothing on the server or in the page
@@ -22584,7 +23167,9 @@ window.addEventListener('message', (e) => {
     } else if (kind === 'queue') {
       ui('received');
     }
-    if (openApp && openApp.id === 'taxi') RENDER.taxi();
+    if (openApp && openApp.id === 'taxi') {
+      RENDER.taxi(!(kind === 'queue' && taxiTab === 'drive'));
+    }
   } else if (d.action === 'taxi') {
     // The config provider's own ride events, which carry what happened.
     if (d.strings && !Object.keys(S || {}).length) S = d.strings;
@@ -22678,7 +23263,10 @@ window.addEventListener('message', (e) => {
     // The whole queue, as the handset holds it. A list rather than a diff: it is a handful of
     // items, and a list the page simply draws cannot drift out of step with the one that owns it.
     outbox = farr(d.items);
-    if (openApp && openApp.id === 'messages' && thread !== null) openThread(thread);
+    // **The tail, not the thread.** Queued bubbles are drawn by `tailHtml`, so this is the
+    // whole of what changed - and rebuilding the conversation empties the composer somebody
+    // is typing in, which is exactly when this push arrives.
+    if (openApp && openApp.id === 'messages' && thread !== null) paintTail();
   } else if (d.action === 'outboxSent') {
     // It finally went. The queued bubble is replaced by the real one, using the SERVER's copy
     // of the message rather than the text this page happened to still be holding.
@@ -22755,7 +23343,9 @@ window.addEventListener('message', (e) => {
     // The draw moved. client/lottery.lua mirrors both providers into one shape, so this handler
     // does not care which resource is running the draw.
     lotteryLive = d.live || null;
-    if (openApp && openApp.id === 'lottery') RENDER.lottery();
+    // **Cached.** The push carries the draw; re-asking the server for it once per ball is the
+    // reload flash on a timer.
+    if (openApp && openApp.id === 'lottery') RENDER.lottery(true);
   } else if (d.action === 'lotteryMine') {
     // What MY ticket did, sent only to its holder. The public result is anonymous.
     lotteryMine = d.result || null;
@@ -22769,7 +23359,7 @@ window.addEventListener('message', (e) => {
             .replace('{n}', String(Number(lotteryMine && lotteryMine.matches) || 0)),
     });
     ui(reward > 0 ? 'success' : 'received');
-    if (openApp && openApp.id === 'lottery') RENDER.lottery();
+    if (openApp && openApp.id === 'lottery') RENDER.lottery(true);
   } else if (d.action === 'zuberStatus') {
     // An order moved along in the kitchen. The card and the sound are the client's; this keeps
     // the app honest if it happens to be open on the tracker.

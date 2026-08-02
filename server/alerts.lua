@@ -250,6 +250,19 @@ end)
 
 local lastEmit = {}      -- [citizenid] = os.time()
 
+--- One emit at a time, per character.
+---
+--- `lastEmit` is stamped AFTER an insert that yields, so two requests arriving in the same tick
+--- both read the same stale value, both pass the cooldown and both reach a full-server
+--- broadcast. This file's own header says the cooldown is not optional; a check that a burst
+--- walks past is not a cooldown.
+---
+--- A lock rather than moving the stamp: three refusals sit between the check and the write, and
+--- an author refused for an empty headline or a failed insert must not lose thirty seconds for
+--- it. With the lock in place the stamp's position stops mattering, so it stays exactly where
+--- it is and every existing path behaves exactly as it did.
+local EmitBusy = {}
+
 --- Bound a piece of written text.
 ---
 --- Tags come out because the page renders a message as text and an operator should not have to
@@ -296,6 +309,26 @@ V.Callback('v-phone:alerts:emit', function(src, resolve, data)
         resolve({ error = 'cooldown', wait = cd - (now - last) })
         return
     end
+
+    -- The check above and the stamp below are separated by a yield. One in flight per character
+    -- makes them atomic with respect to each other. `cooldown` rather than a reason of its own
+    -- because the page renders `ph.alert_e_<error>` and that key exists; a new one would put a
+    -- raw locale key on screen.
+    if EmitBusy[p.citizenid] then
+        resolve({ error = 'cooldown', wait = cd })
+        return
+    end
+    EmitBusy[p.citizenid] = true
+    -- Every exit from here down goes through this, so a refusal cannot leave the lock behind.
+    local answer = resolve
+    resolve = function(res)
+        EmitBusy[p.citizenid] = nil
+        answer(res)
+    end
+    -- And a backstop, because the one exit that does NOT go through the wrapper is the handler
+    -- dying inside the insert: `V.Callback` pcalls it, answers `server`, and this lock would
+    -- otherwise sit there until a restart - a character who could never broadcast again.
+    SetTimeout(10000, function() EmitBusy[p.citizenid] = nil end)
 
     -- 3. A category that exists.
     local cat = categoryFor(data and data.category)

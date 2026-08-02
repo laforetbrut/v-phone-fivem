@@ -98,6 +98,14 @@ end
 
 --- Dropped players keep nothing warm. A character that comes back reads from the table,
 --- which is the only copy that was ever authoritative.
+--- Drop every cached key for a character, so the next read goes to the table.
+---
+--- For a caller that wrote `vphone_kv` rows behind this cache: a restore, a migration, a repair
+--- by hand. Unlike `KvSet(..., nil)` it leaves no "known absent" marker - it forces a real read.
+function Bridge.KvForget(citizenid)
+    cache[tostring(citizenid or '')] = nil
+end
+
 AddEventHandler('playerDropped', function()
     local src = source
     local p = Bridge.GetPlayer and Bridge.GetPlayer(src)

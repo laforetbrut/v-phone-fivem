@@ -145,7 +145,22 @@ end)
 
 --- The qb-phone export, reachable from anywhere. compat/qb-phone forwards to this, and a
 --- script that would rather not depend on the compat resource can call it directly.
+--- Printed once, not once per call: a script making this mistake makes it in a loop.
+local warnedQbMailSignature = false
+
 exports('QbMail', function(citizenid, mailData)
+    -- **Called the way API.md used to document it.** One table, no citizen id: nothing was
+    -- sent and `false` came back with no reason. A citizen id is a string, never a table, so
+    -- this cannot fire on a correct call - and it sits above the `active()` gate so the
+    -- message appears even on a server with qb-phone compatibility switched off.
+    if type(citizenid) == 'table' and mailData == nil then
+        if not warnedQbMailSignature then
+            warnedQbMailSignature = true
+            print('^3[v-phone]^7 QbMail(citizenid, mailData) takes TWO arguments. It was '
+                  .. 'called with one table, so nothing was sent. See API.md.')
+        end
+        return false, 'nocitizenid'
+    end
     if not active() then return false end
     return QbPhone.Mail(citizenid, mailData)
 end)

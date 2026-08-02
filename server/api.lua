@@ -59,6 +59,29 @@ end)
 
 --- Give a character a number, or replace the one they have. For a server that mints
 --- numbers itself, or an admin tool that fixes a collision.
+--- Everything that has to happen when a character's number changes, beyond writing the row.
+---
+--- **Two in-memory maps route every call and every message, and neither is derived from the
+--- database once a session has started.** `Numbers[cid]` caches the character's own number;
+--- `Online[number]` says who is reachable at a number right now. Writing the row and stopping
+--- there leaves both pointing at a number that no longer exists - so the new one is unreachable
+--- and the old one still rings.
+---
+--- This exists as one function because `SetNumber` and `Renumber` both change a number and only
+--- one of them was doing all of it. A third caller written next month gets it for free.
+local function numberChanged(citizenid, old, fresh)
+    Bridge.Numbers.Set(citizenid, fresh)
+    -- Drops the cached number AND the old online entry, so nothing answers at the old one.
+    if PhoneForgetNumber then PhoneForgetNumber(citizenid, old) end
+
+    local target = Core.GetPlayerByCitizenId(citizenid)
+    if target and target.source then
+        -- Reachable at the new number immediately, without waiting for a reconnection.
+        if PhoneSetOnline then PhoneSetOnline(fresh, target.source) end
+        TriggerClientEvent('v-phone:client:close', target.source)
+    end
+end
+
 exports('SetNumber', function(citizenid, number)
     citizenid = tostring(citizenid or '')
     number = tostring(number or '')
@@ -67,14 +90,12 @@ exports('SetNumber', function(citizenid, number)
     local taken = Bridge.Numbers.Owner(number)
     if taken and taken ~= citizenid then return false, 'taken' end
 
+    -- Read BEFORE the update, because it is what has to be removed from the online map.
+    local old = MySQL.scalar.await('SELECT phone FROM vphone_characters WHERE citizenid = ?',
+        { citizenid })
+
     MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?', { number, citizenid })
-    Bridge.Numbers.Set(citizenid, number)
-    -- The phone caches numbers per session, so a character who is connected is asked to
-    -- reload rather than left holding the old one until they reconnect.
-    local target = Core.GetPlayerByCitizenId(citizenid)
-    if target and target.source then
-        TriggerClientEvent('v-phone:client:close', target.source)
-    end
+    numberChanged(citizenid, old, number)
     return true
 end)
 
@@ -103,16 +124,7 @@ exports('Renumber', function(citizenid)
 
     MySQL.update.await('UPDATE vphone_characters SET phone = ? WHERE citizenid = ?',
         { fresh, citizenid })
-    -- The cache is per session and nothing else invalidates it, so a connected character
-    -- would keep answering with the old number until they reconnected.
-    PhoneForgetNumber(citizenid, old)
-    Bridge.Numbers.Set(citizenid, fresh)
-
-    local target = Core.GetPlayerByCitizenId(citizenid)
-    if target and target.source then
-        PhoneSetOnline(fresh, target.source)
-        TriggerClientEvent('v-phone:client:close', target.source)
-    end
+    numberChanged(citizenid, old, fresh)
     Core.Log('phone', ('renumbered %s: %s -> %s'):format(citizenid, tostring(old), fresh),
         nil, citizenid)
     return true, fresh, old
@@ -675,9 +687,88 @@ exports('WipePhone', function(citizenid)
         removed = removed + (tonumber(n) or 0)
     end
 
+    -- **And the copy in memory.** `Bridge.KvGet` answers from a cache that is only dropped on
+    -- `playerDropped`, so for a connected character the rows above came straight back on the
+    -- next prefs write. `KvSet(..., nil)` clears both halves; for an offline character it is a
+    -- DELETE against nothing.
+    for _, k in ipairs({ 'phone', 'card', 'number', 'battery' }) do
+        Bridge.KvSet(citizenid, k, nil)
+    end
+
     local target = Core.GetPlayerByCitizenId(citizenid)
     if target and target.source then TriggerClientEvent('v-phone:client:close', target.source) end
     return true, removed
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Blocked numbers
+-- ══════════════════════════════════════════════════════════════
+-- Read and written from outside for the two cases that are real: a staff tool answering "why
+-- is this player saying they get no messages from X", and an anti-harassment script that wants
+-- to act on a report without asking the victim to go and do it themselves.
+
+--- Everything a character has blocked: `{ { n = number, c = citizenid | nil }, ... }`.
+---
+--- The citizen id is what the phone matches on when it has one, which is what makes a block
+--- survive `/phoneadmin renumber`. It is absent for a number nobody held at the time.
+exports('GetBlocked', function(citizenid)
+    if not PhoneBlocksOf then return {} end
+    return PhoneBlocksOf(tostring(citizenid or ''))
+end)
+
+--- Would a call or a text from `fromNumber` reach `citizenid`?
+---
+--- Both arguments are wanted where you have them: `fromCitizenid` is the reliable one, and
+--- `fromNumber` answers for an entry blocked before anybody held that number.
+exports('IsBlocked', function(citizenid, fromNumber, fromCitizenid)
+    if not PhoneIsBlocked then return false end
+    return PhoneIsBlocked(tostring(citizenid or ''), fromCitizenid, fromNumber) == true
+end)
+
+--- Add a number to a character's blocked list, as though they had done it themselves.
+---
+--- Returns `true`, or `false` and a reason: `args`, `off` when the operator turned blocking
+--- off, `required` for a number in `Config.RequiredContacts`, `full` at the configured cap.
+--- The character does NOT have to be online.
+exports('BlockNumber', function(citizenid, number)
+    citizenid = tostring(citizenid or '')
+    number = tostring(number or ''):gsub('%c', ''):sub(1, 20)
+    if citizenid == '' or number == '' then return false, 'args' end
+    if not PhoneBlocksOf then return false, 'off' end
+    if PhoneBlockable and not PhoneBlockable(number) then return false, 'required' end
+
+    local list = PhoneBlocksOf(citizenid)
+    local cid = PhoneCidOfNumber and PhoneCidOfNumber(number) or nil
+    for _, e in ipairs(list) do
+        if (cid and e.c == cid) or (not e.c and e.n == number) then return true end
+    end
+    list[#list + 1] = { n = number, c = cid }
+
+    local stored = Bridge.KvGet(citizenid, 'phone')
+    if type(stored) ~= 'table' then stored = {} end
+    stored.blocked = list
+    Bridge.KvSet(citizenid, 'phone', stored)
+    return true
+end)
+
+--- Take a number off a character's blocked list. Returns true when it was there.
+exports('UnblockNumber', function(citizenid, number)
+    citizenid = tostring(citizenid or '')
+    number = tostring(number or ''):sub(1, 20)
+    if citizenid == '' or number == '' then return false, 'args' end
+    if not PhoneBlocksOf then return false, 'off' end
+
+    local kept, found = {}, false
+    for _, e in ipairs(PhoneBlocksOf(citizenid)) do
+        if e.n == number then found = true else kept[#kept + 1] = e end
+    end
+    if not found then return false end
+
+    local stored = Bridge.KvGet(citizenid, 'phone')
+    if type(stored) ~= 'table' then stored = {} end
+    stored.blocked = kept
+    Bridge.KvSet(citizenid, 'phone', stored)
+    return true
 end)
 
 --- Open a player's phone on their own screen. For support: "let me see what you see".
@@ -710,6 +801,24 @@ exports('ExportPhone', function(citizenid)
         out[name] = MySQL.query.await(
             ('SELECT * FROM %s WHERE %s = ?'):format(spec.t, spec.key), { citizenid }) or {}
     end
+
+    -- **The passcode does not travel.** `prefsOf` already withholds `passcodeHash` unless the
+    -- caller asks for secrets, because it is one; this read went to the table directly and so
+    -- carried the digest into every backup, every character transfer and every support dump.
+    --
+    -- Nothing is lost by removing it: `savePhonePrefs` re-merges a stored digest when the
+    -- incoming prefs have none, so a restore onto a character who still has a code keeps it,
+    -- and a restore onto a fresh character gives a phone with no lock - which is the right
+    -- answer for a transferred backup anyway.
+    for _, row in ipairs(out.prefs or {}) do
+        if row.key == 'phone' and type(row.value) == 'string' and row.value ~= '' then
+            local ok, blob = pcall(json.decode, row.value)
+            if ok and type(blob) == 'table' and blob.passcodeHash ~= nil then
+                blob.passcodeHash = nil
+                row.value = json.encode(blob)
+            end
+        end
+    end
     return out
 end)
 
@@ -741,6 +850,13 @@ exports('ImportPhone', function(citizenid, data, replace)
             end
         end
     end
+
+    -- **The rows above went in behind the KV cache**, which is only dropped when the player
+    -- disconnects. Without this a connected character keeps reading their pre-import prefs -
+    -- wallpaper, layout, device name, passcode - and the next thing they change in Settings
+    -- writes that stale blob straight back over the row this just restored, so the restore has
+    -- to be run again, and does the same thing again.
+    if Bridge.KvForget then Bridge.KvForget(citizenid) end
 
     local target = Core.GetPlayerByCitizenId(citizenid)
     if target and target.source then TriggerClientEvent('v-phone:client:close', target.source) end

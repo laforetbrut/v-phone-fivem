@@ -231,6 +231,7 @@ const SHOTS = [
   {
     name: 'music', file: 'zz-music.png', scratch: true,
     script: `${SETUP}${MUSIC_FIXTURE}
+      musicPlayerOpen = false;
       await open('music', 400);
       musicTab = 'listen';
       await RENDER.music();
@@ -435,6 +436,11 @@ const SHOTS = [
       state.photos = [{ url: svgShot, album: '', filter: '', crop: 'portrait', focus: 50 }];
       photosForget();
       photosList = async () => ({ ok: true, photos: state.photos, albums: [] });
+      // **The page is shared.** The gallery-albums shot runs before this one and leaves
+      // galleryTab on 'albums', where there are no thumbnails - so this passed alone and
+      // failed in a batch, which is the worst way for an assertion to behave.
+      galleryTab = 'photos';
+      galleryAlbum = null;
       await open('gallery', 700);
       // Two taps now, not one. A thumbnail opens the VIEWER; the editor is behind its Modifier
       // button. This assertion was written before that change and broke on it, which is the
@@ -1077,6 +1083,310 @@ const SHOTS = [
           JSON.stringify({ g: sent.gender, s: sent.seeking }));
       }`,
   },
+  {
+    // **Issue #9: a folder's icons are the wrong shape.**
+    //
+    // `.tile .folder` is a grid with `grid-template-columns: 1fr 1fr` and NO row template, so
+    // the rows are implicit and sized by content. A folder holding one or two apps therefore
+    // has exactly ONE row, which stretches to the full height of the box - and its icons come
+    // out as tall narrow rectangles instead of little squares. Three or four apps make two
+    // rows and look almost right, which is why this went unnoticed: the broken case is the
+    // one you get the moment you drag one app onto another, which is how folders are made.
+    name: 'folder-icons', file: 'zz-folder-icons.png', scratch: true, assert: true,
+    script: `${SETUP}
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+      state.prefs.widgets = [];
+      const items = layoutItems().filter((x) => x && x.t === 'app');
+      const two = items.slice(0, 2).map((x) => x.id);
+      const four = items.slice(2, 6).map((x) => x.id);
+      await saveLayout([{ t: 'folder', name: 'Deux', apps: two },
+                        { t: 'folder', name: 'Quatre', apps: four }]
+                       .concat(items.slice(6)));
+      renderHome();
+      await new Promise((r) => setTimeout(r, 1000));
+
+      const folders = [...document.querySelectorAll('#pages .tile.isfolder')];
+      if (folders.length < 2) throw new Error('drew ' + folders.length + ' folders, wanted 2');
+
+      const shape = (el) => {
+        const ic = el.querySelector('.folder span .ic');
+        if (!ic) throw new Error('a folder holds no icons');
+        const r = ic.getBoundingClientRect();
+        return { w: r.width, h: r.height, ratio: r.height / r.width };
+      };
+      const two2 = shape(folders[0]);
+      const four4 = shape(folders[1]);
+
+      // A mini icon is a SQUARE. Anything past a third out of square is the stretched row.
+      if (two2.ratio > 1.34 || two2.ratio < 0.75) {
+        throw new Error('a two-app folder draws ' + Math.round(two2.w) + 'x' +
+          Math.round(two2.h) + ' icons (ratio ' + two2.ratio.toFixed(2) + ')');
+      }
+      if (four4.ratio > 1.34 || four4.ratio < 0.75) {
+        throw new Error('a four-app folder draws ' + Math.round(four4.w) + 'x' +
+          Math.round(four4.h) + ' icons (ratio ' + four4.ratio.toFixed(2) + ')');
+      }
+      // And both folders agree with each other, so the count cannot change the size.
+      if (Math.abs(two2.h - four4.h) > 2) {
+        throw new Error('two apps give ' + Math.round(two2.h) + 'px icons and four give ' +
+          Math.round(four4.h));
+      }
+
+      // The folder box itself is the same size as an app icon beside it.
+      const box = folders[0].querySelector('.folder').getBoundingClientRect();
+      const appIc = document.querySelector('#pages .tile:not(.isfolder):not(.gap) .ic');
+      if (appIc) {
+        const a = appIc.getBoundingClientRect();
+        if (Math.abs(box.height - a.height) > 2 || Math.abs(box.width - a.width) > 2) {
+          throw new Error('folder box ' + Math.round(box.width) + 'x' + Math.round(box.height) +
+            ' vs app icon ' + Math.round(a.width) + 'x' + Math.round(a.height));
+        }
+      }`,
+  },
+  {
+    // **Issue #10.** Two things the report was actually about.
+    //
+    // A market that has not moved is the ORDINARY state of that board - `percent` is only
+    // non-zero when a price changed between two polls, and under doc-shops those are twenty
+    // minutes apart - so the widget said "nothing has moved" and drew no price at all, for
+    // ever. And Settings listed only what could be ADDED, so a widget already on the strip
+    // appeared nowhere in Settings, which reads exactly like the widget not existing.
+    name: 'widget-export', file: 'zz-wexport.png', scratch: true, assert: true,
+    script: `${SETUP}
+      ['export', 'messages'].forEach((id) => need(id));
+      const under = window.__VPHONE_PREVIEW_POST__;
+      window.__VPHONE_PREVIEW_POST__ = (name, b) => {
+        if (name === 'widgets') {
+          return { ok: true, served: true, at: 1785000000,
+            ambient: { hours: 21, minutes: 40, weather: 'CLEAR' },
+            // No percent at all: the board is steady, which is what most servers see.
+            w: { export: { ok: true, market: 'export', moved: 0, shop: 'Export',
+                           item: 'Or', price: 1240 } } };
+        }
+        return under ? under(name, b) : { error: 'x' };
+      };
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+      state.prefs.widgets = ['export', 'weather'];
+      renderHome();
+      await new Promise((r) => setTimeout(r, 1100));
+
+      const tile = document.querySelector('#widgets .widget[data-w="export"]');
+      if (!tile) throw new Error('the export widget was not drawn');
+      const text = tile.textContent || '';
+      // The price has to be on the tile. That is the whole complaint.
+      if (text.indexOf('1') === -1 || text.indexOf('240') === -1) {
+        throw new Error('a steady market drew no price: ' + JSON.stringify(text));
+      }
+      if (!tile.querySelector('.wpct.flat')) {
+        throw new Error('a steady market did not say so');
+      }
+
+      // And Settings has to list what is already on the strip, with a way off.
+      widgetPicker();
+      await new Promise((r) => setTimeout(r, 500));
+      const onRows = [...document.querySelectorAll('#sheet .row[data-drop]')];
+      if (onRows.length !== 2) {
+        throw new Error('the manager listed ' + onRows.length + ' of the 2 widgets in use');
+      }
+      const ids = onRows.map((r) => r.dataset.drop).sort().join(',');
+      if (ids !== 'export,weather') throw new Error('listed ' + ids);
+
+      // Tapping one takes it off.
+      onRows[0].click();
+      await new Promise((r) => setTimeout(r, 600));
+      if (widgetIds().length !== 1) {
+        throw new Error('removing from Settings did nothing: ' + widgetIds().join(','));
+      }
+      try { closeSheet(true); } catch (e) {}`,
+  },
+  {
+    // **The verification chip offered a code that was not the one just texted.**
+    //
+    // The code screen is drawn at the moment the player ASKS for a code, which is before the
+    // text arrives - so the chip searched a conversation list without the new code in it, found
+    // an older one, and was never redrawn when the real one landed. A player with no earlier
+    // code got no chip at all, ever.
+    name: 'code-chip', file: 'zz-codechip.png', scratch: true, assert: true,
+    script: `${SETUP}
+      // A field of the real shape, and the host beside it.
+      body('<input id="scode" maxlength="4" inputmode="numeric">' + codeFillChip('scode'));
+      const host = document.querySelector('.codefillhost');
+      if (!host) throw new Error('the chip emitted no host, so a later code has nowhere to go');
+
+      const chip = () => {
+        const b = document.querySelector('[data-fill]');
+        return b ? b.dataset.fill : null;
+      };
+
+      // Nothing has ever been received: no chip, but the host is there waiting.
+      state.conversations = [];
+      refreshCodeChips();
+      if (chip() !== null) throw new Error('a chip appeared with no code to show');
+
+      // An older code, from a previous sign-up.
+      state.conversations = [{ body: 'Votre code de verification est 1111.', at: 1 }];
+      refreshCodeChips();
+      if (chip() !== '1111') throw new Error('the old code was not offered: ' + chip());
+
+      // The real one arrives. The server orders newest first, which is what refresh() hands back.
+      state.conversations = [{ body: 'Votre code de verification est 2222.', at: 2 },
+                             { body: 'Votre code de verification est 1111.', at: 1 }];
+      refreshCodeChips();
+      if (chip() !== '2222') {
+        throw new Error('the chip still offers ' + chip() + ' after 2222 arrived');
+      }
+
+      // And it fills the field with what it says it will.
+      document.querySelector('[data-fill]').click();
+      await new Promise((r) => setTimeout(r, 120));
+      if (document.getElementById('scode').value !== '2222') {
+        throw new Error('the chip filled ' + document.getElementById('scode').value);
+      }
+
+      // A four-digit field is never offered an eight-digit number.
+      state.conversations = [{ body: 'Code de verification 12345678', at: 3 }];
+      refreshCodeChips();
+      if (chip() !== null) {
+        throw new Error('an 8-digit code was offered to a maxlength=4 field: ' + chip());
+      }
+
+      // The wiring does not stack: refreshing many times leaves one listener, so one tap is
+      // one fill rather than six.
+      state.conversations = [{ body: 'Votre code de verification est 3333.', at: 4 }];
+      for (let i = 0; i < 5; i++) refreshCodeChips();
+      const wired = [...document.querySelectorAll('[data-fill]')];
+      if (wired.length !== 1) throw new Error(wired.length + ' chips after five refreshes');`,
+  },
+  {
+    // Fruitee's anonymous switch, driven and then read off the wire. Reported as not working;
+    // the whole chain reads correct, so this captures what is actually sent instead.
+    name: 'fund-anon', file: 'zz-fundanon.png', scratch: true, assert: true,
+    script: `${SETUP}
+      need('fruitee');
+      let sent = null;
+      const under = window.__VPHONE_PREVIEW_POST__;
+      window.__VPHONE_PREVIEW_POST__ = (name, b) => {
+        if (name === 'fundGive') { sent = b; return { ok: true }; }
+        return under ? under(name, b) : { error: 'x' };
+      };
+      await open('fruitee', 700);
+
+      const page = { slug: 'test', title: 'Une cause', tiers: [{ amount: 50 }],
+                     msgs: true, anon: true };
+      fundGiveSheet(page, { minGift: 1, maxGift: 100000, taxes: [], taxTotal: 0 });
+      await new Promise((r) => setTimeout(r, 500));
+
+      const row = document.querySelector('#sheet [data-t="anon"]');
+      if (!row) throw new Error('the sheet drew no anonymous switch for a page that allows it');
+      const sw = row.querySelector('.sw');
+      if (!sw) throw new Error('the anonymous row has no switch to press');
+      if (sw.classList.contains('on')) throw new Error('the switch starts on');
+
+      row.click();
+      await new Promise((r) => setTimeout(r, 200));
+      if (!sw.classList.contains('on')) throw new Error('pressing the switch did not turn it on');
+
+      document.getElementById('fundgo').click();
+      await new Promise((r) => setTimeout(r, 500));
+      if (!sent) throw new Error('confirming sent nothing');
+      if (sent.anon !== true) {
+        throw new Error('anonymous was on and the request carried anon=' +
+          JSON.stringify(sent.anon));
+      }
+
+      // And a page whose owner does not allow it must not offer it.
+      try { closeSheet(true); } catch (e) {}
+      fundGiveSheet(Object.assign({}, page, { anon: false }),
+                    { minGift: 1, maxGift: 100000, taxes: [], taxTotal: 0 });
+      await new Promise((r) => setTimeout(r, 400));
+      if (document.querySelector('#sheet [data-t="anon"]')) {
+        throw new Error('a page with anonymous off still offered the switch');
+      }
+      try { closeSheet(true); } catch (e) {}`,
+  },
+  {
+    // The widget strip alone, for looking at the header row up close.
+    name: 'wtop', file: 'zz-wtop.png', scratch: true,
+    script: `${SETUP}
+      ['bank'].forEach((id) => need(id));
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+      state.prefs.widgets = ['bank', 'weather'];
+      renderHome();
+      await new Promise((r) => setTimeout(r, 1100));`,
+  },
+  {
+    // **The two root causes behind "clicking somewhere takes me to another page".**
+    //
+    // One: `data-full` is the phone's open-a-photograph attribute, matched by a capture-phase
+    // delegate over the whole screen. The widget picker used it as a boolean, so a row that
+    // would not fit opened a black full-screen viewer on the string "1" and rotated the handset
+    // - after stopPropagation had killed the row's own toast.
+    //
+    // Two: every control in Settings redrew with RENDER.settings(), which draws the FRONT page.
+    // Flipping a switch on Display sent the player back to the top of Settings.
+    name: 'nav-stays', file: 'zz-navstays.png', scratch: true, assert: true,
+    script: `${SETUP}
+      need('alerts');
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+
+      // ── 1. A refused widget row toasts; it does not open the photo viewer ──────────
+      state.prefs.widgets = ['weather', 'calendar', 'messages'];
+      renderHome();
+      await new Promise((r) => setTimeout(r, 700));
+      widgetPicker();
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Found by either attribute, so the message below names the real fault rather than
+      // "the selector matched nothing".
+      const refused = document.querySelector('#sheet .row[data-nofit], #sheet .row[data-full]');
+      if (!refused) throw new Error('no refused row - the picker had room for everything');
+      if (refused.hasAttribute('data-full')) {
+        throw new Error('a picker row carries data-full, which is the phone-wide open-a-photo '
+          + 'attribute - tapping it will open the viewer');
+      }
+      refused.click();
+      await new Promise((r) => setTimeout(r, 400));
+      if (byId('photoview').classList.contains('on')) {
+        throw new Error('tapping a refused widget opened the photo viewer');
+      }
+      if (byId('device').classList.contains('photoing')) {
+        throw new Error('tapping a refused widget rotated the handset');
+      }
+      try { closeSheet(true); } catch (e) {}
+
+      // The delegate still opens a REAL photograph.
+      body('<img data-full="https://picsum.photos/seed/x/200" id="probeimg">');
+      byId('probeimg').click();
+      await new Promise((r) => setTimeout(r, 400));
+      if (!byId('photoview').classList.contains('on')) {
+        throw new Error('a real photo no longer opens - the delegate is too narrow now');
+      }
+      closePhoto();
+      await new Promise((r) => setTimeout(r, 300));
+
+      // ── 2. A setting changed on a sub-page leaves you on that sub-page ─────────────
+      await open('settings', 700);
+      settingsPage('display');
+      await new Promise((r) => setTimeout(r, 600));
+      if (settingsAt !== 'display') throw new Error('settingsPage did not record where it is');
+
+      const toggle = document.querySelector('#appbody .row[data-t="widgetmoney"]');
+      if (!toggle) throw new Error('the Display page drew no toggle to press');
+      toggle.click();
+      await new Promise((r) => setTimeout(r, 800));
+
+      if (settingsAt !== 'display') {
+        throw new Error('flipping a switch left the page: settingsAt is ' +
+          JSON.stringify(settingsAt));
+      }
+      if (!document.querySelector('#appbody .row[data-t="widgetmoney"]')) {
+        throw new Error('the Display page was replaced by another screen');
+      }
+      // The front page has a row per category; the Display page must not.
+      if (document.querySelector('#appbody .row[data-page]')) {
+        throw new Error('the Settings ROOT was drawn over the Display page');
+      }`,
+  },
   // The full-screen photo viewer is NOT here, and that is a decision rather than an oversight.
   //
   // It turns the handset on its side and lets it GROW TO FILL THE WINDOW, so the capture clip
@@ -1113,6 +1423,11 @@ const SHOTS = [
     script: `${SETUP}
       ['messages', 'music', 'garage'].forEach((id) => need(id));
       state.prefs.widgets = ['weather', 'messages', 'garage'];
+      // A folder holding two apps, which is the shape issue #9 was about: one implicit grid
+      // row stretching to the full height and drawing tall rectangles instead of squares.
+      const its = layoutItems().filter((x) => x && x.t === 'app');
+      await saveLayout([{ t: 'folder', name: 'Dossier', apps: its.slice(0, 2).map((x) => x.id) }]
+        .concat(its.slice(2)));
       renderHome();
       await new Promise((r) => setTimeout(r, 1000));
       enterArrange();
@@ -1376,6 +1691,14 @@ async function main() {
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'vphone-shot-'));
   const raw = fs.mkdtempSync(path.join(os.tmpdir(), 'vphone-raw-'));
+  // **A scratch shot is encoded INTO A DIFFERENT DIRECTORY from the capture it came from.**
+  //
+  // Moving scratch output out of the repository put it in `raw`, which is where the full-size
+  // capture already sits under the same name - so ffmpeg was asked to read and write one file
+  // and refused, and every scratch image had silently printed ENCODE FAILED ever since. The
+  // pictures nobody looks at unless something is wrong are exactly the ones to keep working.
+  const scratchOut = path.join(raw, 'shots');
+  fs.mkdirSync(scratchOut, { recursive: true });
   const child = spawn(chrome, [
     '--headless=new', '--remote-debugging-port=' + PORT, '--user-data-dir=' + profile,
     '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
@@ -1480,7 +1803,12 @@ async function main() {
       // Scaled to the size the README already uses. A landscape shot keeps its own shape:
       // squeezing a phone lying on its side into a portrait frame would letterbox it into a
       // strip, which is the opposite of what that picture is for.
-      const out = path.join(OUT, shot.file);
+      // **A scratch shot is diagnostic output, not a picture the repository keeps.**
+      //
+      // `scratch: true` has always marked them and has never changed where they went, so eight
+      // of them - 864 KB nothing references - shipped inside release 1.6.0. They go beside the
+      // raw captures now, in a temporary directory, and `--keep` prints where.
+      const out = path.join(shot.scratch ? scratchOut : OUT, shot.file);
       const vf = shot.landscape
         ? `scale=${TALL}:-2:flags=lanczos`
         : `scale=${WIDE}:${TALL}:force_original_aspect_ratio=decrease:flags=lanczos,`

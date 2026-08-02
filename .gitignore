@@ -21,3 +21,8 @@ __pycache__/
 
 # Local test server (FXServer + frameworks) - never commit
 server-test/
+
+# Diagnostic screenshots from tools/make-shots.js. A shot marked `scratch: true` exists to be
+# looked at once while chasing something, or to carry an assertion that never photographs
+# anything at all. Eight of them shipped inside release 1.6.0 before this rule existed.
+docs/images/zz-*.png

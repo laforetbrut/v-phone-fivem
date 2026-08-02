@@ -71,14 +71,22 @@ async function vphoneProbe() {
       // control is only judged where it CURRENTLY sits inside every scrolling ancestor: testing
       // one that is merely scrolled away is what produced a false "covered by the home bar" and
       // a false "covered by the tab bar" over the lottery's number grid.
+      // Judged at its CENTRE, not at its edges. `elementFromPoint` is asked about one point,
+      // and that point is the centre - so a row half over the fold, with its top inside the
+      // scroller and its middle below it, was tested at a pixel that belongs to whatever is
+      // painted under the scroller. That is not "unreachable", it is "scrolled away by half a
+      // row", and it reported three controls as lost that one flick of the wheel reveals:
+      // the last Settings row, the bottom line of the lottery grid, and Cipher's second PIN
+      // box. Fully-outside was the old test and it could not see the straddle.
+      const mx = r.left + r.width / 2, my = r.top + r.height / 2;
       let p = n.parentElement, away = false;
       while (p && p !== root.parentElement) {
         const ps = getComputedStyle(p);
         const scrolls = /(auto|scroll)/.test(ps.overflowX + ' ' + ps.overflowY);
         if (scrolls && (p.scrollWidth > p.clientWidth + 1 || p.scrollHeight > p.clientHeight + 1)) {
           const pr = p.getBoundingClientRect();
-          if (r.right < pr.left + 1 || r.left > pr.right - 1 ||
-              r.bottom < pr.top + 1 || r.top > pr.bottom - 1) { away = true; break; }
+          if (mx < pr.left + 1 || mx > pr.right - 1 ||
+              my < pr.top + 1 || my > pr.bottom - 1) { away = true; break; }
         }
         p = p.parentElement;
       }

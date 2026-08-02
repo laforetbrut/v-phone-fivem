@@ -217,7 +217,8 @@ V.Callback('v-phone:repair:open', function(src, resolve)
         resolve({
             ok = true, doc = true,
             staff = job or false,
-            staffWhy = job and nil or why,
+            -- See server/fundraise.lua: `x and nil or y` is always `y`.
+            staffWhy = (not job) and why or nil,
             callGarage = CFG.callGarage ~= false,
             callClient = CFG.callClient ~= false,
             maxMessage = math.floor(num(CFG.maxMessage, 300)),
@@ -319,7 +320,8 @@ V.Callback('v-phone:repair:open', function(src, resolve)
         ok = true, doc = false,
         garages = garages,
         staff = job or false,
-        staffWhy = job and nil or why,
+        -- See server/fundraise.lua: `x and nil or y` is always `y`.
+        staffWhy = (not job) and why or nil,
         callGarage = CFG.callGarage ~= false,
         callClient = CFG.callClient ~= false,
         ratings = CFG.ratings ~= false,

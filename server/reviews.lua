@@ -142,7 +142,8 @@ V.Callback('v-phone:store:reviews', function(src, resolve, data)
     for _, r in ipairs(rows) do
         local isMine = r.citizenid == p.citizenid
         local row = {
-            name = isMine and nil or reviewerName(r.citizenid),
+            -- See server/fundraise.lua: `x and nil or y` is always `y`.
+            name = (not isMine) and reviewerName(r.citizenid) or nil,
             stars = math.floor(num(r.stars, 0)),
             body = r.body,
             ts = math.floor(num(r.ts, 0)),
@@ -212,7 +213,8 @@ V.Callback('v-phone:store:reviewDelete', function(src, resolve, data)
         'DELETE FROM vphone_app_reviews WHERE app_id = ? AND citizenid = ?',
         { app, p.citizenid }) or 0
     forget()
-    resolve({ ok = n > 0, error = n > 0 and nil or 'gone' })
+    -- `n > 0 and nil or 'gone'` put `error = 'gone'` on every SUCCESSFUL answer as well.
+    resolve({ ok = n > 0, error = (n == 0) and 'gone' or nil })
 end)
 
 -- ══════════════════════════════════════════════════════════════

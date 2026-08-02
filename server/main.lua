@@ -723,6 +723,108 @@ local function stringIdList(value, limit)
     return out
 end
 
+--- The block list, as it is stored.
+---
+--- An entry is a NUMBER and, when the phone could resolve one at the moment it was blocked, the
+--- CITIZEN ID behind it. Both, because they answer different questions:
+---
+---   the citizen id  survives `/phoneadmin renumber`. Blocking is aimed at a person, and a
+---                   person whose number an admin changes has not stopped being that person.
+---   the number      is what the player reads in the list, and is all there is for a number
+---                   nobody currently holds.
+---
+--- Matching on the number alone was the trap: numbers are reassignable, so a block left on an
+--- old number would silently mute whoever was handed it next, who has done nothing.
+local function blockList(value, limit)
+    local out, seen = {}, {}
+    if type(value) ~= 'table' then return out end
+    for _, raw in ipairs(value) do
+        local n, c
+        if type(raw) == 'table' then
+            n = tostring(raw.n or raw.number or ''):gsub('%c', ''):sub(1, 20)
+            c = raw.c or raw.citizenid
+            c = (c ~= nil and tostring(c) ~= '') and tostring(c):sub(1, 16) or nil
+        else
+            -- A bare string: what a hand-written config entry or an older stored list looks
+            -- like. Read rather than dropped.
+            n = tostring(raw or ''):gsub('%c', ''):sub(1, 20)
+        end
+        local key = c or n
+        if n ~= '' and not seen[key] then
+            seen[key] = true
+            out[#out + 1] = { n = n, c = c }
+            if #out >= (limit or 50) then break end
+        end
+    end
+    return out
+end
+
+--- How many numbers one character may block. The operator's decision, with a ceiling.
+local function blockCap()
+    local B = Config.Blocking or {}
+    return math.max(1, math.min(200, math.floor(tonumber(B.max) or 50)))
+end
+
+--- Is blocking switched on at all?
+local function blockingOn()
+    local B = Config.Blocking or {}
+    return B.enabled ~= false
+end
+
+--- May this number be blocked?
+---
+--- Everything in `Config.RequiredContacts` is refused, which is what that list is for: those
+--- numbers are in every phone because they are the ones somebody needs when it matters.
+local function blockable(number)
+    number = tostring(number or '')
+    if number == '' then return false end
+    for _, raw in ipairs(Config.RequiredContacts or {}) do
+        if type(raw) == 'table' and tostring(raw.number or '') == number then return false end
+    end
+    return true
+end
+
+--- One character's block list, whether or not they are connected.
+---
+--- Read straight from storage rather than through `prefsOf`, which needs a player object: a
+--- message can be sent to somebody who is offline, and their block list has to hold while they
+--- are away - otherwise blocking is something you wait out.
+local function blocksOf(citizenid)
+    if not blockingOn() then return {} end
+    local m = Bridge.KvGet(tostring(citizenid or ''), 'phone')
+    if type(m) ~= 'table' then return {} end
+    return blockList(m.blocked, blockCap())
+end
+
+--- Has `toCid` blocked whoever is calling or writing from `fromCid` / `fromNumber`?
+---
+--- The RECIPIENT's list is the only one with a say. The citizen id is tried first, for the
+--- reason above; the number answers only for an entry that never had one.
+local function isBlockedBy(toCid, fromCid, fromNumber)
+    if not blockingOn() then return false end
+    if not toCid or toCid == '' then return false end
+    fromCid = (fromCid ~= nil and tostring(fromCid) ~= '') and tostring(fromCid) or nil
+    fromNumber = tostring(fromNumber or '')
+    for _, e in ipairs(blocksOf(toCid)) do
+        if e.c then
+            if fromCid and e.c == fromCid then return true end
+        elseif fromNumber ~= '' and e.n == fromNumber then
+            return true
+        end
+    end
+    return false
+end
+
+--- Globals, for the same reason `PhonePrefs` is one: a `local` here is a nil GLOBAL in every
+--- other server file, and server/api.lua's exports are in another file.
+function PhoneIsBlocked(toCid, fromCid, fromNumber)
+    return isBlockedBy(toCid, fromCid, fromNumber)
+end
+
+function PhoneBlocksOf(citizenid) return blocksOf(citizenid) end
+
+function PhoneBlockable(number) return blockable(number) end
+
 local function cleanLayout(value)
     if type(value) ~= 'table' or type(value.items) ~= 'table' then return nil end
     local items = {}
@@ -795,6 +897,22 @@ prefsOf = function(p, includeSecrets)
         setupComplete = m.setupComplete == true,
         setupVersion = math.max(0, math.min(10, math.floor(tonumber(m.setupVersion) or 0))),
         ownerName = tostring(m.ownerName or ''):gsub('[%c]', ''):sub(1, 40),
+        -- **My card, sent back to the phone that wrote it.**
+        --
+        -- `v-phone:prefs` accepts and stores all five of these, and the `card` branch reads them
+        -- when somebody is handed a whole card - but `prefsOf` never returned them, and the page
+        -- assigns `state.prefs = res.prefs` after every save. So the fields were written to the
+        -- database correctly and wiped from the screen in the same breath, which from the
+        -- player's side is a card that will not save. They were never missing; they were never
+        -- sent back.
+        --
+        -- Nil rather than an empty string when unset, so `myCard()` on the page falls through to
+        -- its own defaults exactly as it did before.
+        cardPhoto    = m.cardPhoto and tostring(m.cardPhoto):sub(1, 400) or nil,
+        cardJob      = m.cardJob and tostring(m.cardJob):sub(1, 120) or nil,
+        cardAddress  = m.cardAddress and tostring(m.cardAddress):sub(1, 120) or nil,
+        cardBirthday = m.cardBirthday and tostring(m.cardBirthday):sub(1, 120) or nil,
+        cardNote     = m.cardNote and tostring(m.cardNote):sub(1, 120) or nil,
         deviceName = deviceName,
         securityEnabled = securityEnabled,
         faceId = securityEnabled and m.faceId == true,
@@ -873,6 +991,9 @@ prefsOf = function(p, includeSecrets)
         -- Whether the money widget draws the figure or four dots. Off, because the phone is
         -- held in the street and a balance on a home screen is a reason to be robbed.
         widgetMoney = m.widgetMoney == true,
+        -- Who this character has blocked, so Settings can list them. The ENFORCEMENT is never
+        -- here: it is on the two paths a blocked person would arrive by, on the server.
+        blocked = blockList(m.blocked, blockCap()),
         -- Which built-in tone, and the player's own link if they set one. The link wins
         -- when it is there, which is what choosing it means.
         alertTone = tostring(m.alertTone or (Config.Sounds.alerts or {})[1] or 'ping'),
@@ -1237,6 +1358,19 @@ local function conversation(p, otherCid, limit)
     local marks = reactionsFor(ids, cid)
     for _, m in ipairs(out) do m.reactions = marks[tostring(m.id)] end
 
+    -- **A block must not announce itself.**
+    --
+    -- A blocked message is stored already read so it raises nothing on the recipient's phone.
+    -- But `seen` is also what draws "Read" under the sender's last bubble, so reporting it
+    -- honestly here would turn every message Read the instant it was sent - which is a tell,
+    -- and a louder one than the silence it was meant to hide. To somebody who has been blocked,
+    -- their own messages read Delivered, for ever, exactly as they would on a real phone.
+    if isBlockedBy(otherCid, cid, numberOfCid(cid)) then
+        for _, m in ipairs(out) do
+            if m.mine then m.seen = false end
+        end
+    end
+
     -- Opening a thread on a screen means you read it.
     local marked = MySQL.update.await(
         'UPDATE vphone_messages SET seen = 1 WHERE to_cid = ? AND from_cid = ? AND seen = 0',
@@ -1336,9 +1470,19 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment, replyTo)
 
     replyTo = replyTarget(fromCid, replyTo, toCid, nil)
 
+    -- **Blocked, and nobody is told.**
+    --
+    -- The row is still written, because the SENDER keeps their own copy of their own
+    -- conversation - that is what a phone does, and a message that vanished from the sender's
+    -- thread would read as the app being broken rather than as a block. It is written already
+    -- read, and that is the whole of the enforcement: `seen = 1` means no unread badge, and the
+    -- live push and the sound in the room are skipped below. Every reader in this resource
+    -- already understands `seen`, so none of them had to learn about blocking to stay right.
+    local blocked = isBlockedBy(toCid, fromCid, numberOfCid(fromCid))
+
     local id = MySQL.insert.await([[INSERT INTO vphone_messages
-        (from_cid, to_cid, body, kind, attachment, reply_to) VALUES (?,?,?,?,?,?)]],
-        { fromCid, toCid, body, kind, attachment, replyTo })
+        (from_cid, to_cid, body, kind, attachment, reply_to, seen) VALUES (?,?,?,?,?,?,?)]],
+        { fromCid, toCid, body, kind, attachment, replyTo, blocked and 1 or 0 })
 
     -- What the quoted line looks like from each side. Built once from what was actually
     -- stored, so the bubble the sender sees and the one the reader sees come from the same
@@ -1349,6 +1493,9 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment, replyTo)
     -- Delivered live only if they are on: an offline character reads it next time they
     -- open the app, which is what the table is for.
     local target = Online[numberOfCid(toCid) or '']
+    -- Nothing arrives. Not the push, not the notification, not the sound anybody standing
+    -- next to them would have heard.
+    if blocked then target = nil end
     if target and phoneReachable(target) then
         TriggerClientEvent('v-phone:client:message', target, {
             from = numberOfCid(fromCid), fromCid = fromCid, body = body, id = id,
@@ -2131,6 +2278,8 @@ local function startCall(src, p, toNumber, anonymous, video)
 
     local tp = Core.GetPlayer(target)
     if tp and prefsOf(tp).dnd then return nil, 'dnd' end
+    -- **Blocked.** Reported as `offline`: see the note on the booth call below.
+    if isBlockedBy(toCid, p.citizenid, numberOfCid(p.citizenid)) then return nil, 'offline' end
 
     local id = allocateCallId()
     if not id then return nil, 'capacity' end
@@ -2329,6 +2478,19 @@ function BoothCall(src, boothNumber, toNumber)
 
     local tp = Core.GetPlayer(target)
     if tp and prefsOf(tp).dnd then return nil, 'dnd' end
+
+    -- **A payphone is not a way around a block.**
+    --
+    -- Both are checked: the BOOTH's number, because that is what the recipient sees and so
+    -- what they would have blocked, and the CALLER's citizen id, because walking to a payphone
+    -- to reach somebody who has blocked you is precisely the behaviour this exists to stop.
+    -- Reported as `offline` rather than as a reason of its own - telling somebody they have
+    -- been blocked is telling them to go and find another number, and "their phone is off" is
+    -- what the caller would have seen had the person simply put it away.
+    local boothCaller = Core.GetPlayer(src)
+    if isBlockedBy(toCid, boothCaller and boothCaller.citizenid, boothNumber) then
+        return nil, 'offline'
+    end
 
     local id = allocateCallId()
     if not id then return nil, 'capacity' end
@@ -3611,6 +3773,64 @@ V.Callback('v-phone:groupLeave', function(src, resolve, data)
 end)
 
 
+--- Block a number, unblock one, or read the list back.
+---
+--- Its own callback rather than a field on `v-phone:prefs`, because an entry is not a value the
+--- page can be trusted to compute. The citizen id behind a number is resolved here, and the
+--- numbers that may not be blocked are refused here. A page that sent its own citizen id would
+--- otherwise be choosing who gets muted.
+V.Callback('v-phone:block', function(src, resolve, data)
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+    if not blockingOn() then resolve({ error = 'off' }) return end
+
+    local op = tostring((data and data.op) or 'list')
+    local prefs = prefsOf(p, true)
+    local list = blockList(prefs.blocked, blockCap())
+
+    if op == 'add' then
+        local number = tostring((data and data.number) or ''):gsub('%c', ''):sub(1, 20)
+        if number == '' then resolve({ error = 'fields' }) return end
+        if number == numberOfCid(p.citizenid) then resolve({ error = 'self' }) return end
+        if not blockable(number) then resolve({ error = 'required' }) return end
+        if #list >= blockCap() then resolve({ error = 'blockfull' }) return end
+
+        -- Resolved now, once. If nobody holds it the entry is number-only, which is the
+        -- honest answer for a number nobody holds.
+        local cid = cidOfNumber(number)
+        for _, e in ipairs(list) do
+            if (cid and e.c == cid) or (not e.c and e.n == number) then
+                resolve({ ok = true, blocked = list }) return
+            end
+        end
+        list[#list + 1] = { n = number, c = cid }
+    elseif op == 'remove' then
+        local number = tostring((data and data.number) or ''):sub(1, 20)
+        local cid = tostring((data and data.cid) or ''):sub(1, 16)
+        local kept = {}
+        for _, e in ipairs(list) do
+            local same = (cid ~= '' and e.c == cid) or (cid == '' and not e.c and e.n == number)
+            -- A player unblocking from the list sends what the list showed them, so match on
+            -- the number too when the entry has no citizen id of its own.
+            if not same and e.n == number and (cid == '' or e.c == cid) then same = true end
+            if not same then kept[#kept + 1] = e end
+        end
+        list = kept
+    elseif op ~= 'list' then
+        resolve({ error = 'x' }) return
+    end
+
+    if op ~= 'list' then
+        prefs.blocked = list
+        savePhonePrefs(p, prefs)
+    end
+
+    -- No name is resolved here, and none is stored. The page already holds this character's
+    -- contacts, so it draws whatever name THEY gave the number - which is the name they will
+    -- recognise, and one fewer query and one fewer thing to keep in step.
+    resolve({ ok = true, blocked = list })
+end)
+
 V.Callback('v-phone:contactSave', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -3621,7 +3841,13 @@ V.Callback('v-phone:contactSave', function(src, resolve, data)
     local name   = tostring((data and data.name) or ''):sub(1, 40)
     local number = tostring((data and data.number) or ''):sub(1, 20)
     if name == '' or number == '' then resolve({ error = 'fields' }) return end
-    local fav = (data and data.favourite) and 1 or 0
+    -- **`0` is TRUE in Lua.** `(data.favourite) and 1 or 0` reads as "one when it is set", and
+    -- it is not: a page sending `favourite: 0` for an unstarred contact would have starred every
+    -- contact it saved. Nothing sent the field at all until now, which is what hid it. Read the
+    -- value; do not test it for truth. A boolean is accepted too, because a script calling this
+    -- callback is as likely to send `true` as `1`.
+    local rawFav = data and data.favourite
+    local fav = (rawFav == true or (tonumber(rawFav) or 0) ~= 0) and 1 or 0
     -- The rest of the card. A photo is a URL other clients will fetch, so it goes through
     -- the same host gate as a wallpaper.
     local photo = tostring((data and data.photo) or ''):sub(1, 400)
@@ -3958,7 +4184,12 @@ V.Callback('v-phone:storage', function(src, resolve, data)
     if op == 'set' then
         local value = data.value
         if type(value) == 'table' then value = json.encode(value) end
-        value = tostring(value == nil and '' or value):sub(1, 4000)
+        value = tostring(value == nil and '' or value)
+        -- **Refused rather than truncated.** Cutting an encoded value at four thousand
+        -- characters produced invalid JSON, which `getJSON` then swallowed as a parse failure
+        -- and answered with the fallback - so an app that saved too much was told nothing and
+        -- read back nothing. An error is at least something the app can act on.
+        if #value > 4000 then resolve({ error = 'toolong' }) return end
         MySQL.query.await([[INSERT INTO vphone_app_data (citizenid, app, k, v) VALUES (?,?,?,?)
             ON DUPLICATE KEY UPDATE v = VALUES(v)]], { p.citizenid, app, key, value })
         resolve({ ok = true })
@@ -4683,6 +4914,9 @@ V.Callback('v-phone:install', function(src, resolve, data)
     if not want and not found.optional then resolve({ error = 'builtin' }) return end
 
     local prefs = prefsOf(p)
+    -- Set when the debit below is confirmed, and applied inside `grant()` where the record
+    -- that actually gets saved is built.
+    local bought = false
 
     -- ── Paying for it ──────────────────────────────────────────
     -- Only on the way IN, and only once ever. What a player bought is remembered against the
@@ -4711,12 +4945,15 @@ V.Callback('v-phone:install', function(src, resolve, data)
             Bridge.Revenue((Config.Store or {}).revenue, found.price,
                            ('v-phone: %s app'):format(id))
         end)
-        local owned = {}
-        for _, rid in ipairs(prefs.purchased or {}) do
-            if rid ~= id then owned[#owned + 1] = rid end
-        end
-        owned[#owned + 1] = id
-        prefs.purchased = owned
+        -- **Recorded in `grant()`, not here.**
+        --
+        -- `prefs` is a VIEW built by `prefsOf`, and `grant()` deliberately throws it away and
+        -- re-reads a fresh one before saving - because writing this view back erased the
+        -- passcode digest, which is a bug that has already been fixed once. So a purchase
+        -- written here never reached the database, `found.purchased` was false again the next
+        -- time, and a player who removed a paid app and installed it later PAID FOR IT AGAIN.
+        -- The comment above promises exactly the opposite.
+        bought = true
         if Core.Log then
             Core.Log('store', ('bought %s for %d'):format(id, found.price), nil, p.citizenid)
         end
@@ -4766,6 +5003,17 @@ V.Callback('v-phone:install', function(src, resolve, data)
         -- **Which version they now hold.** This is what makes an update possible at all: the
         -- store compares the config's version against this one, and an app installed before
         -- versions existed simply has none and reads as up to date.
+        -- The purchase, on the record that is about to be written. Deduplicated, because the
+        -- list is also what `appsFrom` reads to decide whether to charge at all.
+        if bought then
+            local owned = {}
+            for _, rid in ipairs(fresh.purchased or {}) do
+                if rid ~= id then owned[#owned + 1] = rid end
+            end
+            owned[#owned + 1] = id
+            fresh.purchased = owned
+        end
+
         local versions = type(fresh.versions) == 'table' and fresh.versions or {}
         if want then
             versions[id] = tostring(found.version or '')
@@ -5513,6 +5761,12 @@ V.Callback('v-phone:seenAll', function(src, resolve)
     resolve({ ok = true })
 end)
 
+--- When each source was last allowed to leave a voicemail.
+---
+--- Cleared on disconnect with the rest, because a source id is handed to the next player who
+--- connects and a floor inherited from somebody else is a floor on the wrong person.
+local VoicemailLast = {}
+
 V.Callback('v-phone:voicemail', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -5540,6 +5794,24 @@ V.Callback('v-phone:voicemail', function(src, resolve, data)
 
     if op == 'leave' then
         if not V.SettingBool('voicemail', true) then resolve({ error = 'off' }) return end
+        -- **The same three gates `v-phone:lookup` was given, and for the same reason.**
+        --
+        -- Below this point `cidOfNumber` answers a question about a number somebody typed:
+        -- `nonumber` for one nobody holds, something else for one somebody does. Unfloored,
+        -- that is the whole number space walkable at whatever rate the caller likes, one
+        -- uncached SELECT each. And a probe that carries a body does not merely ask - it
+        -- writes a voicemail row and buzzes the victim's handset, indefinitely.
+        --
+        -- None of this is reachable by an honest player: the offer sheet appears once, after a
+        -- real missed call, with a phone in hand and bars showing.
+        if not requireItem(src) then resolve({ error = 'nophone' }) return end
+        if not hasBars(src) then resolve({ error = 'nosignal' }) return end
+        local nowMs = GetGameTimer()
+        if VoicemailLast[src] and (nowMs - VoicemailLast[src]) < 1000 then
+            resolve({ error = 'rate' }) return
+        end
+        VoicemailLast[src] = nowMs
+
         local toNumber = tostring((data and data.number) or '')
         local toCid = cidOfNumber(toNumber)
         if not toCid then resolve({ error = 'nonumber' }) return end
@@ -5884,6 +6156,11 @@ V.Callback('v-phone:callAdd', function(src, resolve, data)
 
     local tp = Core.GetPlayer(target)
     if tp and prefsOf(tp).dnd then resolve({ error = 'dnd' }) return end
+    -- The third door into somebody's phone, and it would have been open: an invitation rings
+    -- exactly as an ordinary call does.
+    if isBlockedBy(toCid, p.citizenid, numberOfCid(p.citizenid)) then
+        resolve({ error = 'offline' }) return
+    end
 
     -- The number on the invitation is the number of whoever sent it, not the call's caller:
     -- being rung by the person who actually dialled you is the honest version, and on a
@@ -6396,6 +6673,7 @@ AddEventHandler('playerDropped', function()
     AirLastSend[src] = nil
     UnlockAttempts[src] = nil
     LookupLast[src] = nil
+    VoicemailLast[src] = nil
     for offerId, offer in pairs(AirOffers) do
         if offer.from == src or offer.to == src then AirOffers[offerId] = nil end
     end

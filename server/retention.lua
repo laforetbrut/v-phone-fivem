@@ -118,14 +118,16 @@ local function plan()
         { table = 'vphone_voicemail',       days = keep('voicemail', 30), label = 'voicemail' },
 
         -- The social apps.
-        { table = 'vphone_social_posts',    days = keep('socialPosts', (SOC.keep or {}).posts or 30),
-          label = 'post' },
-        { table = 'vphone_social_comments', days = keep('socialComments', (SOC.keep or {}).comments or 30),
-          label = 'comment' },
-        { table = 'vphone_social_dm',       days = keep('socialMessages', (SOC.keep or {}).messages or 30),
+        -- `SOC.keep` has never existed - `Config.Social` has no `keep` table - so this
+        -- "legacy fallback" always resolved to the literal after the `or`. Harmless, and
+        -- misleading: it reads as though an older config key is being honoured when nothing
+        -- of the sort is happening. The default is written plainly instead.
+        { table = 'vphone_social_posts',    days = keep('socialPosts', 30), label = 'post' },
+        { table = 'vphone_social_comments', days = keep('socialComments', 30), label = 'comment' },
+        { table = 'vphone_social_dm',       days = keep('socialMessages', 30),
           label = 'social message' },
         -- Stories are measured in hours because a day is their whole life.
-        { table = 'vphone_social_stories',  days = keep('socialStories', (SOC.keep or {}).stories or 1),
+        { table = 'vphone_social_stories',  days = keep('socialStories', 1),
           label = 'story', hours = true },
         { table = 'vphone_social_notifs',   days = keep('socialNotifs', 14), label = 'notification' },
 
@@ -322,5 +324,9 @@ exports('RunRetention', function()
     -- only useful thing to return and it is not known before then.
     local waited = 0
     while not done and waited < 60000 do Wait(100) waited = waited + 100 end
-    return removed
+    -- `done` is the honest half. A sweep that outlived its wait has removed `removed` rows
+    -- SO FAR and is still running, so an operator logging that number as final was logging a
+    -- figure already out of date. A second return value is invisible to every caller that
+    -- does not ask for it.
+    return removed, done
 end)

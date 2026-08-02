@@ -20,7 +20,20 @@
 -- ticker is the whole difference between this working and this technically working.
 
 local Playing = {}   -- [source] = { name, mode, entity }
-local TICK_MS = 400  -- fast enough that a car does not outrun its own radio
+
+-- **How often a sound's position is pushed, and why there are two numbers.**
+--
+-- `x:Position()` MOVES a sound; it does not animate it there. So the interval is exactly how far
+-- the sound is allowed to fall behind before it catches up in one jump - and at 100 km/h a car
+-- covers eleven metres in four hundred milliseconds. That is not a radio in a car, it is a radio
+-- being teleported down the street every four hundred milliseconds, which is what it sounded
+-- like.
+--
+-- A sound on a PED does not have that problem: somebody walking covers a metre and a half in the
+-- same time, and nobody can hear a metre and a half. So the loop runs at the fast rate only
+-- while something is riding a vehicle, and drops back the moment nothing is.
+local TICK_FOOT = 400
+local TICK_DRIVE = 100
 
 local function soundName(src) return ('vphone_%d'):format(src) end
 
@@ -32,14 +45,19 @@ end
 ---
 --- The vehicle when there is one and the player is still in it - a player who gets out mid
 --- track leaves the radio in the car, which is what a car radio does - otherwise the ped.
+--- Where the sound should be right now, and whether it is riding a vehicle.
+---
+--- The second answer decides how fast the ticker runs. It is returned from here rather than
+--- asked for separately because this function already made the `GetVehiclePedIsIn` call, and a
+--- second one could answer differently in the gap.
 local function positionOf(src, record)
     local ped = GetPlayerPed(src)
     if not ped or ped == 0 then return nil end
     if record.mode == 'vehicle' then
         local veh = GetVehiclePedIsIn(ped, false)
-        if veh and veh ~= 0 then return GetEntityCoords(veh) end
+        if veh and veh ~= 0 then return GetEntityCoords(veh), true end
     end
-    return GetEntityCoords(ped)
+    return GetEntityCoords(ped), false
 end
 
 local function stopFor(src, silent)
@@ -64,9 +82,13 @@ local function ensureTicker()
         while next(Playing) ~= nil do
             local x = xsound()
             if not x then break end
+            -- Set while the positions are being read, from the same `GetVehiclePedIsIn` answer
+            -- `positionOf` uses - so it costs nothing extra and cannot disagree with it.
+            local moving = false
             for src, record in pairs(Playing) do
-                local at = positionOf(src, record)
+                local at, inVehicle = positionOf(src, record)
                 if at then
+                    if inVehicle then moving = true end
                     pcall(function() x:Position(-1, record.name, at) end)
                 else
                     -- The player is gone from the world. Their sound goes with them rather
@@ -74,23 +96,52 @@ local function ensureTicker()
                     stopFor(src)
                 end
             end
-            Wait(TICK_MS)
+            Wait(moving and TICK_DRIVE or TICK_FOOT)
         end
         ticking = false
     end)
 end
 
---- Start a positioned sound for everybody, or replace the one this player already has.
+--- May this URL be streamed on this server?
 ---
---- `url` is NOT validated here for host: `Config.Music.hosts` is the operator's allowlist and
---- the app checks it before a track is ever added to a library. What matters at this layer is
---- that the value is a string of sane length going into another resource's export.
+--- `Config.Music.hosts` is the operator's allowlist and it was checked ON THE PAGE only. A page
+--- is a browser: the check it performs is a courtesy to the player, never a control on the
+--- request. And the request here is broadcast to EVERY client - `PlayUrlPos(-1, ...)` - so an
+--- unchecked URL is every player on the server fetching whatever the sender chose.
+---
+--- An empty list still means "any host". That is what the config documents ("An empty list
+--- allows any host, which is the permissive setting") and a server relying on it must not stop
+--- working because of a security fix.
+---
+--- Subdomain-safe: `youtube.com` in the list allows `music.youtube.com` but not
+--- `notyoutube.com`, which is the same rule the wallpaper and picture gates use.
+local function urlAllowed(url)
+    local M = Config.Music or {}
+    local hosts = M.hosts
+    if type(hosts) ~= 'table' or #hosts == 0 then return true end
+
+    local host = tostring(url or ''):match('^https?://([^/?#]+)')
+    if not host then return false end
+    host = host:lower():gsub(':%d+$', '')
+    for _, allowed in ipairs(hosts) do
+        allowed = tostring(allowed or ''):lower()
+        if allowed ~= '' and (host == allowed or host:sub(-(#allowed + 1)) == '.' .. allowed) then
+            return true
+        end
+    end
+    return false
+end
+
+--- Start a positioned sound for everybody, or replace the one this player already has.
 local function play(src, url, volume, mode, distance)
     local x = xsound()
     if not x then return { error = 'nodeck' } end
 
     url = tostring(url or '')
     if url == '' or #url > 500 then return { error = 'nourl' } end
+    -- **Here, not on the page.** See `urlAllowed` above: this value is about to be handed to
+    -- every client on the server.
+    if not urlAllowed(url) then return { error = 'badhost' } end
     volume = math.max(0.0, math.min(1.0, tonumber(volume) or 0.5))
     mode = (mode == 'vehicle') and 'vehicle' or 'phone'
     -- A phone speaker is a phone speaker. The ceiling stops a player broadcasting across a

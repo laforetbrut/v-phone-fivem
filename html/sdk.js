@@ -4,8 +4,8 @@
 
    Ship an app in one HTML file. No build step, no framework, no bundler:
 
-     <link rel="stylesheet" href="https://cfx-nui-v-phone/style.css">
-     <script src="https://cfx-nui-v-phone/sdk.js"><\/script>
+     <link rel="stylesheet" href="https://cfx-nui-v-phone/html/style.css">
+     <script src="https://cfx-nui-v-phone/html/sdk.js"><\/script>
      (the escaped slash above is deliberate: an unescaped closing script tag here
       would end any <script> tag it was pasted into)
      <script>
@@ -696,7 +696,12 @@
         });
       },
       setJSON: function (key, value) {
-        return send('storage', { op: 'set', key: key, value: value });
+        // **Serialised here, not on the server.** Lua has one table type, so an array handed
+        // across as a raw value came back as an object: `setJSON('tasks', [])` stored `{}`.
+        // A string skips the server's encode branch and is stored verbatim, which is what
+        // `getJSON` above parses - and data written the old way is already valid JSON, so it
+        // keeps reading.
+        return send('storage', { op: 'set', key: key, value: JSON.stringify(value) });
       },
     },
 

@@ -532,11 +532,33 @@ V.Callback('v-phone:brawl:open', function(src, resolveCb)
     })
 end)
 
+--- When each player last tried to invite somebody.
+---
+--- **This callback answers a question about a phone number**: `nouser` for one nobody holds,
+--- something else for one somebody does - and on success it hands back the holder's name. Asked
+--- in a loop that is a directory of every character on the server, built by anybody, from a
+--- number space small enough to walk. A floor between attempts is what turns an oracle back
+--- into a feature: a person challenging a friend types one number, and a script enumerating
+--- seven digits needs millions.
+local InviteLast = {}
+
+AddEventHandler('playerDropped', function() InviteLast[source] = nil end)
+
 --- Challenge somebody by their phone number. It is a phone; that is the address people have.
 V.Callback('v-phone:brawl:invite', function(src, resolveCb, data)
     if not enabled() then resolveCb({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
     if not p then resolveCb(false) return end
+    -- Owning the app is what entitles somebody to ask. Checked here rather than trusted from
+    -- the page, which is where every other entitlement in this resource is checked.
+    if PhoneHasApp and not PhoneHasApp(src, 'brawl') then resolveCb({ error = 'off' }) return end
+
+    local now = GetGameTimer()
+    if InviteLast[src] and (now - InviteLast[src]) < 2000 then
+        resolveCb({ error = 'toosoon' }) return
+    end
+    InviteLast[src] = now
+
     local cid = p.citizenid
     if matchOf(cid) then resolveCb({ error = 'busy' }) return end
 

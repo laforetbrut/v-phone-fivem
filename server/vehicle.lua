@@ -146,9 +146,16 @@ AddEventHandler('playerDropped', function() Cooldown[source] = nil end)
 -- For other resources
 -- ══════════════════════════════════════════════════════════════
 
---- Drive the same remote from a script: a key fob item, a heist, an admin tool. Bypasses the
---- ownership and distance checks on purpose - the caller is server code, and server code is
---- trusted where a client is not.
+--- Drive the same remote from a script: a key fob item, a heist, an admin tool.
+---
+--- Bypasses the ownership and distance checks on purpose - the caller is server code, and
+--- server code is trusted where a client is not.
+---
+--- **It also bypasses `enabled()` and `allowed(action)`**, which is NOT deliberate and is worth
+--- knowing before you rely on it: an operator who set `Config.VehicleRemote.enabled = false`,
+--- or who turned off `locks` and left `engine` on, still has both reachable through this
+--- export. Tightening it would stop working for anybody whose config has the feature off, so it
+--- waits for a version where an operator is expecting to read a changelog.
 exports('VehicleRemote', function(netId, action, value)
     if not ACTIONS[tostring(action or '')] then return false end
     local vehicle = NetworkGetEntityFromNetworkId(math.floor(num(netId, 0)))

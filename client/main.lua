@@ -1581,6 +1581,10 @@ RegisterNUICallback('conversation',  relay('v-phone:conversation'))
 -- be the one the page reaches. Registering it in both files would leave which one wins
 -- depending on the manifest order.
 RegisterNUICallback('contactSave',   relay('v-phone:contactSave'))
+-- Blocking a number. The page holds the list only to draw it; every decision - what may
+-- be blocked, who is behind a number, whether a call or a text gets through - is made on
+-- the server, which is the only side that can be trusted with any of them.
+RegisterNUICallback('block',         relay('v-phone:block'))
 RegisterNUICallback('contactDelete', relay('v-phone:contactDelete'))
 RegisterNUICallback('groupCreate',   relay('v-phone:groupCreate'))
 RegisterNUICallback('groupMembers',  relay('v-phone:groupMembers'))
@@ -2004,6 +2008,18 @@ RegisterNUICallback('health', function(data, cb)
     local op = data and data.op
     if op == 'get' or op == 'set' then
         V.Request('v-phone:health', function(res) cb(res or { error = 'x' }) end, data)
+        return
+    end
+    -- **The Patients tab.** `v-phone:health:nearby` and `v-phone:health:read` have always been
+    -- implemented on the server, complete with the permission check, the distance check at both
+    -- the listing and the read, and the notice sent to the patient - and this relay permitted
+    -- neither, so every request from that tab was refused here and answered "something went
+    -- wrong" before it ever left the client. The whole feature was unreachable.
+    --
+    -- Still a closed set: the op is compared against the two names before it is used to build
+    -- the callback, so the page cannot name a third.
+    if op == 'nearby' or op == 'read' then
+        V.Request('v-phone:health:' .. op, function(res) cb(res or { error = 'x' }) end, data)
         return
     end
     if op ~= nil then cb({ error = 'x' }) return end
