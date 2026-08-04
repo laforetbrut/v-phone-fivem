@@ -1753,6 +1753,7 @@ end)
 -- Each of these forwards to the module that owns the action, so the module's own
 -- validation, notifications and settings all still apply. None of them decide anything.
 
+RegisterNUICallback('inbox',        relay('v-phone:inbox'))
 RegisterNUICallback('threadDelete', relay('v-phone:threadDelete'))
 RegisterNUICallback('callsDelete', relay('v-phone:callsDelete'))
 RegisterNUICallback('places', relay('v-phone:places'))

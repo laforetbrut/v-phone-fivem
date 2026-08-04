@@ -145,7 +145,7 @@ CreateThread(function()
     if not enabled() then return end
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_zuber_orders` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(60) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `restaurant` VARCHAR(60) NOT NULL,
         `label`     VARCHAR(80) NOT NULL DEFAULT '',
         `kind`      VARCHAR(12) NOT NULL DEFAULT 'delivery',

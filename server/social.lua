@@ -495,7 +495,7 @@ end
 --- are subselects, so a feed stays a single round trip however long it is. The four
 --- placeholders are the caller's own citizen id, in order.
 local POST_COLUMNS = [[
-    s.id, s.kind, s.body, s.image, s.at,
+    s.id, s.kind, s.body, s.image, s.images, s.at,
     a.handle, a.displayname, a.avatar, a.verified,
     (SELECT COUNT(*) FROM vphone_social_likes l WHERE l.post_id = s.id) AS likes,
     (SELECT COUNT(*) FROM vphone_social_comments c WHERE c.post_id = s.id) AS comments,
@@ -634,8 +634,42 @@ end
 
 --- MySQL answers booleans as 0/1 and counts as strings. The page should receive the
 --- types it is going to render, not the types the driver happened to return.
+--- How many photographs one post may carry.
+local function maxImages()
+    return math.max(1, math.min(10, math.floor(num(V.Setting('socialMaxImages', SOC.maxImages), 4))))
+end
+
+--- The list a post carries, always at least its cover.
+---
+--- `images` is JSON and it comes out of a database, so it is decoded defensively: a row somebody
+--- edited by hand, or one written by an older build, must read as a single-photo post rather
+--- than take the feed down.
+local function imagesOf(row)
+    local out = {}
+    local raw = row.images
+    if type(raw) == 'string' and raw ~= '' then
+        local ok, list = pcall(json.decode, raw)
+        if ok and type(list) == 'table' then
+            for _, u in ipairs(list) do
+                local url = tostring(u or '')
+                if url ~= '' then out[#out + 1] = url end
+            end
+        end
+    end
+    if #out == 0 and tostring(row.image or '') ~= '' then out[1] = row.image end
+    while #out > maxImages() do table.remove(out) end
+    return out
+end
+
+--- The page's copy of the cap, so its Add button stops at the same number the server does.
+function PhoneSocialMaxImages()
+    return maxImages()
+end
+
 local function cleanPosts(rows)
     for _, r in ipairs(rows or {}) do
+        -- Sent as a list always, so the page has one shape to draw rather than two.
+        r.images = imagesOf(r)
         r.likes = num(r.likes, 0)
         r.comments = num(r.comments, 0)
         r.reposts = num(r.reposts, 0)
@@ -699,7 +733,10 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
         ORDER BY s.id DESC LIMIT ?
     ]]):format(POST_COLUMNS, kindWhere, where), args) or {}
 
-    resolve({ ok = true, posts = cleanPosts(rows) })
+    -- The cap travels with the feed rather than in the boot payload: this is the one
+    -- answer the social apps always fetch, and the composer is the only thing that needs
+    -- it. A phone that never opens Bleeter never carries the number.
+    resolve({ ok = true, posts = cleanPosts(rows), maxImages = maxImages() })
 end)
 
 V.Callback('v-phone:soc:post', function(src, resolve, data)
@@ -720,21 +757,45 @@ V.Callback('v-phone:soc:post', function(src, resolve, data)
     if not accountOf(p.citizenid, mediaApp) then resolve({ error = 'noaccount' }) return end
     local body = tostring((data and data.body) or '')
         :sub(1, math.floor(num(V.Setting('socialMaxLength', SOC.postMax), 280)))
-    local image = tostring((data and data.image) or ''):sub(1, 300)
+    -- **Every URL is checked on its own.** A list is not one attachment with extras: an
+    -- allowed host on the first does not vouch for the fourth, and checking only `image` would
+    -- have made the other three a way past the host gate entirely.
+    --
+    -- Truncated rather than refused. A client asking for more than the cap has a bug or an old
+    -- build, and answering "too many" to somebody who attached five photographs is worse for
+    -- them than posting four - the page enforces the same cap and would not normally send more.
+    local list = {}
+    local sent = (data and data.images)
+    if type(sent) ~= 'table' then sent = { (data and data.image) or '' } end
+    local seen = {}
+    for _, u in ipairs(sent) do
+        local url = tostring(u or ''):sub(1, 300)
+        -- The same photograph twice is one attachment, not two.
+        if url ~= '' and not seen[url] and imageAllowed(url) then
+            seen[url] = true
+            list[#list + 1] = url
+            if #list >= maxImages() then break end
+        elseif url ~= '' and not imageAllowed(url) then
+            resolve({ error = 'badhost' })
+            return
+        end
+    end
+    local image = list[1] or ''
 
     if kind == 'photo' or kind == 'video' then
-        -- The media is the post; a caption is optional. The URL faces every client that
-        -- opens the feed, so it goes through the host gate.
+        -- The media is the post; a caption is optional.
         if image == '' then resolve({ error = 'noimage' }) return end
-        if not imageAllowed(image) then resolve({ error = 'badhost' }) return end
     else
-        if body:gsub('%s', '') == '' then resolve({ error = 'empty' }) return end
-        image = ''
+        if body:gsub('%s', '') == '' and image == '' then resolve({ error = 'empty' }) return end
     end
 
+    -- A clip is one file. Four videos in a card is a frame-rate problem rather than a feature,
+    -- and nothing in the page draws a grid of them.
+    if kind == 'video' then list = { image } end
+
     local id = MySQL.insert.await(
-        'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image) VALUES (?,?,?,?,?)',
-        { p.citizenid, mediaApp, kind, body, image })
+        'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image, images) VALUES (?,?,?,?,?,?)',
+        { p.citizenid, mediaApp, kind, body, image, #list > 1 and json.encode(list) or nil })
     Core.Log('social', ('%s posted %s #%d'):format(p.citizenid, kind, id), nil, p.citizenid)
     -- Hashtags into their own table, and anybody the post named gets told. Both read the
     -- body that was actually stored, not the one that arrived, so a truncated post cannot
@@ -1964,7 +2025,10 @@ V.Callback('v-phone:soc:saved', function(src, resolve, data)
         { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
           app, p.citizenid, app, socFeedSize() }) or {}
 
-    resolve({ ok = true, posts = cleanPosts(rows) })
+    -- The cap travels with the feed rather than in the boot payload: this is the one
+    -- answer the social apps always fetch, and the composer is the only thing that needs
+    -- it. A phone that never opens Bleeter never carries the number.
+    resolve({ ok = true, posts = cleanPosts(rows), maxImages = maxImages() })
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -2000,7 +2064,10 @@ V.Callback('v-phone:soc:explore', function(src, resolve, data)
         { p.citizenid, p.citizenid, p.citizenid, p.citizenid, p.citizenid,
           app, app, p.citizenid, app, p.citizenid, hours, socFeedSize() }) or {}
 
-    resolve({ ok = true, posts = cleanPosts(rows) })
+    -- The cap travels with the feed rather than in the boot payload: this is the one
+    -- answer the social apps always fetch, and the composer is the only thing that needs
+    -- it. A phone that never opens Bleeter never carries the number.
+    resolve({ ok = true, posts = cleanPosts(rows), maxImages = maxImages() })
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -2457,7 +2524,7 @@ function SocialBoot(core)
     Core = core
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_accounts` (
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `app`       VARCHAR(12) NOT NULL DEFAULT 'bleeter',
         `handle`      VARCHAR(20) NOT NULL,
         `displayname` VARCHAR(40) NOT NULL DEFAULT '',
@@ -2534,7 +2601,7 @@ function SocialBoot(core)
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_posts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         -- WHICH APP this post belongs to.
         --
         -- It used to be derived from `kind`: text meant Bleeter, photo meant Snapmatic. That
@@ -2545,7 +2612,16 @@ function SocialBoot(core)
         `app`       VARCHAR(8)  NOT NULL DEFAULT 'bleeter',
         `kind`      VARCHAR(8)  NOT NULL DEFAULT 'text',
         `body`      VARCHAR(1000) NOT NULL DEFAULT '',
+        -- The COVER, and the first of `images` when there are several.
+        --
+        -- Kept as its own column on purpose. The profile grid, the share sheet, the story row,
+        -- the home widget and every export read this one field, and a post with four pictures
+        -- has a cover like any other post - so none of them had to learn about the list.
         `image`     VARCHAR(300) NOT NULL DEFAULT '',
+        -- The rest of them, as a JSON array including the cover. NULL on every row written
+        -- before this column existed, which decodes to "just the cover" - a faithful reading,
+        -- because one is all those posts ever had.
+        `images`    TEXT NULL DEFAULT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), KEY `app_idx` (`app`, `id`), KEY `kind_idx` (`kind`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -2565,13 +2641,23 @@ function SocialBoot(core)
         print('[v-phone] social: added posts.app and backfilled it from kind')
     end
 
+    -- `images` on a table that already exists. No backfill: NULL is read as the single
+    -- `image` those rows carry, so there is nothing to write.
+    local hasImages = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_posts'
+          AND COLUMN_NAME = 'images' LIMIT 1]])
+    if not hasImages then
+        MySQL.query.await('ALTER TABLE `vphone_social_posts` ADD COLUMN `images` TEXT NULL DEFAULT NULL')
+        print('[v-phone] social: added posts.images for multi-photo posts')
+    end
+
     -- What somebody did to your post, or to you. The one thing a social app cannot be
     -- without: a like nobody is told about may as well not have happened.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_notifs` (
         `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `app`      VARCHAR(8)  NOT NULL DEFAULT 'bleeter',
-        `to_cid`   VARCHAR(16) NOT NULL,
-        `from_cid` VARCHAR(16) NOT NULL,
+        `to_cid`   VARCHAR(64) NOT NULL,
+        `from_cid` VARCHAR(64) NOT NULL,
         `kind`     VARCHAR(10) NOT NULL,
         `post_id`  INT UNSIGNED NULL DEFAULT NULL,
         `seen`     TINYINT(1)  NOT NULL DEFAULT 0,
@@ -2597,12 +2683,12 @@ function SocialBoot(core)
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_likes` (
         `post_id`   INT UNSIGNED NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         PRIMARY KEY (`post_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_hush_profiles` (
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `bio`       VARCHAR(160) NOT NULL DEFAULT '',
         `photo`     VARCHAR(300) NOT NULL DEFAULT '',
         `photo2`    VARCHAR(300) NOT NULL DEFAULT '',
@@ -2650,8 +2736,8 @@ function SocialBoot(core)
     hushColumn('premium_until', 'INT UNSIGNED NULL DEFAULT NULL')
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_hush_likes` (
-        `from_cid` VARCHAR(16) NOT NULL,
-        `to_cid`   VARCHAR(16) NOT NULL,
+        `from_cid` VARCHAR(64) NOT NULL,
+        `to_cid`   VARCHAR(64) NOT NULL,
         `liked`    TINYINT(1) NOT NULL DEFAULT 0,
         -- A super like is a like that says so. Its own table would buy nothing: it is the
         -- same row, the same uniqueness, and the same expiry rules.
@@ -2670,8 +2756,8 @@ function SocialBoot(core)
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_follows` (
         `app`      VARCHAR(12) NOT NULL DEFAULT 'bleeter',
-        `from_cid` VARCHAR(16) NOT NULL,
-        `to_cid`   VARCHAR(16) NOT NULL,
+        `from_cid` VARCHAR(64) NOT NULL,
+        `to_cid`   VARCHAR(64) NOT NULL,
         `at`       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`app`, `from_cid`, `to_cid`), KEY `to_idx` (`app`, `to_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -2679,7 +2765,7 @@ function SocialBoot(core)
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_comments` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `post_id`   INT UNSIGNED NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `body`      VARCHAR(280) NOT NULL DEFAULT '',
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), KEY `post_idx` (`post_id`, `id`)
@@ -2689,7 +2775,7 @@ function SocialBoot(core)
     -- public, a repost is public, a save is a private bookmark and its count is never shown.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_saves` (
         `post_id`   INT UNSIGNED NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`post_id`, `citizenid`),
         KEY `mine` (`citizenid`, `post_id`)
@@ -2697,7 +2783,7 @@ function SocialBoot(core)
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_reposts` (
         `post_id`   INT UNSIGNED NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`post_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -2705,7 +2791,7 @@ function SocialBoot(core)
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_stories` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `app`       VARCHAR(12) NOT NULL DEFAULT 'snap',
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `image`     VARCHAR(300) NOT NULL DEFAULT '',
         `body`      VARCHAR(160) NOT NULL DEFAULT '',
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2714,7 +2800,7 @@ function SocialBoot(core)
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_story_seen` (
         `story_id`  INT UNSIGNED NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         PRIMARY KEY (`story_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
@@ -2723,7 +2809,7 @@ function SocialBoot(core)
     -- only one row, so "deleted" is not a property of the message.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_dm_hidden` (
         `message_id` INT UNSIGNED NOT NULL,
-        `citizenid`  VARCHAR(16) NOT NULL,
+        `citizenid`  VARCHAR(64) NOT NULL,
         PRIMARY KEY (`message_id`, `citizenid`),
         KEY `citizenid` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -2731,8 +2817,8 @@ function SocialBoot(core)
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_social_dm` (
         `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `app`      VARCHAR(12) NOT NULL DEFAULT 'bleeter',
-        `from_cid` VARCHAR(16) NOT NULL,
-        `to_cid`   VARCHAR(16) NOT NULL,
+        `from_cid` VARCHAR(64) NOT NULL,
+        `to_cid`   VARCHAR(64) NOT NULL,
         `body`     VARCHAR(500) NOT NULL DEFAULT '',
         `image`    VARCHAR(300) NOT NULL DEFAULT '',
         `seen`     TINYINT(1) NOT NULL DEFAULT 0,

@@ -57,8 +57,16 @@ local QB, qbChecked = nil, false
 local function qbCore()
     if qbChecked then return QB end
     qbChecked = true
-    if GetResourceState('qb-core') ~= 'started' then return nil end
-    local ok, core = pcall(function() return exports['qb-core']:GetCoreObject() end)
+    -- **qbx_core too.** These five files each looked for the literal name `qb-core`, so on a
+    -- qbx server no core was ever found, every request answered `noframework`, and the app
+    -- showed a permanent error page - while doc mode had already been chosen on the doc-*
+    -- resource being started, so the working config provider was never asked either.
+    local resource = nil
+    for _, name in ipairs({ 'qb-core', 'qbx_core' }) do
+        if GetResourceState(name) == 'started' then resource = name break end
+    end
+    if not resource then return nil end
+    local ok, core = pcall(function() return exports[resource]:GetCoreObject() end)
     QB = ok and core or nil
     return QB
 end

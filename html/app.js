@@ -1121,6 +1121,19 @@ function renderHome() {
 // pages are BALANCED - nine and eight both look like pages, sixteen and one does not.
 let arrPerPage = 16;
 
+/// The icon size the last measurement settled on, keyed by what it depends on.
+///
+/// `fitGrid` writes five custom properties and then reads `scrollHeight`, up to fourteen times -
+/// a forced synchronous reflow per turn. `renderHome` calls it from eighteen places, including
+/// an incoming message and the SDK's badge op, so a phone receiving traffic re-measured a grid
+/// that had not changed. The answer depends on the column count, the row count and the size of
+/// the screen, and nothing else.
+let gridFitKey = null;
+let gridFitSize = 0;
+
+/// Called when one of the four things the measurement depends on moves.
+function forgetGridFit() { gridFitKey = null; }
+
 function fitGrid(cols, rows) {
   const pg = byId('pages');
   const page = pg.querySelector('.page');
@@ -1143,6 +1156,11 @@ function fitGrid(cols, rows) {
   // Start from an estimate, then check it against the real thing. Arithmetic about
   // padding, gaps and label height is exactly the sort of guess that ends up one row
   // short, so the estimate is only a starting point: what settles it is measuring.
+  // Nothing that decides the answer has moved, so the answer is the one from last time and
+  // the loop below is skipped entirely.
+  const key = cols + '|' + rows + '|' + Math.round(w) + '|' + Math.round(h);
+  if (gridFitKey === key && gridFitSize > 0) { apply(gridFitSize); return; }
+
   const cellH = h / rows, cellW = w / cols;
   let size = Math.max(22, Math.min(60, Math.floor(Math.min(cellH - 24, cellW - 8))));
   apply(size);
@@ -2626,7 +2644,10 @@ function widgetPicker() {
           value: size(def.units), data: fits ? { add: id } : { nofit: '1' },
         });
       }))
-    : '<div class="grouphead">' + esc(L('ph.w_pick_none')) + '</div>') +
+    // An empty state, not a section label. `.grouphead` is a 13px left-aligned heading and
+    // this function uses it correctly twice, three lines up - so "nothing left to add" read as
+    // one more heading with nothing under it.
+    : UI.empty(L('ph.w_pick_none'), 'wall')) +
     '<div class="groupfoot">' + esc(L('ph.w_pick_room').replace('{n}', String(left))) + '</div>';
 
   sheet(L('ph.w_pick'), body, () => {
@@ -3166,7 +3187,14 @@ const foot = (html) => {
 /// replaces the content when it arrives, so navigation reads as a change of view instead of a
 /// reload. Held to the FIRST paint after the app opened, so re-entering an app never shows a
 /// stale screen from the last time it was open while fresh data is on its way.
-const loading = () => { if (!appPainted) body(UI.empty(L('ph.loading'))); };
+/// The first paint of an app that has not drawn yet.
+///
+/// A ring rather than the word "Loading" on its own. The shell already spins one for a
+/// dropped-in app's frame and for pull-to-refresh; the built-in apps were the only place that
+/// showed static text, which on a slow read is indistinguishable from a screen that has
+/// finished loading and found nothing. `.uispinner` reads `--app-tint`, so it takes each app's
+/// own accent without being told.
+const loading = () => { if (!appPainted) body(UI.spinner(L('ph.loading'))); };
 const rows = (sel, fn) => [...byId('appbody').querySelectorAll(sel)].forEach(fn);
 const qrows = (root, sel, fn) => [...byId(root).querySelectorAll(sel)].forEach(fn);
 
@@ -3380,6 +3408,61 @@ RENDER.phone = () => {
 // ── Health record ──────────────────────────────────────────────
 // The half of a Health app the game cannot work out for itself: blood type, allergies,
 // what you are on, who to call. It rides on the character, so it survives the handset.
+/// A stride, in metres.
+///
+/// The SAME number the client divides by to turn metres walked into steps, so the distance
+/// shown here is the distance that was measured rather than a second guess at it. Changing one
+/// without the other makes the two rows on the screen contradict each other.
+const STEP_METRES = 0.75;
+
+/// Steps as a distance a person reads: metres below a kilometre, then one decimal.
+function stepDistance(steps) {
+  const m = Math.round((Number(steps) || 0) * STEP_METRES);
+  return m < 1000 ? m + ' m' : (m / 1000).toFixed(1) + ' km';
+}
+
+/// The week, as bars.
+///
+/// `stepHist` holds up to seven FINISHED days, oldest first; today is the live count and is not
+/// in it. Days with no entry are drawn as empty rather than skipped, because a bar chart with
+/// the gaps closed up says somebody walked every day.
+function stepWeek(rec) {
+  const hist = Array.isArray(rec.stepHist) ? rec.stepHist : [];
+  const byDay = {};
+  hist.forEach((h) => { if (h && h.d) byDay[String(h.d)] = Math.max(0, Number(h.s) || 0); });
+  if (rec.stepDay) byDay[String(rec.stepDay)] = Math.max(0, Number(rec.steps) || 0);
+
+  // Seven days ending today, built from the record's own idea of today so the chart cannot
+  // drift from the server's clock the way a page-side `new Date()` would.
+  const end = rec.stepDay ? new Date(String(rec.stepDay) + 'T12:00:00') : new Date();
+  if (isNaN(end.getTime())) return '';
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end.getTime() - i * 86400000);
+    const key = d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    days.push({ key, n: byDay[key] || 0, dow: d.getDay(), today: i === 0 });
+  }
+  // Nothing to compare yet. One bar at full height beside six empty ones is not a trend, it is
+  // a claim, and the app already says how many steps today was.
+  if (days.filter((d) => d.n > 0).length < 2) return '';
+
+  const top = Math.max.apply(null, days.map((d) => d.n)) || 1;
+  const done = days.filter((d) => !d.today && d.n > 0);
+  const avg = done.length
+    ? Math.round(done.reduce((a, d) => a + d.n, 0) / done.length) : 0;
+  const dows = (L('ph.dow_short') || 'S M T W T F S').split(' ');
+
+  return UI.group([
+    '<div class="stepchart">' + days.map((d) =>
+      '<div class="stepbar' + (d.today ? ' now' : '') + '">' +
+        '<i style="height:' + Math.max(3, Math.round((d.n / top) * 100)) + '%"></i>' +
+        '<b>' + esc(dows[d.dow] || '') + '</b>' +
+      '</div>').join('') + '</div>',
+  ].concat(avg ? [UI.row({ icon: 'heart', tint: '#30D158', title: L('ph.steps_avg'),
+    value: String(avg) })] : []), { header: L('ph.steps_week') });
+}
+
 function healthRecord() {
   if (!openApp || openApp.id !== 'health') return;
   beginView();
@@ -3395,8 +3478,11 @@ function healthRecord() {
         appicon: 'heart',
         eyebrow: L('ph.steps'),
         value: String(r.steps || 0),
-        subtitle: L('ph.steps_today'),
+        // The distance was never shown although the client MEASURES it and divides by a stride
+        // to get the step count above - the number the store page names was the one thrown away.
+        subtitle: L('ph.steps_today') + ' \u00b7 ' + stepDistance(r.steps),
       }) +
+      stepWeek(r) +
       UI.field('hblood', L('ph.blood'), r.blood || '', 'maxlength="6"') +
       UI.field('hallerg', L('ph.allergies'), r.allergies || '', 'maxlength="300"') +
       UI.field('hcond', L('ph.conditions'), r.conditions || '', 'maxlength="300"') +
@@ -4097,9 +4183,20 @@ function photoRow(v) {
 //
 // Avatars and icons are left out on purpose: they go through their own helpers and do not
 // carry the attribute. Zooming a 30px profile picture is not a feature.
+/// Is this picture at an address worth putting on a clipboard?
+///
+/// A `data:` URI is the picture itself, inline - often megabytes of base64 - and pasting that
+/// into a chat window does nothing useful. `nui://` is inside the game and means nothing
+/// outside it. Only an http(s) link is somewhere another person can actually go.
+function shareableLink(url) {
+  const clean = String(url || '').trim();
+  return /^https?:\/\//i.test(clean) ? clean : null;
+}
+
 function openPhoto(url, caption) {
   const clean = String(url || '').trim();
   if (!clean) return;
+  const link = shareableLink(clean);
   const host = byId('photoview');
   const wasOpen = host.classList.contains('on');
   host.innerHTML =
@@ -4107,8 +4204,18 @@ function openPhoto(url, caption) {
       '<img class="pvimg" src="' + esc(cssUrl(clean)) + '" alt="" />' +
       '<button class="pvclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
         svg('xmark') + '</button>' +
+      // Beside the close button, on every picture the phone can show. Drawn only when there
+      // is an address: a local photograph has nothing to copy but itself.
+      (link
+        ? '<button class="pvlink" type="button" aria-label="' + esc(L('ph.copy_link')) + '">' +
+          svg('copy') + '</button>'
+        : '') +
       (caption ? '<div class="pvcap">' + esc(caption) + '</div>' : '') +
     '</div>';
+
+  // The link the copy button will hand over, read by the delegate below. Kept here rather
+  // than on the element because the delegate finds its target by geometry, not by identity.
+  photoLink = link;
 
   // **The handset turns, and the frame turns back.**
   //
@@ -4140,6 +4247,7 @@ function closePhoto() {
   host.classList.remove('on', 'rot');
   byId('device').classList.remove('photoing');
   host.innerHTML = '';
+  photoLink = null;
   photoZoom = false;
   // Back to where it was, which is not always portrait: opening a photograph from the camera
   // starts from a handset that is already on its side.
@@ -4147,9 +4255,45 @@ function closePhoto() {
   return true;
 }
 
-// Click anywhere - the backdrop, the photograph, the close button. There is one thing to do
-// here and everything does it, which is what "tap to dismiss" means.
-byId('photoview').addEventListener('click', () => closePhoto());
+/// The address of the picture on screen, when it has one worth copying.
+let photoLink = null;
+
+/// **The controls over a photograph are hit-tested here, by hand.**
+///
+/// A press on the picture reaches this listener. A press on either of the round buttons on top
+/// of it reaches NOTHING: the browser's own `elementFromPoint` says the button is there, and the
+/// compositor - which is what a real click goes through - disagrees, because the buttons sit
+/// inside a frame carrying a rotation and each one establishes its own stacking context with a
+/// `backdrop-filter`. The close button had been unpressable since the viewer was written, and
+/// nobody noticed because a tap ANYWHERE closes the viewer, so pressing it appeared to work
+/// while actually being a tap on the backdrop underneath.
+///
+/// Rather than chase the compositor, the point is compared against the two rectangles. They are
+/// read fresh on every click, so nothing has to be kept in step with the markup.
+byId('photoview').addEventListener('click', (e) => {
+  const at = (sel) => {
+    // Identity first. A click forwarded by the edge-zone handler carries the button as its
+    // target and NO COORDINATES - `el.click()` dispatches at 0,0 - so a geometry test alone
+    // read it as a tap on the far corner of the backdrop and dismissed the viewer.
+    if (e.target.closest && e.target.closest(sel)) return true;
+    // Geometry second, and only for a click that has a real point behind it.
+    if (!e.clientX && !e.clientY) return false;
+    const el = byId('photoview').querySelector(sel);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right
+        && e.clientY >= r.top && e.clientY <= r.bottom;
+  };
+
+  if (photoLink && at('.pvlink')) {
+    copyText(photoLink, L('ph.link_copied'));
+    return;
+  }
+  // Everything else - the backdrop, the photograph, the close button - dismisses. That is what
+  // "tap to dismiss" means, and the close button is there to say so rather than to be the only
+  // way out.
+  closePhoto();
+});
 
 // One delegated listener for the whole phone, so no app has to remember to wire it.
 //
@@ -4193,8 +4337,13 @@ function photoImg(value, cls) {
       + focusOf(r.focus) + '%' : '');
   // `data-full` is what makes it openable. Written here rather than at each call site, so a
   // picture drawn by this helper can always be looked at properly.
+  // **Deferred, and decoded off the main thread.** This one helper draws every photograph in
+  // every list in the phone, and a feed is fifty posts of two-thousand-pixel screenshots: they
+  // were all fetched and all decoded the moment the list entered the tree. `aspect-ratio` is
+  // set above for a cropped picture, so nothing shifts when one arrives late.
   return '<img class="' + esc(cls || '') + '" src="' + esc(r.url)
-    + '" style="' + style + '" data-full="' + esc(r.url) + '" alt="" />';
+    + '" loading="lazy" decoding="async"'
+    + ' style="' + style + '" data-full="' + esc(r.url) + '" alt="" />';
 }
 /// A URL, safe to sit inside a CSS `url("...")`.
 ///
@@ -4729,7 +4878,7 @@ RENDER.messages = async () => {
   // from one of the apps - was simply not in the list. Opening Messages and seeing nothing
   // new while the message sat in the database is what that looked like.
   const epoch = viewEpoch;
-  await refresh();
+  await refreshInbox();
   if (epoch !== viewEpoch || !openApp || openApp.id !== 'messages') return;
 
   const list = state.conversations || [];
@@ -6747,7 +6896,10 @@ function emergencyQueue(d, queues, active) {
     title: L(a.reason) + (a.detail ? ' - ' + a.detail : ''),
     subtitle: [
       shortWhen(a.at * 1000),
-      a.anonymous ? L('ph.911_anon_caller') : (a.caller || ''),
+      // The caller when there is one, otherwise who the alert is about. A dispatch alert
+      // raised by a script has a subject and no caller, and the row used to print the subject
+      // as though they had phoned it in.
+      a.anonymous ? L('ph.911_anon_caller') : (a.caller || a.subject || ''),
       a.state !== 'open' ? L('ph.911_st_' + a.state) + (a.takenBy ? ' - ' + a.takenBy : '') : '',
     ].filter(Boolean).join('  '),
     chevron: true,
@@ -6799,12 +6951,26 @@ function emergencyAlertSheet(a, service) {
       // one - which, for an anonymous alert, happens only if the operator turned
       // `anonymousCallback` on. The page never has to know that rule: it draws whatever it was
       // given, so a withheld number is a number it never received.
+      // **Caller and subject are different people and the card says which it has.**
+      //
+      // An alert raised by a dispatch script names the player it is ABOUT - the robber, the
+      // driver, the person who went down - and nobody called it in. This row said "Appelant"
+      // over that name, so an officer opening a robbery was told the robber had phoned it in.
+      //
+      // Drawn only for what actually arrived: a caller row when somebody called, a subject row
+      // when the alert is about somebody, both when a script supplied both.
       a.anonymous
         ? UI.row({ icon: 'lockshut', title: L('ph.911_caller'),
                    subtitle: L('ph.911_anon_caller'),
                    value: a.number ? maskNum(a.number) : '' })
-        : UI.row({ icon: 'contacts', title: L('ph.911_caller'), subtitle: a.caller || '',
-                   value: a.number ? maskNum(a.number) : '' }),
+        : (a.caller
+            ? UI.row({ icon: 'contacts', title: L('ph.911_caller'), subtitle: a.caller,
+                       value: (!a.subject && a.number) ? maskNum(a.number) : '' })
+            : ''),
+      (!a.anonymous && a.subject)
+        ? UI.row({ icon: 'warning', title: L('ph.911_subject'), subtitle: a.subject,
+                   value: a.number ? maskNum(a.number) : '' })
+        : '',
       a.state !== 'open'
         ? UI.row({ icon: 'check', title: L('ph.911_st_' + a.state), subtitle: a.takenBy || '' })
         : '',
@@ -7310,10 +7476,44 @@ async function vehicleRemote(v) {
   if (controls.engine) group.push(UI.row({ icon: 'fuel', tint: '#FF453A', title: L('ph.veh_engine'), chevron: true, data: { a: 'engine' } }));
   if (controls.alarm) group.push(UI.row({ icon: 'bell', tint: '#FF2D55', title: L('ph.veh_alarm'), data: { a: 'alarm' } }));
 
+  // **The three numbers that were already on the wire.**
+  //
+  // `server/apps.lua` computes fuel, engine and body for every vehicle, the qb and qbx query
+  // selects all three by name, and the comment above them says they are "shown by the remote
+  // sheet" - which never drew any of them. Meanwhile the app's store entry promises live
+  // condition and vehicle information. Nothing new is fetched here; this is the payload
+  // arriving somewhere a player can see it.
+  //
+  // Each row appears only if its number did, so a garage script that keeps none of them leaves
+  // the sheet exactly as it is today. A percentage is rounded because these arrive as a health
+  // value out of a thousand on some scripts and a percentage on others - `pct` reads both.
+  const pct = (n) => {
+    const v0 = Number(n);
+    if (!Number.isFinite(v0)) return null;
+    return Math.max(0, Math.min(100, Math.round(v0 > 100 ? v0 / 10 : v0)));
+  };
+  const condition = [];
+  const fuel = pct(v.fuel);
+  const engine = pct(v.engine);
+  const body = pct(v.body);
+  if (fuel !== null) {
+    condition.push(UI.row({ icon: 'fuel', tint: fuel <= 20 ? '#FF453A' : '#34C759',
+      title: L('ph.veh_fuel'), value: fuel + '%' }));
+  }
+  if (engine !== null) {
+    condition.push(UI.row({ icon: 'wrench', tint: engine <= 40 ? '#FF9F0A' : '#8E8E93',
+      title: L('ph.veh_engine_health'), value: engine + '%' }));
+  }
+  if (body !== null) {
+    condition.push(UI.row({ icon: 'garage', tint: body <= 40 ? '#FF9F0A' : '#8E8E93',
+      title: L('ph.veh_body'), value: body + '%' }));
+  }
+
   sheet(v.label || v.model || plate,
     '<div class="groupfoot">' + esc(plate) + ' · ' +
     esc(near ? L('ph.veh_near').replace('{m}', String(found.distance))
              : L('ph.veh_far')) + '</div>' +
+    (condition.length ? UI.group(condition, { header: L('ph.veh_condition') }) : '') +
     (group.length ? UI.group(group) : UI.empty(L('ph.veh_no_controls'), 'garage')),
     () => {
       qrows('sheet', '.row', (r) => {
@@ -7538,6 +7738,9 @@ const SETTING_TOGGLES = {
   silenceunknown: { key: 'silenceUnknown' },
   previews:       { key: 'previews', defaultOn: true },
   peek:           { key: 'peek', defaultOn: true },
+  // Applied the moment it is flipped rather than on the next open: a motion setting whose
+  // effect you have to go and look for is one nobody believes worked.
+  reducemotion:   { key: 'reduceMotion', after: () => applyMotion() },
   // The strip has to be redrawn, and redrawn from the SERVER: whether the balance is masked is
   // decided there, and the figure is simply not in the payload while it is off - so flipping
   // this cannot be a repaint of what the page already holds. `redraw` is what says so: every
@@ -7567,6 +7770,7 @@ const SETTINGS_PAGES = [
   { id: 'privacy',  icon: 'lockshut', tint: '#8E8E93', label: 'ph.calls_privacy' },
   { id: 'security', icon: 'faceid',   tint: '#FF3B30', label: 'ph.sec_header' },
   { id: 'action',   icon: 'focus',    tint: '#BF5AF2', label: 'ph.action_button' },
+  { id: 'access',   icon: 'focus',    tint: '#0A84FF', label: 'ph.set_access' },
   { id: 'about',    icon: 'id',       tint: '#8E8E93', label: 'ph.about_title' },
 ];
 
@@ -7717,6 +7921,16 @@ function settingsSection(id) {
       appicon: (UI.hasTile && UI.hasTile(a.id)) ? a.id : a.icon, title: L(a.label),
       value: p.actionApp === a.id ? L('ph.on') : '', data: { act: a.id },
     })), { header: L('ph.action_button'), footer: L('ph.action_hint') }));
+  if (id === 'access') return (
+    // **The store page named this section long before it existed.** The stylesheet has
+    // honoured `prefers-reduced-motion` for a long time, and that is a setting on the player's
+    // operating system - unreachable from inside the game. This is the same request, asked
+    // here, and the rule that answers it is the same rule.
+    UI.group([
+      UI.row({ icon: 'focus', tint: '#0A84FF', title: L('ph.reduce_motion'),
+        subtitle: L('ph.reduce_motion_sub'),
+        toggle: !!p.reduceMotion, data: { t: 'reducemotion' } }),
+    ], { header: L('ph.set_access'), footer: L('ph.reduce_motion_hint') }));
   if (id === 'about') return (
     // About, where a phone puts it: the last thing in Settings.
     //
@@ -7888,6 +8102,7 @@ function wireSettings() {
         () => [...byId('sheet').querySelectorAll('.row')].forEach((el) => el.addEventListener('click', async () => {
           const epoch = sheetEpoch;
           const res = await post('prefs', { gridCols: Number(el.dataset.gc), gridRows: Number(el.dataset.gr) });
+          forgetGridFit();
           if (!closeSheet(false, epoch)) return;
           if (res && res.ok) { state.prefs = res.prefs; renderHome(); settingsRedraw(); }
         })));
@@ -8166,8 +8381,23 @@ function applyAdminView() {
   if (name) host.textContent = L('ph.admin_holding').replace('{name}', name);
 }
 
+/// Reduce motion, asked for from the phone rather than from the operating system.
+///
+/// The stylesheet describes what reducing motion means in one place, behind
+/// `prefers-reduced-motion`. This puts the same rules behind a class so the switch in Settings
+/// reaches them - one description, two ways to ask.
+function applyMotion() {
+  const on = !!(state.prefs || {}).reduceMotion;
+  byId('device').classList.toggle('reducemotion', on);
+}
+
 function applyDevice() {
   applyAdminView();
+  applyMotion();
+  // The handset has been resized or rescaled, so the measurement the grid settled on last
+  // time is about a page that no longer exists - and so is the remembered screen box.
+  forgetGridFit();
+  forgetScreenRect();
   const p = state.prefs || {};
   const d = byId('device');
   const size = Math.max(0.75, Math.min(1.15, Number(p.size) || 1));
@@ -8201,6 +8431,12 @@ function applyDevice() {
     d.style.right = (p.side === 'left') ? 'auto' : '3vw';
     d.style.left = (p.side === 'left') ? '3vw' : 'auto';
   }
+
+  // **And again after the layout settles.** The clear at the top of this function happens
+  // BEFORE the transforms above are written, so anything that asked for the box between the
+  // two would have cached a handset mid-resize. Clearing once more on the next frame means the
+  // first read after this is the box as it finally is.
+  requestAnimationFrame(forgetScreenRect);
 }
 function setLandscape(on) { landscape = on === true; applyDevice(); }
 
@@ -8208,6 +8444,12 @@ function setLandscape(on) { landscape = on === true; applyDevice(); }
 // Everywhere the map already shows, turned into a waypoint. A phone map that could not
 // set a waypoint would be a list of place names.
 let placeFilter = 'all';
+/// What has been typed into the Maps search field.
+///
+/// Maps was the only long list in this phone without one. Notes, Contacts, the store and the
+/// export board all have a field; here, finding a named place meant guessing its category and
+/// reading the whole group underneath.
+let placeQuery = '';
 
 // -- Your own pins ----------------------------------------------
 // A second list inside Maps: not the server's directory of garages and hospitals, but the
@@ -8397,36 +8639,76 @@ RENDER.maps = async () => {
   // key for an operator's own - the same way `ph.export_c_metal` reached a screen.
   const kinds = [...new Set(all.map((p) => p.kind))];
   const kindName = (k) => (all.find((p) => p.kind === k) || {}).kindLabel || L('ph.place_' + k);
-  const shown = placeFilter === 'all' ? all : all.filter((p) => p.kind === placeFilter);
+  // The list currently drawn, so a row's `data-i` means to the click handler exactly what it
+  // meant to the markup that produced it. Repainting the results rewrites both together.
+  let shown = [];
+
+  /// Everything below the search field, rebuilt per keystroke.
+  const placesHtml = () => {
+    const q = placeQuery.trim().toLowerCase();
+    // A query searches EVERYTHING, not the chosen category. Somebody typing a place name wants
+    // that place; answering "none" because they were on Garages is the app arguing with them.
+    // The chips are hidden while a query runs rather than left on to contradict the results.
+    shown = q
+      ? all.filter((p) => (String(p.label || '') + ' ' +
+          String(p.kindLabel || p.kind || '')).toLowerCase().indexOf(q) >= 0)
+      : (placeFilter === 'all' ? all : all.filter((p) => p.kind === placeFilter));
+
+    return (q
+      ? ''
+      // Chips that WRAP, not a segmented control. Ten categories sharing one row ground every
+      // label down to two letters and an ellipsis - "Ba...", "Ca...", "Ga..." - which is a
+      // filter nobody can use. The scrolling variant is no better: this page is driven by a
+      // mouse and a sideways scroller has no gesture behind it.
+      : '<div class="mapskinds">' +
+        '<button class="mapkind' + (placeFilter === 'all' ? ' on' : '') + '" data-k="all">' +
+          esc(L('ph.all')) + '</button>' +
+        kinds.map((k) => '<button class="mapkind' + (placeFilter === k ? ' on' : '') +
+          '" data-k="' + esc(k) + '">' + esc(kindName(k)) + '</button>').join('') +
+      '</div>') +
+      (shown.length
+        ? UI.group(shown.map((pl, i) => UI.row({
+            icon: pl.icon, title: pl.label, subtitle: pl.kindLabel || L('ph.place_' + pl.kind),
+            value: pinAway(pl.away), chevron: true, data: { i },
+          })), { footer: L('ph.maps_hint') })
+        : UI.empty(L(q ? 'ph.no_place_hits' : 'ph.no_places'), 'map'));
+  };
+
+  /// The chips and rows are recreated by every repaint, so their listeners are too.
+  const wireResults = () => {
+    [...byId('appbody').querySelectorAll('.mapkind')].forEach((b) =>
+      b.addEventListener('click', () => { placeFilter = b.dataset.k; repaint(); }));
+    rows('.row[data-i]', (r) => r.addEventListener('click', async () => {
+      const pl = shown[Number(r.dataset.i)];
+      if (!pl) return;
+      await post('waypoint', { x: pl.x, y: pl.y, label: pl.label });
+      toast(L('ph.waypoint_set'));
+    }));
+  };
+  const repaint = () => {
+    const host = byId('mapresults');
+    if (!host) return;
+    host.innerHTML = placesHtml();
+    wireResults();
+  };
 
   body(
     mapsSeg() +
-    // Chips that WRAP, not a segmented control. Ten categories sharing one row ground every
-    // label down to two letters and an ellipsis - "Ba...", "Ca...", "Ga..." - which is a filter
-    // nobody can use. The scrolling variant is no better: this page is driven by a mouse and a
-    // sideways scroller has no gesture behind it.
-    '<div class="mapskinds">' +
-      '<button class="mapkind' + (placeFilter === 'all' ? ' on' : '') + '" data-k="all">' +
-        esc(L('ph.all')) + '</button>' +
-      kinds.map((k) => '<button class="mapkind' + (placeFilter === k ? ' on' : '') +
-        '" data-k="' + esc(k) + '">' + esc(kindName(k)) + '</button>').join('') +
-    '</div>' +
-    (shown.length
-      ? UI.group(shown.map((pl, i) => UI.row({
-          icon: pl.icon, title: pl.label, subtitle: pl.kindLabel || L('ph.place_' + pl.kind),
-          value: pinAway(pl.away), chevron: true, data: { i },
-        })), { footer: L('ph.maps_hint') })
-      : UI.empty(L('ph.no_places'), 'map'))
+    // Always there, not past some count. `paintNotes` makes the argument: a control that
+    // appears at a threshold is one nobody learns is available.
+    '<div class="mapsearch">' + UI.search('mapq', L('ph.maps_search'), placeQuery) + '</div>' +
+    '<div id="mapresults">' + placesHtml() + '</div>'
   );
   wireMapsSeg();
-  [...byId('appbody').querySelectorAll('.mapkind')].forEach((b) =>
-    b.addEventListener('click', () => { placeFilter = b.dataset.k; RENDER.maps(); }));
-  rows('.row[data-i]', (r) => r.addEventListener('click', async () => {
-    const pl = shown[Number(r.dataset.i)];
-    if (!pl) return;
-    await post('waypoint', { x: pl.x, y: pl.y, label: pl.label });
-    toast(L('ph.waypoint_set'));
-  }));
+  wireResults();
+
+  const box = byId('mapq');
+  if (box) {
+    // **Only the list is repainted.** Rebuilding the body would destroy the field on every
+    // letter, which is the mistake `paintNotes` documents: the focus and the caret had to be
+    // restored by hand and the screen's entrance animation replayed once per keystroke.
+    box.addEventListener('input', () => { placeQuery = box.value; repaint(); });
+  }
 };
 
 // -- Music ------------------------------------------------------
@@ -9752,8 +10034,24 @@ const SWITCHER_TRAVEL = 155;
 
 let g = null;
 
+/// The screen's box, remembered.
+///
+/// `getBoundingClientRect()` is a synchronous forced layout, and this ran on every pointer
+/// event - twice while a gesture is in flight. The box only moves when the window resizes or
+/// the handset is rescaled or rotated, and every one of those already goes through
+/// `applyDevice` or `setLandscape`, so it is read there instead: once per change rather than
+/// once per pixel of mouse travel.
+let screenRect = null;
+
+function forgetScreenRect() { screenRect = null; }
+
+function screenBox() {
+  if (!screenRect) screenRect = byId('screen').getBoundingClientRect();
+  return screenRect;
+}
+
 function screenPoint(e) {
-  const r = byId('screen').getBoundingClientRect();
+  const r = screenBox();
   return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height };
 }
 
@@ -9856,6 +10154,20 @@ byId('screen').addEventListener('pointerdown', (e) => {
          // Whether this press began on the home indicator. Recorded here because the capture
          // below is about to take the rest of the gesture away from the bar itself.
          onHomeBar: !!(e.target.closest && e.target.closest('.homebar')),
+         // **And whether it began on any other control.**
+         //
+         // The capture below takes every pointer event for this gesture, so a control inside
+         // the top or bottom edge zone sees the pointerdown and never the pointerup - and no
+         // pointerup means no click. It cost the photo viewer both of its round buttons: the
+         // close button sat 53 pixels down, inside a 56 pixel zone, and had never been
+         // pressable. Nobody noticed because a tap anywhere in that viewer dismisses it, so
+         // pressing close appeared to work while actually being a tap on the backdrop.
+         //
+         // The home bar is excluded deliberately: the swipe up from it IS a gesture that
+         // starts on a button, and it is handled on its own terms below.
+         tapTarget: (!(e.target.closest && e.target.closest('.homebar')) && interactive)
+           ? e.target.closest('button,input,textarea,select,[role="slider"],.ccslider,.ncard,.row')
+           : null,
          fromBottom: p.y > p.h - EDGE, fromTop: p.y < EDGE_TOP, fromLeft: p.x < 18,
          insideOverlay: !!(e.target.closest && e.target.closest(
            '#sheet,#shade,#cc,#switcher,#auth,#folderview,#emojipanel,#setup'
@@ -9864,17 +10176,34 @@ byId('screen').addEventListener('pointerdown', (e) => {
          dismissPanel: systemPanel && !interactive && p.y > p.h - PANEL_DISMISS_ZONE
            ? systemPanel : null };
   if ((g.fromTop || g.fromBottom) && e.currentTarget.setPointerCapture) {
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    // **Recorded, because the forwarding below depends on it.**
+    //
+    // A captured pointer never delivers its pointerup to the control it started on, so no
+    // click is generated and the tap has to be forwarded by hand. When nothing captured it the
+    // browser makes the click itself - and forwarding as well clicks everything TWICE, which
+    // is every button in the phone firing its handler two times.
+    try { e.currentTarget.setPointerCapture(e.pointerId); g.captured = true; } catch {}
   }
 });
 
 let glassFrame = 0;
 let pendingGlassPoint = null;
+/// The last highlight position actually written, as whole percent.
+let glassAt = null;
 
 function trackGlassPointer(e) {
-  const p = screenPoint(e);
-  const x = Math.max(0, Math.min(100, (p.x / Math.max(1, p.w)) * 100));
-  const y = Math.max(0, Math.min(100, (p.y / Math.max(1, p.h)) * 100));
+  const p = screenBox();
+  const x = Math.round(Math.max(0, Math.min(100, ((e.clientX - p.left) / Math.max(1, p.width)) * 100)));
+  const y = Math.round(Math.max(0, Math.min(100, ((e.clientY - p.top) / Math.max(1, p.height)) * 100)));
+  // **Whole percent, and only when it changes.**
+  //
+  // These are INHERITED custom properties on `#screen`, so writing one invalidates style for
+  // the entire subtree and every glass surface repaints its radial gradient - a raster pass
+  // each, on a feed screen that is thousands of elements. Two decimal places of a percent is
+  // a third of a pixel on a 372px screen: below what a specular highlight can express and far
+  // below what an eye can see. Rounding turns a write on every event into a write on every
+  // three or four pixels of travel.
+  if (glassAt && glassAt[0] === x && glassAt[1] === y) return;
   pendingGlassPoint = [x, y];
   if (glassFrame) return;
   glassFrame = requestAnimationFrame(() => {
@@ -9882,9 +10211,10 @@ function trackGlassPointer(e) {
     glassFrame = 0;
     pendingGlassPoint = null;
     if (!point) return;
+    glassAt = point;
     const screen = byId('screen');
-    screen.style.setProperty('--glass-x', point[0].toFixed(2) + '%');
-    screen.style.setProperty('--glass-y', point[1].toFixed(2) + '%');
+    screen.style.setProperty('--glass-x', point[0] + '%');
+    screen.style.setProperty('--glass-y', point[1] + '%');
   });
 }
 
@@ -9967,7 +10297,20 @@ byId('screen').addEventListener('pointerup', (e) => {
   // bottom edge zone, and the indicator sits inside that zone - so the bar's own pointerup
   // never fired and its tap-to-go-home did nothing at all. Only the swipe worked, which is
   // why it went unnoticed: the gesture people use most is the one that still worked.
-  if (gg.onHomeBar && Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) { goHome(); return; }
+  if (gg.captured && gg.onHomeBar && Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) {
+    goHome();
+    return;
+  }
+
+  // **A tap that began on a control belongs to that control**, and the capture above is the
+  // only reason it did not already. Same shape as the home indicator immediately above: the
+  // decision is made where the events arrive, because that is the only place they arrive.
+  if (gg.captured && gg.tapTarget && Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) {
+    // Still on the page: a control whose screen was replaced during the press is a control
+    // whose click would land somewhere nobody asked for.
+    if (gg.tapTarget.isConnected) gg.tapTarget.click();
+    return;
+  }
 
   if (Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) return;   // a tap, not a swipe
 
@@ -11401,6 +11744,12 @@ RENDER.health = async (cached) => {
 // The four lists, and the four repeats. Both are closed sets the server also holds: the page
 // draws the names, the server stores the keys, and neither trusts the other's spelling.
 const REM_LISTS = ['personal', 'work', 'shopping', 'other'];
+/// Which list is being looked at, or null for all of them.
+///
+/// The four lists were assignable and unreachable: the edit sheet offered them, the server
+/// stored them, the tick took their colour, and no screen anywhere filtered by one. Filing a
+/// reminder under Shopping put it somewhere that did not exist as a place to go.
+let remList = null;
 const REM_TINT = { personal: '#FF9500', work: '#0A84FF', shopping: '#30D158', other: '#BF5AF2' };
 const REM_REPEATS = [0, 1440, 10080, 43200];
 
@@ -11438,8 +11787,10 @@ const remIsToday = (r) => {
 
 /// The reminders one tab shows.
 function remFor(tab) {
-  const live = reminders.filter((r) => !r.done);
-  if (tab === 'done') return reminders.filter((r) => r.done);
+  // The chosen list first, so every tab below counts and shows the same set.
+  const inList = (r) => !remList || (r.list || 'personal') === remList;
+  const live = reminders.filter((r) => !r.done && inList(r));
+  if (tab === 'done') return reminders.filter((r) => r.done && inList(r));
   if (tab === 'flagged') return live.filter((r) => r.flagged);
   if (tab === 'scheduled') return live.filter((r) => remWhen(r));
   if (tab === 'today') return live.filter(remIsToday);
@@ -11476,13 +11827,22 @@ RENDER.reminders = async () => {
 };
 
 function paintReminders() {
-  const live = reminders.filter((r) => !r.done);
+  // **Which lists are actually in use.** A filter for four lists on a phone whose reminders are
+  // all Personal is four buttons that do nothing; the row appears once there is a second one.
+  const used = [];
+  REM_LISTS.forEach((k) => {
+    if (reminders.some((r) => (r.list || 'personal') === k)) used.push(k);
+  });
+  if (remList && used.indexOf(remList) < 0) remList = null;
+
+  const inList = (r) => !remList || (r.list || 'personal') === remList;
+  const live = reminders.filter((r) => !r.done && inList(r));
   const counts = {
     today: live.filter(remIsToday).length,
     scheduled: live.filter(remWhen).length,
     all: live.length,
     flagged: live.filter((r) => r.flagged).length,
-    done: reminders.length - live.length,
+    done: reminders.filter((r) => r.done && inList(r)).length,
   };
   const tabs = ['today', 'scheduled', 'all', 'flagged', 'done'];
   // A tab that has emptied while you were looking at it hands you back to the whole list
@@ -11494,6 +11854,16 @@ function paintReminders() {
     '<div class="remtabs">' + tabs.map((t) =>
       '<button class="remtab' + (t === remTab ? ' on' : '') + '" type="button" data-t="' + t + '">' +
         esc(L('ph.rem_' + t)) + '<b>' + counts[t] + '</b></button>').join('') + '</div>' +
+    // The same pills the edit sheet uses to CHOOSE a list, here to read one back. Same colours
+    // as the ticks, so the row and the reminders under it say the same thing.
+    (used.length > 1
+      ? '<div class="rempick remfilter">' +
+        '<button class="rempill' + (remList ? '' : ' on') + '" type="button" data-fl="">' +
+          esc(L('ph.rem_all_lists')) + '</button>' +
+        used.map((k) => '<button class="rempill' + (remList === k ? ' on' : '') + '" ' +
+          'type="button" data-fl="' + k + '" style="--rem-tint:' + REM_TINT[k] + '">' +
+          esc(L('ph.rem_list_' + k)) + '</button>').join('') + '</div>'
+      : '') +
     (list.length
       ? '<div class="remlist">' + list.map(remRow).join('') + '</div>'
       : UI.empty(L(remTab === 'done' ? 'ph.rem_none_done' : 'ph.no_reminders'), 'check')) +
@@ -11503,6 +11873,11 @@ function paintReminders() {
 
   rows('.remtab', (b) => b.addEventListener('click', () => {
     remTab = b.dataset.t;
+    paintReminders();
+  }));
+  rows('[data-fl]', (b) => b.addEventListener('click', () => {
+    remList = b.dataset.fl || null;
+    ui('sheet');
     paintReminders();
   }));
   rows('.remtick', (b) => b.addEventListener('click', async (e) => {
@@ -11894,8 +12269,29 @@ function paintViewer() {
   stage.addEventListener('pointercancel', () => { sx = null; });
 
   byId('pfull').addEventListener('click', () => openPhoto(v.url));
-  byId('pshare').addEventListener('click', () =>
-    airdropShare('photo', { url: photoEncode(v.url, v) }));
+  // **Share is a choice now, not a single action.**
+  //
+  // It went straight to AirDrop, which is one of two things somebody means by sharing a
+  // photograph. The other is taking its address out of the phone, which was the suggestion
+  // this was built for. AirDrop is one tap deeper and nothing else moves.
+  byId('pshare').addEventListener('click', () => {
+    const link = shareableLink(v.url);
+    sheet(L('ph.share'),
+      UI.button(L('ph.airdrop_share'), 'psair', 'plain') +
+      (link ? UI.button(L('ph.copy_link'), 'pslink', 'plain') : '') +
+      (link ? '' : '<div class="groupfoot">' + esc(L('ph.link_none')) + '</div>'),
+      () => {
+        const epoch = sheetEpoch;
+        byId('psair').addEventListener('click', () => {
+          if (!closeSheet(false, epoch)) return;
+          airdropShare('photo', { url: photoEncode(v.url, v) });
+        });
+        if (byId('pslink')) byId('pslink').addEventListener('click', () => {
+          if (!closeSheet(false, epoch)) return;
+          copyText(link, L('ph.link_copied'));
+        });
+      });
+  });
   byId('pedit').addEventListener('click', () => photoSheet(
     viewRows.map((r) => r.raw), viewRows.findIndex((r) => r === row), viewAlbums));
   byId('pdel').addEventListener('click', () => confirmSheet(
@@ -16998,6 +17394,10 @@ const SOC = {
   tab: { bleeter: 'feed', snap: 'feed', hush: 'swipe' },
   scope: { bleeter: 'all', snap: 'all' },
   handle: { bleeter: '', snap: '' },   // whose profile is open, empty for your own
+  // How many photographs one post may carry. The server's number, learnt from the feed. 4
+  // until one arrives, which is the shipped default and what the composer draws before the
+  // first fetch lands.
+  maxImages: 4,
 };
 
 const socialKind = (appId) => (appId === 'snap' ? 'photo' : 'text');
@@ -17042,11 +17442,28 @@ function postCard(pst, appId) {
         '<span class="ph">@' + esc(pst.handle) + '</span></span>' +
       '<span class="pt">' + esc(socWhen(pst.at)) + '</span></button>';
 
-  // A clip renders as a looping muted video; a photo as an image. Both fill the card.
-  const image = !pst.image ? ''
-    : (pst.kind === 'video'
+  // A clip renders as a looping muted video; photographs as a grid. Both fill the card.
+  //
+  // `postImages` is always a list - the server sends one even for a single picture - so there
+  // is one shape to draw rather than two. The COUNT is a class rather than a computed style,
+  // because the four arrangements are different shapes, not one shape at four sizes: two split
+  // the card, three put a tall one beside two stacked, four make a square.
+  const shots = postImages(pst);
+  const image = pst.kind === 'video'
+    ? (pst.image
         ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
-        : photoImg(pst.image, 'pimg'));
+        : '')
+    : (shots.length
+        ? (shots.length === 1
+            ? photoImg(shots[0], 'pimg')
+            : '<div class="pgrid n' + shots.length +
+                '" data-pgall="' + esc(JSON.stringify(shots)) + '">' +
+                shots.map((u, i) =>
+                  '<button class="pgcell" type="button" data-pg="' + i + '" style="' +
+                    photoStyle(u) + '" aria-label="' +
+                    esc(L('ph.photo') + ' ' + (i + 1)) + '"></button>').join('') +
+              '</div>')
+        : '');
   // Linkified AFTER escaping, never before: the tags and mentions are built out of text that
   // is already safe, so a post containing markup stays a post containing markup.
   const text = pst.body ? '<div class="pbody">' + socLinkify(esc(pst.body)) + '</div>' : '';
@@ -17163,6 +17580,23 @@ function wirePosts(appId, reload) {
       popHeart(card);
     });
   });
+
+  // A cell of the grid opens the full-screen viewer AT that picture, with the rest of the
+  // post as its reel - so a swipe moves between the four rather than closing and re-opening.
+  //
+  // The single-photo card keeps its double-tap-to-like above and is not a grid; these cells are
+  // buttons and a tap on one means "show me this one", which is what a grid of thumbnails means
+  // everywhere else.
+  rows('.post .pgcell', (cell) => cell.addEventListener('click', () => {
+    // The reel is carried on the grid rather than looked up. A post's rows live in whichever
+    // list happens to be on screen - feed, profile, tag, saved - and chasing the right one is
+    // four places to be wrong; four URLs in an attribute is under a kilobyte and only ever on
+    // the posts that have them.
+    let shots = [];
+    try { shots = JSON.parse(cell.parentNode.dataset.pgall || '[]'); } catch (e) { shots = []; }
+    if (!Array.isArray(shots) || !shots.length) return;
+    photoSheet(shots, Math.min(Number(cell.dataset.pg) || 0, shots.length - 1), []);
+  }));
 
   rows('.post .pcomment', (b) => b.addEventListener('click', () =>
     commentSheet(appId, Number(b.closest('.post').dataset.id), b.querySelector('span'))));
@@ -17285,6 +17719,8 @@ async function socialFeed(appId) {
   if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), APP_ICON[appId])); return; }
 
   const list = r.posts || [];
+  // The server's own ceiling, kept so the composer's Add button stops where the server does.
+  if (Number(r.maxImages) > 0) SOC.maxImages = Number(r.maxImages);
   const switcher =
     '<div class="socscope">' +
       '<button data-scope="all" class="' + (scope === 'all' ? 'on' : '') + '" type="button">' +
@@ -17856,6 +18292,17 @@ function socGrid(appId, list, emptyKey, reload) {
 }
 
 // One post, full size, with everything the grid left out.
+/// Every photograph on a post, as a list.
+///
+/// The server sends `images` for every post, including single-picture ones, so this is normally
+/// a pass-through. The fallback is for a payload that predates the column - an open feed that
+/// was fetched before the resource restarted - which reads as the one picture it has.
+function postImages(pst) {
+  const list = Array.isArray(pst && pst.images) ? pst.images.filter(Boolean) : [];
+  if (list.length) return list;
+  return (pst && pst.image) ? [pst.image] : [];
+}
+
 function socPostSheet(appId, pst, reload) {
   if (!pst) return;
   sheet('@' + (pst.handle || ''), '<div id="socone">' + postCard(pst, appId) + '</div>', () => {
@@ -18010,27 +18457,41 @@ async function socialTagFeed(appId, tag) {
 function socCompose(appId) {
   const isSnap = appId === 'snap';
   const textId = isSnap ? 'scap' : 'btext';
-  let image = '';
+  // **A list, not one url.** The server takes up to `socialMaxImages` and the page keeps the
+  // same ceiling, so the Add button goes away at the cap rather than letting somebody pick a
+  // fifth photograph and have it silently dropped on the way out.
+  const cap = Math.max(1, Number(SOC.maxImages) || 4);
+  let images = [];
 
-  // The attachment, drawn under the field. Repainted in place rather than by rebuilding the
+  // The attachments, drawn under the field. Repainted in place rather than by rebuilding the
   // sheet, so the caption already typed survives picking - and re-picking - a photograph.
   const paintAttach = () => {
     const host = byId('socattach');
     if (!host) return;
-    host.innerHTML = image
-      ? '<div class="socattached" style="' + photoStyle(image) + '">' +
-          '<button class="socattachx" id="bdrop" type="button" aria-label="' +
-            esc(L('ph.remove')) + '">' + svg('xmark') + '</button>' +
-        '</div>'
+    host.innerHTML = images.length
+      ? '<div class="socattachrow">' + images.map((u, i) =>
+          '<div class="socattached" style="' + photoStyle(u) + '">' +
+            '<button class="socattachx" data-drop="' + i + '" type="button" aria-label="' +
+              esc(L('ph.remove')) + '">' + svg('xmark') + '</button>' +
+          '</div>').join('') + '</div>'
       : '';
-    if (image) byId('bdrop').addEventListener('click', () => {
-      image = '';
+    rows('[data-drop]', (b) => b.addEventListener('click', () => {
+      images.splice(Number(b.dataset.drop), 1);
       paintAttach();
       ui('detach');
-    });
+    }));
+    const pick = byId('bpick');
+    if (pick) {
+      pick.disabled = images.length >= cap;
+      // The button says how many are left, so the cap is visible before it is hit rather than
+      // as a button that stopped working.
+      pick.textContent = images.length
+        ? L('ph.pick_photo_n').replace('{n}', String(images.length)).replace('{max}', String(cap))
+        : L('ph.pick_photo');
+    }
     const go = byId('bgo');
     // Snapmatic is a photo app: there is nothing to post until one is attached.
-    if (go && isSnap) go.disabled = !image;
+    if (go && isSnap) go.disabled = !images.length;
   };
 
   sheet(L(isSnap ? 'ph.snap_new' : 'ph.bleet_new'),
@@ -18043,22 +18504,28 @@ function socCompose(appId) {
     () => {
       byId('bemoji').addEventListener('click', () => emojiOpen(textId));
       byId('bpick').addEventListener('click', () => pickPhoto((url) => {
-        image = url;
+        if (images.length >= cap) return;
+        // The same photograph twice is one attachment. The server drops the duplicate anyway;
+        // catching it here means the count on the button never lies about what will be posted.
+        if (images.indexOf(url) >= 0) { toast(L('ph.soc_already_attached')); return; }
+        images.push(url);
         paintAttach();
         ui('attach');
       }));
       byId('bgo').addEventListener('click', async () => {
         const bodyText = byId(textId).value;
         // Nothing at all to send: say so here rather than making the server answer 'empty'.
-        if (!image && bodyText.replace(/\s/g, '') === '') {
+        if (!images.length && bodyText.replace(/\s/g, '') === '') {
           toast(L(isSnap ? 'ph.snap_needphoto' : 'ph.err_empty'));
           return;
         }
         const epoch = sheetEpoch;
         const r = await post('social', {
           op: 'post', app: appId,
-          kind: image ? 'photo' : 'text',
-          body: bodyText, image,
+          kind: images.length ? 'photo' : 'text',
+          // `image` as well as `images`: it is the cover, and a server that has not been
+          // restarted since this page loaded still reads that field alone.
+          body: bodyText, image: images[0] || '', images,
         });
         if (!closeSheet(false, epoch)) return;
         if (r && r.ok) { ui('sent'); socialRender(appId); }
@@ -21438,8 +21905,21 @@ function paintEmoji() {
   });
   [...pan.querySelectorAll('.emojitabs button')].forEach((b) =>
     b.addEventListener('click', () => { emojiCat = b.dataset.c; paintEmoji(); }));
-  [...pan.querySelectorAll('.emojigrid button')].forEach((b) =>
-    b.addEventListener('click', () => {
+  // **One listener on the PANEL, not one per glyph, and bound once.**
+  //
+  // `things` holds about two hundred and thirty emoji and `symbols` about a hundred and
+  // fifty, and every tab tap repaints the grid - so changing category destroyed and rebuilt
+  // that many nodes AND bound that many listeners, in the middle of typing a message, which
+  // is the one place input latency is felt.
+  //
+  // The panel rather than the grid, because `paintEmoji` rewrites the panel's innerHTML: a
+  // flag on the grid would be gone by the next repaint and the binding would happen every
+  // time anyway. The tab buttons carry `data-c` and not `data-e`, so they cannot match.
+  if (!pan.dataset.egwired) {
+    pan.dataset.egwired = '1';
+    pan.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('.emojigrid [data-e]');
+      if (!b) return;
       const inp = byId(emojiTarget);
       if (!inp) return;
       // Insert at the caret if there is one, otherwise append; then keep typing.
@@ -21447,13 +21927,14 @@ function paintEmoji() {
       inp.value = inp.value.slice(0, at) + b.dataset.e + inp.value.slice(at);
       const pos = at + b.dataset.e.length;
       emojiRemember(b.dataset.e);
-      // Repaint when the player is LOOKING at Recent, so the emoji they just picked moves to the
-      // front under their finger rather than after the next open. Repainting on any other tab
-      // would rebuild the grid under a finger that is still tapping.
+      // Repaint when the player is LOOKING at Recent, so the emoji they just picked moves to
+      // the front under their finger rather than after the next open. Repainting on any other
+      // tab would rebuild the grid under a finger that is still tapping.
       if (emojiCat === 'recent') paintEmoji();
       try { inp.setSelectionRange(pos, pos); } catch {}
       inp.focus();
-    }));
+    });
+  }
 }
 function emojiOpen(inputId) {
   if (emojiTarget === inputId && byId('emojipanel').classList.contains('on')) { emojiClose(); return; }
@@ -21536,6 +22017,13 @@ byId('emojipanel').addEventListener('pointercancel', () => {
   const WHEEL_MAX_STRIP_HEIGHT = 110;
 
   screen.addEventListener('wheel', (e) => {
+    // **The cheap question first.** This listener is non-passive, so the wheel does not move
+    // the page until it returns - and `stripOf` below is a style-and-layout read at every
+    // level from the event target up to the screen. It answers null for almost every event,
+    // because the sideways strips it exists for are a handful of elements out of thousands.
+    // One `closest()` decides that without touching layout at all.
+    if (!e.target.closest || !e.target.closest('.seg.scroll, [data-hscroll], .exmovers, '
+        + '.excats, .musiccarousel, .cards, .lotgrid, .proll, .exmarkets')) return;
     const s = stripOf(e.target);
     // A strip that also scrolls vertically keeps the wheel for that: turning it sideways there
     // would take away the gesture that already worked.
@@ -22566,6 +23054,24 @@ window.addEventListener('message', async (e) => {
 // ══ Refresh ════════════════════════════════════════════════════
 // Re-asks the server for everything it owns. Called after any write, because re-rendering
 // from a locally patched copy is how a UI starts disagreeing with the database.
+/// The message list, and nothing else.
+///
+/// `refresh()` below is the BOOT payload, and it was what an arriving text ran. Three fields
+/// are what the three message paths actually read, and asking for three fields instead of
+/// twenty also means `Object.assign` can no longer put a stale `state.prefs` back over a
+/// setting the player changed a second ago.
+///
+/// Answers false when the server refused, so a caller can leave the list it already has on
+/// screen rather than blanking it.
+async function refreshInbox() {
+  const res = await post('inbox');
+  if (!res || !res.ok) return false;
+  state.conversations = res.conversations || [];
+  state.groups = res.groups || [];
+  state.cipherUnread = Number(res.cipherUnread || 0);
+  return true;
+}
+
 async function refresh() {
   const res = await post('refresh');
   if (res && res.ok) Object.assign(state, res);
@@ -23009,7 +23515,7 @@ window.addEventListener('message', (e) => {
           if (groupId) openGroup(groupId, groupName);
           else messageTo(m.from);
         } });
-      refresh().then(() => {
+      refreshInbox().then(() => {
         if (!openApp) renderHome();
         // A verification code arrives while the player is staring at the field it belongs in,
         // which is precisely when the chip was still showing an older one.
@@ -23283,7 +23789,7 @@ window.addEventListener('message', (e) => {
       // Re-checked AFTER the await, not only before it: `refresh` is a round trip, and a player
       // can leave Messages while it is in flight. Redrawing a thread onto whatever app they
       // opened instead is the same class of bug as painting a late answer over a newer one.
-      refresh().then(() => {
+      refreshInbox().then(() => {
         if (openApp && openApp.id === 'messages' && thread !== null) openThread(thread);
       });
     }

@@ -87,7 +87,7 @@ CreateThread(function()
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_bankpro_log` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `account`   VARCHAR(60) NOT NULL,
-        `citizenid` VARCHAR(60) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `name`      VARCHAR(80) NOT NULL DEFAULT '',
         `kind`      VARCHAR(16) NOT NULL,
         `amount`    INT NOT NULL DEFAULT 0,

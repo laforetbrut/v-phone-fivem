@@ -5,6 +5,171 @@ one coming back.
 
 ---
 
+## [2026-08-04 05:20] - An audit finding whose fix would have opened the SDK permission gate
+
+**Context:** the depth audit reported that the store catalogue rides in every open and refresh
+payload, and proposed stripping `desc`, `developer`, `permissions`, `features` and `keywords`
+from the installed-apps rows because "the home screen never reads them".
+
+**Error:** none shipped. Caught by reading the call sites before cutting.
+
+**Root cause of the bad advice:** the home screen indeed never reads them, and two other things
+do. `sdkHasPermission` reads `app.permissions` off the OPEN app - an installed row - and its
+own comment says an empty list is "the backwards-compatible legacy profile", i.e. full access.
+Stripping the field would have silently granted every dropped-in app every SDK op. And
+`storeDetail` is called with an installed row from an app's own action sheet ("View in the
+FruitStore"), where it renders `desc`, `features`, `permissions` and `developer`.
+
+**Outcome:** not applied. The only field genuinely unread on an installed row is `keywords`, and
+that alone is not worth a change. The real fix needs a detail callback so the heavy fields can
+leave BOTH lists, which is a day's work on a shipped screen.
+
+**Prevention:** "X never reads this" is a claim about every reader, and the way to check it is to
+enumerate the readers rather than to check the one the finding names. A field that gates
+permissions is worth grepping for twice.
+
+---
+
+## [2026-08-04 04:05] - Every button in the phone was being clicked twice, for two hours
+
+**Context:** the home indicator's tap and the photo viewer's two buttons were dead because
+`#screen` captures the pointer in its edge zones, so the control never sees a pointerup and no
+click is generated. The fix forwards the tap by calling `.click()` on the control the press
+began on.
+
+**Error:** pressing one emoji typed it twice.
+
+**Root cause:** the forwarding was unconditional. It is only NEEDED when the pointer was
+actually captured - and capture happens only in the top and bottom edge zones. Everywhere else
+the browser generates the click itself, so forwarding as well meant two clicks on every control
+in the phone: two toggles, two sends, two purchases.
+
+**Why nothing caught it for two hours:** the input probe's existing checks are all on controls
+whose second activation is invisible. A widget removed twice is one widget removed and one
+no-op; a home-bar press that goes home twice is home. The emoji picker was the first check
+written against a control whose effect ACCUMULATES, and it failed on the first run.
+
+**Fix:** record whether `setPointerCapture` succeeded, and forward only then.
+
+**Prevention:** when a fix adds a synthetic event, ask what the real one is doing at the same
+moment. And prefer a test on something that accumulates: a toggle hides a double fire, a text
+field shows it.
+
+---
+
+## [2026-08-04 02:10] - "Framework agnostic" was true of the code and false of the schema
+
+**Context:** an audit sweep asked whether the resource is really framework agnostic rather than
+whether it looks it.
+
+**Error:** on ESX and standalone the phone opens, keeps the wallpaper and the passcode, and then
+saves nothing. No contact, no message, no note, no mail, no social account.
+
+**Root cause:** the bridge sets `citizenid` from the framework, and on ESX that is
+`player.identifier` (48 characters, more with multicharacter) while on standalone it is the bare
+forty-hex licence. Forty-eight columns across eleven files declared `VARCHAR(16)`. In strict mode
+every insert raises; without it the id is cut on write and compared full on read.
+
+**Why it was invisible:** the two tables the BRIDGE owns - `vphone_kv` and `vphone_characters` -
+were already `VARCHAR(64)`, so the phone booted, remembered its settings and looked healthy. The
+failure was confined to the feature tables, and to two of the four frameworks.
+
+**Fix:** every CREATE corrected, plus an idempotent widening pass at boot for databases that
+already exist. Keys widened in place rather than dropped and recreated.
+
+**Prevention:** a value that crosses a framework boundary has no width you can assume. The newer
+files in this resource already used 64 - the author had learned it once, in one place, and the
+older files never heard. When a fact like that is discovered, the sweep is the whole repository.
+
+---
+
+## [2026-08-04 01:35] - An export that raises where nil was expected
+
+**Context:** reading the ox_core money paths.
+
+**Error:** on ox_core, a bank debit could not succeed, and the attempt could take the whole NUI
+callback with it - leaving a transfer sheet spinning for ever.
+
+**Root cause:** `elseif acc.id and exports.ox_core.RemoveAccountBalance then` reads as "if the
+export exists". FiveM's export proxy does not answer nil for a name a resource does not publish:
+it RAISES. Outside a pcall that is not a falsy test, it is an uncaught error. And it was reached
+every time, because the method it falls back FROM cannot exist either - ox hands the account
+across the export boundary as data, so its fields survive and its methods do not, which this
+resource had already documented for the player object and not applied to the account.
+
+**Fix:** call the export inside a pcall rather than testing it for truth, on both the debit and
+the credit side.
+
+**Prevention:** `exports.foo.bar` is not a lookup, it is a call into a metatable that can throw.
+Anything that reaches an export defensively must do it inside a pcall, including the part that
+only means to look.
+
+---
+
+## [2026-08-02 21:30] - The same capture, in a second place, killing two more buttons
+
+**Context:** adding a copy-link button to the full-screen photo viewer. The new button did not
+respond to a real press.
+
+**Error:** `Input.dispatchMouseEvent` at the button's centre produced a pointerdown ON the
+button and no click at all. `elementFromPoint` agreed the button was there.
+
+**Root cause:** `#screen`'s pointerdown calls `setPointerCapture` for any press starting within
+`EDGE_TOP` (56px) of the top or `EDGE` (34px) of the bottom, so the pointerup goes to `#screen`
+and the button never sees one. No pointerup, no click. The same mechanism that had killed the
+home indicator's tap, found in 1.6.1 - and this time it had also killed the viewer's CLOSE
+button, since the day the viewer was written. Nobody noticed because a tap anywhere in that
+viewer dismisses it, so the close button appeared to work while actually being a tap on the
+backdrop underneath it.
+
+**Fix:** the pointerdown records the control the press began on, and the pointerup forwards a
+tap to it. The home bar is excluded, because the swipe up from it is a real gesture that starts
+on a button.
+
+**Prevention:** when a root cause is found, ask where else the same mechanism reaches. The first
+fix named the home bar and stopped there; the capture covers two whole edges of the screen and
+everything in them. A fix that names one instance of a general mechanism is half a fix.
+
+---
+
+## [2026-08-02 20:55] - A synthetic click carries no coordinates
+
+**Context:** forwarding a tap to the control it began on, with `el.click()`.
+
+**Error:** the forwarded click dismissed the photo viewer instead of copying the link.
+
+**Root cause:** the viewer's delegate decided which control had been pressed by comparing the
+click's `clientX/clientY` against the buttons' rectangles - correct for a real click, and wrong
+for `HTMLElement.click()`, which dispatches with both at 0. The point (0,0) is not inside the
+button, so the delegate fell through to "tap on the backdrop, dismiss".
+
+**Fix:** identity first (`e.target.closest`), geometry only for a click that has a real point
+behind it.
+
+**Prevention:** a geometry test on an event is a test on `clientX/clientY`, and those are zero
+for every synthetic dispatch. Ask where the event comes from before deciding by where it landed.
+
+---
+
+## [2026-08-02 20:10] - A test PNG that no decoder would accept
+
+**Context:** `vphone_media_test` builds a one-pixel PNG so that "the file was too big" cannot be
+the answer when the host refuses it.
+
+**Error:** none observed. Caught by inflating the generated file in Python before trusting it:
+the zlib stream failed its Adler-32 check and every chunk CRC was written as zero.
+
+**Root cause:** the checksums were stubbed on the assumption that nothing would look at them.
+
+**Fix:** CRC-32 and Adler-32 computed in Lua, verified against Python's `zlib` - signature,
+three chunks, correct CRCs, and an IDAT that inflates to the four bytes it should.
+
+**Prevention:** a diagnostic that can itself be wrong is worse than none: a host rejecting a
+malformed file would have been reported as a rejected key, which is the exact confusion the
+command exists to remove. Verify the instrument before reading it.
+
+---
+
 ## [2026-08-02 18:40] - The home indicator's tap had never worked, and every test agreed it did
 
 **Context:** the reachability sweep reported three controls under the home bar. Chasing them.
@@ -1613,3 +1778,143 @@ framework share a surface just because they share a player shape. Read the sourc
 a silent pcall as a place a bug can hide: `QBUsable` returned false and nobody looked, for
 however long. Where a pcall guards an integration that is *supposed* to be there, log the
 failure once rather than swallowing it.
+
+## [2026-08-04 —] Module state leaked between screenshots, so a picture was of the wrong screen
+
+**Context:** adding an assertion for the new Maps search field, using the shot harness.
+
+**Error:** `maps-search: Error: no search field on the places screen`, on a screen that has one.
+
+**Root cause:** the `pins` shot sets `mapsTab = 'pins'` and never puts it back. Every shot runs
+against the same page and the same module state, so every later Maps shot opened on the Pins
+tab. The assertion was not wrong; it was correct about a screen nobody meant to be showing.
+The consequence is worse than the test failure: `29-map-places.png` in the README has been a
+picture of the Pins tab for as long as both shots have existed, and nothing said so, because a
+picture of the wrong screen is still a picture.
+
+**Fix:** each Maps shot sets the tab it depends on before opening the app.
+
+**Prevention:** this is the third time — `crop-slider` failed after `gallery-albums` left
+`galleryTab` behind, and now this. A shot sets the state it depends on; the order it happens to
+run in is not a fact about the phone. A shot that passes alone and fails in a batch is the
+symptom, but the batch is right and the lone run is the lie.
+
+## [2026-08-04 —] `pairs` order treated as an order
+
+**Context:** checking the ox_core job label, found the group pick beside it.
+
+**Error:** no error. On ox_core, a character in two non-permission groups had a job that changed
+between two opens of the same app.
+
+**Root cause:** `for group, grade in pairs(groups) do ... break end` — Lua does not define the
+order `pairs` visits keys in, so "the first group" is not a thing. It survived because a
+character in ONE group is stable, and one group is what anybody tests with.
+
+**Fix:** the highest grade wins, the name breaks a tie. `tools/test-oxjob.py` runs the pick over
+sixty shuffles of the same two groups and asserts one answer; the old code gives two.
+
+**Prevention:** `pairs` plus `break` is a bug whenever the table can hold more than one match.
+When a fix depends on ordering, the test has to VARY the order — a single run of an unordered
+loop proves nothing, and asserting over many shuffles is what turned this from a suspicion into
+a demonstrated defect.
+
+## [2026-08-04 —] A screenshot assertion left a wrapper on the preview's post handler
+
+**Context:** measuring the Hush match avatar against the Messages avatar. The Hush screen needs
+data, so the shot wrapped `window.__VPHONE_PREVIEW_POST__` the way the existing Hush shots do.
+
+**Error:** none observed, which is the point. The existing Hush shots wrap the same global and
+never restore it, and they get away with it because they run near the END of the list. The new
+shot was inserted near the front, so every one of the thirty shots after it would have inherited
+a handler it never asked for.
+
+**Fix:** the shot restores the handler on the way out, and puts the Hush tab back.
+
+**Prevention:** the same rule as the leaked `mapsTab` logged above, one level up: a shot must not
+only SET what it depends on, it must not leave anything behind that another shot could read. A
+global that is wrapped gets unwrapped in the same script.
+
+## [2026-08-04 —] Backticks in a comment closed the template literal, again
+
+**Context:** adding a comment to a shot script inside `` script: `...` ``.
+
+**Error:** `SyntaxError: Unexpected identifier 'flex'` at the comment line.
+
+**Root cause:** the comment used backticks to quote a CSS property. Every shot script in
+make-shots.js is a JS template literal, so a backtick inside one ends it.
+
+**Fix:** the comment quotes nothing.
+
+**Prevention:** already logged twice this session, in probe-input.js and anim-count.js. Inside a
+template literal there is no such thing as a backtick that is "just prose". `node --check`
+catches it in a second and was the thing that did.
+
+## [2026-08-04 —] An elision rule turned a unit symbol into a pronoun
+
+**Context:** restoring the apostrophes the French locale had dropped, 206 of them.
+
+**Error:** `Toute personne à moins de {n} m apparaît ici` became `{n} m'apparaît ici`.
+
+**Root cause:** the rule was "a stump letter, a space, then a vowel". The `m` there is metres.
+The guard already excluded a stump preceded by `%`, `{`, `}` or a digit — because `"Reçu %s de
+%s"` looks exactly like the elision `s d` — but `{n} m` puts a SPACE between the placeholder and
+the unit, so the unit slipped through the one guard written for this.
+
+**Fix:** the string is back as it was, and a sweep for `[}\d]\s+[a-z]'` over the whole file
+confirmed it was the only one. That sweep found one other hit, the `1` of `911` before `n'est`,
+which is correct.
+
+**Prevention:** when a rule is written to skip false positives, enumerate the SHAPES the false
+positive takes, not the one that was in front of you. `%s de` and `{n} m` are the same mistake
+with different spacing, and only the first had been imagined.
+
+## [2026-08-04 —] A checker read 119 fewer words than it claimed, and still printed ok
+
+**Context:** after 186 strings moved from single to double quotes to carry an apostrophe.
+
+**Error:** none visible. `check-fr.py` printed `ok  no word is spelled two ways`.
+
+**Root cause:** its Lua-string pattern excluded BOTH quote characters from the body,
+`(?:[^'"\]|\.)*`. That is correct for a single-quoted string with no apostrophe in it, and it
+silently fails to match a double-quoted string that contains one. The word count dropped from
+1955 to 1836 and nothing said so.
+
+**Fix:** the body now excludes only the delimiter, `(?:(?!\2)[^\]|\.)*`. The count went to
+2044 and eighteen real defects appeared immediately — in strings that had ALWAYS been double
+quoted, so the check had never once looked at them.
+
+**Prevention:** a checker's COVERAGE is a number to watch, not just its verdict. A pass over
+less input looks exactly like a pass. Print how much was read, and be suspicious when it falls.
+
+## [2026-08-04 —] A rule was written against one apostrophe, and the file has two
+
+**Context:** deciding `a` against `à` across 140 occurrences of the French locale.
+
+**Error:** the dry run was about to turn `Votre fiche n’a pour l’instant` into `n’à`.
+
+**Root cause:** the guard excluded a preceding ASCII `'` so that `n'a` would be left alone. The
+file also contains 76 typographic apostrophes `’` — it mixes the two — and `n’a` matched.
+
+**Fix:** both characters are in the guard. The mixing itself is untouched and worth a pass of
+its own.
+
+**Prevention:** when a guard is written around a character, check which characters the file
+actually contains rather than which one was in the example. A `grep -c` for the other form takes
+five seconds and would have shown 76 of them.
+
+## [2026-08-04 —] The dry run is the test
+
+**Context:** the same pass. Eleven verbs were about to become prepositions: `a accepte`,
+`a commence`, `a note`, `a verse`, `a cloture`, `a republie`, `a mentionne`, `a cesse`.
+
+**Root cause:** the verb was recognised by "`a` followed by a past participle", and those
+participles are still spelled like the present tense because they are homographs the accent
+passes deliberately left alone. So the test for the verb could not see them.
+
+**Fix:** each was added to the protection list after being read in place, and the ones whose
+context was certain then had their accent corrected too.
+
+**Prevention:** a bulk edit over natural language gets a dry run that PRINTS every change, and
+the print gets read, not skimmed for a count. Three separate classes of error were caught this
+way in one pass, and none of them would have failed a test — the file would have compiled, the
+screenshots would have matched, and the French would have been wrong.

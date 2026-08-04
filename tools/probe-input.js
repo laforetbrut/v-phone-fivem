@@ -232,6 +232,120 @@ async function widgetStrip(cdp) {
 /// The fix reserves the strip, so this asserts the property rather than any handler: Settings
 /// has no tab bar, and at EVERY scroll position nothing pressable may have its centre in the
 /// band. Then the bar is shown to still do its own job.
+/// Copying a picture's link, pressed for real.
+///
+/// The viewer closes on a tap ANYWHERE inside it, so this button lives on top of a listener
+/// whose whole job is to make it go away. The press has to reach the button, the button has to
+/// stop the tap travelling, and the viewer has to still be there afterwards - three things a
+/// synthetic click cannot tell you anything about, because it skips the hit test that decides
+/// which of the two is pressed in the first place.
+async function copyLink(cdp) {
+  console.log('');
+  console.log('copying a picture link');
+
+  const shown = await cdp.eval(`
+    try { if (typeof unlock === 'function') unlock(); } catch (e) {}
+    if (typeof editing !== 'undefined' && editing) exitArrange();
+    try { goHome(); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 400));
+    window.__copied = null;
+    window.__realCopy = copyText;
+    copyText = (t) => { window.__copied = t; return true; };
+    openPhoto('https://example.invalid/shot-9182.webp', 'a caption');
+    await new Promise((r) => setTimeout(r, 500));
+    const b = document.querySelector('.photoview .pvlink');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: Math.round(r.width) };
+  `);
+  check(!!shown, 'an uploaded picture offers a link button', shown ? shown.w + 'px' : 'not drawn');
+  if (!shown) return;
+
+  await cdp.press(shown.x, shown.y, 80);
+  await sleep(500);
+
+  const after = await cdp.eval(`
+    return { copied: window.__copied,
+             open: document.getElementById('photoview').classList.contains('on') };
+  `);
+  check(after.copied === 'https://example.invalid/shot-9182.webp',
+    'the press copied the address', String(after.copied));
+  check(after.open === true, 'and the viewer did not close under it',
+    after.open ? '' : 'the tap reached the backdrop');
+
+  // A picture the phone has not uploaded has nothing to copy, and must not pretend otherwise.
+  const local = await cdp.eval(`
+    closePhoto();
+    await new Promise((r) => setTimeout(r, 300));
+    openPhoto('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"/>');
+    await new Promise((r) => setTimeout(r, 400));
+    const has = !!document.querySelector('.photoview .pvlink');
+    closePhoto();
+    copyText = window.__realCopy;
+    return has;
+  `);
+  check(local === false, 'a local picture offers no link', local ? 'it offered one' : '');
+}
+
+/// Picking an emoji, and picking one after changing category.
+///
+/// The grid used to bind a listener to every glyph - two hundred and thirty of them on one tab -
+/// and rebind them all on each tab tap. It is one delegated listener on the panel now, which is
+/// the kind of change that either works or silently stops emoji from being pickable at all. The
+/// second half of the check is the one that matters: the panel survives a repaint and the grid
+/// does not, so a listener bound to the wrong one would work exactly once.
+async function emojiPicker(cdp) {
+  console.log('');
+  console.log('the emoji picker');
+
+  const first = await cdp.eval(`
+    try { if (typeof unlock === 'function') unlock(); } catch (e) {}
+    if (typeof editing !== 'undefined' && editing) exitArrange();
+    try { goHome(); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 400));
+    // A field for the picker to type into, and the picker pointed at it.
+    body('<input id="probemsg" type="text" value="">');
+    emojiOpen('probemsg');
+    await new Promise((r) => setTimeout(r, 500));
+    const b = document.querySelector('.emojigrid [data-e]');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, glyph: b.dataset.e };
+  `);
+  check(!!first, 'the grid draws pickable glyphs', first ? first.glyph : 'none');
+  if (!first) return;
+
+  await cdp.press(first.x, first.y, 70);
+  await sleep(350);
+  let val = await cdp.eval("return (byId('probemsg') || {}).value || '';");
+  check(val === first.glyph, 'pressing one types it', JSON.stringify(val));
+
+  // Now change category, which repaints the grid, and pick again. A listener bound to the
+  // GRID rather than the panel would be gone by now.
+  const second = await cdp.eval(`
+    const tab = [...document.querySelectorAll('.emojitabs button')]
+      .find((t) => t.dataset.c && t.dataset.c !== emojiCat);
+    if (!tab) return null;
+    tab.click();
+    await new Promise((r) => setTimeout(r, 400));
+    byId('probemsg').value = '';
+    const b = document.querySelector('.emojigrid [data-e]');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, glyph: b.dataset.e };
+  `);
+  check(!!second, 'another category draws its own glyphs', second ? second.glyph : 'none');
+  if (!second) return;
+
+  await cdp.press(second.x, second.y, 70);
+  await sleep(350);
+  val = await cdp.eval("return (byId('probemsg') || {}).value || '';");
+  check(val === second.glyph, 'and one from THAT grid still types',
+    JSON.stringify(val) + ' wanted ' + JSON.stringify(second.glyph));
+
+  await cdp.eval("try { emojiClose(); } catch (e) {} return true;");
+}
+
 async function homeBand(cdp) {
   console.log('');
   console.log('the home indicator band');
@@ -377,6 +491,8 @@ async function appGrid(cdp) {
     await widgetStrip(cdp);
     await appGrid(cdp);
     await homeBand(cdp);
+    await copyLink(cdp);
+    await emojiPicker(cdp);
   } catch (e) {
     check(false, 'the probe ran to the end', e.message);
   }

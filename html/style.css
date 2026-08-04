@@ -3,10 +3,22 @@
 
    Two rules govern everything below.
 
-   1. **No `backdrop-filter`.** FiveM's CEF renders it as an opaque black box, so
-      the glass is COMPOSED rather than sampled: a translucent tint, a bright 1px
-      rim, a specular sheen across the top edge and a soft inner shadow. Against
-      the smooth gradient wallpapers this reads as glass, and it costs nothing.
+   1. **Glass is COMPOSED, and blur is for chrome only.** The `.glass` material is
+      built from layers - a translucent tint, a bright half-pixel rim, a specular
+      sheen along the top edge, a darkened outer edge - rather than sampled from
+      what is behind it. Against the smooth gradient wallpapers that reads as
+      glass and costs nothing, and it is what every panel in this file uses.
+
+      A real `backdrop-filter` is used, deliberately, on the chrome and nowhere
+      else: the navigation bar, the tab bar, sheets, the banner, the island, the
+      control centre, the lock screen. That is one blur per surface over opaque
+      content, which is affordable; it is not the dozen NESTED full-screen blurs
+      the earlier "Clear Glass" pass put on every group, field and post, which was
+      not. The reasoning is in the "iOS 27: glass is chrome, content is opaque"
+      section, and `--chrome-blur` is the one place the recipe lives.
+
+      So: reach for `.glass` on a panel. Reach for `--chrome-blur` on a bar. Do
+      not put either on content that scrolls.
 
    2. **The chrome is the phone's; the accent is the server's.** Structure,
       radii, materials and motion are iOS. The accent colour comes from v-ui, so
@@ -226,8 +238,11 @@ input { font: inherit; }
 .screen.app-open .wallpaper { filter: blur(18px) saturate(120%); transform: scale(1.08); }
 
 /* ── Liquid Glass primitive ────────────────────────────────────
-   Composed, not sampled: FiveM's CEF renders backdrop-filter as an opaque black
-   box, so the material is built from layers.
+   Composed, not sampled: the material is built from layers rather than blurring
+   what is behind it. Not because a blur cannot be had - the chrome uses a real
+   one, see `--chrome-blur` - but because this is the PANEL material, and panels
+   are many. A blur per panel is what the Clear Glass pass did and what the iOS 27
+   section further down was written to undo.
 
    Four of them, in order:
      1. a specular sheen along the top edge, and a second diagonal one (iOS 27
@@ -882,6 +897,7 @@ input { font: inherit; }
 
 /* Category chips. They wrap onto as many lines as they need, because the alternative is
    ten labels sharing one row at two letters each. */
+.mapsearch { margin-bottom: 12px; }
 .mapskinds { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
 .mapkind { padding: 6px 12px; border-radius: 14px; font-size: 12.5px;
   background: var(--app-card); color: var(--app-label2);
@@ -983,6 +999,9 @@ input { font: inherit; }
 
 /* The editor: pills for the choices, two native pickers for the date and the time. */
 .rempick, .remquick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+/* The same pills, reading a list back rather than choosing one, so they sit under the tab row
+   instead of inside a sheet. */
+.rempick.remfilter { margin: -4px 0 12px; }
 .rempill { padding: 7px 12px; border-radius: 14px; font-size: 12.5px; background: var(--app-card);
   color: var(--app-label2); transition: transform .16s var(--snap); }
 .rempill:active { transform: scale(.94); }
@@ -1340,6 +1359,21 @@ input { font: inherit; }
 /* ══ Health rings ═════════════════════════════════════════════
    The one place a list would be the wrong shape: these are quantities, and a
    ring reads as one at a glance. */
+/* The week of steps. Seven columns whatever the numbers are, because a chart that drops the
+   empty days says somebody walked every one of them. `align-items: flex-end` is what makes the
+   bars grow upward from a shared baseline; the percentage height is set inline per bar. */
+.stepchart { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  align-items: end; height: 104px; padding: 12px 14px 8px; }
+.stepbar { display: flex; flex-direction: column; justify-content: flex-end;
+  align-items: center; height: 100%; gap: 5px; }
+.stepbar > i { display: block; width: 100%; max-width: 22px; border-radius: 5px;
+  background: var(--app-sep); transition: height 240ms ease; }
+.stepbar > b { font-size: 11px; font-weight: 600; color: var(--app-label2); }
+/* Today, so the live number is not read as another finished day. */
+.stepbar.now > i { background: #30D158; }
+.stepbar.now > b { color: var(--app-label); }
+#device.reducemotion .stepbar > i { transition: none; }
+
 .rings { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 20px; }
 .ring { border-radius: 16px; padding: 14px; background: var(--app-card);
   text-align: center; }
@@ -1523,7 +1557,19 @@ input { font: inherit; }
 
 /* Hold to arrange: the jiggle is the signal that icons are movable. */
 @keyframes ph-jiggle { from { transform: rotate(-1.7deg); } to { transform: rotate(1.7deg); } }
-.pages.jiggle .tile { animation: ph-jiggle .13s ease-in-out infinite alternate; }
+.pages.jiggle .tile { animation: ph-jiggle .13s ease-in-out infinite alternate;
+  /* **A NEGATIVE delay, so each icon starts partway through its own wobble.**
+
+     Moving a tile rewrites the whole page's markup whenever the insertion point changes, so
+     every icon becomes a brand-new element and its animation restarts from frame zero - all of
+     them, at the same instant, on every seam the finger crosses. That is a synchronised snap to
+     -1.7deg rather than the continuous independent wobble iOS has, and it is most visible on a
+     full page where a drag crosses eight or nine seams.
+
+     A negative delay starts an animation already in progress, and `--i` is the tile's own index,
+     already written on every tile for the stagger. Multiplying it spreads the icons across the
+     cycle, so a rebuild puts each one back where it was rather than resetting the lot. */
+  animation-delay: calc(var(--i, 0) * -37ms); }
 .pages.jiggle .tile:nth-child(2n) { animation-duration: .15s; animation-direction: alternate-reverse; }
 
 /* Drilling in slides the new content in from the right, as a push does. A swap
@@ -1818,7 +1864,11 @@ input { font: inherit; }
   text-transform: uppercase; color: rgba(235,235,245,.6); }
 .ccnow .nowmid { display: flex; align-items: center; gap: 10px; margin: auto 0; min-width: 0; }
 .ccnow .nowart { width: 42px; height: 42px; border-radius: 10px; flex: 0 0 auto;
-  background: linear-gradient(135deg, var(--v-accent-400), var(--v-accent-600)); display: flex;
+  /* Both halves carry a fallback. `--v-accent-400` is not defined anywhere - the theme ships
+     300, 600 and 700 - and one unresolvable var() invalidates the whole declaration, which
+     left this tile transparent on every server. */
+  background: linear-gradient(135deg, var(--v-accent-400, var(--ios-pink)),
+                              var(--v-accent-600, #A6103C)); display: flex;
   align-items: center; justify-content: center; color: #fff; }
 .ccnow .nowart svg { width: 20px; height: 20px; }
 .ccnow .nowmid > span { display: flex; flex-direction: column; min-width: 0; }
@@ -3094,7 +3144,19 @@ input { font: inherit; }
 .appbody.refreshing::before {
   opacity: 1;
   transform: translate(-50%, 0);
-  animation: ui-spin .72s linear infinite;
+  /* **Its own keyframe, because it has a base transform.**
+
+     `ui-spin` is `to { transform: rotate(360deg) }` with an implicit from-frame taken from the
+     underlying value - here `translate(-50%, 0)`. Two transform lists with different primitives
+     interpolate by matrix decomposition, and rotate(360deg) IS the identity matrix, so this
+     animated from "shifted 12px left" to "not shifted": the ring drifted right over 720ms and
+     snapped back, for ever, without once rotating. The other two users of `ui-spin` have no
+     base transform, which is why they are fine and why `ui-spin` is left alone. */
+  animation: pull-spin .72s linear infinite;
+}
+@keyframes pull-spin {
+  from { transform: translate(-50%, 0) rotate(0deg); }
+  to   { transform: translate(-50%, 0) rotate(360deg); }
 }
 
 .appbody.pushin > * {
@@ -3300,10 +3362,26 @@ input { font: inherit; }
     0 3px 8px rgba(0, 0, 0, .18);
 }
 
-.row .rav {
+.row .rav,
+.row .socav {
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .18),
     0 3px 9px rgba(0, 0, 0, .18);
+}
+
+/* **The same row, so the same avatar.**
+   Messages, Contacts and Calls draw `.row.lead` with a 38px `.rav`. Bleeter's follower lists,
+   Snapmatic's search results and Hush's matches draw the same `.row.lead`, with the same
+   `.rmain`/`.rt`/`.rs` inside it, and a 34px flat `.socav` - four pixels and a finish apart,
+   on screens one tab from each other.
+
+   Scoped to a row on purpose: `.socav` shares its block with the comment and story-ring
+   avatars, where 34px is right and this shadow would be wrong. */
+.row .socav {
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .row .rt {
@@ -8575,6 +8653,14 @@ body.inframe.dark .uisearch {
 .uichip:active { transform: scale(.96); }
 .uichip.positive { color: #248A3D; background: rgba(52, 199, 89, .15); }
 .uichip.negative { color: #D70015; background: rgba(255, 59, 48, .14); }
+/* On black the two darkened greens and reds above become a smudge - roughly 2.5:1 against a
+   tinted near-black card, and worse because the BACKGROUND flips usefully while the text does
+   not. Same shape as the `.screen.dark .uicard` block further up, which fixed the per-app
+   tints and did not reach the chips. */
+.screen.dark .uichip.positive,
+body.inframe.dark .uichip.positive { color: var(--ios-green); }
+.screen.dark .uichip.negative,
+body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 .uinotice {
   display: flex;
@@ -8691,7 +8777,29 @@ body.inframe.dark .uisearch {
   color: var(--ios-red);
 }
 
-/* This must remain the final motion rule so later component rules cannot revive it. */
+/* This must remain the final motion rule so later component rules cannot revive it.
+
+   Two selectors, one meaning. The media query answers the player's OPERATING SYSTEM; the class
+   answers the switch in Settings > Accessibility, which is the only one a player inside FiveM
+   can actually reach. Written together so there is one description of what reducing motion
+   means rather than two that drift. */
+#device.reducemotion,
+#device.reducemotion *,
+#device.reducemotion *::before,
+#device.reducemotion *::after {
+  animation-duration: .001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+#device.reducemotion .pages.jiggle .tile,
+#device.reducemotion.device.buzz .bezel,
+#device.reducemotion.device.peeking .bezel {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   #device,
   #device *,
@@ -8923,6 +9031,46 @@ body.inframe.dark .uisearch {
 .pact.plike.on svg { fill: currentColor; }
 .pact.prepost.on { color: var(--ios-green); }
 .pact.pdel:active { color: var(--ios-red); }
+
+/* ── Several photographs on one post ──────────────────────────
+   Four arrangements, not one at four sizes: two split the card down the middle, three put a
+   tall one beside two stacked, four make a square. That is why the count is a class - the
+   shapes differ, so a computed column count could not produce them.
+
+   `aspect-ratio` rather than a fixed height so the block scales with the card's width, and a
+   1px gap so the seams read as separate pictures rather than one wide one. */
+.pgrid {
+  display: grid;
+  gap: 2px;
+  width: calc(100% + 30px);
+  margin: 9px -15px 0;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+}
+.pgrid.n2 { grid-template-columns: 1fr 1fr; aspect-ratio: 2 / 1; }
+.pgrid.n3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+/* The first of three is the tall one, down the left. */
+.pgrid.n3 .pgcell:first-child { grid-row: span 2; }
+.pgrid.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+.pgcell {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background-color: var(--app-fill);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  transition: opacity var(--ph-fast) ease;
+}
+.pgcell:active { opacity: .82; }
+#device.reducemotion .pgcell { transition: none; }
+
+/* The composer's own row of thumbnails, which is a strip rather than a grid: it is a list of
+   what is attached, in the order it will be posted. */
+.socattachrow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
 /* Snapmatic leads with the photo, so its image goes edge to edge inside the card. */
 .post.snapstyle .pimg {
@@ -12797,6 +12945,16 @@ body.inframe.dark .uisearch {
   backdrop-filter: blur(14px);
 }
 .photoview .pvclose svg { width: 17px; height: 17px; }
+/* The link button is the close button's twin, one place to its left, because they are the same
+   kind of thing: a small round control over the picture rather than part of it. */
+.photoview .pvlink {
+  position: absolute; top: 14px; right: 54px; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 99px; background: rgba(28, 28, 30, .72); color: #fff;
+  backdrop-filter: blur(14px);
+}
+.photoview .pvlink svg { width: 16px; height: 16px; }
+.photoview .pvlink:active { transform: scale(.9); }
 /* Anything that opens the viewer says so under the pointer. */
 [data-full] { cursor: zoom-in; }
 

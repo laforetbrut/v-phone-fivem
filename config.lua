@@ -1278,7 +1278,11 @@ Config.AppMetadata = {
         keywords = { 'voiture', 'véhicule', 'plaque', 'garage' },
     },
     property = {
-        features = { 'Propriétés', 'Locataires', 'Loyer', 'Paiement à distance' },
+        -- 'Locataires' and 'Paiement à distance' were here and neither exists anywhere in the
+        -- resource: the page renders `pr.arrears` and `pr.locked`, which nothing ever sends. A
+        -- feature list is a promise, and this one is the only place a player reads it before
+        -- deciding what the app is.
+        features = { 'Propriétés', 'Loyer', 'Localiser' },
         keywords = { 'maison', 'appartement', 'loyer', 'logement' },
     },
     wallet = {
@@ -1365,6 +1369,33 @@ Config.AppMetadata = {
         features = { 'Apparence', 'Clear Glass', 'Sécurité', 'Sons', 'Accessibilité', 'Organisation des apps' },
         keywords = { 'réglages', 'thème', 'face id', 'code', 'fond écran' },
     },
+
+    -- ── The five that had none ─────────────────────────────────
+    -- Thirty-two of the thirty-seven apps had an entry here and these five did not, so their
+    -- store page drew no feature list at all and the search could only match their display
+    -- name. OnlyFruits is the one shipped app with a price on it: somebody deciding whether to
+    -- spend a hundred dollars read one line of description and three mock screenshots, while
+    -- every other paid app got a checked list.
+    emergency = {
+        features = { 'Appel 911', 'Position transmise', 'Suivi de la prise en charge', 'Appel anonyme' },
+        keywords = { 'urgence', 'police', 'ambulance', 'pompier', 'secours', '911' },
+    },
+    bankpro = {
+        features = { 'Comptes de société', 'Masse salariale', 'Virements', 'Relevé de l entreprise' },
+        keywords = { 'entreprise', 'société', 'patron', 'salaire', 'comptabilité' },
+    },
+    onlyfruits = {
+        features = { 'Abonnements', 'Publications privées', 'Revenus', 'Messages aux abonnés' },
+        keywords = { 'abonnement', 'créateur', 'contenu', 'revenus', 'privé' },
+    },
+    zuber = {
+        features = { 'Restaurants', 'Commande', 'Suivi de livraison', 'Avis' },
+        keywords = { 'livraison', 'restaurant', 'manger', 'commande', 'repas' },
+    },
+    taxi = {
+        features = { 'Commander une course', 'Suivi du chauffeur', 'Estimation du prix', 'File des chauffeurs' },
+        keywords = { 'taxi', 'course', 'chauffeur', 'transport', 'trajet' },
+    },
 }
 
 -- ── The home screen, in one place ──────────────────────────────
@@ -1390,6 +1421,12 @@ Config.Home = {
     -- something a character chooses to open, not something their phone arrives with.
     installed = {
         'emergency',  -- first on the grid, and `required` below: it is never a download
+        -- **And alerts, for the same reason.** Its catalogue entry has said `required = true`
+        -- and carried a paragraph about it since 1.6.1 - but THIS list is the one that decides,
+        -- as the note under `required` below says, so the entry was arguing with the wrong
+        -- side. A new character had no Alerts icon: the banner fired, and tapping it led to an
+        -- app that was not installed.
+        'alerts',
         'bank', 'mail', 'maps', 'camera', 'gallery', 'music',
         'garage', 'property', 'wallet', 'jobs', 'health',
         'notes', 'reminders', 'calc',
@@ -1403,7 +1440,7 @@ Config.Home = {
     -- own `required` field (see the loop below), so an app left out of it is removable
     -- whatever its entry says. Switch the app off with `Config.Emergency.enabled` - a player
     -- does not get to delete the one app they will need while they are being shot at.
-    required = { 'phone', 'messages', 'contacts', 'store', 'settings', 'emergency' },
+    required = { 'phone', 'messages', 'contacts', 'store', 'settings', 'emergency', 'alerts' },
 
     -- Not offered at all: not on the home screen, not in the store, not searchable.
     -- Use this to switch an app off entirely rather than deleting its catalogue entry,
@@ -1478,6 +1515,12 @@ Config.Social = {
     handleMax = 20,
 
     -- ── What a player may write ────────────────────────────────
+    -- How many photographs may ride on one post. Four is what the apps this imitates allow,
+    -- and it is a real ceiling rather than a suggestion: the server truncates a longer list
+    -- instead of refusing it, so a client that asks for six gets four and a post rather than
+    -- an error nobody can act on. 1 turns the feature off without changing anything else.
+    maxImages  = 4,
+
     postMax    = 280,       -- a bleet
     captionMax = 160,       -- a Snapmatic caption or a story line
     commentMax = 280,
@@ -4257,6 +4300,18 @@ Config.Bank = {
         -- flashes spending, and a phone buzzing at every purchase gets muted.
         outgoing = false,
 
+        -- **Announce CASH as well as bank money.** Off, and off is the honest default: a phone
+        -- is a banking app. It reads an account. It cannot see what is in somebody's pockets,
+        -- so it has no way to know a note changed hands - and it should not claim to.
+        --
+        -- It used to announce them regardless, because the qb-core money event fires for both
+        -- types and the handler ignored which one it was. That meant a notification for every
+        -- purchase, every payment between two players and every coin picked up, plus a line in
+        -- the BANK statement about money that never went near a bank.
+        --
+        -- Turn it on for a server that wants the phone to be a general money HUD.
+        cash = false,
+
         -- Write a statement line for money the phone did not move itself.
         --   'auto'  only when no dedicated banking script is running (the default: with one
         --           present that line already exists in its history, which the statement
@@ -4265,10 +4320,18 @@ Config.Bank = {
         record = 'auto',
 
         -- The fallback for a framework with no money event, ox_core in practice: sample the
-        -- balance every N seconds and announce what changed. 0 is off, and off is right on
-        -- qb, qbx and ESX where the events above are instant and carry a reason. The
-        -- minimum is 15 seconds; it costs one balance read per online player per interval.
-        pollSeconds = 0,
+        -- balance every N seconds and announce what changed.
+        --
+        -- 'auto' asks the framework: off on qb, qbx and ESX, where the events above are
+        -- instant and carry a reason, and 30 seconds on ox_core and anything bespoke, where
+        -- there is no event and this is the only way a notification ever fires. It shipped as
+        -- a flat 0, which switched the whole feature described above off on the one framework
+        -- that paragraph names as needing it.
+        --
+        -- A number is taken literally, so 0 still means off and an operator who chose an
+        -- interval keeps it. The minimum is 15 seconds; it costs one balance read per online
+        -- player per interval.
+        pollSeconds = 'auto',
     },
 
     -- How many statement lines the app shows, and how long the phone keeps its own.

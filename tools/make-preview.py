@@ -111,6 +111,47 @@ def catalogue(cfg):
     return out
 
 
+def places(cfg, S):
+    """The config's pins, shaped the way `v-phone:places` shapes them.
+
+    The preview used to answer an empty list, so the one app in the phone that is nothing but a
+    list was previewed with no list. The order and the resolved category names follow the server
+    so the picture matches what a player sees.
+    """
+    cats, order = {}, []
+    for c in cfg.get('PlaceCategories', []) or []:
+        key = str(c.get('key') or '')
+        if not key:
+            continue
+        label = str(c.get('label') or key)
+        cats[key] = {'label': S.get(label, label) if label.startswith('ph.') else label,
+                     'icon': str(c.get('icon') or 'map')}
+        order.append(key)
+
+    by_kind = {}
+    for pl in cfg.get('Places', []) or []:
+        if pl.get('enabled') is False or pl.get('x') is None:
+            continue
+        kind = str(pl.get('kind') or 'other')
+        label = str(pl.get('label') or kind)
+        by_kind.setdefault(kind, []).append({
+            'kind': kind,
+            'icon': (cats.get(kind) or {}).get('icon', 'map'),
+            'kindLabel': (cats.get(kind) or {}).get('label', kind),
+            'label': S.get(label, label) if label.startswith('ph.') else label,
+            'x': float(pl['x']), 'y': float(pl.get('y') or 0), 'z': float(pl.get('z') or 0),
+        })
+
+    out = []
+    for key in order:
+        out.extend(by_kind.pop(key, []))
+    # A pin in a category nobody declared still shows, under its own name - the server keeps
+    # them for the same reason: a typo in `kind` should not silently delete a place.
+    for key in sorted(by_kind):
+        out.extend(by_kind[key])
+    return out
+
+
 def build():
     lua = lua_world()
     cfg = plain(lua.globals().Config)
@@ -314,6 +355,25 @@ def build():
                      'me': {'label': 'Mechanic', 'name': 'mechanic', 'grade': 2, 'ranks': 4,
                             'salary': 850, 'ladder': []}},
         'app:health': {'ok': True, 'health': 100, 'armour': 25, 'hunger': 70, 'thirst': 60},
+        # The Health screen posts to `health`, not to `app`, so `app:health` above has never
+        # been reached by it. One entry answers both shapes the route carries: the live snapshot
+        # when there is no `op`, the stored record when there is. The dates are fixed so the
+        # week chart is the same seven bars in every run rather than whatever today happens to
+        # be.
+        'health': {'ok': True, 'health': 84, 'armour': 25, 'hunger': 62, 'thirst': 48,
+                   'stress': 18, 'bleed': 0, 'sick': 0, 'reader': False,
+                   'record': {'blood': 'O-', 'allergies': 'Pénicilline',
+                              'conditions': 'Asthme', 'meds': 'Ventoline', 'donor': True,
+                              'ice': '555-0148',
+                              'stepDay': '2025-03-14', 'steps': 4820,
+                              'stepHist': [
+                                  {'d': '2025-03-08', 's': 6210},
+                                  {'d': '2025-03-09', 's': 3480},
+                                  {'d': '2025-03-10', 's': 9040},
+                                  {'d': '2025-03-11', 's': 7125},
+                                  {'d': '2025-03-12', 's': 2360},
+                                  {'d': '2025-03-13', 's': 8570},
+                              ]}},
         'app:music': {'ok': True, 'enabled': True, 'provider': 'xdiskjockey', 'handoff': True,
                       'sources': [], 'allowCustomUrl': music.get('allowCustomUrl', True),
                       'hosts': music.get('hosts', []),
@@ -388,7 +448,7 @@ def build():
         'fundSlug': {'ok': True, 'free': True, 'slug': 'mypage'},
         'fundGive': {'ok': True, 'amount': 250},
         'lookup': {'ok': True},
-        'places': {'ok': True, 'places': []},
+        'places': {'ok': True, 'places': places(cfg, S)},
         'airdropScan': {'ok': True, 'devices': []},
         'photo': {'ok': True, 'photos': []},
         # No `address` and no `error`: that is what a character with no mailbox looks like,
@@ -512,6 +572,15 @@ function refreshState() {
 
 const HANDLERS = {
   refresh: () => refreshState(),
+
+  // The narrow read the message paths use instead of the boot payload. Built from the same
+  // simulated threads, so the preview cannot show a list the boot payload disagrees with -
+  // which is exactly the drift a second hand-written mock would introduce.
+  inbox: () => {
+    const b = refreshState();
+    return { ok: true, conversations: b.conversations,
+             groups: b.groups || [], cipherUnread: b.cipherUnread || 0 };
+  },
 
   // Every Settings toggle goes through here. It MUST return the new prefs: the page does
   // `state.prefs = res.prefs`, so answering a bare { ok: true } wipes them and the phone

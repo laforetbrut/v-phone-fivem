@@ -245,6 +245,21 @@ phone:GetPhoneInfo()
 Useful in a `/phonedebug` command: it says what the phone decided at boot, which is the
 first question when an integration is not behaving.
 
+#### Console commands
+
+```
+vphone_update       ask GitHub whether a newer release exists, and print the answer
+vphone_media_test   post a one-pixel PNG to the configured upload endpoint, and print the
+                    status the host answers with
+```
+
+Both are server console only. `vphone_media_test` exists because a failed upload reports
+`write EPIPE`, which is the host closing the connection part way through the body: no status
+code, no message, and a rejected key, an exhausted quota and an oversized file all look exactly
+alike. The command takes screencapture out of the middle and asks the endpoint directly, with a
+file small enough that size cannot be the answer. **401 or 403 is the key. 413 is the size. 429
+is the quota. No answer at all means the host hung up on a one-pixel file, which is the key.**
+
 ### 911
 
 Raising an emergency alert from another script: a till under robbery, a fire that started
@@ -271,6 +286,21 @@ local id, reached = phone:CreateAlert({
     source  = playerId,
     anonymous = false,                            -- true hides the name and number
 })
+
+-- `source` is who the alert is ABOUT. It is not the caller, and the difference matters: an
+-- alert raised against a robber must not tell the robber when a unit takes it or closes it,
+-- must not show them the police response on their own 911 screen, and must not count against
+-- the number of live calls they are allowed to make.
+--
+-- When a script genuinely has a caller — somebody pressed a panic button, an operator relayed
+-- a call — name them.
+local id, reached = phone:CreateAlert({
+    service = 'police',
+    reason  = 'Panic button',
+    source  = suspectId,                          -- where to send help
+    callerSource = clerkId,                       -- who called, and who gets told
+})
+-- `callerCid = 'ABC12345'` does the same for somebody who is offline.
 ```
 
 `id` is the alert, `reached` is how many responders received it — **worth checking**. A script

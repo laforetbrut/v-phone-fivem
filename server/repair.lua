@@ -111,7 +111,7 @@ CreateThread(function()
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_repair_calls` (
         `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `job`        VARCHAR(48) NOT NULL,
-        `citizenid`  VARCHAR(16) NOT NULL,
+        `citizenid`  VARCHAR(64) NOT NULL,
         `name`       VARCHAR(64) NOT NULL DEFAULT '',
         `number`     VARCHAR(24) NOT NULL DEFAULT '',
         `message`    VARCHAR(320) NOT NULL DEFAULT '',
@@ -129,7 +129,7 @@ CreateThread(function()
     -- edits what you wrote rather than stacking a second opinion on the same visit.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_repair_reviews` (
         `job`        VARCHAR(48) NOT NULL,
-        `citizenid`  VARCHAR(16) NOT NULL,
+        `citizenid`  VARCHAR(64) NOT NULL,
         `stars`      TINYINT UNSIGNED NOT NULL DEFAULT 5,
         `comment`    VARCHAR(320) NOT NULL DEFAULT '',
         `name`       VARCHAR(64) NOT NULL DEFAULT '',
@@ -142,7 +142,7 @@ CreateThread(function()
     -- a callout is completed, and kept after the callout row itself is gone.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_repair_served` (
         `job`       VARCHAR(48) NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `at`        INT UNSIGNED NOT NULL,
         PRIMARY KEY (`job`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])

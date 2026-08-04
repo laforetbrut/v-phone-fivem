@@ -235,7 +235,7 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_fund_pages` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16)  NOT NULL,
+        `citizenid` VARCHAR(64)  NOT NULL,
         `slug`      VARCHAR(24)  NOT NULL,
         `title`     VARCHAR(60)  NOT NULL DEFAULT '',
         `blurb`     VARCHAR(400) NOT NULL DEFAULT '',
@@ -280,7 +280,7 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_fund_tx` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `kind`      VARCHAR(12) NOT NULL DEFAULT 'gift',
         `amount`    INT         NOT NULL DEFAULT 0,
         `at`        TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,

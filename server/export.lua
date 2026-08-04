@@ -338,7 +338,7 @@ CreateThread(function()
     if not enabled() then return end
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_export_watch` (
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `market`    VARCHAR(24) NOT NULL,
         `item`      VARCHAR(64) NOT NULL,
         `at`        INT UNSIGNED NOT NULL,
@@ -350,7 +350,7 @@ CreateThread(function()
     -- buzzing on every single poll.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_export_alerts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `market`    VARCHAR(24) NOT NULL,
         `item`      VARCHAR(64) NOT NULL,
         `kind`      VARCHAR(8) NOT NULL DEFAULT 'above',

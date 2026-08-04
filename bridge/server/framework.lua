@@ -234,17 +234,36 @@ function Bridge.GetPlayer(src)
         end)
         groups = (ok and type(groups) == 'table') and groups or {}
         local jobName, jobGrade = 'unemployed', 0
+        -- **`pairs` has no order.** ox has no single "job", so one group has to be chosen, and
+        -- the first version took whichever one `pairs` happened to hand over first and broke.
+        -- For a character in two non-permission groups that is a job which changes between two
+        -- opens of the same app with nothing having happened - and it is invisible in testing,
+        -- because a character in one group is stable and that is what anybody tests with.
+        --
+        -- The highest grade wins, which is also the more useful answer: somebody who is a
+        -- sergeant of police and a hand at the garage reads as police. The name breaks a tie,
+        -- so two groups at the same grade still pick the same one every time.
+        --
+        -- `picked` rather than testing jobName against 'unemployed': a server is allowed to
+        -- have a group actually NAMED unemployed, and comparing against the sentinel would
+        -- then let every later group overwrite it however low its grade.
+        local picked = false
         for group, grade in pairs(groups) do
-            -- ox has no single "job": the first group that is not a permission group is
-            -- the closest honest answer, and a server can name its own in the config.
             if not Config.Compat.ignoredGroups[group] then
-                jobName, jobGrade = group, grade
-                break
+                local g = tonumber(grade) or 0
+                if not picked or g > jobGrade or (g == jobGrade and group < jobName) then
+                    jobName, jobGrade, picked = group, g, true
+                end
             end
         end
+        -- The names ox already has. `ox_groups.label` and `ox_group_grades.label` are read by
+        -- the Jobs catalogue and were never read here, so the one job a player sees on their
+        -- own card was the only one shown as a raw key and a bare number.
+        local named = (Bridge.OxGroupLabels and Bridge.OxGroupLabels() or {})[jobName] or {}
         return wrap(src, tostring(player.charId),
             ((player.firstName or '') .. ' ' .. (player.lastName or '')):gsub('^%s+', ''),
-            { name = jobName, label = jobName, grade = jobGrade, gradeLabel = tostring(jobGrade),
+            { name = jobName, label = named.label or jobName, grade = jobGrade,
+              gradeLabel = (named.grades or {})[jobGrade] or tostring(jobGrade),
               -- ox_core has no boss flag either; a group's own grade list decides, and the
               -- operator names the grade that counts as one. Nil means "do not guess", and
               -- Bank Pro's `minGrade` is the route on such a server.

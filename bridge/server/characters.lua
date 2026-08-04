@@ -92,14 +92,21 @@ local function onLoaded(src)
     end)
 end
 
-RegisterNetEvent('QBCore:Server:PlayerLoaded', function(player)
+-- **`AddEventHandler`, not `RegisterNetEvent`.** All four frameworks fire these on the
+-- SERVER with `TriggerEvent`, so nothing legitimate reaches them over the network - and
+-- registering them as net events additionally let any client call them with
+-- `TriggerServerEvent`, naming whichever player id it liked. Nothing could be falsified,
+-- since the data written comes from the framework and not from the payload, but it was an
+-- unauthenticated way to drive two queries per call at whatever rate a client chose. The ox
+-- line was already right; the other three were not, in the same file.
+AddEventHandler('QBCore:Server:PlayerLoaded', function(player)
     onLoaded(player and player.PlayerData and player.PlayerData.source)
 end)
-RegisterNetEvent('qbx_core:playerLoaded', function(player)
+AddEventHandler('qbx_core:playerLoaded', function(player)
     onLoaded(player and player.PlayerData and player.PlayerData.source)
 end)
 AddEventHandler('ox:playerLoaded', function(src) onLoaded(src) end)
-RegisterNetEvent('esx:playerLoaded', function(_, xPlayer)
+AddEventHandler('esx:playerLoaded', function(_, xPlayer)
     onLoaded(xPlayer and xPlayer.source)
 end)
 

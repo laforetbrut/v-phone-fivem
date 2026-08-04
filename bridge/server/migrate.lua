@@ -29,6 +29,78 @@
 
 Bridge = Bridge or {}
 
+-- ══════════════════════════════════════════════════════════════
+-- Widening the character-id columns
+-- ══════════════════════════════════════════════════════════════
+-- **A citizen id is not sixteen characters, and on two frameworks it never was.**
+--
+--   qb / qbx     a generated id, eight characters
+--   ox           the numeric charId
+--   ESX          `player.identifier` - `license:` plus forty hex, or `charN:` before that
+--   standalone   the bare licence hex, forty characters
+--
+-- The bridge's own two tables always knew: `vphone_kv` and `vphone_characters` are VARCHAR(64).
+-- Every feature table declared VARCHAR(16). So on ESX and standalone the phone opened, kept the
+-- wallpaper and the passcode, and then saved nothing: on a server in MySQL's default strict
+-- mode every insert raised "Data too long", and on one without it the id was cut to 16 on the
+-- way in while every read used the full one, so nothing matched again.
+--
+-- The CREATE statements are fixed, which repairs a new install. This repairs an old one.
+local ID_COLUMNS = { 'citizenid', 'from_cid', 'to_cid', 'other_cid', 'owner_cid' }
+
+--- Widen every character-id column in a `vphone_` table that is narrower than 64.
+---
+--- Idempotent: it asks `information_schema` what is actually there, so a second run finds
+--- nothing to do. Nullability and the default are read and written back, because MODIFY
+--- replaces the whole definition and a column that loses its NOT NULL is a different column.
+function Bridge.WidenIdColumns()
+    local placeholders = {}
+    for _ = 1, #ID_COLUMNS do placeholders[#placeholders + 1] = '?' end
+
+    local rows = MySQL.query.await(([[
+        SELECT TABLE_NAME, COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME LIKE 'vphone!_%%' ESCAPE '!'
+          AND COLUMN_NAME IN (%s)
+          AND DATA_TYPE = 'varchar'
+          AND CHARACTER_MAXIMUM_LENGTH < 64
+    ]]):format(table.concat(placeholders, ',')), ID_COLUMNS) or {}
+
+    if #rows == 0 then return 0 end
+
+    local done = 0
+    for _, r in ipairs(rows) do
+        -- Rebuilt rather than guessed: MODIFY replaces the definition outright, so a column
+        -- that came back without its NOT NULL would start accepting rows it used to refuse.
+        local nullable = tostring(r.IS_NULLABLE or 'NO') == 'YES'
+        local def = 'VARCHAR(64) ' .. (nullable and 'NULL' or 'NOT NULL')
+        if r.COLUMN_DEFAULT ~= nil then
+            def = def .. " DEFAULT " .. ("'%s'"):format(tostring(r.COLUMN_DEFAULT):gsub("'", "''"))
+        elseif nullable then
+            def = def .. ' DEFAULT NULL'
+        end
+
+        -- Table and column names come from information_schema, not from anything a player can
+        -- reach, so back-quoting them is enough; there is nothing here to parameterise.
+        local ok = pcall(MySQL.query.await, ('ALTER TABLE `%s` MODIFY COLUMN `%s` %s')
+            :format(r.TABLE_NAME, r.COLUMN_NAME, def))
+        if ok then
+            done = done + 1
+        else
+            print(('[v-phone] could not widen %s.%s - widen it by hand if this server runs ESX '
+                   .. 'or standalone'):format(r.TABLE_NAME, r.COLUMN_NAME))
+        end
+    end
+
+    if done > 0 then
+        print(('[v-phone] widened %d character-id column(s) to 64 characters. ESX and '
+               .. 'standalone identifiers do not fit in 16.'):format(done))
+    end
+    return done
+end
+
+
 -- The columns our earliest build created in each table. Later versions only ever ADD
 -- columns (through ALTER), so these are present in every version of our own tables, and
 -- absent from anything that merely shares a name. Generated from the CREATE statements.

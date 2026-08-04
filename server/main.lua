@@ -463,6 +463,17 @@ local ALWAYS_REQUIRED = {
     settings = true,
     store = true,       -- and with no store, nothing can ever be got back
     emergency = true,   -- 911
+    -- **Alerts, while the alert system is switched on.**
+    --
+    -- This table is the floor that survives an operator keeping their own `config.lua` through
+    -- an update, which is the whole reason it exists - and Alerts is exactly the app that
+    -- argument was written for: it is the one app on this phone whose purpose is to reach
+    -- somebody who is NOT looking at it.
+    --
+    -- Conditional, because an app that can neither be removed nor do anything is worse than one
+    -- somebody deleted. `Config.Compat.apps.alerts = false` remains the way to take it off the
+    -- phone entirely; that gate runs before this one.
+    alerts = ((Config.Alerts or {}).enabled ~= false) or nil,
 }
 
 local function appsFor(src, p)
@@ -743,7 +754,12 @@ local function blockList(value, limit)
         if type(raw) == 'table' then
             n = tostring(raw.n or raw.number or ''):gsub('%c', ''):sub(1, 20)
             c = raw.c or raw.citizenid
-            c = (c ~= nil and tostring(c) ~= '') and tostring(c):sub(1, 16) or nil
+            -- 64, not 16. A citizen id is eight characters on qb and a small integer on
+            -- ox, which is why 16 looked generous - but on ESX it is `player.identifier`
+            -- (`license:` plus forty hex, or `charN:` before that) and on standalone it is
+            -- the bare forty. Cutting it here and comparing the full one later is a block
+            -- that silently never matches, on two of the four frameworks.
+            c = (c ~= nil and tostring(c) ~= '') and tostring(c):sub(1, 64) or nil
         else
             -- A bare string: what a hand-written config entry or an older stored list looks
             -- like. Read rather than dropped.
@@ -952,6 +968,10 @@ prefsOf = function(p, includeSecrets)
         previews  = m.previews ~= false,
         -- The handset rising out of a pocket to show a notification. On by default.
         peek      = m.peek ~= false,
+        -- **Accessibility.** The stylesheet has honoured `prefers-reduced-motion` for a long
+        -- time, and that is an operating-system setting a player inside FiveM cannot reach.
+        -- This is the same request, asked from the phone.
+        reduceMotion = m.reduceMotion == true,
         -- Control centre toggles. Each one is real: airplane and cellular drive the
         -- signal the status bar draws, wifi and bluetooth their own glyphs, brightness a
         -- dimming layer. A control that changed nothing would be a lie about the phone.
@@ -1499,7 +1519,10 @@ local function sendMessage(fromCid, toNumber, body, kind, attachment, replyTo)
     if target and phoneReachable(target) then
         TriggerClientEvent('v-phone:client:message', target, {
             from = numberOfCid(fromCid), fromCid = fromCid, body = body, id = id,
-            kind = kind, attachment = attachment, hasItem = requireItem(target),
+            -- `phoneReachable` on the line above already asked, and it is `requireItem`
+            -- plus a player check - so inside this branch the answer can only be true. Asking
+            -- again is a second round trip into the inventory resource for a value in hand.
+            kind = kind, attachment = attachment, hasItem = true,
             reply = quoted and {
                 id = quoted.id, kind = quoted.kind,
                 body = quoted.kind == 'text' and quoted.body or '',
@@ -1563,7 +1586,10 @@ local function sendGroup(p, groupId, body, kind, attachment, replyTo)
                 TriggerClientEvent('v-phone:client:message', target, {
                     from = fromNumber, fromCid = p.citizenid, body = body, id = id,
                     kind = kind, attachment = attachment,
-                    group = groupId, groupName = gname, hasItem = requireItem(target),
+                    -- Same as the direct path above: `phoneReachable` has already answered.
+                    -- Once per member, this was the difference between twenty inventory
+                    -- lookups and forty on a twenty-person group.
+                    group = groupId, groupName = gname, hasItem = true,
                     reply = quoteFor(m.citizenid),
                 })
                 roomAlert(target, 'message')
@@ -3134,6 +3160,34 @@ local function cipherAllowedBurn(raw)
     return 0
 end
 
+--- Just the message list.
+---
+--- **`v-phone:open` is the boot payload** - the catalogue merge, the preferences, the contacts,
+--- the wallpapers, the sounds, the widget config - and it was what every arriving text ran, on
+--- every player, because the page had no cheaper way to ask "what conversations are there now".
+---
+--- The waste is the smaller half. `refresh()` does `Object.assign(state, res)`, so a message
+--- landing while somebody is in Settings replaces `state.prefs` with the server's copy from
+--- before their last change. A narrow answer cannot do that, because it carries nothing else.
+V.Callback('v-phone:inbox', function(src, resolve)
+    local p = Core.GetPlayer(src)
+    if not p then resolve({ error = 'x' }) return end
+    -- The same door the rest of the phone uses. No battery check: this is asked BY an open
+    -- phone, and a handset that goes flat is closed by its own path rather than by refusing
+    -- to list the messages already on screen.
+    if not requireItem(src) then resolve({ error = 'nophone' }) return end
+    if PhoneBricked and PhoneBricked(p.citizenid) then resolve({ error = 'broken' }) return end
+
+    resolve({
+        ok = true,
+        conversations = conversations(p.citizenid),
+        cipherUnread = cipherUnreadOf(p.citizenid),
+        groups = MySQL.query.await([[SELECT g.id, g.name FROM vphone_groups g
+            JOIN vphone_group_members m ON m.group_id = g.id
+            WHERE m.citizenid = ? ORDER BY g.id DESC]], { p.citizenid }) or {},
+    })
+end)
+
 V.Callback('v-phone:open', function(src, resolve)
     if not V.SettingBool('enabled', true) then resolve({ error = 'off' }) return end
     local p = Core.GetPlayer(src)
@@ -3806,7 +3860,7 @@ V.Callback('v-phone:block', function(src, resolve, data)
         list[#list + 1] = { n = number, c = cid }
     elseif op == 'remove' then
         local number = tostring((data and data.number) or ''):sub(1, 20)
-        local cid = tostring((data and data.cid) or ''):sub(1, 16)
+        local cid = tostring((data and data.cid) or ''):sub(1, 64)
         local kept = {}
         for _, e in ipairs(list) do
             local same = (cid ~= '' and e.c == cid) or (cid == '' and not e.c and e.n == number)
@@ -3998,6 +4052,7 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         if data.silenceUnknown ~= nil then prefs.silenceUnknown = data.silenceUnknown == true end
         if data.previews ~= nil then prefs.previews = data.previews == true end
         if data.peek ~= nil then prefs.peek = data.peek == true end
+        if data.reduceMotion ~= nil then prefs.reduceMotion = data.reduceMotion == true end
         if data.airplane  ~= nil then prefs.airplane  = data.airplane == true end
         if data.cellular  ~= nil then prefs.cellular  = data.cellular == true end
         if data.wifi      ~= nil then prefs.wifi      = data.wifi == true end
@@ -5875,6 +5930,34 @@ end
 -- allergies, conditions, an emergency contact. Stored on the character, so it is the same
 -- record whatever happens to the handset. Steps come from the client, which is the only
 -- side that knows how far somebody actually walked.
+--- How many finished days of steps are kept. A week, because that is the span the app draws
+--- and every entry costs a row in a metadata blob that is written from a walking player.
+local STEP_DAYS = 7
+
+--- Close off yesterday rather than deleting it.
+---
+--- **The old rollover was `if rec.stepDay ~= day then rec.steps = 0 end`.** A day's walking was
+--- erased at midnight with nothing kept, in an app whose store page promises trends - so there
+--- was no trend to draw and there never had been one. It also ran on the READ path without
+--- writing anything back, so the zeroing happened again on every open until the next step
+--- arrived.
+---
+--- Answers true when it changed something, so the caller knows whether to persist.
+local function rollStepDay(rec, day)
+    if rec.stepDay == day then return false end
+    local had = math.floor(tonumber(rec.steps) or 0)
+    if rec.stepDay and had > 0 then
+        local hist = type(rec.stepHist) == 'table' and rec.stepHist or {}
+        hist[#hist + 1] = { d = tostring(rec.stepDay), s = had }
+        -- Oldest first, so trimming means dropping from the front.
+        while #hist > STEP_DAYS do table.remove(hist, 1) end
+        rec.stepHist = hist
+    end
+    rec.stepDay = day
+    rec.steps = 0
+    return true
+end
+
 V.Callback('v-phone:health', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -5895,8 +5978,7 @@ V.Callback('v-phone:health', function(src, resolve, data)
     elseif op == 'steps' then
         -- The client reports distance walked; the record keeps the day's total.
         local add = math.max(0, math.floor(num(data and data.steps, 0)))
-        local day = os.date('%Y-%m-%d')
-        if rec.stepDay ~= day then rec.stepDay = day rec.steps = 0 end
+        rollStepDay(rec, os.date('%Y-%m-%d'))
         rec.steps = math.min(200000, (tonumber(rec.steps) or 0) + add)
         -- **Not** the sync write. This one runs every couple of seconds from a walking player,
         -- and losing a few paces to a restart is not something anybody can notice - which is
@@ -5904,8 +5986,10 @@ V.Callback('v-phone:health', function(src, resolve, data)
         p.SetMetadata('healthrec', rec)
     end
 
-    local day = os.date('%Y-%m-%d')
-    if rec.stepDay ~= day then rec.steps = 0 end
+    -- A character who has not walked since yesterday still has to see the rollover, and it has
+    -- to be WRITTEN: the old line zeroed the count for the answer and left the record alone, so
+    -- the same day was rolled over again on every single open.
+    if rollStepDay(rec, os.date('%Y-%m-%d')) then p.SetMetadata('healthrec', rec) end
     resolve({ ok = true, record = rec, reader = healthMayRead(p) })
 end)
 
@@ -6293,16 +6377,24 @@ CreateThread(function()
     while true do
         Wait(2000)
         if next(TorchOn) ~= nil then
+            -- **Every player's position read ONCE per tick, not once per torch.**
+            --
+            -- The outer coordinate was hoisted and the inner one was not, so the cost was
+            -- lit torches TIMES players: twenty torches on a full server is two and a half
+            -- thousand ped-and-coordinate native pairs every two seconds, for a light. Built
+            -- once here it is one read per player, whatever is alight - L x P becomes P.
+            local where = {}
+            for _, raw in ipairs(GetPlayers()) do
+                local id = tonumber(raw)
+                if id then where[id] = coordsOf(id) end
+            end
+
             for lit in pairs(TorchOn) do
-                local at = coordsOf(lit)
+                local at = where[lit]
                 if at then
-                    for _, raw in ipairs(GetPlayers()) do
-                        local other = tonumber(raw)
-                        if other and other ~= lit then
-                            local theirs = coordsOf(other)
-                            if theirs and #(at - theirs) <= TORCH_RANGE then
-                                TriggerClientEvent('v-phone:client:peerTorch', other, lit, true)
-                            end
+                    for other, theirs in pairs(where) do
+                        if other ~= lit and #(at - theirs) <= TORCH_RANGE then
+                            TriggerClientEvent('v-phone:client:peerTorch', other, lit, true)
                         end
                     end
                 end
@@ -6731,7 +6823,7 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_contacts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16)  NOT NULL,
+        `citizenid` VARCHAR(64)  NOT NULL,
         `name`      VARCHAR(40)  NOT NULL,
         `number`    VARCHAR(20)  NOT NULL,
         `favourite` TINYINT(1)   NOT NULL DEFAULT 0,
@@ -6741,8 +6833,8 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_messages` (
         `id`       INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `from_cid` VARCHAR(16)  NOT NULL,
-        `to_cid`   VARCHAR(16)  NOT NULL,
+        `from_cid` VARCHAR(64)  NOT NULL,
+        `to_cid`   VARCHAR(64)  NOT NULL,
         `body`     VARCHAR(1000) NOT NULL,
         `seen`     TINYINT(1)   NOT NULL DEFAULT 0,
         `at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -6755,7 +6847,7 @@ CreateThread(function()
     -- column, because a message has two readers and only one row.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_message_hidden` (
         `message_id` INT UNSIGNED NOT NULL,
-        `citizenid`  VARCHAR(16) NOT NULL,
+        `citizenid`  VARCHAR(64) NOT NULL,
         PRIMARY KEY (`message_id`, `citizenid`),
         KEY `citizenid` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -6769,7 +6861,7 @@ CreateThread(function()
     -- bytes of free text on another player's bubble is a small billboard.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_message_reactions` (
         `message_id` INT UNSIGNED NOT NULL,
-        `citizenid`  VARCHAR(16) NOT NULL,
+        `citizenid`  VARCHAR(64) NOT NULL,
         `reaction`   VARCHAR(12) NOT NULL,
         `at`         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`message_id`, `citizenid`),
@@ -6777,7 +6869,7 @@ CreateThread(function()
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_app_data` (
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `app`       VARCHAR(40) NOT NULL,
         `k`         VARCHAR(60) NOT NULL,
         `v`         TEXT,
@@ -6785,7 +6877,7 @@ CreateThread(function()
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_cipher_profiles` (
-        `citizenid`  VARCHAR(16)  NOT NULL,
+        `citizenid`  VARCHAR(64)  NOT NULL,
         `handle`     VARCHAR(20)  NOT NULL,
         `displayname` VARCHAR(32) NOT NULL,
         `public_key` TEXT         NOT NULL,
@@ -6798,8 +6890,8 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_cipher_messages` (
         `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `from_cid`   VARCHAR(16) NOT NULL,
-        `to_cid`     VARCHAR(16) NOT NULL,
+        `from_cid`   VARCHAR(64) NOT NULL,
+        `to_cid`     VARCHAR(64) NOT NULL,
         `envelope`   TEXT        NOT NULL,
         `burn`       INT UNSIGNED NOT NULL DEFAULT 0,
         `seen`       TINYINT(1)  NOT NULL DEFAULT 0,
@@ -6816,8 +6908,8 @@ CreateThread(function()
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_cipher_clears` (
-        `citizenid` VARCHAR(16) NOT NULL,
-        `other_cid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
+        `other_cid` VARCHAR(64) NOT NULL,
         `before_id` BIGINT UNSIGNED NOT NULL DEFAULT 0,
         PRIMARY KEY (`citizenid`, `other_cid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -6825,13 +6917,13 @@ CreateThread(function()
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_groups` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
         `name`      VARCHAR(40) NOT NULL,
-        `owner_cid` VARCHAR(16) NOT NULL,
+        `owner_cid` VARCHAR(64) NOT NULL,
         PRIMARY KEY (`id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_group_members` (
         `group_id`  INT UNSIGNED NOT NULL,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         PRIMARY KEY (`group_id`, `citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
@@ -6854,7 +6946,7 @@ CreateThread(function()
     -- and never from a request, so a row here is always somewhere that character has stood.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_pins` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16)  NOT NULL,
+        `citizenid` VARCHAR(64)  NOT NULL,
         `label`     VARCHAR(60)  NOT NULL,
         `x`         FLOAT NOT NULL,
         `y`         FLOAT NOT NULL,
@@ -6866,7 +6958,7 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_notes` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `title`     VARCHAR(120) NOT NULL DEFAULT '',
         `body`      TEXT,
         `pinned`    TINYINT(1) NOT NULL DEFAULT 0,
@@ -6889,7 +6981,7 @@ CreateThread(function()
     -- an ordinary index, which is what allows more than one row per person.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail_accounts` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `address`   VARCHAR(64) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), UNIQUE KEY `address` (`address`), KEY `owner` (`citizenid`)
@@ -6922,7 +7014,7 @@ CreateThread(function()
     -- one is that nobody else can have it.
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_mail_domains` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `domain`    VARCHAR(48) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), UNIQUE KEY `domain` (`domain`), KEY `owner` (`citizenid`)
@@ -6964,7 +7056,7 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_voicemail` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `from_num`  VARCHAR(20) NOT NULL DEFAULT '',
         `body`      VARCHAR(500) NOT NULL DEFAULT '',
         `seen`      TINYINT(1) NOT NULL DEFAULT 0,
@@ -6974,7 +7066,7 @@ CreateThread(function()
 
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_calls` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16) NOT NULL,
+        `citizenid` VARCHAR(64) NOT NULL,
         `other_num` VARCHAR(20) NOT NULL DEFAULT '',
         `direction` VARCHAR(4)  NOT NULL DEFAULT 'out',
         `answered`  TINYINT(1)  NOT NULL DEFAULT 0,
@@ -7105,4 +7197,10 @@ CreateThread(function()
     -- rather than for one of their own. `Core` is passed rather than fetched again: a
     -- second GetCore would be a second answer to a question already asked.
     if SocialBoot then SocialBoot(Core) end
+
+    -- **Last, because it has to see every table.** A server that has been running since before
+    -- the character-id columns were widened has them at VARCHAR(16), which fits qb and ox and
+    -- fits neither ESX nor standalone. Idempotent: on a database that is already right it is
+    -- one query against information_schema and no ALTER at all.
+    if Bridge.WidenIdColumns then Bridge.WidenIdColumns() end
 end)

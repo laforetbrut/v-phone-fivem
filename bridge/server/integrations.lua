@@ -198,6 +198,26 @@ function Bridge.CharacterName(citizenid)
     elseif Bridge.framework == 'ox' then
         local row = MySQL.single.await('SELECT firstName, lastName FROM characters WHERE charId = ?', { citizenid })
         if row then name = ((row.firstName or '') .. ' ' .. (row.lastName or '')):gsub('^%s+', '') end
+    elseif Bridge.framework == 'esx' then
+        -- **The phone's own projection, and on ESX only.**
+        --
+        -- The note above says reading it would put Steam names on public pages, and that is
+        -- true for STANDALONE, where `vphone_characters` is filled from `GetPlayerName`. On
+        -- ESX it is filled from the framework's own `users` table - see
+        -- bridge/server/characters.lua - so the row holds a real character name, and
+        -- server/main.lua already reads exactly this table for one.
+        --
+        -- Without this, every ESX screen that names somebody who is offline showed a bare
+        -- number or nothing: a bank transfer confirmation, a statement's counterparty, a
+        -- police lookup, a repair callout, a taxi ride's other party. The same screens are
+        -- correct on qb.
+        local row = MySQL.single.await(
+            'SELECT firstname, lastname FROM vphone_characters WHERE citizenid = ?', { citizenid })
+        if row then
+            name = ((row.firstname or '') .. ' ' .. (row.lastname or ''))
+                :gsub('^%s+', ''):gsub('%s+$', '')
+            if name == '' then name = nil end
+        end
     end
 
     NameCache[citizenid] = name or false
@@ -433,18 +453,26 @@ function Bridge.RemoveMoney(src, amount, account, reason)
         end)
         if not gotAcc or type(acc) ~= 'table' then return false end
 
-        -- ox has shipped both shapes. Whichever exists is asked, and a refusal from either is
-        -- a refusal - this fails CLOSED, so a debit that cannot be confirmed grants nothing.
+        -- ox has shipped both shapes. Whichever answers is taken, and a refusal from either
+        -- is a refusal - this fails CLOSED, so a debit that cannot be confirmed grants nothing.
+        --
+        -- **Both reaches are inside a pcall, including the one that only LOOKS at an export.**
+        -- `exports.ox_core.RemoveAccountBalance` was written as a truth test, and FiveM's
+        -- export proxy does not answer nil for a name a resource does not publish: it RAISES.
+        -- Outside a pcall that killed the callback, so the transfer sheet waiting on it spun
+        -- for ever rather than reporting a refusal. And it is reached every time, because
+        -- `acc.removeBalance` cannot exist - ox hands the account across the export boundary
+        -- as data, so its fields survive and its methods do not, which is the same reason job
+        -- groups go through `CallPlayer`.
         local removed = false
-        if acc.removeBalance then
-            local fine = pcall(function() removed = acc:removeBalance(amount) ~= false end)
-            if not fine then removed = false end
-        elseif acc.id and exports.ox_core.RemoveAccountBalance then
-            local fine = pcall(function()
+        local fine = pcall(function()
+            if acc.removeBalance then
+                removed = acc:removeBalance(amount) ~= false
+            elseif acc.id then
                 removed = exports.ox_core:RemoveAccountBalance(acc.id, amount) ~= false
-            end)
-            if not fine then removed = false end
-        end
+            end
+        end)
+        if not fine then removed = false end
         return removed == true
     end
 
@@ -498,24 +526,39 @@ function Bridge.AddMoney(src, amount, account, reason)
 
     elseif Bridge.framework == 'ox' then
         -- ox keeps cash as an inventory item and the bank as an account with its own
-        -- methods. The account is tried first because that is where a bank transfer
-        -- belongs; cash falls through to the item.
+        -- methods. A bank credit is the account and ONLY the account; cash is the item.
         if account == 'bank' then
             local ok = pcall(function()
                 local player = exports.ox_core:GetPlayer(src)
                 if not player or not player.charId then error('no character') end
                 local acc = exports.ox_core:GetCharacterAccount(player.charId)
                 if not acc then error('no account') end
+                -- The export is CALLED rather than tested for existence. Indexing
+                -- `exports.ox_core.AddAccountBalance` raises for a name ox does not publish
+                -- rather than answering nil, so the truth test that used to be here sent
+                -- every server down the `no credit method` branch even where the export was
+                -- there to be used. The pcall around all of this turns a raise into a
+                -- refusal, which is what it was already doing for the wrong reason.
                 if acc.addBalance then
                     if acc:addBalance(amount, reason) == false then error('refused') end
-                elseif acc.id and exports.ox_core.AddAccountBalance then
+                elseif acc.id then
                     if exports.ox_core:AddAccountBalance(acc.id, amount) == false then error('refused') end
                 else
                     error('no credit method')
                 end
             end)
-            if ok then return true end
+            -- **A bank credit that did not land is not a cash payment.**
+            --
+            -- This used to fall through to the item path below and answer TRUE, so money the
+            -- caller believed had gone into an account was printed into the player's pockets
+            -- instead - a refunded transfer coming back as notes, a Bank Pro withdrawal
+            -- spawning cash, a lottery refund moving money between two pots the server's
+            -- economy assumes are separate, and nothing logging any of it because it reported
+            -- success. Every caller here is already written for a false: they refund, or they
+            -- say so.
+            return ok == true
         end
+
         local ok, added = pcall(function()
             return exports.ox_inventory:AddItem(src, 'money', amount)
         end)
@@ -577,6 +620,40 @@ function Bridge.Banking.Script() return choose('banking', BANKS) end
 --- balance and the second as "your banking script does not expose this", because telling a
 --- business owner their company has nothing when the truth is "we could not ask" is worse
 --- than saying nothing.
+--- A group's account balance, straight out of ox_core's `accounts` table.
+---
+--- Only the SHAPE of that table is documented - id, balance, type, owner, group - not the
+--- spelling its SQL uses, so both are asked for and whichever answers is taken. That is the
+--- same thing this file already does one screen down, where a banking script is asked for
+--- `GetAccountBalance` and then `GetAccountMoney`.
+---
+--- `isDefault` picks the group's own account rather than a second one somebody made for it, and
+--- the whole thing is inside a pcall: a column name that is wrong on some future version has to
+--- read as "no balance", which is what it read as before this existed.
+local oxBalanceColumn = nil
+
+function oxGroupBalance(account)
+    if Bridge.framework ~= 'ox' then return nil end
+
+    local tries = oxBalanceColumn and { oxBalanceColumn } or { 'isDefault', 'is_default' }
+    for _, col in ipairs(tries) do
+        local ok, value = pcall(function()
+            return MySQL.scalar.await(
+                ('SELECT balance FROM accounts WHERE `group` = ? AND `%s` = 1 LIMIT 1'):format(col),
+                { account })
+        end)
+        if ok then
+            -- The query RAN, so this is the spelling this database uses. Remembered even when
+            -- the answer is nil, because "this group has no account" is a real answer and
+            -- retrying the other spelling for it every time would be a query per open.
+            oxBalanceColumn = col
+            if tonumber(value) then return math.floor(tonumber(value)) end
+            return nil
+        end
+    end
+    return nil
+end
+
 function Bridge.SocietyBalance(account)
     account = tostring(account or ''):gsub('%s', '')
     if account == '' then return nil end
@@ -619,6 +696,20 @@ function Bridge.SocietyBalance(account)
             end)
         end)
         if balance then return math.floor(balance) end
+    end
+
+    -- **ox_core has group accounts and none of the five scripts above is running on an ox
+    -- server**, so this answered nil for every company on the framework whose groups are the
+    -- thing Bank Pro exists to show.
+    --
+    -- Read from the table rather than through an export, for the reason `Bridge.RemoveMoney`
+    -- already documents: ox's account API is methods on an account instance, and methods do not
+    -- survive the export boundary. Reaching them properly means including ox_core's own lib in
+    -- the manifest, which would make ox_core a requirement for a resource that runs on four
+    -- frameworks. Reading a table is what the job catalogue already does for `ox_groups`.
+    if Bridge.framework == 'ox' then
+        local value = oxGroupBalance(account)
+        if value then return value end
     end
 
     return nil
@@ -1229,7 +1320,9 @@ function Bridge.Vehicles.Owned(citizenid, src)
                 FROM %s WHERE `owner` = ?]]):format(tbl), { citizenid })
         end
         if Bridge.framework == 'esx' then
-            return MySQL.query.await(([[SELECT plate, vehicle AS model, stored, `type`
+            -- `parking` too: it is where ESX keeps the garage name, and without it the app
+            -- can say a car is out but never where it went in.
+            return MySQL.query.await(([[SELECT plate, vehicle AS model, stored, parking, `type`
                 FROM %s WHERE owner = ?]]):format(tbl), { citizenid })
         end
         return MySQL.query.await(([[SELECT plate, vehicle AS model, garage, state, fuel, engine, body
@@ -1244,6 +1337,29 @@ function Bridge.Vehicles.Owned(citizenid, src)
                 local decoded, data = pcall(json.decode, r.model)
                 r.model = (decoded and data and (data.model or data.modelName)) or '?'
             end
+        end
+    end
+
+    -- **`state` is the field the app reads, and only qb was filling it in.**
+    --
+    -- The app's rule is `state == 0 means out`. qb supplies it directly. The other two
+    -- schemas answer the same question in their own shape and the app could read neither, so
+    -- on ox and ESX every car reported as parked, always - and the whole point of the app,
+    -- where did I leave it, was dead on half the frameworks it claims to support.
+    --
+    --   ESX  `stored` is TINYINT(1): oxmysql hands back the NUMBER 0 or 1, and the app's
+    --        string test on it could never be true. The garage name is in `parking`.
+    --   ox   `stored` is a VARCHAR naming the garage, and NULL when the car is out - so a
+    --        car that IS out arrived as nil and missed every branch.
+    if Bridge.framework == 'esx' then
+        for _, r in ipairs(rows) do
+            r.state = tonumber(r.stored) or 1
+            r.garage = r.garage or r.parking
+        end
+    elseif Bridge.framework == 'ox' then
+        for _, r in ipairs(rows) do
+            r.state = (r.stored == nil) and 0 or 1
+            r.garage = r.garage or (type(r.stored) == 'string' and r.stored or nil)
         end
     end
 
@@ -1871,6 +1987,153 @@ function Bridge.Jobs.All()
     end
     return nil
 end
+
+--- ox group names, cached.
+---
+--- `ox_groups` and `ox_group_grades` are ox_core's own tables and they are CONFIGURATION: an
+--- operator edits them and restarts. So this is read once and kept, rather than joined again
+--- for every player who opens a card.
+---
+--- Answers a table keyed by group name:
+---     { police = { label = 'Los Santos Police', grades = { [2] = 'Sergeant' } } }
+---
+--- Empty on any framework that is not ox, and empty when the query fails - a caller that gets
+--- nothing falls back to the raw key, which is what it printed before this existed.
+local oxGroupNames = nil
+
+function Bridge.OxGroupLabels()
+    if Bridge.framework ~= 'ox' then return {} end
+    if oxGroupNames then return oxGroupNames end
+
+    local out = {}
+    local ok, rows = pcall(function()
+        return MySQL.query.await([[SELECT g.name AS name, g.label AS label,
+                gr.grade AS grade, gr.label AS grade_label
+            FROM ox_groups g
+            LEFT JOIN ox_group_grades gr ON gr.`group` = g.name]])
+    end)
+    if ok and type(rows) == 'table' then
+        for _, r in ipairs(rows) do
+            local key = tostring(r.name or '')
+            if key ~= '' then
+                local entry = out[key]
+                if not entry then
+                    entry = { label = tostring(r.label or key), grades = {} }
+                    out[key] = entry
+                end
+                local g = tonumber(r.grade)
+                if g and r.grade_label and tostring(r.grade_label) ~= '' then
+                    entry.grades[math.floor(g)] = tostring(r.grade_label)
+                end
+            end
+        end
+        -- Only cached once it has been read successfully. A failed query on a server whose
+        -- database was still coming up would otherwise pin the raw keys in for the session.
+        oxGroupNames = out
+    end
+    return out
+end
+
+--- Forget them, for an operator who edited the tables without restarting the resource.
+function Bridge.ForgetOxGroupLabels()
+    oxGroupNames = nil
+end
+
+--- Ask ox_core which of the surfaces the phone needs are actually there.
+---
+---     vphone_ox_test            the exports, and the group tables
+---     vphone_ox_test police     and that group's account balance too
+---
+--- Every ox reach in this file is inside a pcall that fails closed, which is the right
+--- behaviour and also the reason a missing export is invisible: a transfer that cannot be
+--- confirmed is refused, and a refused transfer looks like a player who has no money. This
+--- prints what answered and what raised, so the difference is one command rather than an
+--- afternoon.
+---
+--- Console only, and read only. Nothing here moves money.
+local function oxSelfTest(group)
+    if Bridge.framework ~= 'ox' then
+        print(('[v-phone] ox test: this server is running %s, not ox_core')
+            :format(Bridge.framework or 'nothing'))
+        return
+    end
+
+    local function try(label, fn)
+        local ok, value = pcall(fn)
+        if not ok then
+            print(('[v-phone] ox test: %-26s RAISED  %s'):format(label, tostring(value)))
+            return nil
+        end
+        print(('[v-phone] ox test: %-26s ok      %s'):format(label, tostring(value)))
+        return value
+    end
+
+    print('[v-phone] ox test: asking ox_core for the surfaces the phone reads')
+    -- A source is needed for the player reaches, and any online player will do. With nobody
+    -- connected the account half cannot be asked at all, which is worth saying out loud rather
+    -- than printing a row of failures.
+    local who = nil
+    for _, id in ipairs(GetPlayers()) do who = tonumber(id) break end
+    if not who then
+        print('[v-phone] ox test: nobody is online, so the player and account reaches are skipped')
+    else
+        local player = try('GetPlayer', function() return exports.ox_core:GetPlayer(who) end)
+        if type(player) == 'table' and player.charId then
+            print(('[v-phone] ox test: %-26s ok      charId %s')
+                :format('player.charId', tostring(player.charId)))
+            local acc = try('GetCharacterAccount', function()
+                return exports.ox_core:GetCharacterAccount(player.charId)
+            end)
+            if type(acc) == 'table' then
+                print(('[v-phone] ox test: %-26s %s'):format('account.id',
+                    acc.id and ('ok      ' .. tostring(acc.id)) or 'MISSING'))
+                print(('[v-phone] ox test: %-26s %s'):format('account.balance',
+                    acc.balance and ('ok      ' .. tostring(acc.balance)) or 'MISSING'))
+                -- The METHODS, which is the reach most likely to be absent: ox hands the
+                -- account across the export boundary as data, so its fields survive and its
+                -- functions do not.
+                print(('[v-phone] ox test: %-26s %s'):format('account:addBalance',
+                    type(acc.addBalance) == 'function' and 'ok' or 'absent (data, not an object)'))
+                print(('[v-phone] ox test: %-26s %s'):format('account:removeBalance',
+                    type(acc.removeBalance) == 'function' and 'ok' or 'absent (data, not an object)'))
+            end
+        end
+        -- Named without being called: an export that exists answers a function, and one that
+        -- does not RAISES rather than answering nil - which is the whole reason these live
+        -- inside pcalls. Nothing is invoked, so no money moves.
+        for _, name in ipairs({ 'AddAccountBalance', 'RemoveAccountBalance', 'CallPlayer' }) do
+            local ok, fn = pcall(function() return exports.ox_core[name] end)
+            print(('[v-phone] ox test: %-26s %s'):format('exports.ox_core.' .. name,
+                (ok and fn ~= nil) and 'published' or 'NOT PUBLISHED'))
+        end
+    end
+
+    -- The tables, which is what the job list and the group balance read instead.
+    local groups = try('ox_groups rows', function()
+        return MySQL.scalar.await('SELECT COUNT(*) FROM ox_groups')
+    end)
+    try('ox_group_grades rows', function()
+        return MySQL.scalar.await('SELECT COUNT(*) FROM ox_group_grades')
+    end)
+    if groups == nil then
+        print('[v-phone] ox test: no ox_groups table, so the Jobs list has nothing to draw')
+    end
+
+    group = tostring(group or ''):gsub('%s', '')
+    if group ~= '' then
+        local balance = oxGroupBalance(group)
+        print(('[v-phone] ox test: %-26s %s'):format('balance of ' .. group,
+            balance and tostring(balance)
+                or 'no account found (Bank Pro will show nothing for it)'))
+    else
+        print('[v-phone] ox test: pass a group name to check its account, eg  vphone_ox_test police')
+    end
+end
+
+RegisterCommand('vphone_ox_test', function(src, args)
+    if src ~= 0 then return end
+    oxSelfTest(args and args[1])
+end, true)
 
 -- ══════════════════════════════════════════════════════════════
 -- Status: the health app

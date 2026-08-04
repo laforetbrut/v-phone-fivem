@@ -41,7 +41,7 @@ local LISTS = { personal = true, work = true, shopping = true, other = true }
 CreateThread(function()
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_reminders` (
         `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `citizenid` VARCHAR(16)  NOT NULL,
+        `citizenid` VARCHAR(64)  NOT NULL,
         `text`      VARCHAR(160) NOT NULL,
         `note`      VARCHAR(500) NOT NULL DEFAULT '',
         `list`      VARCHAR(16)  NOT NULL DEFAULT 'personal',

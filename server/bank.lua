@@ -683,6 +683,16 @@ end)
 -- ox_core has no comparable server event, which is what `pollSeconds` is for.
 local NOTIFY = BANK.notify or {}
 local function notifyOn() return enabled() and NOTIFY.enabled ~= false end
+
+--- Does this phone announce CASH as well as bank money?
+---
+--- Off, and off is the honest default. A phone is a banking app: it reads an account, it does
+--- not see what is in somebody's pockets, and it has no way to know a note changed hands. It
+--- announced them anyway because the qb handler below took the money type as an argument and
+--- never looked at it, so every purchase, every payment between two players and every coin
+--- picked up buzzed the phone and wrote a line into a BANK statement about money that never
+--- went near a bank.
+local function cashOn() return NOTIFY.cash == true end
 local function notifyMin() return math.max(0, math.floor(num(NOTIFY.minAmount, 1))) end
 
 --- Should a statement line be written for money the phone did not move itself?
@@ -790,6 +800,9 @@ AddEventHandler('QBCore:Server:OnMoneyChange', function(src, moneyType, amount, 
     -- report from it without tracking the previous value; the add/remove pair covers every
     -- normal payment.
     if action ~= 'add' and action ~= 'remove' then return end
+    -- **This event fires for cash too.** See `cashOn` above: the argument was taken and never
+    -- read, which is the whole of the bug.
+    if tostring(moneyType or '') ~= 'bank' and not cashOn() then return end
     local kind = tostring(reason or ''):lower():find('paycheck') and 'salary' or 'account'
     moneyMoved(src, amount, action == 'add', reason, kind)
 end)
@@ -808,12 +821,20 @@ AddEventHandler('qbx_core:server:onPaycheck', function(src, amount)
 end)
 
 -- ESX.
+-- In ESX the account named `money` IS cash, so it goes through the same switch as qb's
+-- money type. `bank` is always announced; anything else is somebody's pocket.
+local function esxAccountHeard(account)
+    if account == 'bank' then return true end
+    if account == 'money' then return cashOn() end
+    return false
+end
+
 AddEventHandler('esx:addAccountMoney', function(src, account, amount, reason)
-    if account ~= 'bank' and account ~= 'money' then return end
+    if not esxAccountHeard(account) then return end
     moneyMoved(src, amount, true, reason, 'account')
 end)
 AddEventHandler('esx:removeAccountMoney', function(src, account, amount, reason)
-    if account ~= 'bank' and account ~= 'money' then return end
+    if not esxAccountHeard(account) then return end
     moneyMoved(src, amount, false, reason, 'account')
 end)
 
@@ -826,12 +847,61 @@ end)
 -- instantly and with a reason attached.
 local lastSeen = {}
 
+--- Bank money the phone itself moved since this player was last sampled.
+---
+--- The event path recognises the phone's own movements by their reason string, and the sampler
+--- has no reason to read - only a number that changed. Without this, a transfer sent from the
+--- phone reaches the recipient twice: once as the phone's own notification, and again at the
+--- next sample as an unexplained deposit with no label on it.
+local ownMoved = {}
+
 AddEventHandler('playerDropped', function()
     lastSeen[source] = nil
+    ownMoved[source] = nil
 end)
 
+--- Count a movement the phone made itself.
+local function bankOwnMove(src, delta)
+    src = tonumber(src)
+    if not src then return end
+    ownMoved[src] = (ownMoved[src] or 0) + math.floor(tonumber(delta) or 0)
+end
+
+-- **Wrapped at the door rather than at the call sites.** Every movement the phone makes goes
+-- through these two functions by definition - that is what they are for - so hooking them once
+-- cannot be forgotten by the next app that spends money, which the eight separate call sites in
+-- bank.lua and bankpro.lua absolutely could be. The same arrangement adminview.lua uses to wrap
+-- `Core.GetPlayer`, and it holds for the same reason: everything calls these by name at run
+-- time rather than taking a copy of them.
+--
+-- Cash is skipped: the sampler watches the bank balance and nothing else.
+local bankAddImpl, bankRemoveImpl = Bridge.AddMoney, Bridge.RemoveMoney
+
+function Bridge.AddMoney(src, amount, account, reason)
+    local ok = bankAddImpl(src, amount, account, reason)
+    if ok and account ~= 'cash' then bankOwnMove(src, math.abs(num(amount, 0))) end
+    return ok
+end
+
+function Bridge.RemoveMoney(src, amount, account, reason)
+    local ok = bankRemoveImpl(src, amount, account, reason)
+    if ok and account ~= 'cash' then bankOwnMove(src, -math.abs(num(amount, 0))) end
+    return ok
+end
+
+--- How often to sample, resolving the config's `'auto'`.
+---
+--- Anything that is not a number is 'auto': off where the framework announces its own money
+--- changes, on where it does not. A number is honoured exactly, including 0.
+local function pollEvery()
+    local n = tonumber(NOTIFY.pollSeconds)
+    if n then return math.floor(n) end
+    if Bridge.framework == 'qb' or Bridge.framework == 'esx' then return 0 end
+    return 30
+end
+
 CreateThread(function()
-    local every = math.floor(num(NOTIFY.pollSeconds, 0))
+    local every = pollEvery()
     if every <= 0 or not notifyOn() then return end
     every = math.max(15, every)
     V.Info(('[v-phone] bank: sampling balances every %ds for money notifications'):format(every))
@@ -840,17 +910,37 @@ CreateThread(function()
         Wait(every * 1000)
         for _, id in ipairs(GetPlayers()) do
             local src = tonumber(id)
-            local balances = src and Bridge.Banking and Bridge.Banking.Balances
-                and Bridge.Banking.Balances(PhoneActingSource and PhoneActingSource(src) or src)
-            if type(balances) == 'table' then
-                local now = math.floor(num(balances.bank, 0))
+            if src then
                 local before = lastSeen[src]
-                -- The first sample only establishes the baseline: announcing a difference
-                -- from nothing would greet every player with their whole balance.
-                if before and now ~= before then
-                    moneyMoved(src, now - before, now > before, '', 'account')
+                -- Read BEFORE the balance, so what follows can tell whether the phone moved
+                -- money while the balance was being fetched.
+                local mine = ownMoved[src] or 0
+                local balances = Bridge.Banking and Bridge.Banking.Balances
+                    and Bridge.Banking.Balances(PhoneActingSource and PhoneActingSource(src) or src)
+
+                if type(balances) == 'table' then
+                    local now = math.floor(num(balances.bank, 0))
+                    if (ownMoved[src] or 0) ~= mine then
+                        -- **The phone moved money while this balance was in flight**, and there
+                        -- is no way to know from here whether the number that came back is
+                        -- before or after it. Re-baseline instead of guessing: one missed
+                        -- external movement in a window a few milliseconds wide beats a
+                        -- notification for money the player just sent themselves.
+                        lastSeen[src] = nil
+                    else
+                        -- The first sample only establishes the baseline: announcing a
+                        -- difference from nothing would greet every player with their whole
+                        -- balance.
+                        if before then
+                            local unexplained = now - before - mine
+                            if unexplained ~= 0 then
+                                moneyMoved(src, unexplained, unexplained > 0, '', 'account')
+                            end
+                        end
+                        lastSeen[src] = now
+                    end
                 end
-                lastSeen[src] = now
+                ownMoved[src] = 0
             end
         end
     end

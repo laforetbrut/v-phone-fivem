@@ -82,6 +82,12 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **A theme in one place**: `Config.Theme` sets the accent and the whole system palette without editing a stylesheet inside somebody else's resource. Unset colours keep the phone's own.
 - **`/refreshphone`**: a get-out-of-jail command for a phone stuck to the hand or a frozen animation.
 - **Media hosting**: photos and short video clips captured in game and uploaded to a CDN (Fivemanage), with a per-file auto-delete clock. Clips post to Bleeter and Snapmatic.
+- **Copy a picture's link**: any photograph opened full screen offers its address on the
+  clipboard, for pasting into Discord or anywhere else. Only for pictures the phone has
+  uploaded: one that lives only on the handset has no link, and says so rather than copying
+  itself. `vphone_media_test` in the server console checks the upload endpoint and the key
+  directly and prints what the host answers, so a failing upload has a cause rather than a
+  stack trace.
 - **Front camera**: a selfie mode - a game camera in front of you - for photos and clips of yourself.
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 

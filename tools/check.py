@@ -748,6 +748,95 @@ def check_and_nil_or(report):
     return not problems
 
 
+#: A closure, where the argument wants a word or an object.
+#:
+#: Matches an arrow function or a `function` keyword at the START of an argument, so an action
+#: object - `{ icon: 'add', onClick: () => ... }` - is not flagged for the arrow inside it.
+IS_FUNCTION_ARG = re.compile(r"""^(?:async\s+)?(?:
+      function\b
+    | \([^()]*\)\s*=>
+    | [A-Za-z_$][\w$]*\s*=>
+)""", re.X)
+
+
+def check_setnav(report):
+    """`setNav(title, backLabel, action, onBack)` - the word, then the behaviour.
+
+    A closure passed as argument 2 becomes the back button's LABEL: the navigation bar renders
+    the source of the function, and the behaviour that was meant by it is missing, so the button
+    leaves the app instead of going back one screen. app.js documents that happening in the
+    music playlist header.
+
+    Nothing throws. `textContent = fn` stringifies, and a missing `onBack` falls through to
+    `closeApp()` - so the screen draws, reads wrong, and goes somewhere else.
+
+    Argument 3 is the action OBJECT. A bare function there draws "undefined" and wires nothing.
+    """
+    # Comments stripped first. app.js documents this signature in prose - `setNav(title,
+    # backLabel, action, onBack)` - and a checker that reads its own documentation as a call
+    # site both inflates the count and can be set off by an example of the bug written down
+    # deliberately, which is the one place a bug is allowed to be.
+    src = strip_comments(read(os.path.join(ROOT, 'html', 'app.js')), False)
+    problems, calls = [], 0
+    WANTS = {1: 'the back button label', 2: 'the action object'}
+
+    for m in re.finditer(r'\bsetNav\s*\(', src):
+        args = _split_args(src[m.end():])
+        calls += 1
+        line = src.count('\n', 0, m.start()) + 1
+        for pos, what in WANTS.items():
+            if pos >= len(args):
+                continue
+            arg = args[pos].strip()
+            if IS_FUNCTION_ARG.match(arg):
+                problems.append('app.js:%d passes a function where setNav wants %s - '
+                                'argument %d. The behaviour goes in argument 4.'
+                                % (line, what, pos + 1))
+
+    report('setNav shape', '%d call(s)' % calls, problems)
+    return not problems
+
+
+def check_app_metadata(report):
+    """Every app in the catalogue needs a `Config.AppMetadata` entry.
+
+    The store page skips its whole Features block when the list is empty, and the search
+    haystack is built from `keywords` and `features` - so an app with no entry can only be found
+    by typing its display name, and its page is a single line of description where every other
+    app has a checked list.
+
+    Five of the thirty-seven had none: emergency, bankpro, onlyfruits, zuber and taxi. OnlyFruits
+    is the one shipped app with a price on it, so the app a player has to DECIDE to buy was the
+    one telling them least about itself.
+
+    Nothing else notices, because the merge falls back to an empty table rather than failing.
+    """
+    cfg = read(os.path.join(ROOT, 'config.lua'))
+    start = cfg.find('Config.Apps')
+    end = cfg.find('Config.StoreApps')
+    if start < 0 or end < 0:
+        report('app metadata', 'Config.Apps not found', [])
+        return True
+
+    ids = [a for a in re.findall(r"\{ id = '([a-z0-9_]+)'", cfg[start:end])
+           if not a.startswith(('ch_', 'dz_'))]
+
+    meta = cfg.find('Config.AppMetadata')
+    block = cfg[meta:cfg.find('Config.Home', meta)] if meta >= 0 else ''
+
+    problems = []
+    for app in ids:
+        entry = re.search(r'\n    %s = \{(.*?)\n    \},' % re.escape(app), block, re.S)
+        if not entry:
+            problems.append('%s has no Config.AppMetadata entry, so its store page draws no '
+                            'feature list and only its name is searchable' % app)
+        elif 'features' not in entry.group(1) or 'keywords' not in entry.group(1):
+            problems.append('%s is missing features or keywords' % app)
+
+    report('app metadata', '%d app(s)' % len(ids), problems)
+    return not problems
+
+
 def check_zero_is_true(report):
     """`0` is TRUE in Lua, so `data.flag and 1 or 0` is `1` when the page sent a zero.
 
@@ -843,6 +932,8 @@ CHECKS = [
     ('and nil or', check_and_nil_or),
     ('app descriptions', check_app_descriptions),
     ('zero is true', check_zero_is_true),
+    ('app metadata', check_app_metadata),
+    ('setNav shape', check_setnav),
 ]
 
 
@@ -890,6 +981,17 @@ def selftest():
     numeric = re.search(r'\?\s*1\s*:\s*0|Number\(|\|\|\s*0', sample)
     hit = fields == ['favourite'] and bool(numeric)
     print('  zero      ' + ('catches `data.x and 1 or 0` against a numeric field'
+                            if hit else 'FAILED'))
+    ok = ok and hit
+
+    # A closure where the back LABEL goes: the bug app.js documents in the playlist header.
+    bad = _split_args("open.name, () => { musicPlaylistOpen = null; }, null)")
+    good = _split_args("open.name, L('ph.playlists'), "
+                       "{ icon: 'add', onClick: () => add() }, () => back())")
+    hit = (IS_FUNCTION_ARG.match(bad[1].strip()) is not None
+           and IS_FUNCTION_ARG.match(good[1].strip()) is None
+           and IS_FUNCTION_ARG.match(good[2].strip()) is None)
+    print('  setNav    ' + ('sees a closure in the label slot, not in the object'
                             if hit else 'FAILED'))
     ok = ok and hit
 

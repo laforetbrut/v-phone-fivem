@@ -4,6 +4,421 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.6.2] - 2026-08-04
+
+### Added
+
+- **Santé keeps the week, and shows the distance.** The store page has promised "Pas et
+  distance" and "Tendances" from the start, and the app had neither. The step counter was a
+  single number for the current day, set back to zero at midnight with nothing kept, so there
+  was no trend to draw and there never had been one; the distance was never computed at all,
+  although the client measures metres on foot and divides by a stride to produce the step count
+  in the first place. Seven finished days are kept beside today's total and drawn as a chart,
+  with a daily average over the finished days only, and the distance sits beside the steps
+  using the same stride the client walks with so the two numbers cannot disagree. A day nobody
+  played is left empty rather than filed as a day of nought steps. `tools/test-steps.py` drives
+  the rollover through a week under real Lua.
+
+- **`vphone_ox_test`, a console command that asks ox_core what it actually publishes.** Every
+  ox reach in the bridge sits inside a pcall that fails closed, which is the right behaviour and
+  also the reason a missing export is invisible: a transfer that cannot be confirmed is refused,
+  and a refused transfer looks exactly like a player with no money. ox_core's published API
+  reference lists four cross-resource server exports and none of them is one of the four the
+  phone's money path reads, so whether those names answer on a given build is a question worth
+  being able to settle in one command. It prints what answered and what raised, checks whether
+  the account arrives with its methods or only its fields, and counts the group tables. Read
+  only: nothing in it moves money.
+
+- **`tools/check-fr.py`: the French locale may not spell a word two ways.** It needs no
+  dictionary and makes no judgement about French - the file is its own authority. A word written
+  with an accent in one string and without it in another is not a style choice; one of the two
+  is wrong. Homographs are the exception and are listed rather than guessed at, because French
+  genuinely has pairs where both spellings are real and only the sentence decides - `a` and `à`,
+  `la` and `là`, `ou` and `où`, `passe` and `passé`. A check that cried wolf six hundred times
+  would be switched off, which is how a check dies. It found one the two correction passes below
+  had missed on its first run.
+
+  It carries a second list beside the first, for the class the comparison cannot see: a word the
+  file gets wrong EVERYWHERE leaves no contradiction to notice. `Telechargement` appeared five
+  times and never once with its accents, which is exactly why it survived the first two passes.
+
+- **Up to four photographs on one Bleeter or Snapmatic post.** The composer keeps a list
+  instead of a single attachment: add, remove, reorder by removing, and the Add button counts
+  down to the cap rather than quietly ignoring a fifth. The card draws them the way the apps
+  this imitates do - one fills the card as before, two split it, three put a tall one beside two
+  stacked, four make a square - and tapping any of them opens the full-screen viewer at that
+  picture with the rest as its reel, so a swipe moves between them.
+  `image` still holds the FIRST photograph, which is what makes this a contained change: the
+  profile grid, the share sheet, the story row, the home widget and every export read that one
+  field and none of them had to learn anything. The rest live in a new `images` column, written
+  only when there is more than one, so a single-photo post is byte for byte the row it always
+  was, and a row from before the column exists reads as the one picture it has.
+  Every URL goes through the host gate on its own. An allowed host on the cover does not vouch
+  for the fourth, and a version that checked only `image` would have made the other three a way
+  straight past that gate. `Config.Social.maxImages` is the ceiling, the server truncates rather
+  than refusing, and the page learns the number from the feed so its Add button stops where the
+  server does. A clip stays one file: four videos decoding in a card is a frame-rate problem.
+  `tools/test-multiphoto.py` covers the host gate, the cap, duplicates, an old client that only
+  sends `image`, and a corrupt list.
+
+- **A sixteenth static check: a closure where `setNav` wants a word.**
+  `setNav(title, backLabel, action, onBack)` takes the label from argument 2 and the behaviour
+  from argument 4. app.js already carries a paragraph about what happened when a closure went
+  into argument 2 instead: the back button rendered its own source code as its text, across two
+  lines of the navigation bar, and pressing it left the app entirely because argument 4 was then
+  missing. Neither half throws - assigning a function to `textContent` stringifies it, and a
+  missing `onBack` falls through to closing the app, which is a real thing for a button to do -
+  so the screen draws, reads wrong, and goes somewhere else. Argument 3 is checked in the other
+  direction: it is an action object, and a bare function there draws the word "undefined" and
+  wires nothing. All 61 call sites are clean; the check is there so the sixty-second is too.
+  Comments are stripped first, because app.js writes this signature out in prose and a checker
+  that reads its own documentation as a call site both miscounts and can be set off by an
+  example of the bug written down deliberately - which is the one place a bug is allowed to be.
+  Proven by putting the original bug back at its original line, where it is caught.
+
+- **A search field in Plans.** It was the only long list in the phone without one. Notes has a
+  field, Contacts has a field, the store has a field, the export board has a field; Plans drew
+  every place the server knows and offered category chips alone, so finding one named garage
+  meant guessing which category it had been filed under and then reading the whole group. A
+  query searches every place rather than the chosen category, because somebody typing a name
+  wants that name and being told there is none because they happened to be on Garages is the
+  app arguing with them. The chips step aside while a query is running instead of staying lit
+  and contradicting the results, and the category comes back untouched when the field is
+  cleared. Only the list is repainted, so the field is never destroyed by its own keystroke.
+
+- **Reminders lists you can actually read back.** Four lists exist - personal, work, shopping
+  and other - and the app has always let you file a reminder into one, stored the choice, and
+  coloured the tick by it. Nothing anywhere filtered or grouped by them, so the choice changed
+  one dot's colour and nothing else, on an app whose store page leads with "Reminder lists". A
+  chip row under the tabs picks one, using the same pills the edit sheet uses and the same
+  colours the ticks use. It appears only once a second list is in play, because a filter for
+  four lists on a phone where everything is Personal is four buttons that do nothing. The five
+  tab counts are recomputed for the chosen list rather than left describing something else.
+
+- **Settings > Accessibility, with Reduce motion.** The store page has named an accessibility
+  section for a long time and there was no such section. The stylesheet has honoured
+  `prefers-reduced-motion` just as long - and that is a setting on the player's operating system,
+  which nobody inside FiveM can reach. The switch is the missing half: the same rules, behind a
+  class, asked for from the phone. Apps open without the zoom, panels appear instead of sliding,
+  and the icons stop wobbling while you arrange them.
+
+- **Three more Lua unit tests**, all in `tools/test-all.py`: `test-migration.py` drives the
+  column-widening pass against a fake `information_schema` and checks it is idempotent, keeps
+  NOT NULL and defaults, and drops nothing; `test-frameworks.py` drives the vehicle
+  normalisation and the app's own decision together across all three schemas, including the two
+  shapes that used to be read backwards; `test-money-notify.py` covers which money movements may
+  be announced.
+
+- **`python tools/test-all.py`** runs every check this resource has, in the order that fails
+  cheapest first: Lua compiles, JS parses, fourteen static checks and their selftest, two Lua
+  unit tests, the preview build, the reachability sweep over all 37 apps, real mouse input
+  through the compositor, and 52 screenshots with their assertions. `--fast` skips the
+  screenshots. There were several ways to test this phone and no single way to run them, so
+  each was run when somebody remembered it existed.
+
+- **Copy a picture's link.** Open any photograph full screen and there is a copy button beside
+  the close button: the address goes on the clipboard, ready to paste into Discord or anywhere
+  else. It is in the full-screen viewer rather than in the Gallery because every picture in the
+  phone passes through that one screen - a message, a Bleeter post, a Snapmatic story, a mail,
+  a Hush profile - so one button covers all of them and no app had to learn anything. The
+  Gallery's Share button now offers AirDrop or the link, instead of going straight to AirDrop.
+  A picture the phone has not uploaded is a `data:` URI rather than an address, so it offers no
+  link and says why: copying several megabytes of base64 to a clipboard helps nobody.
+- **`vphone_media_test`, a console command that asks the upload host directly.** A failed upload
+  reports `write EPIPE`, which is the host closing the connection part way through the body: no
+  status code, no message, and the three usual causes (a rejected key, an exhausted quota, a
+  file over the plan's ceiling) all look identical. The command posts a valid one-pixel PNG to
+  the configured endpoint with the configured headers, outside screencapture, and prints the
+  status. 401 or 403 names the key. 413 names the size. 429 names the quota. No answer at all
+  means the host hung up on a one-pixel file, which is the key and nothing else.
+
+### Fixed
+
+- **`a` against `à`, and the rest of the homographs.** The class no table settles, because both
+  spellings are real French and only the sentence decides. 140 occurrences of `a`, 44 of `ou`,
+  49 of `des`, and the answer is different for each one.
+  What made it tractable was the accent passes that came first: the verb `a` is followed by a
+  past participle, and `a été`, `a payé`, `a échoué` only stop looking like the infinitives
+  `à être`, `à payer` once they carry their accents. So the rule was inverted - everything
+  becomes `à` unless it matches a closed list of verb shapes - and every single change was
+  printed and read before being written.
+  That dry run is the whole reason this is safe. It caught `n’a pour l’instant` about to become
+  `n’à` (the file mixes the typographic apostrophe with the ASCII one, and only the second was
+  guarded), `Le téléphone a cesse` about to become `à cesse`, and eleven more verbs about to be
+  turned into prepositions - `a accepte`, `a commence`, `a note`, `a verse`, `a cloture`,
+  `a republie`, `a mentionne`. All of those are participles the file still spells like the
+  present tense, which is exactly why a rule could not see them and a person could.
+  Nine `ou` are `où` and nine only; two `des` are `dès`. Four `À` at the start of a string were
+  missed by the first sweep because it was case sensitive, and found by re-reading the leftovers
+  rather than by trusting the count.
+
+- **The French locale dropped 206 apostrophes and left a space.** `Ce service n a pas d
+  application sur ce telephone` is what a player read. fr.lua's own header explains how it
+  happened - an apostrophe inside a Lua single-quoted string closes it, so a string that needs
+  one goes in double quotes - and part of the file does exactly that while part of it dropped
+  the apostrophe instead. Restored, with the strings re-quoted the way that header asks for.
+  Two rules keep it from inventing French rather than restoring it: the character before the
+  stump may not be a placeholder or a digit, because `"Reçu %s de %s"` looks exactly like the
+  elision `s d` and would have become `%s'de`; and the next word must begin with a vowel or an
+  h, because that is the only place French elides at all. One slipped through both anyway -
+  `{n} m apparaît` is metres, and became `m'apparaît` - which is logged, reverted, and swept for
+  across the whole file.
+
+- **The French locale spelled the same words two ways, 380 times.** fr.lua opens with
+  "v-phone | Français" and its first hundred strings are written properly - "Quelques étapes
+  suffisent", "Ces noms apparaîtront dans Réglages". Further in the accents stop: `telephone`
+  appeared 41 times beside `téléphone`, `numero` 32 beside `numéro`, `ecran` 10 beside `écran`.
+  139 words were spelled both ways in the one file, and every one of them is on screen, in
+  French, on a French server. Corrected in two passes covering only the words whose unaccented
+  spelling is not a French word at all, so no replacement needed the sentence around it to be
+  right; five more were read in place because their accent was certain and their ENDING was not
+  - `echoue` is `échoue` in the present and `échoué` after `a`, and the file had one of each.
+  What remains is the class no table can settle: `passe` against `passé`, `charge` against
+  `chargé`, `a` against `à`. Those are counted, listed as homographs, and left for a pass that
+  reads sentences rather than words. A fourth pass then corrected nineteen more that no pass
+  could have seen: `check-fr.py` matched a Lua string by excluding both quote characters from
+  its body, so the moment 186 strings moved to double quotes to carry an apostrophe, every one
+  of them became invisible - including the strings that had ALWAYS been double quoted, which the
+  check had therefore never looked at once. It went on printing "ok" over 119 fewer words. A
+  third pass covered the words the file was uniformly wrong
+  about - 58 more - and two of those were read in place rather than substituted, because the word
+  alone gets them backwards: `Grille complete` is the adjective `complète`, not the participle
+  `complété`, and `Je prefere ne pas dire` is the verb `préfère`, not `préféré`.
+
+- **A dispatch alert told its SUSPECT that it had been closed.** Reported on qb-core with the
+  doc scripts: commit a crime, and the 911 app announces that the alert about you has been
+  closed - as if you had called it in yourself. `CreateAlert` fills a lot in from `source`, and
+  a dispatch script passes the player the alert is ABOUT, because that is where help has to go.
+  The export read that as the caller.
+  Two more things followed from the same field, and neither was reported. The police response
+  appeared on the offender's own 911 screen under their recent calls, so they could watch a unit
+  accept the call about their robbery. And every alert raised against them counted towards
+  `maxOpen`, the cap on how many live calls one person may have - so somebody reported four
+  times could no longer ring 911 themselves, which turns a wanted player into one who cannot
+  ask for an ambulance.
+  `source` keeps doing what API.md says it does: the position, and the callback name and number
+  on the dispatch card. It no longer claims that player as the caller. A script that genuinely
+  has one names it - `callerSource = playerId`, or `callerCid` for somebody offline - and a
+  script that meant the old behaviour writes `callerSource = source`.
+  The same field also fed the responder's screen, which draws it under "Appelant". An officer
+  opening a robbery alert was therefore told the robber had phoned it in - misinformation given
+  to somebody responding to a live call, which is worse than the banner that was reported. The
+  card now keeps the two apart: a Caller row when somebody called, a Concerns row for who the
+  alert is about, and both when a script supplies both. The callback number still travels and
+  the ring-back button still works, because a way to reach the person an alert is about is worth
+  having whichever end supplied it.
+  `tools/test-alert-caller.py` covers all four consequences; the old code fails its first
+  assertion.
+
+- **The stylesheet's first rule forbade something the stylesheet does seventeen times.** The
+  header opens with "No `backdrop-filter`. FiveM's CEF renders it as an opaque black box", and
+  the Liquid Glass primitive three hundred lines down repeats it. Both predate the iOS 27 pass,
+  which is documented in the same file, introduced `--chrome-blur`, and applies a real blur to
+  the navigation bar, the tab bar, sheets, the banner, the island, the control centre and the
+  lock screen - saying out loud that one blur is affordable where a dozen nested ones were not.
+  So the file banned the technique it then used on every piece of chrome it has. Anyone reading
+  the header composes by hand a blur that already exists; anyone reading the code stops trusting
+  the header, and then the rest of it. It has cost one regression already. Comments only: no
+  declaration changed, and both now point at the section that decided the rule.
+
+- **One row component, two avatars.** Messages, Contacts and Calls draw a row with a 38px
+  avatar carrying a rim and a soft shadow. Bleeter's follower and following lists, Snapmatic's
+  search results and Hush's matches draw the same row - the same component, the same title and
+  subtitle inside it - with a 34px flat one. Four pixels and a finish, on screens a tab apart
+  that are meant to read as the same kind of thing. Aligned only where the avatar sits in a row:
+  the comment and story-ring avatars share that stylesheet block and 34px is right for them.
+  Asserted by measurement, because four pixels is not something anybody catches in a screenshot,
+  which is how it lasted.
+
+- **Every arriving text re-ran the boot payload, and could undo a setting while it did.**
+  `refresh()` is `v-phone:open` - the app catalogue merged against what the character owns,
+  their preferences, their whole contact list, every conversation, the cipher count, a two-table
+  join for groups, the wallpaper list, the sound list, the widget config, the number formatting
+  rules. It is the right thing to run when a phone is switched on. It also ran on every message
+  that arrived, every message the player sent, and every open of Messages, for one thing between
+  them: the conversation list. The waste is the smaller half. `refresh()` does
+  `Object.assign(state, res)`, so a text landing while somebody is in Settings puts the server's
+  copy of `state.prefs` back over the switch they just moved. A narrow `inbox` read answers three
+  fields and therefore cannot overwrite anything else. The assertion is on that second half,
+  because a screenshot cannot see a wasted query: a preference set on the page and not yet
+  written survives opening Messages now, and did not before.
+
+- **Money notifications never fired on ox_core.** qb, qbx and ESX all announce their own money
+  changes and the phone listens to them; ox_core has no such event, which is what the balance
+  sampler exists for, and the sampler shipped switched off. Nine lines of config prose described
+  a feature that was disabled on the one framework those nine lines name as needing it.
+  `pollSeconds` now understands `'auto'` - the same word `record` beside it already uses - and
+  samples only where the framework says nothing for itself. A number is still honoured exactly,
+  so `0` means off and an operator who chose an interval keeps it.
+- **Switching that sampler on would have notified every transfer twice.** A transfer sent from
+  the phone moves the balance too, so the recipient heard about it once from the phone and again
+  seconds later from the sampler noticing the phone, unlabelled. The event path recognises the
+  phone's own movements by their reason string and the sampler has only a number, so the two
+  functions the phone moves money through now count what they moved and the sampler subtracts
+  it - hooked at the door rather than at the eight call sites, which the next app to spend money
+  could have missed. A movement landing while a balance is in flight re-establishes the baseline
+  instead of being guessed at. `tools/test-poll.py` covers all of it, including the double
+  notification, which the naive version produces on its second sample.
+- **Bank Pro showed nothing at all on ox_core.** The society balance is read from a banking
+  script or from esx_addonaccount, and none of those runs on an ox server, so the app was blank
+  on the framework whose groups are the thing it exists to show. The balance now comes from the
+  table ox keeps it in, the way the Jobs catalogue already reads `ox_groups`. Read only and
+  deliberately so: ox's account API is methods on an account instance, methods do not survive
+  the export boundary, and reaching them properly would make ox_core a requirement for a
+  resource that runs on four frameworks.
+
+- **On ox_core your job read `police` and your rank read `2`.** `ox_groups.label` and
+  `ox_group_grades.label` are ox_core's own columns, the Jobs catalogue has read both from the
+  start, and the one job a player sees on their own card was the only place that read neither.
+  qb shows the job label and the grade name, ESX shows the label and the grade label, and ox
+  showed a raw key and a bare number because nothing fetched what ox already has. The tables are
+  configuration, so they are read once and cached.
+- **On ox_core a character in two groups had a job that changed by itself.** ox has no single
+  job, so one group has to be chosen, and the choice was whichever one Lua's `pairs` handed over
+  first. Two opens of the same app, nothing having happened between them, two different
+  employers - and invisible in testing, because a character in one group is stable and that is
+  what anybody tests with. The highest grade wins now, with the name breaking a tie, so the
+  answer is the same every time. `tools/test-oxjob.py` runs the pick over sixty shuffles of the
+  same two groups and asserts one answer; the old code gives two.
+- **`29-map-places.png` was a picture of the Pins tab.** The screenshot before it sets the Maps
+  tab and never puts it back, and module state outlives a shot, so the picture named after the
+  Places tab has been photographing the wrong one. Each Maps shot sets the tab it needs; the
+  order the shots happen to run in is not a fact about the phone.
+- **The preview answered nothing for Health and nothing for Plans.** Neither route had an entry,
+  so the fallback returned a bare ok: five vitals rings at zero, a medical record with no fields
+  filled, and a map with no places at all. Plans is now built from the config's own pins the way
+  the server builds them, and Health from a record with a week of steps behind it, so the two
+  screens preview as what they are rather than as empty states.
+
+- **Alerts was a store download on a new phone, and deletable** - the exact bug its own catalogue
+  comment says was fixed in 1.6.1. The fix was applied to the losing side: `Config.Home` decides
+  both questions and says so out loud ("this list WINS over the catalogue's own `required`
+  field"), and `alerts` was in neither of its two lists. So a new character had no Alerts icon,
+  the banner still fired, and tapping it led to an app that was not installed - and anybody who
+  did install it could delete it again from the store page. Fixed in all three places, including
+  the server-side floor that survives an operator keeping their own `config.lua`, which is the
+  entire reason that table exists. Conditional on the alert system being switched on: an app
+  that can neither be removed nor do anything is worse than one somebody deleted.
+- **The Garage sent fuel, engine and body condition on every open and no screen ever drew
+  them.** The qb and qbx query selects all three by name, the server computes them under a
+  comment saying the remote sheet shows them, and the remote sheet showed the plate and the
+  controls. The app's own store entry promises live condition and vehicle information. A
+  condition group now draws whichever of the three arrived, so a garage script that keeps none
+  of them leaves the sheet exactly as it was.
+- **Five apps had no store metadata at all** - emergency, Bank Pro, OnlyFruits, Zuber and Taxi.
+  Their store page drew no feature list and only their display name was searchable, so the store
+  found nothing for `livraison`, `restaurant`, `entreprise` or `société`. OnlyFruits is the one
+  shipped app with a price on it, which made the app a player has to DECIDE to buy the one
+  telling them least about itself. `tools/check.py` gained a fifteenth check so it cannot drift
+  back.
+
+- **Dragging an app made every other icon on the page twitch in lockstep.** Moving a tile
+  rewrites the page's markup whenever the insertion point changes, so every icon became a new
+  element and its wobble restarted at frame zero - all of them, at the same instant, on every
+  seam the finger crossed. A negative animation delay taken from each tile's own index starts it
+  partway through its cycle, so a rebuild puts each icon back where it was instead of
+  resynchronising the lot.
+- **Property's store page promised tenants and remote payment**, and neither exists anywhere in
+  the resource. Struck rather than built: a feature list is the one thing a player reads before
+  deciding what an app is.
+
+- **Three framework `playerLoaded` handlers were registered as net events**, so any client could
+  fire them with `TriggerServerEvent` naming whichever player id it liked. Nothing could be
+  falsified - the data written comes from the framework, not the payload - but it was an
+  unauthenticated way to drive two queries per call at any rate. The ox line beside them was
+  already correct.
+
+### Performance
+
+- **The emoji picker bound a listener to every glyph, and rebound them all on each tab tap.**
+  Two hundred and thirty nodes destroyed, recreated and rewired in the middle of typing a
+  message, which is where input latency is felt most. One delegated listener on the panel now.
+- **The torch re-assert was lit torches TIMES players, every two seconds.** Twenty torches on a
+  full server is two and a half thousand ped-and-coordinate reads per tick, for a light. Every
+  player's position is read once per tick instead, whatever is alight.
+- **A message asked the inventory resource twice per recipient** for an answer the line above
+  had already established. On a twenty-member group that was forty cross-resource lookups where
+  twenty would do.
+
+- **Moving the mouse over the phone re-styled the whole phone, on every event.** The specular
+  highlight read `getBoundingClientRect()` on `#screen` per pointer event - a synchronous forced
+  layout, twice while a gesture was in flight - and then wrote two INHERITED custom properties
+  onto `#screen`, which invalidates style for the entire subtree so all twenty-five glass rules
+  repaint their radial gradient. Dirty the tree in one frame, force a layout read in the next
+  that flushes exactly what was dirtied. The box is cached and refreshed where the geometry
+  really changes, and the highlight is written in whole percent and only when it moves.
+  Measured over a hundred real mouse moves on an open Messages screen: a fast flick went from a
+  forced layout per event to **one for the whole sweep**, and a slow drift of forty pixels -
+  what a hand actually does - from a write per event to **twelve**.
+- **A feed fetched and decoded fifty full-resolution photographs at once.** One helper draws
+  every photograph in every list in the phone; it now defers them and decodes off the main
+  thread. A photograph taken in game is two thousand pixels wide.
+- **Every wheel notch paid an ancestor style-and-layout walk before the page was allowed to
+  move.** The listener is non-passive, so the compositor waits for it - and its first act was to
+  climb from the event target to the screen calling `getComputedStyle` at every level, then
+  return null for almost every event. One `closest()` decides that now without touching layout.
+- **The home screen re-measured its grid on every repaint**, up to fourteen forced reflows, from
+  eighteen call sites including an incoming message and the SDK's badge op. The answer depends
+  on four numbers and is remembered until one of them moves.
+
+- **On ESX and standalone the phone could not save anything, and this is the answer to whether
+  it is really framework agnostic.** A citizen id is eight characters on qb and a small integer
+  on ox, so `VARCHAR(16)` looked generous. On ESX it is `player.identifier` - `license:` plus
+  forty hex, or `charN:` before that - and on standalone it is the bare forty. Forty-eight
+  character-id columns across eleven files were sixteen wide. On a server in MySQL's default
+  strict mode every insert raised "Data too long"; on one without it the id was cut to sixteen
+  on the way in while every read used the full one, so nothing ever matched and messages
+  vanished the moment a thread was closed. The phone still opened, because the two tables the
+  bridge owns were always sixty-four. Every CREATE is corrected, and an idempotent pass widens
+  an existing database at boot - keys widened in place, because dropping a primary key to
+  recreate it opens a window with no uniqueness constraint.
+- **On ox_core no bank debit could succeed, and the attempt could kill the request.** The branch
+  reached `exports.ox_core.RemoveAccountBalance` as a truth test, outside any pcall - and
+  FiveM's export proxy raises for a name a resource does not publish rather than answering nil.
+  Buying an app, a bank transfer, a taxi fare, a lottery ticket: best case "not enough money"
+  with a full account, worst case a sheet that spins for ever.
+- **On ox_core a failed BANK credit was paid out as cash items and reported as success.** The
+  account branch fell through to `ox_inventory:AddItem` and returned true, so a refunded
+  transfer came back as notes, a Bank Pro withdrawal spawned cash, and money moved between two
+  pots the server's economy assumes are separate with nothing logging it. A bank credit is the
+  account and only the account now; every caller was already written for a refusal.
+- **The Garage app reported every vehicle as parked on ox_core and ESX.** It reads `state`, and
+  only qb fills that in. ESX's `stored` is a TINYINT, so a car that was OUT arrived as the
+  number 0 and the string test on it could never be true; ox's `stored` is a VARCHAR naming the
+  garage and NULL when the car is out, so being out arrived as nil and missed every branch.
+  Both were read as the OPPOSITE of the truth. Normalised in the bridge, where the framework is
+  already known, and ESX's `parking` column is now selected so the garage has a name.
+- **Taxi, Zuber, Lottery, Alerts and Repair were a permanent error page on qbx_core.** Each
+  reached doc-* through qb-core's shared object by the literal name `qb-core`, so on qbx no core
+  was ever found and every request answered `noframework` - while doc mode had already been
+  chosen on the doc-* resource being started, so the config provider that works was never asked.
+- **On ESX nobody offline had a name.** `Bridge.CharacterName` branched for qb and ox only, so a
+  bank transfer confirmation, a statement's counterparty, a police lookup, a repair callout and
+  a taxi ride's other party all showed a bare number. The phone's own projection of the ESX
+  `users` table was sitting there unread. Standalone still returns nil, which is what the
+  original note was protecting: there the projection holds FiveM display names.
+
+- **The phone announced CASH movements, and it has no way of knowing about them.** A phone is a
+  banking app: it reads an account, it cannot see what is in somebody's pockets. It buzzed for
+  every purchase, every note handed between two players and every coin picked up, and wrote a
+  line into the BANK statement about money that never went near a bank.
+  `QBCore:Server:OnMoneyChange` fires for both money types, and the handler took the type as an
+  argument and never looked at it. ESX had the same hole written out in full, since the account
+  ESX calls `money` IS cash. Bank money only now, with `Config.Bank.notify.cash` for a server
+  that wants the phone to be a general money HUD. `tools/test-money-notify.py` holds both gates
+  under real Lua, in both switch positions.
+
+- **Both round buttons over the full-screen photo viewer were unpressable**, and the close
+  button had been since the viewer was written. `#screen` captures the pointer for any press
+  starting within fifty-six pixels of the top of the screen, so a control there sees the
+  pointerdown and never the pointerup, and no pointerup means no click. The close button sits
+  fifty-three pixels down. It went unnoticed because a tap ANYWHERE in that viewer dismisses
+  it, so pressing close appeared to work while actually being a tap on the backdrop behind it.
+  This is the same root cause as the home indicator's dead tap in 1.6.1, in a second place: a
+  tap that begins on a control now reaches that control, wherever on the screen it is.
+
+---
+
 ## [1.6.1] - 2026-08-02
 
 ### Added

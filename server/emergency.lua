@@ -201,11 +201,14 @@ local function alertFor(a, forResponder)
     if forResponder then
         if not a.anonymous then
             out.caller = a.callerName
-            out.number = a.callerNumber
+            out.subject = a.subjectName
+            -- One number, whichever end supplied it. A way to reach the person an alert is
+            -- about is worth having however it arrived, and the ring-back button keys on this.
+            out.number = a.callerNumber or a.subjectNumber
         elseif opt(serviceById(a.service), 'anonymousCallback', false) == true then
             -- The operator decided an anonymous caller can still be rung back. The NAME is
             -- still withheld, which is the part that is not recoverable from a number anyway.
-            out.number = a.callerNumber
+            out.number = a.callerNumber or a.subjectNumber
         end
     end
     return out
@@ -279,6 +282,10 @@ local function raise(o)
         callerName = o.callerName,
         callerNumber = o.callerNumber,
         callerCid = o.callerCid,
+        -- Who the alert is ABOUT, which is not who called it in. Kept apart so the responder's
+        -- card can say which it is looking at rather than calling a robber the caller.
+        subjectName = o.subjectName,
+        subjectNumber = o.subjectNumber,
         source = o.source,
     }
     Alerts[id] = a
@@ -634,6 +641,14 @@ end)
 ---         coords  = vector3(1959.0, 3740.0, 32.3),   -- or `source = playerId`
 ---     })
 ---
+--- `source` is the player the alert is ABOUT: it fills in the position and the callback details
+--- on the dispatch card. It does NOT make that player the caller - a robbery alert must not
+--- notify the robber that it has been closed.
+---
+--- When there really is a caller, name them: `callerSource = playerId`, or `callerCid = id` for
+--- somebody offline. That is the field that decides who is told when the alert is taken or
+--- closed, whose 911 screen it appears on, and whose open-alert limit it counts against.
+---
 --- Returns the alert id and how many responders it reached, or false and a reason. The count
 --- is worth acting on: a script that raises an alert nobody received may want to do something
 --- else as well.
@@ -644,20 +659,47 @@ exports('CreateAlert', function(o)
     local coords = o.coords
     local callerName, callerNumber, callerCid = o.callerName, o.callerNumber, nil
 
-    -- A player id is the friendlier way to say "where this happened and who it is about".
+    -- **`source` is who the alert is ABOUT, and that is not the same person as the caller.**
+    --
+    -- A dispatch script raising "Store robbery" passes the robber. This used to set
+    -- `callerCid` from it, which made the robber the caller of the alert against them - so
+    -- their phone buzzed "somebody took your alert" and then "your alert was closed", the
+    -- police response appeared on their own 911 screen under their recent calls, and every
+    -- alert raised against them ate into `maxOpen`, the cap on how many live calls one person
+    -- may have. Reported four times and you could no longer ring 911 yourself.
+    --
+    -- So `source` keeps doing what API.md says it does - the position, and the callback name
+    -- and number on the dispatch card - and stops claiming that player as the caller.
+    local subjectName, subjectNumber = nil, nil
     local src = tonumber(o.source)
     if src then
         local p = Core.GetPlayer(src)
         -- The position of the phone's OWNER. Staff holding somebody's phone and raising an alert
-    -- for them must send help to that player, not to the staff member's own body.
-    local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
+        -- for them must send help to that player, not to the staff member's own body.
+        local ped = GetPlayerPed(PhoneActingSource and PhoneActingSource(src) or src)
         if not coords and ped and ped ~= 0 then coords = GetEntityCoords(ped) end
         if p then
-            callerCid = p.citizenid
-            callerName = callerName or p.name
-            callerNumber = callerNumber
-                or exports[GetCurrentResourceName()]:GetNumber(p.citizenid)
+            subjectName = p.name
+            subjectNumber = exports[GetCurrentResourceName()]:GetNumber(p.citizenid)
         end
+    end
+
+    -- Who actually called it in, when somebody did. Said explicitly, because this is the field
+    -- that decides who gets notified, whose 911 screen the alert appears on, and whose limit it
+    -- counts against. A script that means the old behaviour passes `callerSource = source`.
+    local callerSrc = tonumber(o.callerSource)
+    if callerSrc then
+        local cp = Core.GetPlayer(callerSrc)
+        if cp then
+            callerCid = cp.citizenid
+            callerName = callerName or cp.name
+            callerNumber = callerNumber
+                or exports[GetCurrentResourceName()]:GetNumber(cp.citizenid)
+        end
+    elseif o.callerCid ~= nil then
+        -- A citizen id straight from a script that has one and no player online to look up.
+        callerCid = tostring(o.callerCid):sub(1, 64)
+        if callerCid == '' then callerCid = nil end
     end
 
     if coords and type(coords) == 'table' and coords.x == nil then
@@ -675,6 +717,8 @@ exports('CreateAlert', function(o)
         callerName = callerName,
         callerNumber = callerNumber,
         callerCid = callerCid,
+        subjectName = subjectName,
+        subjectNumber = subjectNumber,
         source = tostring(o.from or 'script'),
     })
     if not id then return false, sent end

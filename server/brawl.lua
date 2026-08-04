@@ -178,7 +178,7 @@ CreateThread(function()
     if not enabled() then return end
     Wait(800)
     MySQL.query.await([[CREATE TABLE IF NOT EXISTS `vphone_brawl_stats` (
-        `citizenid` VARCHAR(16)  NOT NULL,
+        `citizenid` VARCHAR(64)  NOT NULL,
         `nick`      VARCHAR(16)  NOT NULL DEFAULT '',
         `wins`      INT UNSIGNED NOT NULL DEFAULT 0,
         `losses`    INT UNSIGNED NOT NULL DEFAULT 0,

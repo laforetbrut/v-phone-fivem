@@ -545,8 +545,284 @@ const SHOTS = [
       await new Promise((r) => setTimeout(r, 500));`,
   },
   {
-    name: 'maps', file: '29-map-places.png',
+    // **Maps was the only long list in the phone with no way to find a name in it.**
+    //
+    // Three things are checked here that a picture cannot show. That a query reaches places
+    // OUTSIDE the selected category, because the version that filters the already-filtered list
+    // answers "no place matches" for a shop while you happen to be on Garages, and looks
+    // perfectly correct in a screenshot. That the chips are hidden while a query runs, so the
+    // screen does not claim to be filtered by Garages while showing a hospital. And that the
+    // input element SURVIVES the repaint - the identity comparison is the whole point: calling
+    // RENDER.maps() per keystroke draws exactly the same pixels and destroys the field, which
+    // is the mistake paintNotes carries a comment about.
+    name: 'maps-search', file: 'zz-mapsearch.png', scratch: true, assert: true,
     script: `${SETUP}
+      mapsTab = 'places';
+      await open('maps', 900);
+      await new Promise((r) => setTimeout(r, 400));
+
+      const box = document.getElementById('mapq');
+      if (!box) throw new Error('no search field on the places screen');
+      const count = () => document.querySelectorAll('#mapresults .row[data-i]').length;
+      const chips = () => document.querySelectorAll('#mapresults .mapkind').length;
+      const names = () => [...document.querySelectorAll('#mapresults .row[data-i]')]
+        .map((r) => r.textContent).join(' | ');
+
+      if (chips() < 2) throw new Error('the category chips are not drawn: ' + chips());
+      const everything = count();
+      if (everything < 8) {
+        throw new Error('the preview has too few places for this to prove anything: ' + everything);
+      }
+
+      // Pick a category, then search for something that is NOT in it. "Pillbox" is a shop
+      // (Ammu-Nation) and a hospital (Pillbox Hill Medical), and neither is a garage.
+      const garage = [...document.querySelectorAll('#mapresults .mapkind')]
+        .find((b) => b.dataset.k === 'garage');
+      if (!garage) throw new Error('no garage category to filter by');
+      garage.click();
+      await new Promise((r) => setTimeout(r, 150));
+      const garages = count();
+      if (!garages || garages >= everything) {
+        throw new Error('the chip did not narrow anything: ' + garages + ' of ' + everything);
+      }
+      if (names().toLowerCase().indexOf('pillbox') >= 0) {
+        throw new Error('a garage category that already contains Pillbox proves nothing');
+      }
+
+      const type = async (v) => {
+        box.value = v;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 150));
+      };
+
+      await type('pillbox');
+      const hits = names().toLowerCase();
+      if (hits.indexOf('pillbox') < 0) {
+        throw new Error('the query never left the chosen category: ' + count() + ' hit(s)');
+      }
+      if (count() >= everything) throw new Error('the query narrowed nothing');
+      if (chips() !== 0) {
+        throw new Error('the chips still claim a filter that the results ignore');
+      }
+      // The field itself must not have been rebuilt. Same node, same caret, same focus.
+      if (document.getElementById('mapq') !== box) {
+        throw new Error('the search field was destroyed by its own keystroke');
+      }
+
+      // Nothing at all, and the empty state has to be the one about a search rather than the
+      // one about a server with no places configured.
+      await type('zzzznotaplace');
+      if (count() !== 0) throw new Error('a nonsense query still matched something');
+      const empty = (document.getElementById('mapresults').textContent || '').toLowerCase();
+      if (empty.indexOf('configur') >= 0 || !empty.length) {
+        throw new Error('a search with no hits reads as a server with no places: ' + empty);
+      }
+
+      // Clearing gives the chips back, still on Garage rather than reset behind the player.
+      await type('');
+      if (chips() < 2) throw new Error('the chips did not come back');
+      if (count() !== garages) {
+        throw new Error('clearing the query lost the chosen category: ' +
+          count() + ' vs ' + garages);
+      }
+      const all = [...document.querySelectorAll('#mapresults .mapkind')]
+        .find((b) => b.dataset.k === 'all');
+      if (all) { all.click(); await new Promise((r) => setTimeout(r, 200)); }`,
+  },
+  {
+    // **Health promised "steps and distance" and "trends" and kept neither.**
+    //
+    // The step count was one number for the current day, set back to zero at midnight with
+    // nothing kept, so there was no trend and never had been. The distance was never computed
+    // although the client measures metres and divides by a stride to GET that number.
+    //
+    // The bars are asserted on their computed heights rather than looked at, because "is this
+    // chart telling the truth" is not something a screenshot answers: seven bars all the same
+    // height and seven bars in the right proportions photograph identically at a glance. The
+    // day with the most steps has to be the tallest, and today's bar has to be marked as today
+    // or the live count reads as another finished day.
+    name: 'health-week', file: 'zz-healthweek.png', scratch: true, assert: true,
+    script: `${SETUP}
+      healthTab = 'record';
+      await open('health', 1100);
+      await new Promise((r) => setTimeout(r, 500));
+
+      const hero = document.querySelector('#appbody .apphero');
+      if (!hero) throw new Error('no hero on the record screen');
+      const sub = hero.textContent || '';
+      // 4820 steps at a 0.75 m stride is 3615 m, so 3.6 km.
+      if (sub.indexOf('3.6 km') < 0) {
+        throw new Error('the distance is not shown beside the steps: ' + sub);
+      }
+
+      const bars = [...document.querySelectorAll('#appbody .stepbar')];
+      if (bars.length !== 7) throw new Error('the week is ' + bars.length + ' bars');
+      const h = bars.map((b) => parseFloat(getComputedStyle(b.querySelector('i')).height) || 0);
+      if (Math.max.apply(null, h) - Math.min.apply(null, h) < 8) {
+        throw new Error('every bar is the same height, so the chart says nothing: ' + h.join());
+      }
+      // 9040 on the 10th is the biggest of the seven, and it is the third bar of a week
+      // ending on the 14th. A chart that sorts, reverses or drops a day fails here.
+      const tallest = h.indexOf(Math.max.apply(null, h));
+      if (tallest !== 2) throw new Error('the busiest day landed at bar ' + tallest);
+      if (!bars[6].classList.contains('now')) {
+        throw new Error('today is not marked, so the live count reads as a finished day');
+      }
+      if (bars.filter((b) => b.classList.contains('now')).length !== 1) {
+        throw new Error('more than one bar claims to be today');
+      }
+
+      // The average is over FINISHED days only. Today is still being counted and dragging it
+      // into the mean makes every morning look like a bad week.
+      const txt = document.getElementById('appbody').textContent || '';
+      const want = String(Math.round((6210 + 3480 + 9040 + 7125 + 2360 + 8570) / 6));
+      if (txt.indexOf(want) < 0) {
+        throw new Error('the daily average is not ' + want + ', so today was counted in it');
+      }
+      healthTab = 'today';`,
+  },
+  {
+    // **Opening Messages used to run the boot payload.**
+    //
+    // `refresh()` is `v-phone:open`: the catalogue merge, the preferences, the contacts, the
+    // wallpapers, the widget config. It ran on every arriving text, every sent text and every
+    // open of Messages, for one thing - the conversation list.
+    //
+    // The waste is not what is asserted here, because a screenshot cannot see a wasted query.
+    // What it CAN see is the second half of the bug: `refresh()` does `Object.assign(state,
+    // res)`, so a wide answer puts the server's `state.prefs` back over one the player changed
+    // a moment ago. Setting a preference on the page only - which is what "a change still in
+    // flight" looks like - and then opening Messages is the discriminating test: the narrow
+    // read cannot carry prefs, so it cannot overwrite them, and the wide one always did.
+    name: 'inbox-narrow', file: 'zz-inbox.png', scratch: true, assert: true,
+    script: `${SETUP}
+      // A preference the SERVER does not have. Nothing is posted, so the simulated server is
+      // still answering the old value - the state a player is in between changing a switch and
+      // the write landing.
+      state.prefs.lockClock = 'stack';
+
+      await open('messages', 1100);
+      await new Promise((r) => setTimeout(r, 500));
+
+      if (state.prefs.lockClock !== 'stack') {
+        throw new Error('opening Messages put the server copy back over a live preference');
+      }
+
+      const rows = document.querySelectorAll('#appbody .row');
+      if (!rows.length) {
+        throw new Error('the conversation list is empty, so the narrow read fetched nothing');
+      }
+      // The list has to be the SERVER's, not a leftover from boot: a read that answers ok and
+      // no conversations would blank it, and an empty list is indistinguishable from a phone
+      // with no messages unless something is asserted about the contents.
+      if (!(state.conversations || []).length) {
+        throw new Error('state.conversations was blanked by the narrow read');
+      }
+      // The rows on screen have to match what came back, or the list is a leftover that
+      // happens to look right.
+      const got = (state.conversations || []).length;
+      if (rows.length < got) {
+        throw new Error('drew ' + rows.length + ' rows for ' + got + ' conversations');
+      }
+      const first = (state.conversations || [])[0] || {};
+      const text = document.getElementById('appbody').textContent || '';
+      const label = first.name || first.number || '';
+      if (label && text.indexOf(label) < 0) {
+        throw new Error('the first conversation is not on screen: ' + label);
+      }
+
+      // And the boot payload is still intact underneath: the narrow read must not have
+      // replaced the things it does not carry.
+      if (!(state.apps || []).length) throw new Error('the app list was lost');
+      if (!(state.contacts || []).length) throw new Error('the contact list was lost');`,
+  },
+  {
+    // **One row component, two avatars.**
+    //
+    // Messages draws `.row.lead` with a 38px `.rav` carrying a rim and a drop shadow. Hush's
+    // matches draw the same `.row.lead`, with the same `.rmain`/`.rt`/`.rs` inside it, and a
+    // 34px flat `.socav`. Bleeter's follower lists and Snapmatic's search results do the same.
+    //
+    // Measured rather than looked at: four pixels is not something anybody catches in a
+    // screenshot, which is why it survived this long. The comment avatar is measured too, in
+    // the opposite direction - it must NOT have been dragged along, because 34px is right there
+    // and a row-sized avatar beside a comment would be a different bug.
+    name: 'avatar-size', file: 'zz-avatars.png', scratch: true, assert: true,
+    script: `${SETUP}
+      const box = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height),
+                 shadow: getComputedStyle(el).boxShadow };
+      };
+
+      await open('messages', 1100);
+      await new Promise((r) => setTimeout(r, 400));
+      const rav = box('#appbody .row .rav');
+      if (!rav) throw new Error('no avatar on a Messages row');
+
+      closeApp();
+      await new Promise((r) => setTimeout(r, 300));
+
+      const under = window.__VPHONE_PREVIEW_POST__;
+      window.__VPHONE_PREVIEW_POST__ = function (name, b) {
+        b = b || {};
+        if (name === 'social' && b.op === 'hushMatches') {
+          return { ok: true, matches: [
+            { ref: 'A', name: 'Elena', age: 27, bio: 'Je conduis trop vite.', unread: 2 },
+            { ref: 'B', name: 'Marcus', age: 31, bio: 'Peche le dimanche.', unread: 0 } ] };
+        }
+        return under ? under(name, b) : { error: 'x' };
+      };
+
+      await open('hush', 900);
+      SOC.tab.hush = 'matches';
+      await hushMatches();
+      await new Promise((r) => setTimeout(r, 400));
+      const socav = box('#appbody .row .socav');
+      if (!socav) throw new Error('no avatar on a Hush match row');
+
+      // The comment avatar shares a stylesheet block with this one and must NOT have moved:
+      // 34px is right beside a comment, and dragging it along would be a different bug.
+      const probe = document.createElement('div');
+      // In its real container: comav is flex 0 0 auto, which a bare block parent ignores.
+      probe.innerHTML = '<div class="com"><span class="comav">A</span></div>';
+      document.getElementById('appbody').appendChild(probe);
+      const comav = box('#appbody .comav');
+      if (!comav) throw new Error('the comment avatar could not be measured');
+      if (comav.w !== 34) {
+        throw new Error('the comment avatar was dragged to ' + comav.w + 'px');
+      }
+      probe.remove();
+
+      if (socav.w !== rav.w || socav.h !== rav.h) {
+        throw new Error('the same row draws ' + rav.w + 'px in Messages and ' +
+          socav.w + 'px in Hush');
+      }
+      if (!rav.shadow || rav.shadow === 'none') {
+        throw new Error('the Messages avatar has no finish, so this compares nothing');
+      }
+      if (socav.shadow !== rav.shadow) {
+        throw new Error('same size, different finish: ' + socav.shadow);
+      }
+
+      // **Put the post handler back.** This shot runs near the front of the list, so leaving a
+      // wrapper installed hands every shot after it a handler it did not ask for - which is the
+      // same class of leak as the Maps tab that made 29-map-places a picture of the wrong
+      // screen. Restored on the way out rather than left for the next shot to survive.
+      window.__VPHONE_PREVIEW_POST__ = under;
+      SOC.tab.hush = 'deck';
+      closeApp();
+      await new Promise((r) => setTimeout(r, 200));`,
+  },
+  {
+    name: 'maps', file: '29-map-places.png',
+    // `mapsTab` is module state and the `pins` shot above sets it without putting it back, so
+    // the shot named after the Places tab has been photographing Pins. A shot sets what it
+    // depends on; the order it happens to run in is not a fact about the phone.
+    script: `${SETUP}
+      mapsTab = 'places';
       await open('maps', 900);
       await new Promise((r) => setTimeout(r, 400));`,
   },
@@ -1303,6 +1579,84 @@ const SHOTS = [
         throw new Error('a page with anonymous off still offered the switch');
       }
       try { closeSheet(true); } catch (e) {}`,
+  },
+  {
+    // **The store page named an accessibility section that did not exist.**
+    //
+    // The stylesheet had honoured `prefers-reduced-motion` all along - and that is a setting on
+    // the player's operating system, unreachable from inside FiveM. The switch is the missing
+    // half. Asserted on computed style rather than by looking, because "nothing moved" is not
+    // something a still photograph can show.
+    name: 'reduce-motion', file: 'zz-reducemotion.png', scratch: true, assert: true,
+    script: `${SETUP}
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+      state.prefs.reduceMotion = false;
+      applyMotion();
+      renderHome();
+      await new Promise((r) => setTimeout(r, 500));
+      enterArrange();
+      await new Promise((r) => setTimeout(r, 400));
+
+      const tile = document.querySelector('#pages .page .tile');
+      if (!tile) throw new Error('no tile to measure');
+      const moving = getComputedStyle(tile).animationDuration;
+      if (parseFloat(moving) <= 0.01) {
+        throw new Error('nothing was animating to begin with, so this proves nothing: ' + moving);
+      }
+
+      state.prefs.reduceMotion = true;
+      applyMotion();
+      await new Promise((r) => setTimeout(r, 250));
+      const still = getComputedStyle(document.querySelector('#pages .page .tile')).animationDuration;
+      if (parseFloat(still) > 0.01) {
+        throw new Error('the switch did not reach the icons: ' + still);
+      }
+      if (!document.getElementById('device').classList.contains('reducemotion')) {
+        throw new Error('the class never landed on the device');
+      }
+
+      // And back off again, so the setting is a setting rather than a one-way door.
+      state.prefs.reduceMotion = false;
+      applyMotion();
+      await new Promise((r) => setTimeout(r, 250));
+      const again = getComputedStyle(document.querySelector('#pages .page .tile')).animationDuration;
+      if (parseFloat(again) <= 0.01) throw new Error('turning it off did not bring motion back');
+      try { exitArrange(); } catch (e) {}`,
+  },
+  {
+    // **Every icon restarted its wobble at the same instant, on every seam crossed.**
+    //
+    // Moving a tile rewrites the page's markup whenever the insertion point changes, so every
+    // icon becomes a new element and its animation begins again at frame zero - together. What
+    // iOS has is a continuous independent wobble; what this was is a synchronised snap. A
+    // negative animation-delay derived from each tile's own index starts it partway through, so
+    // a rebuild puts each icon back where it was in the cycle.
+    //
+    // Asserted on the computed delay rather than by looking, because a phase is not something a
+    // screenshot can show.
+    name: 'jiggle-phase', file: 'zz-jiggle.png', scratch: true, assert: true,
+    script: `${SETUP}
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+      renderHome();
+      await new Promise((r) => setTimeout(r, 600));
+      enterArrange();
+      await new Promise((r) => setTimeout(r, 500));
+
+      const tiles = [...document.querySelectorAll('#pages .page .tile')].slice(0, 6);
+      if (tiles.length < 3) throw new Error('not enough tiles to judge: ' + tiles.length);
+      const delays = tiles.map((t) => getComputedStyle(t).animationDelay);
+      const distinct = new Set(delays);
+      if (distinct.size < 3) {
+        throw new Error('the icons share a phase, so a rebuild resynchronises them: '
+          + JSON.stringify(delays));
+      }
+      // And every one of them has to be negative, which is what "already in progress" means.
+      const positive = delays.filter((d) => parseFloat(d) >= 0 && parseFloat(d) !== 0);
+      if (positive.length) {
+        throw new Error('a positive delay waits before starting rather than starting partway: '
+          + JSON.stringify(positive));
+      }
+      try { exitArrange(); } catch (e) {}`,
   },
   {
     // The widget strip alone, for looking at the header row up close.

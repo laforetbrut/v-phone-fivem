@@ -321,6 +321,140 @@ V.Callback('v-phone:media:video', function(src, resolve, data)
 end)
 
 -- ══════════════════════════════════════════════════════════════
+-- Asking the host directly
+-- ══════════════════════════════════════════════════════════════
+-- **A one-pixel PNG, valid enough to be decoded.**
+--
+-- Small enough that "the file was too big" cannot be the answer, and a real image so a host
+-- that inspects the bytes is not refusing it for being nonsense. The checksums are computed
+-- rather than stubbed: a file with a wrong CRC is rejected as a broken file, and the test
+-- would then report a refused KEY while the host was complaining about the picture - which is
+-- exactly the confusion this command exists to remove.
+local CRC_TABLE
+local function crc32(str)
+    if not CRC_TABLE then
+        CRC_TABLE = {}
+        for i = 0, 255 do
+            local c = i
+            for _ = 1, 8 do
+                if c & 1 == 1 then c = 0xEDB88320 ~ (c >> 1) else c = c >> 1 end
+            end
+            CRC_TABLE[i] = c
+        end
+    end
+    local crc = 0xFFFFFFFF
+    for i = 1, #str do
+        crc = CRC_TABLE[(crc ~ str:byte(i)) & 0xFF] ~ (crc >> 8)
+    end
+    return (crc ~ 0xFFFFFFFF) & 0xFFFFFFFF
+end
+
+local function adler32(str)
+    local a, b = 1, 0
+    for i = 1, #str do
+        a = (a + str:byte(i)) % 65521
+        b = (b + a) % 65521
+    end
+    return b * 65536 + a
+end
+
+local function onePixelPng()
+    local function be32(n)
+        n = math.floor(n) % 4294967296
+        return string.char(math.floor(n / 16777216) % 256, math.floor(n / 65536) % 256,
+                           math.floor(n / 256) % 256, n % 256)
+    end
+    local function chunk(kind, payload)
+        return be32(#payload) .. kind .. payload .. be32(crc32(kind .. payload))
+    end
+    -- Signature, IHDR for a 1x1 truecolour image, one IDAT holding a STORED deflate block,
+    -- then IEND. A stored block needs no compressor: two header bytes, the length and its
+    -- complement, then the bytes themselves.
+    local sig = string.char(137, 80, 78, 71, 13, 10, 26, 10)
+    local ihdr = chunk('IHDR', be32(1) .. be32(1) .. string.char(8, 2, 0, 0, 0))
+    local raw = string.char(0, 0, 0, 0)          -- the filter byte, then one black RGB pixel
+    local zlib = string.char(0x78, 0x01)         -- deflate, 32k window, no preset dictionary
+        .. string.char(0x01, #raw % 256, math.floor(#raw / 256),
+                       255 - (#raw % 256), 255 - math.floor(#raw / 256))
+        .. raw
+        .. be32(adler32(raw))
+    return sig .. ihdr .. chunk('IDAT', zlib) .. chunk('IEND', '')
+end
+
+--- Post a small multipart body to the configured endpoint and print the status.
+---
+--- Not through screencapture on purpose: this is the question "does the endpoint accept our
+--- key", and putting the capture resource in the middle is how it stopped being answerable.
+local function mediaSelfTest()
+    local endpoint = tostring(MEDIA.endpoint or '')
+    if endpoint == '' then
+        print('[v-phone] media test: no endpoint configured (Config.Media.endpoint).')
+        return
+    end
+    local key = apiKey()
+    print(('[v-phone] media test: %s'):format(endpoint))
+    print(('[v-phone] media test: provider %s, key %s, field %s')
+        :format(tostring(MEDIA.provider or 'custom'),
+                key == '' and 'MISSING' or ('set, ' .. #key .. ' chars'),
+                tostring(MEDIA.formField or 'file')))
+    if key == '' then
+        print('[v-phone] media test: there is no key to test with. Set `phone_media_key`.')
+        return
+    end
+
+    local boundary = 'vphoneselftest'
+    local field = tostring(MEDIA.formField or 'file')
+    local body = table.concat({
+        '--' .. boundary,
+        ('Content-Disposition: form-data; name="%s"; filename="vphone-test.png"'):format(field),
+        'Content-Type: image/png',
+        '',
+        onePixelPng(),
+        '--' .. boundary .. '--',
+        '',
+    }, '\r\n')
+
+    local headers = uploadHeaders()
+    headers['Content-Type'] = 'multipart/form-data; boundary=' .. boundary
+
+    PerformHttpRequest(endpoint, function(status, text)
+        -- `status` is 0 when the request never completed, which is the EPIPE case: the socket
+        -- was closed before an answer existed. Said in words, because 0 is not a status code
+        -- and reads as a bug in this command rather than as the finding it is.
+        if not status or status == 0 then
+            print('[v-phone] media test: NO ANSWER. The host closed the connection without '
+                  .. 'replying - the same failure screencapture reports as `write EPIPE`.')
+            print('[v-phone] media test: a host that hangs up on a one-pixel file is refusing '
+                  .. 'the KEY, not the file. Check `phone_media_key` against your Fivemanage '
+                  .. 'dashboard, and check the token is for the endpoint above.')
+            return
+        end
+        print(('[v-phone] media test: HTTP %d'):format(status))
+        print('[v-phone] media test: ' .. tostring(text or ''):gsub('%c', ' '):sub(1, 400))
+        if status == 401 or status == 403 then
+            print('[v-phone] media test: the key was refused. That is the whole answer.')
+        elseif status == 404 then
+            print('[v-phone] media test: no such endpoint. Check Config.Media.endpoint.')
+        elseif status == 413 then
+            print('[v-phone] media test: the host refused a ONE PIXEL file for size, which '
+                  .. 'means the limit is not about the file.')
+        elseif status == 429 then
+            print('[v-phone] media test: rate limited or out of quota.')
+        elseif status >= 200 and status < 300 then
+            print('[v-phone] media test: the endpoint and the key are fine. If real uploads '
+                  .. 'still fail, the difference is the size of what is being sent - try '
+                  .. '`imageEncoding = \'jpg\'` or a smaller capture.')
+        end
+    end, 'POST', body, headers)
+end
+
+--- Console only. `src ~= 0` refuses it from a player, because the answer quotes headers.
+RegisterCommand('vphone_media_test', function(src)
+    if src ~= 0 then return end
+    mediaSelfTest()
+end, true)
+
+-- ══════════════════════════════════════════════════════════════
 -- Auto-deletion
 -- ══════════════════════════════════════════════════════════════
 local function deleteFromHost(url, mediaId)
