@@ -95,6 +95,7 @@
     speaker: 'M12 4v16l-5-4H3V8h4l5-4ZM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11',
     keypad: 'M6 5h.01M12 5h.01M18 5h.01M6 11h.01M12 11h.01M18 11h.01M6 17h.01M12 17h.01M18 17h.01',
     add: 'M12 5v14M5 12h14',
+    minus: 'M5 12h14',
     chevron: 'M9 4l7 8-7 8',
     send: 'M4 12l16-8-6 8 6 8z',
     del: 'M9 6h11v12H9L3 12zM17 9l-5 6M12 9l5 6',
@@ -164,6 +165,8 @@
     share: 'M12 3l4 4M12 3L8 7M12 3v13M6 12H5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1',
     landscape: 'M3 8a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM19 10l2.5 2-2.5 2M21.5 12H15',
     camrotate: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM5 8V6a1 1 0 0 1 1-1h2M19 16v2a1 1 0 0 1-1 1h-2M4 11a8 8 0 0 1 3-5M20 13a8 8 0 0 1-3 5',
+    // A question mark in a ring, for a control that brings back an instruction.
+    help: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM9.7 9.4A2.5 2.5 0 0 1 14.5 10.2c0 1.7-2.5 2-2.5 3.5M12 17h.01',
     callout: 'M6.5 2.5l3.2 5-2.2 2.2a13.5 13.5 0 0 0 6.8 6.8l2.2-2.2 5 3.2-2 4.2c-8.6.5-17.4-8.3-16.9-16.9zM15 3h6v6M21 3l-7 7',
     callin: 'M6.5 2.5l3.2 5-2.2 2.2a13.5 13.5 0 0 0 6.8 6.8l2.2-2.2 5 3.2-2 4.2c-8.6.5-17.4-8.3-16.9-16.9zM21 3l-7 7M14 3v7h7',
     callmissed: 'M6.5 2.5l3.2 5-2.2 2.2a13.5 13.5 0 0 0 6.8 6.8l2.2-2.2 5 3.2-2 4.2c-8.6.5-17.4-8.3-16.9-16.9zM14 3l7 7M21 3l-7 7',
@@ -235,9 +238,17 @@
               //
               // `photo` is a URL the server has already host-gated, and it is set as a
               // background rather than an <img> so it crops to the circle without a second rule.
+              // **The letter is written in BOTH branches.**
+              //
+              // These used to test whether a url EXISTS, never whether it loaded, and the
+              // picture branch emitted an empty element - so a contact whose photograph
+              // expired got a hole where somebody with no photograph at all got their
+              // initial. The image sits on top as a background; when it fails to load, the
+              // letter underneath is simply revealed.
               ? (o.photo
                   ? '<span class="rav ravimg" style="background-image:url(&quot;' +
-                    esc(cssUrl(String(o.photo))) + '&quot;)"></span>'
+                    esc(cssUrl(String(o.photo))) + '&quot;)">' +
+                    esc(String(o.avatar || o.title || '?').slice(0, 1).toUpperCase()) + '</span>'
                   : '<span class="rav">' + esc(String(o.avatar).slice(0, 1).toUpperCase()) + '</span>')
               : '');
       const tail =
@@ -252,10 +263,56 @@
       if (o.toggle !== undefined) {
         attrs += ' role="switch" aria-checked="' + (o.toggle ? 'true' : 'false') + '"';
       }
-      return '<button class="row ' + (lead ? 'lead' : '') + '" type="button"' + attrs + '>' + lead +
+      // Two classes the row cannot work out for itself, because CEF has no `:has()`.
+      //
+      //   av   the leading element is a 38px avatar rather than a 30px tile, so the
+      //        separator under this row is inset 66 and not 58. Without it every avatar
+      //        list in the phone - Messages, Contacts, Calls and all four social apps -
+      //        draws its hairline six pixels short of the name it is supposed to line up
+      //        with.
+      //   two  the row carries a subtitle, so it is the 68px two-line row rather than the
+      //        52px one. A stylesheet can see the avatar and the subtitle in the DOM; it
+      //        just cannot select on them here.
+      const av = !o.appicon && !o.icon && !!o.avatar;
+      const cls = 'row' + (lead ? ' lead' : '') + (av ? ' av' : '') + (o.subtitle ? ' two' : '');
+      // **A row carrying its own buttons is not itself a button.** `accessory` takes a
+      // string of markup - `UI.stepper()`, say - and the row becomes a `<div role="group">`.
+      // A <button> nested inside a <button> is invalid, and Blink does not merely warn about
+      // it: it closes the outer one and hoists the inner, silently restructuring the DOM
+      // under whatever code was about to query it.
+      if (o.accessory) {
+        return '<div class="' + cls + '" role="group"' + attrs + '>' + lead +
+          '<span class="rmain"><span class="rt">' + esc(o.title) + '</span>' +
+          (o.subtitle ? '<span class="rs">' + esc(o.subtitle) + '</span>' : '') +
+          '</span>' + tail + o.accessory + '</div>';
+      }
+      return '<button class="' + cls + '" type="button"' + attrs + '>' + lead +
         '<span class="rmain"><span class="rt">' + esc(o.title) + '</span>' +
         (o.subtitle ? '<span class="rs">' + esc(o.subtitle) + '</span>' : '') +
         '</span>' + tail + '</button>';
+    },
+
+    /**
+     * A stepper, 92 x 32, for a row that changes a number in place.
+     * `data` becomes data-attributes on BOTH halves; the pressed half is told apart by
+     * `data-step`, which is `-1` or `1`.
+     *
+     *   UI.row({ title: 'Quantity', value: n,
+     *            accessory: UI.stepper({ data: { field: 'qty' } }) })
+     */
+    stepper: function (o) {
+      o = o || {};
+      let attrs = '';
+      const data = o.data || {};
+      for (const k in data) attrs += ' data-' + k + '="' + esc(data[k]) + '"';
+      const half = (dir, icon, label, off) =>
+        '<button type="button" data-step="' + dir + '"' + attrs +
+        ' aria-label="' + esc(label) + '"' + (off ? ' aria-disabled="true"' : '') + '>' +
+        svg(icon) + '</button>';
+      return '<span class="stepper">' +
+        half('-1', 'minus', o.decrementLabel || 'Decrease', o.minReached) +
+        half('1', 'add', o.incrementLabel || 'Increase', o.maxReached) +
+        '</span>';
     },
 
     /**
@@ -296,8 +353,28 @@
         '" aria-label="' + esc(placeholder) + '" value="' + esc(value || '') + '" ' + (attrs || '') + ' />';
     },
 
+    /**
+     * An empty state.
+     *
+     * Two forms, and the first one is the reason the second exists rather than
+     * replacing it: `empty(text, icon)` is what all 127 call sites in the phone use,
+     * and it keeps working untouched. `empty({ title, body, icon, action })` adds the
+     * description line and the call to action that iOS puts under it.
+     *
+     * `action` is `{ label, id }`. It emits the SAME `.bigbtn` the rest of the phone
+     * uses rather than a private button class, so there is one button in the resource
+     * and a caller wires it with the id it already passed.
+     */
     empty: function (text, icon) {
-      return '<div class="empty" role="status">' + (icon ? svg(icon) : '') + '<div>' + esc(text) + '</div></div>';
+      const o = (text && typeof text === 'object') ? text : { title: text, icon: icon };
+      const glyph = o.icon ? svg(o.icon) : '';
+      const body = o.body ? '<div class="emptybody">' + esc(o.body) + '</div>' : '';
+      const action = (o.action && o.action.label)
+        ? UI.button(o.action.label, o.action.id || 'emptycta', o.action.style || '')
+        : '';
+      return '<div class="empty" role="status"><div class="emptymid">' + glyph +
+        '<div class="emptytitle">' + esc(o.title == null ? '' : o.title) + '</div>' +
+        body + '</div>' + action + '</div>';
     },
 
     /** Replace the app body. Inside a frame this is the document body. */

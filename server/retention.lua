@@ -43,6 +43,34 @@ local function keep(key, legacy)
     return math.max(0, math.floor(num(v, 0)))
 end
 
+--- How long a social row lives. **Asked, never decided here.**
+---
+--- This file and `socialSweep` in server/social.lua both delete out of `vphone_social_posts`,
+--- `vphone_social_comments`, `vphone_social_dm` and `vphone_social_stories`. While each carried
+--- its own number the shorter one won and nothing said so: posts configured to live sixty days
+--- went at thirty, and `Config.Settings.socialRetentionS3` - a hundred and eighty days of feed
+--- for a server that pays for its own bucket - could never have taken effect at all.
+---
+--- `SocialKeepDays` is the single answer now. It reads, in order, the `phone_socialRetention*`
+--- convar, this file's own `Config.Retention.social*` key when a server has set one,
+--- `socialRetentionS3` when the media provider is s3, and `Config.Settings` last. The old key is
+--- read there rather than here so that one function holds the whole order: honouring it in this
+--- file would have put the two sweeps back out of step the moment a server used it, which is the
+--- exact fault being closed. So the two sweeps cannot disagree, and
+--- the ordering against the media clock is unchanged: nothing here deletes a file, and
+--- `Bridge.MediaReferencedBy` still keeps a photograph alive for as long as a row shows it.
+---
+--- The literal is the floor for a server running without the social module, where the global
+--- does not exist. Those four tables do not exist there either, so `ready()` skips them anyway.
+local function socialKeep(kind, fallback)
+    if SocialKeepDays then
+        local ok, days = pcall(SocialKeepDays, kind)
+        days = ok and tonumber(days)
+        if days then return math.max(0, math.floor(days)) end
+    end
+    return math.max(0, math.floor(num(fallback, 0)))
+end
+
 local function batchSize()
     return math.max(50, math.min(5000, math.floor(num(R.batchSize, 500))))
 end
@@ -106,6 +134,7 @@ end
 local function plan()
     local M = Config.Messages or {}
     local SOC = Config.Social or {}
+    local SOCR = SOC.retention or {}
     local BANK = Config.Bank or {}
     local ALERTS = Config.Alerts or {}
 
@@ -117,17 +146,20 @@ local function plan()
         { table = 'vphone_calls',           days = keep('calls', 30), label = 'call' },
         { table = 'vphone_voicemail',       days = keep('voicemail', 30), label = 'voicemail' },
 
-        -- The social apps.
-        -- `SOC.keep` has never existed - `Config.Social` has no `keep` table - so this
-        -- "legacy fallback" always resolved to the literal after the `or`. Harmless, and
-        -- misleading: it reads as though an older config key is being honoured when nothing
-        -- of the sort is happening. The default is written plainly instead.
-        { table = 'vphone_social_posts',    days = keep('socialPosts', 30), label = 'post' },
-        { table = 'vphone_social_comments', days = keep('socialComments', 30), label = 'comment' },
-        { table = 'vphone_social_dm',       days = keep('socialMessages', 30),
+        -- The social apps. Four numbers this file no longer owns: `socialKeep` above asks
+        -- server/social.lua, which is the one place the question is answered. A
+        -- `Config.Retention.social*` value a server set for itself still wins - that decision
+        -- moved into the same function rather than being dropped.
+        --
+        -- `SOC.retention` is the floor for a phone without the social module, and it is the same
+        -- table `SocialKeepDays` falls back to, so the two agree even when it is used.
+        { table = 'vphone_social_posts',    days = socialKeep('posts', SOCR.posts), label = 'post' },
+        { table = 'vphone_social_comments', days = socialKeep('comments', SOCR.comments),
+          label = 'comment' },
+        { table = 'vphone_social_dm',       days = socialKeep('messages', SOCR.messages),
           label = 'social message' },
         -- Stories are measured in hours because a day is their whole life.
-        { table = 'vphone_social_stories',  days = keep('socialStories', 1),
+        { table = 'vphone_social_stories',  days = socialKeep('stories', SOCR.stories),
           label = 'story', hours = true },
         { table = 'vphone_social_notifs',   days = keep('socialNotifs', 14), label = 'notification' },
 

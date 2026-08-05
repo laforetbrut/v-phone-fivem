@@ -218,6 +218,39 @@ if ADMIN.commands ~= false then
                 and ('Nobody is verified on %s.'):format(app)
                 or ('Verified on %s: @%s'):format(app, table.concat(list, ', @')))
 
+        elseif sub == 'official' and actionOn('verify') then
+            -- `/phoneadmin official @handle [off] [snap]`
+            --
+            -- The ORANGE mark. Same shape as `verify` above and deliberately a separate
+            -- subcommand rather than a flag on it, because they are separate badges: the blue
+            -- tick is bought at a desk, this one says the account is who it claims to be, and
+            -- granting one must never be a way of touching the other. An account can hold both.
+            local handle = args[2]
+            if not handle then
+                reply(src, 'Usage: /phoneadmin official [@handle] (off) (snap)')
+                return
+            end
+            local rest = table.concat(args, ' ', 3):lower()
+            local on = not rest:find('off', 1, true)
+            local app = rest:find('snap', 1, true) and 'snap' or 'bleeter'
+
+            local ok, result = self:SetOfficial(app, handle, on)
+            if not ok then
+                reply(src, result == 'nosuchhandle'
+                    and ('No %s account called @%s.'):format(app, tostring(handle):gsub('^@', ''))
+                    or 'Usage: /phoneadmin official [@handle] (off) (snap)')
+                return
+            end
+            reply(src, ('@%s is %s official on %s.')
+                :format(result, on and 'now' or 'no longer', app))
+
+        elseif sub == 'officials' and actionOn('verify') then
+            local app = ((args[2] or ''):lower() == 'snap') and 'snap' or 'bleeter'
+            local list = self:OfficialHandles(app)
+            reply(src, #list == 0
+                and ('Nobody is official on %s.'):format(app)
+                or ('Official on %s: @%s'):format(app, table.concat(list, ', @')))
+
         -- ── Network outages ─────────────────────────────────────────────
         --
         -- `outage` on its own is a global one; `here` and `at` are areas. Bars rather than
@@ -469,7 +502,8 @@ if ADMIN.commands ~= false then
         else
             reply(src, 'phoneadmin: info | who | number | renumber | contacts | apps | open | ' ..
                        'battery | batteryall | message | notify | announce | alert | app | ' ..
-                       'outage | outages | brick | unbrick | bricked | verify | verified | unverifyall | wipe')
+                       'outage | outages | brick | unbrick | bricked | verify | verified | ' ..
+                       'unverifyall | official | officials | wipe')
         end
     end
 
@@ -546,6 +580,8 @@ if ADMIN.commands ~= false then
         { 'verify', 'Grant or revoke the verified badge', { { '@handle', 'the account' }, { 'off', 'to revoke' }, { 'snap', 'Snapmatic instead of Bleeter' } } },
         { 'unverifyall', 'Take the badge off EVERY account', { { 'bleeter|snap', 'one app, or leave blank for both' } } },
         { 'verified', 'Who holds a badge', { { 'snap', 'Snapmatic instead of Bleeter' } } },
+        { 'official', 'Grant or revoke the ORANGE official mark', { { '@handle', 'the account' }, { 'off', 'to revoke' }, { 'snap', 'Snapmatic instead of Bleeter' } } },
+        { 'officials', 'Who holds the orange mark', { { 'snap', 'Snapmatic instead of Bleeter' } } },
         { 'wipe', 'DELETE everything on a phone. Irreversible', { { 'id|cid', 'the target' }, { 'confirm', 'required' } } },
     }
 

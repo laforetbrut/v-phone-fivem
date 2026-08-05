@@ -66,11 +66,79 @@ local function socFeedSize()
     return math.max(10, math.min(200, math.floor(tonumber(V.Setting('socialFeedSize', SOC.feedSize)) or SOC.feedSize)))
 end
 
+--- The `Config.Retention` key that answers the same question about the same table.
+---
+--- server/retention.lua carried its own number for each of these four, and two files answering
+--- one question is one file answering it wrongly: whichever was shorter won and neither said so.
+--- The key is kept and read here instead, so a server that set it still gets what it asked for.
+local RETENTION_KEY = {
+    posts    = 'socialPosts',
+    comments = 'socialComments',
+    stories  = 'socialStories',
+    messages = 'socialMessages',
+}
+
 --- Days before a kind of row is swept. 0 means never.
+---
+--- **This is the only place the question is answered.** Both sweeps that delete a social row -
+--- `socialSweep` below and `PhoneRetentionSweep` in server/retention.lua - come through here, so
+--- there is one clock per kind of row rather than one per file.
+---
+--- The order, most specific first:
+---
+---  1. `set phone_socialRetentionPosts 90`. A convar is an operator speaking directly, at
+---     runtime, and nothing below may silence it.
+---  2. `Config.Retention.socialPosts`, if a server set one. It used to be the retention file's
+---     own number for this table; it is read here now so that config still decides. Absent from
+---     the shipped config, which is what lets the two below apply.
+---  3. `Config.Settings.socialRetentionS3`, when the media provider is `s3`. **The four follow
+---     the provider**: a server keeping its files in its own bucket keeps them for a year, and a
+---     feed measured in weeks against files measured in a year is the wrong way round for the
+---     operator paying for the storage.
+---  4. `Config.Settings.socialRetention*`, then `Config.Social.retention`. Every other provider
+---     is somebody else's quota on a monthly plan and keeps the plain four.
+---
+--- The convar is looked at here rather than left to `V.Setting` alone, which falls back to
+--- `Config.Settings` before it ever reaches a default - and on s3 the plain four sitting in that
+--- table are precisely what is being replaced.
+---
+--- **Unset is the only state that lets the provider decide**, which is why this asks whether the
+--- convar exists rather than whether it parses. A convar that is set says what the operator wants
+--- even when what they typed is not a number, and the answer to that has always been 0, keep for
+--- ever - `V.Setting` hands the string back and `tonumber` fails on it. Reading a typo as "unset"
+--- would quietly swap that for six months. A `Config.Retention` value that is not a number is a
+--- different case and falls through: a Lua config cannot hold a half-typed number the way a
+--- console line can, so the only way to write one there is to have meant something else entirely.
+---
+--- `MediaProvider` lives in server/media.lua, which loads after this file. Every caller is a
+--- sweep - long after every file is in - but the guard costs one comparison and the alternative
+--- is a nil call at boot.
 local function socKeep(kind)
-    local days = tonumber(V.Setting('socialRetention' .. kind:sub(1, 1):upper() .. kind:sub(2),
-                                    SOC.retention[kind]))
+    local key = 'socialRetention' .. kind:sub(1, 1):upper() .. kind:sub(2)
+    local days
+
+    -- '' rather than a sentinel: `V.Setting` treats an empty convar as unset too, so the two
+    -- agree on which values are the operator speaking.
+    if GetConvar('phone_' .. key, '') == '' then
+        local legacy = (Config.Retention or {})[RETENTION_KEY[kind] or '']
+        if legacy ~= nil then days = tonumber(legacy) end
+
+        if not days and MediaProvider and MediaProvider() == 's3' then
+            local s3 = V.Setting('socialRetentionS3', nil)
+            if type(s3) == 'table' then days = tonumber(s3[kind]) end
+        end
+    end
+
+    days = days or tonumber(V.Setting(key, SOC.retention[kind]))
     return math.max(0, math.floor(days or 0))
+end
+
+--- How long a social row of this kind lives, in days, for anything else that sweeps one.
+---
+--- Global because server/retention.lua deletes out of the same four tables and must not carry a
+--- second answer. Its own numbers are gone; it asks this.
+function SocialKeepDays(kind)
+    return socKeep(tostring(kind or ''))
 end
 
 --- Same shape as the phone's wallpaper gate, for the same reason. Rejected rather than
@@ -105,6 +173,22 @@ local function imageAllowed(url)
     return false
 end
 
+--- The host gate, for a value that may not have changed.
+---
+--- A picture already stored passed this same check when it was set. Asking again later does not
+--- test the player's honesty, it tests whether the file still exists - and refusing the SAVE
+--- because of that locks a form over a field nobody was editing. Worse on Hush, where the
+--- `active` switch shares the payload: a player whose photograph expired could not turn their
+--- profile off, so they could not leave the app.
+---
+--- So an unchanged value is allowed through, and only a genuinely NEW url is judged.
+function PhoneImageAllowedOrSame(url, current)
+    url = tostring(url or '')
+    if url == '' then return true end
+    if url == tostring(current or '') then return true end
+    return imageAllowed(url)
+end
+
 --- The same gate, for the other apps that accept a picture.
 ---
 --- Published rather than copied: a server that widens `socialImageHosts` widens it everywhere at
@@ -126,7 +210,7 @@ local function appOfKind(kind) return kind == 'photo' and 'snap' or 'bleeter' en
 
 local function accountOf(cid, app)
     return MySQL.single.await(
-        'SELECT citizenid, handle, displayname, avatar, cover, bio, phone, verified FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
+        'SELECT citizenid, handle, displayname, avatar, cover, bio, phone, verified, official FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
         { cid, app })
 end
 
@@ -455,8 +539,10 @@ V.Callback('v-phone:soc:setup', function(src, resolve, data)
 
     local displayname = tostring((data and data.displayname) or a.displayname or ''):sub(1, 40)
     if displayname == '' then displayname = a.handle end
+    -- Judged against what is already stored: an avatar the player is not changing must not
+    -- be able to refuse the save because its file expired. `a` is this account's current row.
     local avatar = tostring((data and data.avatar) or ''):sub(1, 300)
-    if avatar ~= '' and not imageAllowed(avatar) then resolve({ error = 'badhost' }) return end
+    if not PhoneImageAllowedOrSame(avatar, a.avatar) then resolve({ error = 'badhost' }) return end
     -- The cover banner. This declaration was missing and the UPDATE below read `cover` as a
     -- nil GLOBAL, so every profile save failed with "Column 'cover' cannot be null" - a hard
     -- error, on a column that had only just been added.
@@ -464,7 +550,7 @@ V.Callback('v-phone:soc:setup', function(src, resolve, data)
     -- Same host gate as the avatar: it faces every visitor to the profile, so it is exactly as
     -- public as a post's image.
     local cover = tostring((data and data.cover) or ''):sub(1, 300)
-    if cover ~= '' and not imageAllowed(cover) then resolve({ error = 'badhost' }) return end
+    if not PhoneImageAllowedOrSame(cover, a.cover) then resolve({ error = 'badhost' }) return end
     local bio = tostring((data and data.bio) or ''):sub(1, 160)
 
     -- The handle is the account's name on the server and does not change here; only the
@@ -496,7 +582,7 @@ end
 --- placeholders are the caller's own citizen id, in order.
 local POST_COLUMNS = [[
     s.id, s.kind, s.body, s.image, s.images, s.at,
-    a.handle, a.displayname, a.avatar, a.verified,
+    a.handle, a.displayname, a.avatar, a.verified, a.official,
     (SELECT COUNT(*) FROM vphone_social_likes l WHERE l.post_id = s.id) AS likes,
     (SELECT COUNT(*) FROM vphone_social_comments c WHERE c.post_id = s.id) AS comments,
     (SELECT COUNT(*) FROM vphone_social_reposts r WHERE r.post_id = s.id) AS reposts,
@@ -678,9 +764,311 @@ local function cleanPosts(rows)
         r.saved = truthy(r.saved)
         r.following = truthy(r.following)
         r.verified = truthy(r.verified)
+        r.official = truthy(r.official)
         r.mine = truthy(r.mine)
     end
     return rows or {}
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- The hourly nudge
+-- ══════════════════════════════════════════════════════════════
+-- A banner telling ONE player how many posts have appeared on Bleeter or Snapmatic since
+-- they last opened it. A quiet feed is a feed nobody opens, and nobody posts to a feed
+-- nobody opens; this is the thing that breaks that circle.
+--
+-- It only earns that by being true. Two rules, and everything below exists to keep them:
+--
+--   1. Never sent when nothing is new TO THAT PLAYER. A notification that fires on a feed
+--      they have already read is the notification that teaches them to ignore the next one.
+--   2. Never sent twice about the same posts. Ignoring one must not mean receiving it again
+--      every hour until the end of the session.
+--
+-- The interval is a CEILING, not a schedule. Nothing fires on the hour: each player carries
+-- their own clock, started when they connect, so a restart that brings forty people back in
+-- the same minute does not make forty handsets buzz in the same second.
+
+local NUDGE_APPS = { 'bleeter', 'snap' }
+
+--- Where a character is in one app's feed, in the phone's own per-character store.
+---
+--- The record is `{ [app] = { seen = <post id>, told = <post id> } }`, and the two numbers
+--- answer two different questions:
+---
+---   `seen`  the newest post they have LOOKED at. Advanced by opening the feed and by nothing
+---           else, which is the rule `soc:notifSeen` already states for the notifications tab:
+---           opening it is reading it. "New to you" is counted from here.
+---   `told`  the newest post they have already been TOLD about. Advanced by sending a nudge and
+---           by nothing else. This is what stops the same posts being announced a second time.
+---
+--- **Kept here rather than in a table of its own, on purpose.** There is no read marker for the
+--- FEED anywhere in this file: the three `seen` columns it does have are per notification, per
+--- story and per direct message, and none of them says where a player got to in a timeline. A
+--- fourth table with a fourth `seen` column would be a second answer to "has this player read
+--- this", which is the one thing not to build. `vphone_kv` is where every other per-character
+--- fact the phone owns already lives, it is read through a per-character cache, and it needs
+--- no migration.
+local NUDGE_KEY = 'socnudge'
+
+local function nudgeRecord(cid)
+    local rec = Bridge.KvGet(cid, NUDGE_KEY)
+    return type(rec) == 'table' and rec or {}
+end
+
+--- One app's half of a record, with both numbers as numbers. Nil when this character has never
+--- been marked for this app at all, which is a state the decision below has to tell apart from
+--- "marked at zero" - see `plant`.
+local function nudgeMark(rec, app)
+    local mine = rec and rec[app]
+    if type(mine) ~= 'table' then return nil end
+    return { seen = math.floor(num(mine.seen, 0)), told = math.floor(num(mine.told, 0)) }
+end
+
+--- What the operator asked for, for one app.
+---
+--- Read on every pass rather than cached, so a convar moved on a live server takes effect
+--- without a restart - the same as every other setting in this file.
+local function nudgeCfg(app)
+    local all = type(SOC.nudge) == 'table' and SOC.nudge or {}
+    local mine = type(all[app]) == 'table' and all[app] or {}
+    local on = V.SettingBool('socialNudge', all.enabled ~= false) and mine.enabled ~= false
+    -- A ceiling under a minute is not a ceiling, it is a loop. The pass itself ticks once a
+    -- minute, so anything finer could not be honoured anyway.
+    return { on = on, minutes = math.max(1, math.floor(num(mine.minutes, 60))) }
+end
+
+--- The whole decision, as one function of plain values.
+---
+--- Everything around it is a database read, a preference lookup or a clock, and none of those
+--- run outside the game. This does, and tools/test-nudge.py drives it through every case that
+--- matters rather than trusting the loop below to be read correctly.
+---
+---   cfg   `{ on = <this app's half of the feature is on> }`
+---   gate  `{ due = <the ceiling has elapsed>, phone = <on them, with charge in it>,
+---           quiet = <do not disturb, this app silenced, or this app not installed> }`
+---   mark  `{ seen = , told = }`, or nil when this character has never been marked for this app
+---   feed  `{ top = }` on a first sight, `{ fresh = , freshtop = }` otherwise, or nil to ask
+---         whether reading one is worth a query at all
+---
+--- Answers a verdict, and for `send` and `plant` the count and the post id to record:
+---
+---   `off`    the feature, or this app's half of it, is switched off
+---   `wait`   the ceiling has not elapsed since this player's last turn
+---   `quiet`  the phone cannot show it, or the player has asked it not to
+---   `ask`    the gates pass; the caller should read the feed and call again
+---   `plant`  first sight of this character: record where the feed is and say nothing. Somebody
+---            who has never opened Bleeter must not be handed the whole history as a number.
+---   `none`   nothing has arrived that they have not seen, or not already been told about
+---   `send`   with how many are new to them
+---
+--- The order is the point. `quiet` is decided AFTER `due`, so a silenced phone still spends its
+--- turn: were it the other way round, turning do-not-disturb off would release an hour of
+--- held-back banners in one go. And `ask` sits between the free checks and the paid one, so a
+--- player with the app muted never costs a query.
+local function nudgeVerdict(cfg, gate, mark, feed)
+    if not (cfg and cfg.on) then return 'off' end
+    gate = gate or {}
+    if not gate.due then return 'wait' end
+    if not gate.phone or gate.quiet then return 'quiet' end
+    if not feed then return 'ask' end
+    if not mark then return 'plant', 0, math.floor(num(feed.top, 0)) end
+
+    local fresh = math.floor(num(feed.fresh, 0))
+    if fresh <= 0 then return 'none' end
+    -- Everything above their read mark has already been announced, so there is nothing NEW to
+    -- say. Saying it again is precisely how a notification stops being worth opening.
+    local freshtop = math.floor(num(feed.freshtop, 0))
+    if freshtop <= mark.told then return 'none' end
+    return 'send', fresh, freshtop
+end
+
+--- Move a character's read mark for one app up to the newest post there is.
+---
+--- Called from the feed, because opening the feed IS reading it. To the newest post that
+--- EXISTS rather than to the newest one the answer happened to carry: the Following tab shows a
+--- subset, and marking only what it showed would leave somebody who lives on that tab being
+--- nudged about strangers for ever.
+---
+--- `told` is carried up with it so it can never fall behind `seen`. A record where the phone
+--- has told you about less than you have read is not a state that means anything.
+---
+--- Written only when it MOVES. `Bridge.KvGet` answers from a per-character cache, so pulling to
+--- refresh on a quiet feed costs one table lookup and no write at all.
+local function nudgeMarkRead(cid, app)
+    local top = math.floor(num(MySQL.scalar.await(
+        'SELECT COALESCE(MAX(id), 0) FROM vphone_social_posts WHERE app = ?', { app }), 0))
+    local rec = nudgeRecord(cid)
+    local mine = nudgeMark(rec, app)
+    if mine and mine.seen >= top then return end
+    rec[app] = { seen = top, told = math.max(top, mine and mine.told or 0) }
+    Bridge.KvSet(cid, NUDGE_KEY, rec)
+end
+
+--- Everything that silences a notification, asked BEFORE one is made rather than after.
+---
+--- The client checks all of this again on arrival - `notificationMuted`, the do-not-disturb gate
+--- in `peek`, and the `hasItem` flag - and that is the path every other notification on this
+--- phone takes. Asking here as well is not a second rule; it is what stops a player's rate
+--- ceiling being spent on a banner that was never going to be drawn, and what stops a muted app
+--- costing a query an hour for ever.
+---
+--- `notifSilent` is deliberately NOT among these. Silent means seen but not heard: the banner is
+--- still wanted, only the sound is not, and that is the client's to apply.
+local function nudgeQuiet(src, p, app)
+    if PhoneHasApp and not PhoneHasApp(src, app) then return true end
+    local prefs = PhonePrefs and PhonePrefs(p)
+    if type(prefs) ~= 'table' then return false end
+    if prefs.dnd == true then return true end
+    for _, id in ipairs(prefs.notifMuted or {}) do
+        if tostring(id) == app then return true end
+    end
+    return false
+end
+
+--- One player, one app, one turn.
+local function nudgeOne(src, p, app, cfg)
+    local cid = p.citizenid
+    -- No account, no feed. Planting a mark for somebody who has not registered would record
+    -- where a timeline they cannot see had got to.
+    if not accountOf(cid, app) then return 'noaccount' end
+
+    -- Carrying it, and with charge in it: both halves of "a phone that is off, or not on them",
+    -- in the one answer the rest of the resource already uses.
+    --
+    -- A failure FAILS OPEN, the same direction the item check itself does. `PhoneUsable` is
+    -- registered by this resource, so the only way to miss it is to ask during a restart - and a
+    -- feature that quietly switches itself off is worse than one banner too many, especially when
+    -- `hasItem` below already tells the client what it needs to withhold a peek.
+    local ok, usable = pcall(function()
+        return exports[GetCurrentResourceName()]:PhoneUsable(src)
+    end)
+    local gate = {
+        due = true,
+        phone = (not ok) or usable == true,
+        quiet = nudgeQuiet(src, p, app),
+    }
+
+    local rec = nudgeRecord(cid)
+    local mark = nudgeMark(rec, app)
+    -- The free checks first, with no feed. Reading one for a player who has do-not-disturb on
+    -- would be a query an hour for a banner nobody was ever going to be shown.
+    local gated = nudgeVerdict(cfg, gate, mark, nil)
+    if gated ~= 'ask' then return gated end
+
+    local feed
+    if mark then
+        -- **The count and the mark come out of one read.** Asking for the count and then asking
+        -- again for the newest id would be two snapshots, and a post written between them would
+        -- either be counted and not marked - announced twice - or marked and not counted.
+        --
+        -- A range seek from their read mark forward on `app_idx (app, id)`, so this costs the
+        -- new rows and not the table.
+        local row = MySQL.single.await([[SELECT COUNT(*) AS fresh, COALESCE(MAX(id), 0) AS freshtop
+            FROM vphone_social_posts WHERE app = ? AND id > ? AND citizenid <> ?]],
+            { app, mark.seen, cid })
+        feed = { fresh = num(row and row.fresh, 0), freshtop = num(row and row.freshtop, 0) }
+    else
+        feed = { top = num(MySQL.scalar.await(
+            'SELECT COALESCE(MAX(id), 0) FROM vphone_social_posts WHERE app = ?', { app }), 0) }
+    end
+
+    local verdict, count, top = nudgeVerdict(cfg, gate, mark, feed)
+    if verdict ~= 'plant' and verdict ~= 'send' then return verdict end
+
+    -- Re-read rather than reusing the record from before the query: the player may have opened
+    -- the app while it was in flight, and their own read mark is the one that wins.
+    local rec2 = nudgeRecord(cid)
+    local after = nudgeMark(rec2, app)
+    if verdict == 'plant' then
+        -- Opened it during the query. They have a real mark of their own now, so leave it.
+        if after then return 'plant' end
+        rec2[app] = { seen = top, told = top }
+        Bridge.KvSet(cid, NUDGE_KEY, rec2)
+        return 'plant'
+    end
+
+    -- Read it during the query, and reading it covered everything this was going to announce.
+    -- `nudgeMarkRead` has already carried `told` up with it, so there is nothing left to write.
+    if after and after.seen >= top then return 'none' end
+    rec2[app] = { seen = after and after.seen or mark.seen,
+                  told = math.max(top, after and after.told or 0) }
+    Bridge.KvSet(cid, NUDGE_KEY, rec2)
+
+    TriggerClientEvent('v-phone:client:banner', src, {
+        app = app, icon = app,
+        -- `LP` translates for ONE player, in the language that player carries. `L` on the server
+        -- would answer in the server's own language and hand a French player an English word.
+        title = LP(src, 'ph.soc_nudge_title', APP_NAME[app] or app),
+        body = count == 1 and LP(src, 'ph.soc_nudge_one') or LP(src, 'ph.soc_nudge_many', count),
+        -- See server/main.lua: a notification claiming they are holding their phone when they
+        -- are not is a peek that rises out of an empty pocket.
+        hasItem = PhoneRequiresItem(src),
+    })
+    return 'send'
+end
+
+--- Whose turn is next, per source and per app.
+---
+--- In memory and per SESSION, and that IS the stagger: a player's clock starts when they
+--- connect, so people who reconnected after a restart come due spread across the whole interval
+--- rather than together, and a few seconds of jitter keeps two who connected in the same tick
+--- from sharing a tick for ever after.
+---
+--- Nothing in here needs to survive a restart. What must survive is the MARK, and that is in
+--- the database - so a restart costs at most one delayed nudge and can never cause a duplicate.
+--- A player who disconnects and comes back waits a full interval for their first one.
+local nudgeNext = {}
+
+AddEventHandler('playerDropped', function()
+    nudgeNext[source] = nil
+end)
+
+--- One pass over everybody online.
+---
+--- Cheap by construction: a player whose turn has not come costs one table lookup, and a player
+--- whose turn has come costs one indexed range read. An idle server reads nothing at all,
+--- because every mark is already level with the newest post.
+local function nudgePass()
+    if not socOn() then return end
+    local now = os.time()
+
+    for _, raw in ipairs(GetPlayers()) do
+        local src = tonumber(raw)
+        local mine = src and nudgeNext[src]
+        if src and not mine then
+            mine = {}
+            nudgeNext[src] = mine
+        end
+
+        -- Whose turn has come, worked out before the player is fetched at all: on a full server
+        -- this loop runs sixty times an hour over everybody, and all but two of those passes
+        -- have nothing to do.
+        local due = nil
+        for _, app in ipairs(NUDGE_APPS) do
+            local cfg = nudgeCfg(app)
+            if not mine then                        -- no source: nothing to schedule
+                break
+            elseif not mine[app] then
+                -- First sight of this session. Their interval starts now, with a few seconds of
+                -- spread on top so two players who connected in the same tick do not share a
+                -- tick for ever afterwards.
+                mine[app] = now + cfg.minutes * 60 + math.random(0, 59)
+            elseif now >= mine[app] then
+                -- The clock is moved BEFORE the turn is taken. `nudgeOne` awaits, and a pass
+                -- that outlasts its own tick must not find this player due a second time.
+                mine[app] = now + cfg.minutes * 60
+                due = due or {}
+                due[#due + 1] = { app = app, cfg = cfg }
+            end
+        end
+
+        if due then
+            local p = Core.GetPlayer(src)
+            if p and p.citizenid then
+                for _, turn in ipairs(due) do nudgeOne(src, p, turn.app, turn.cfg) end
+            end
+        end
+    end
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -737,6 +1125,15 @@ V.Callback('v-phone:soc:feed', function(src, resolve, data)
     -- answer the social apps always fetch, and the composer is the only thing that needs
     -- it. A phone that never opens Bleeter never carries the number.
     resolve({ ok = true, posts = cleanPosts(rows), maxImages = maxImages() })
+
+    -- Opening the feed IS reading it, the same rule the notifications tab states further down.
+    -- This is the mark the hourly nudge counts "new to you" from, so it is advanced here and
+    -- nowhere else: somebody who has just opened Bleeter has, by definition, nothing waiting.
+    --
+    -- AFTER the answer has gone, deliberately. It is bookkeeping the player is not waiting on,
+    -- and putting its read in front of the feed would put a round trip between tapping the app
+    -- and seeing it. On a feed that has not moved it does not even write.
+    nudgeMarkRead(p.citizenid, app)
 end)
 
 V.Callback('v-phone:soc:post', function(src, resolve, data)
@@ -1144,10 +1541,20 @@ V.Callback('v-phone:soc:hushSetup', function(src, resolve, data)
     local bio = tostring((data and data.bio) or ''):sub(1, SOC.bioMax)
     -- Three photographs, each through the host gate: they face every profile this one is
     -- shown to, so they are as public as a post's image.
+    -- What is already on this profile, so an unchanged photograph is not re-judged. Without
+    -- this, a player whose picture expired could not save anything at all - and because
+    -- `active` rides in the same payload, could not switch the profile off either. They could
+    -- not leave the app.
+    local had = MySQL.single.await(
+        'SELECT photo, photo2, photo3 FROM vphone_hush_profiles WHERE citizenid = ?',
+        { p.citizenid }) or {}
+
     local photos = {}
     for i, key in ipairs({ 'photo', 'photo2', 'photo3' }) do
         local url = tostring((data and data[key]) or ''):sub(1, 300)
-        if url ~= '' and not imageAllowed(url) then resolve({ error = 'badhost' }) return end
+        if not PhoneImageAllowedOrSame(url, had[key]) then
+            resolve({ error = 'badhost' }) return
+        end
         photos[i] = url
     end
     local active = (data and data.active == false) and 0 or 1
@@ -1677,7 +2084,8 @@ V.Callback('v-phone:soc:profile', function(src, resolve, data)
         me = cid == p.citizenid,
         account = {
             handle = a.handle, displayname = a.displayname, avatar = a.avatar,
-            bio = a.bio, cover = a.cover, verified = truthy(a.verified),
+            bio = a.bio, cover = a.cover,
+            verified = truthy(a.verified), official = truthy(a.official),
         },
         counts = {
             posts = num(counts.posts, 0),
@@ -1703,7 +2111,7 @@ V.Callback('v-phone:soc:search', function(src, resolve, data)
     local rows
     if q:gsub('%s', '') == '' then
         rows = MySQL.query.await([[
-            SELECT a.handle, a.displayname, a.avatar, a.cover, a.bio, a.verified,
+            SELECT a.handle, a.displayname, a.avatar, a.cover, a.bio, a.verified, a.official,
                    (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
                    EXISTS(SELECT 1 FROM vphone_social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
                    (a.citizenid = ?) AS me
@@ -1713,7 +2121,7 @@ V.Callback('v-phone:soc:search', function(src, resolve, data)
     else
         local like = '%' .. q .. '%'
         rows = MySQL.query.await([[
-            SELECT a.handle, a.displayname, a.avatar, a.bio, a.verified,
+            SELECT a.handle, a.displayname, a.avatar, a.bio, a.verified, a.official,
                    (SELECT COUNT(*) FROM vphone_social_follows f WHERE f.app = a.app AND f.to_cid = a.citizenid) AS followers,
                    EXISTS(SELECT 1 FROM vphone_social_follows f2 WHERE f2.app = a.app AND f2.from_cid = ? AND f2.to_cid = a.citizenid) AS followed,
                    (a.citizenid = ?) AS me
@@ -1727,6 +2135,7 @@ V.Callback('v-phone:soc:search', function(src, resolve, data)
         r.followers = num(r.followers, 0)
         r.followed = truthy(r.followed)
         r.verified = truthy(r.verified)
+        r.official = truthy(r.official)
         r.me = truthy(r.me)
     end
     resolve({ ok = true, accounts = rows })
@@ -1770,7 +2179,7 @@ V.Callback('v-phone:soc:comments', function(src, resolve, data)
     local app = appOf(data)
 
     local rows = MySQL.query.await([[
-        SELECT c.id, c.body, c.at, a.handle, a.displayname, a.avatar, a.verified,
+        SELECT c.id, c.body, c.at, a.handle, a.displayname, a.avatar, a.verified, a.official,
                (c.citizenid = ?) AS mine
         FROM vphone_social_comments c
         JOIN vphone_social_accounts a ON a.citizenid = c.citizenid AND a.app = ?
@@ -1779,6 +2188,7 @@ V.Callback('v-phone:soc:comments', function(src, resolve, data)
     for _, r in ipairs(rows) do
         r.mine = truthy(r.mine)
         r.verified = truthy(r.verified)
+        r.official = truthy(r.official)
     end
     resolve({ ok = true, comments = rows })
 end)
@@ -1887,7 +2297,7 @@ V.Callback('v-phone:soc:notifs', function(src, resolve, data)
 
     local rows = MySQL.query.await([[SELECT n.id, n.kind, n.post_id, n.seen,
             UNIX_TIMESTAMP(n.at) AS ts,
-            a.handle, a.displayname, a.avatar, a.verified,
+            a.handle, a.displayname, a.avatar, a.verified, a.official,
             (SELECT LEFT(s.body, 80) FROM vphone_social_posts s WHERE s.id = n.post_id) AS excerpt
         FROM vphone_social_notifs n
         JOIN vphone_social_accounts a ON a.citizenid = n.from_cid AND a.app = n.app
@@ -1906,6 +2316,7 @@ V.Callback('v-phone:soc:notifs', function(src, resolve, data)
             displayname = r.displayname and tostring(r.displayname) or nil,
             avatar = r.avatar and tostring(r.avatar) or nil,
             verified = truthy(r.verified),
+            official = truthy(r.official),
             excerpt = r.excerpt and tostring(r.excerpt) or nil,
         }
     end
@@ -2091,7 +2502,7 @@ V.Callback('v-phone:soc:storyViewers', function(src, resolve, data)
     if not owner then resolve({ error = 'gone' }) return end
     if owner ~= p.citizenid then resolve({ error = 'notyours' }) return end
 
-    local rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+    local rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified, a.official
         FROM vphone_social_story_seen v
         JOIN vphone_social_accounts a ON a.citizenid = v.citizenid AND a.app = ?
         WHERE v.story_id = ?
@@ -2103,6 +2514,7 @@ V.Callback('v-phone:soc:storyViewers', function(src, resolve, data)
             handle = tostring(r.handle), displayname = r.displayname and tostring(r.displayname) or nil,
             avatar = r.avatar and tostring(r.avatar) or nil,
             verified = truthy(r.verified),
+            official = truthy(r.official),
         }
     end
     resolve({ ok = true, viewers = out })
@@ -2127,6 +2539,7 @@ local function personRow(r)
         displayname = r.displayname and tostring(r.displayname) or nil,
         avatar = r.avatar and tostring(r.avatar) or nil,
         verified = truthy(r.verified),
+        official = truthy(r.official),
     }
 end
 
@@ -2150,7 +2563,7 @@ V.Callback('v-phone:soc:likers', function(src, resolve, data)
         'SELECT 1 FROM vphone_social_posts WHERE id = ? AND app = ? LIMIT 1', { id, app })
     if not exists then resolve({ error = 'gone' }) return end
 
-    local rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+    local rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified, a.official
         FROM vphone_social_likes l
         JOIN vphone_social_accounts a ON a.citizenid = l.citizenid AND a.app = ?
         WHERE l.post_id = ?
@@ -2185,13 +2598,13 @@ V.Callback('v-phone:soc:follows', function(src, resolve, data)
     -- it cannot be turned into a different query by anything the client sends.
     local rows
     if which == 'followers' then
-        rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+        rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified, a.official
             FROM vphone_social_follows f
             JOIN vphone_social_accounts a ON a.citizenid = f.from_cid AND a.app = ?
             WHERE f.app = ? AND f.to_cid = ?
             ORDER BY f.at DESC LIMIT 200]], { app, app, cid })
     else
-        rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified
+        rows = MySQL.query.await([[SELECT a.handle, a.displayname, a.avatar, a.verified, a.official
             FROM vphone_social_follows f
             JOIN vphone_social_accounts a ON a.citizenid = f.to_cid AND a.app = ?
             WHERE f.app = ? AND f.from_cid = ?
@@ -2206,6 +2619,322 @@ end)
 -- ══════════════════════════════════════════════════════════════
 -- Verification
 -- ══════════════════════════════════════════════════════════════
+-- **Two badges, and they are two different things rather than two levels of one.**
+--
+--   `verified`  the blue tick. BOUGHT, at a desk on the map, and staff may still grant it.
+--   `official`  the orange mark. Granted by staff and by nothing else. There is no callback
+--               that writes it, so there is no message a client could send that would.
+--
+-- Two columns rather than one number, because they are independent facts. An account can hold
+-- both; revoking one has to leave the other exactly where it was; and a level would make the
+-- orange one "blue, but more", which is the opposite of what it says. Both live on the account
+-- row, which is already per (citizenid, app), so Bleeter and Snapmatic are independent without
+-- anything extra being stored.
+--
+-- Everything below that SELLS the blue one is governed by `Config.SocialVerify`. Nothing below
+-- can grant the orange one.
+
+local VERIFY_APPS = { bleeter = true, snap = true }
+
+local function verifyCfg()
+    local c = Config.SocialVerify
+    return (type(c) == 'table') and c or {}
+end
+
+--- Is the desk open for business?
+---
+--- Not "does the badge exist" - the badges are columns and always exist. This governs SELLING
+--- only, so an operator who switches it off takes nothing away from anybody who already paid.
+--- `set phone_socialVerify false` does the same thing on a running server.
+local function verifySellOn()
+    if not socOn() then return false end
+    if verifyCfg().enabled == false then return false end
+    return V.SettingBool('socialVerify', true)
+end
+
+--- Does the desk sell a badge for this app? An operator's list wins; the default is both.
+local function verifySells(app)
+    if not VERIFY_APPS[app] then return false end
+    local list = verifyCfg().apps
+    if type(list) ~= 'table' then return true end
+    for _, one in ipairs(list) do
+        if tostring(one):lower() == app then return true end
+    end
+    return false
+end
+
+--- What one costs on one app. Never negative, and never a fraction of a dollar.
+local function verifyPrice(app)
+    local prices = verifyCfg().price
+    local p = (type(prices) == 'table') and prices[app] or prices
+    return math.max(0, math.floor(num(p, 0)))
+end
+
+--- Which purse pays, and where the money lands.
+local function verifyPurse()
+    return (tostring(verifyCfg().money or 'bank') == 'cash') and 'cash' or 'bank'
+end
+
+--- Is the app on this phone? On by default, because a badge on an app the player cannot open
+--- is money taken for nothing. `requireApp = false` sells it anyway, for a server whose social
+--- apps are not removable in the first place.
+local function verifyInstalled(src, app)
+    if verifyCfg().requireApp == false then return true end
+    if not PhoneHasApp then return true end
+    return PhoneHasApp(src, app) == true
+end
+
+--- What this source is holding in the purse that pays, or nil when it cannot be read.
+---
+--- **nil is not zero, and the difference matters.** A balance that could not be read is a
+--- question the bridge could not answer, and turning that into 0 would tell somebody with a
+--- full account that they cannot afford a badge. `Bridge.RemoveMoney` is the authority either
+--- way; this is the courtesy that refuses before the money moves, so it steps aside when it
+--- does not know rather than guessing against the player.
+local function verifyBalance(src)
+    local read = Bridge.Banking and Bridge.Banking.Balances and Bridge.Banking.Balances(src)
+    if type(read) ~= 'table' then return nil end
+    local held = read[verifyPurse()]
+    return held ~= nil and num(held, 0) or nil
+end
+
+--- The desks, as plain coordinates. `normalisePlaces` in config.lua has already turned every
+--- `coords = vector3(...)` into x/y/z, so there is one shape to read here.
+local function verifyPoints()
+    local out = {}
+    local fallback = math.max(0.5, num(verifyCfg().distance, 2.0))
+    for i, pt in ipairs(verifyCfg().points or {}) do
+        if type(pt) == 'table' and pt.enabled ~= false and pt.x ~= nil and pt.y ~= nil then
+            out[#out + 1] = {
+                index = i,
+                label = pt.label and tostring(pt.label) or nil,
+                x = num(pt.x, 0.0) + 0.0, y = num(pt.y, 0.0) + 0.0, z = num(pt.z, 0.0) + 0.0,
+                radius = math.max(0.5, num(pt.radius, fallback)),
+            }
+        end
+    end
+    return out
+end
+
+--- The desk a position is standing at, or nil.
+---
+--- **Read from the ped, on the server.** A client that could name the desk it is at could name
+--- one it is nowhere near, and a badge sold in a place stops being sold in a place the moment
+--- the place is the client's word for it. server/charging.lua answers "am I at a charger" the
+--- same way and for the same reason.
+local function verifyDeskAt(coords)
+    if not coords then return nil end
+    local best, bestAt
+    for _, pt in ipairs(verifyPoints()) do
+        local d = #(coords - vector3(pt.x, pt.y, pt.z))
+        if d <= pt.radius and (bestAt == nil or d < bestAt) then best, bestAt = pt, d end
+    end
+    return best, bestAt
+end
+
+local function verifyPedCoords(src)
+    src = tonumber(src)
+    local ped = src and GetPlayerPed(src)
+    if not ped or ped == 0 then return nil end
+    return GetEntityCoords(ped)
+end
+
+--- One account's two badges, or nil when there is no account on that app.
+local function verifyBadges(cid, app)
+    local row = MySQL.single.await(
+        'SELECT handle, verified, official FROM vphone_social_accounts WHERE citizenid = ? AND app = ?',
+        { cid, app })
+    if not row then return nil end
+    return {
+        handle = tostring(row.handle or ''),
+        verified = truthy(row.verified),
+        official = truthy(row.official),
+    }
+end
+
+--- **Every reason to say no, answered before a single unit moves.**
+---
+--- This resource has already shipped a path that charged for something which no longer existed,
+--- so the ORDER is part of the design and not an accident of how it was written:
+---
+---   off           the desk is closed on this server, or the social apps are
+---   badapp        an app the desk does not sell, or a name that is not an app at all
+---   range         not at a desk. First of the per-player refusals on purpose: it is the one
+---                 that guards against a forged request, and a forged request must not be able
+---                 to learn whether a handle exists by reading which refusal comes back
+---   notinstalled  the app is not on their phone, so the badge would hang on nothing
+---   noaccount     no account on that app - there is no row for a badge to sit on
+---   hasbadge      already verified there. Selling it twice is selling nothing
+---   paying        a purchase of theirs is already in flight
+---   nomoney       the price is more than they are holding
+---   ok            take the money
+---
+--- Pure, deliberately. It reads a table of facts and answers with a word: it queries nothing,
+--- charges nothing and does not know what a source is. That is what lets tools/test-verify.py
+--- drive every branch of it outside the game, which is the only place these branches can all
+--- be reached.
+local function verifyVerdict(s)
+    s = s or {}
+    if not s.on then return 'off' end
+    if not s.sells then return 'badapp' end
+    if not s.atDesk then return 'range' end
+    if not s.installed then return 'notinstalled' end
+    if not s.account then return 'noaccount' end
+    if s.verified then return 'hasbadge' end
+    if s.paying then return 'paying' end
+    local price = math.max(0, math.floor(num(s.price, 0)))
+    -- A balance of nil is "the bridge could not say", not "nothing". The debit below is the
+    -- authority; this only refuses when the answer is known and it is short.
+    if price > 0 and s.balance ~= nil and num(s.balance, 0) < price then return 'nomoney' end
+    return 'ok'
+end
+
+--- One purchase at a time per character.
+---
+--- Everything in the buy path yields - the balance read, the debit, the update - so two taps in
+--- the same second both got past the checks on the old Hush pass and both were charged. The
+--- same trap, the same guard, cleared on every exit path including the refusals.
+local VerifyBuying = {}
+
+--- What the desk is offering this player, for the sheet the phone raises.
+---
+--- The state of every app is answered in one call, because the sheet has to say WHY an app
+--- cannot be bought - no account, already verified, not installed - rather than leaving a row
+--- that does nothing when it is tapped.
+V.Callback('v-phone:soc:verifyDesk', function(src, resolve)
+    if not verifySellOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    -- The person actually standing at the desk, and whose money this would be. Under a staff
+    -- phone-view session those are the held character, not the staff member holding the screen.
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    local desk, away = verifyDeskAt(verifyPedCoords(acting))
+    if not desk then resolve({ error = 'range' }) return end
+
+    local purse = verifyPurse()
+    local held = verifyBalance(acting)
+
+    local out = {}
+    for _, app in ipairs({ 'bleeter', 'snap' }) do
+        if verifySells(app) then
+            local badges = verifyBadges(p.citizenid, app)
+            local price = verifyPrice(app)
+            local installed = verifyInstalled(src, app)
+            out[#out + 1] = {
+                app = app,
+                name = APP_NAME[app],
+                price = price,
+                handle = badges and badges.handle or nil,
+                verified = badges and badges.verified or false,
+                official = badges and badges.official or false,
+                installed = installed,
+                account = badges ~= nil,
+                -- The same verdict the purchase will reach, so a row that cannot be bought
+                -- says so before it is tapped rather than after.
+                verdict = verifyVerdict({
+                    on = true, sells = true, atDesk = true,
+                    installed = installed,
+                    account = badges ~= nil,
+                    verified = badges and badges.verified or false,
+                    paying = VerifyBuying[p.citizenid] == true,
+                    price = price, balance = held,
+                }),
+            }
+        end
+    end
+
+    resolve({
+        ok = true,
+        label = desk.label,
+        away = away and math.floor(away * 10) / 10 or nil,
+        money = purse,
+        balance = held,
+        apps = out,
+    })
+end)
+
+--- Buy the blue tick on one app.
+---
+--- **Nothing the page sends decides anything.** It names an app and that is the whole of its
+--- say: the price comes from the config, the desk comes from the ped's real position, and the
+--- payment goes through `Bridge.RemoveMoney`, which answers false on every framework it
+--- supports when the balance will not cover it. A debit that cannot be confirmed grants nothing.
+V.Callback('v-phone:soc:verifyBuy', function(src, resolve, data)
+    if not verifySellOn() then resolve({ error = 'off' }) return end
+    local p = Core.GetPlayer(src)
+    if not p then resolve(false) return end
+
+    local app = tostring((data and data.app) or ''):lower()
+    local acting = PhoneActingSource and PhoneActingSource(src) or src
+    local desk = verifyDeskAt(verifyPedCoords(acting))
+    local badges = VERIFY_APPS[app] and verifyBadges(p.citizenid, app) or nil
+    local price = verifyPrice(app)
+    local purse = verifyPurse()
+
+    local verdict = verifyVerdict({
+        on = true,
+        sells = verifySells(app),
+        atDesk = desk ~= nil,
+        installed = verifyInstalled(src, app),
+        account = badges ~= nil,
+        verified = badges and badges.verified or false,
+        paying = VerifyBuying[p.citizenid] == true,
+        price = price,
+        balance = verifyBalance(acting),
+    })
+    if verdict ~= 'ok' then resolve({ error = verdict, price = price }) return end
+
+    VerifyBuying[p.citizenid] = true
+
+    if price > 0 then
+        local paid = Bridge.RemoveMoney(acting, price, purse,
+            ('v-phone: %s verification'):format(APP_NAME[app] or app))
+        if paid ~= true then
+            VerifyBuying[p.citizenid] = nil
+            resolve({ error = 'nomoney', price = price })
+            return
+        end
+    end
+
+    -- **The badge is written against the account that has not got it yet.**
+    --
+    -- `verified = 0` in the WHERE, so two writes that somehow both got here still produce one
+    -- grant: the second changes no rows. `official` is not named at all, which is the whole
+    -- point of two columns - buying blue cannot disturb an orange mark staff granted.
+    local changed = MySQL.update.await(
+        'UPDATE vphone_social_accounts SET verified = 1 WHERE citizenid = ? AND app = ? AND verified = 0',
+        { p.citizenid, app })
+    VerifyBuying[p.citizenid] = nil
+
+    if (tonumber(changed) or 0) < 1 then
+        -- Paid, and the row says it was already verified. The money is gone and refusing now
+        -- would be taking it for nothing, so this reads as success - and it is logged loudly,
+        -- because it means two purchases raced and one of them should not have got here.
+        V.Log(('verification: %s paid %d for %s and the badge was already set')
+            :format(tostring(p.citizenid), price, app))
+    end
+
+    local account = tostring(verifyCfg().account or '')
+    if account ~= '' and price > 0 then
+        local landed = Bridge.AddSociety and Bridge.AddSociety(account, price,
+            ('v-phone: %s verification'):format(APP_NAME[app] or app)) or false
+        if not landed then
+            -- Printed unconditionally: an operator who named an account and never sees the
+            -- money is looking at a misconfiguration, and a silent one is worse than a line.
+            V.Log(('verification: could not credit "%s" with %d - check the account exists')
+                :format(account, price))
+        end
+    end
+
+    Core.Log('social', ('verified %s on %s (%d)'):format(p.citizenid, app, price),
+             nil, p.citizenid)
+    TriggerClientEvent('v-phone:client:socialRefresh', src, app)
+
+    resolve({ ok = true, app = app, price = price,
+              handle = badges and badges.handle or nil })
+end)
+
 --- Grant or revoke the badge on one account.
 ---
 --- The column and the badge have both existed since the app shipped - the badge is drawn
@@ -2284,6 +3013,50 @@ exports('VerifiedHandles', function(app)
     app = (tostring(app or ''):lower() == 'snap') and 'snap' or 'bleeter'
     local rows = MySQL.query.await(
         'SELECT handle FROM vphone_social_accounts WHERE app = ? AND verified = 1 ORDER BY handle',
+        { app }) or {}
+    local out = {}
+    for _, r in ipairs(rows) do out[#out + 1] = tostring(r.handle) end
+    return out
+end)
+
+--- Grant or revoke the OFFICIAL mark - the orange one - on one account.
+---
+--- **There is no player-facing route to this and there is not meant to be.** The blue tick is
+--- for sale at a desk; this one says an account is who it claims to be, and a badge that can be
+--- bought cannot say that. So it is an export and a staff command, exactly like `SetVerified`
+--- was before the desk existed, and no callback anywhere writes this column.
+---
+---     exports['v-phone']:SetOfficial('bleeter', 'lspd', true)
+---
+--- It does not touch `verified`. Somebody who paid for the blue tick and is then made official
+--- keeps both, and taking the orange one away leaves the one they bought alone - which is the
+--- reason these are two columns and not one level.
+---
+--- Returns ok, and the handle as it is actually stored, so a caller can echo it back.
+exports('SetOfficial', function(app, handle, on)
+    app = (tostring(app or ''):lower() == 'snap') and 'snap' or 'bleeter'
+    handle = tostring(handle or ''):gsub('^@', ''):gsub('%s', '')
+    if handle == '' then return false, 'nohandle' end
+
+    local cid = cidOfHandle(app, handle)
+    if not cid then return false, 'nosuchhandle' end
+
+    MySQL.update.await(
+        'UPDATE vphone_social_accounts SET official = ? WHERE citizenid = ? AND app = ?',
+        { on and 1 or 0, cid, app })
+
+    local target = Core.GetPlayerByCitizenId(cid)
+    if target and target.source then
+        TriggerClientEvent('v-phone:client:socialRefresh', target.source, app)
+    end
+    return true, handle
+end)
+
+--- Who holds the orange mark, for the staff listing.
+exports('OfficialHandles', function(app)
+    app = (tostring(app or ''):lower() == 'snap') and 'snap' or 'bleeter'
+    local rows = MySQL.query.await(
+        'SELECT handle FROM vphone_social_accounts WHERE app = ? AND official = 1 ORDER BY handle',
         { app }) or {}
     local out = {}
     for _, r in ipairs(rows) do out[#out + 1] = tostring(r.handle) end
@@ -2372,7 +3145,7 @@ V.Callback('v-phone:soc:dmList', function(src, resolve, data)
     local app = appOf(data)
 
     local rows = MySQL.query.await([[
-        SELECT a.handle, a.displayname, a.avatar, a.verified,
+        SELECT a.handle, a.displayname, a.avatar, a.verified, a.official,
                m.body, m.image, m.at, (m.from_cid = ?) AS mine,
                (SELECT COUNT(*) FROM vphone_social_dm u
                  WHERE u.app = m.app AND u.to_cid = ? AND u.seen = 0
@@ -2392,6 +3165,7 @@ V.Callback('v-phone:soc:dmList', function(src, resolve, data)
     for _, r in ipairs(rows) do
         r.mine = truthy(r.mine)
         r.verified = truthy(r.verified)
+        r.official = truthy(r.official)
         r.unread = num(r.unread, 0)
     end
     resolve({ ok = true, threads = rows })
@@ -2534,6 +3308,10 @@ function SocialBoot(core)
         `phone`     VARCHAR(20) NOT NULL DEFAULT '',
         `password`  VARCHAR(80) NOT NULL DEFAULT '',
         `verified`  TINYINT(1) NOT NULL DEFAULT 0,
+        -- The ORANGE mark, and its own column rather than a second value in `verified`.
+        -- The blue one is bought and this one is granted; an account may hold both, and
+        -- taking either away has to leave the other exactly where it was.
+        `official`  TINYINT(1) NOT NULL DEFAULT 0,
         PRIMARY KEY (`citizenid`, `app`),
         UNIQUE KEY `handle` (`app`, `handle`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -2557,6 +3335,10 @@ function SocialBoot(core)
         phone       = "ADD COLUMN `phone` VARCHAR(20) NOT NULL DEFAULT ''",
         password    = "ADD COLUMN `password` VARCHAR(80) NOT NULL DEFAULT ''",
         verified    = "ADD COLUMN `verified` TINYINT(1) NOT NULL DEFAULT 0",
+        -- Added after release, so it has to be added on its own or a database that already
+        -- has this table never gets it: `CREATE TABLE IF NOT EXISTS` does nothing at all to a
+        -- table that exists. Defaults to 0, so nobody is made official by an update.
+        official    = "ADD COLUMN `official` TINYINT(1) NOT NULL DEFAULT 0",
     }) do
         local has = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_accounts'
@@ -2836,6 +3618,17 @@ function SocialBoot(core)
         while true do
             Wait(60 * 60 * 1000)
             socialSweep(false)
+        end
+    end)
+
+    -- The nudge. A minute is the GRANULARITY, not the rate: every player carries their own
+    -- interval and this only asks whose is up. Wrapped so a database that is briefly away costs
+    -- one pass rather than the thread, which is how the sweep above learnt to survive.
+    CreateThread(function()
+        while true do
+            Wait(60 * 1000)
+            local ok, err = pcall(nudgePass)
+            if not ok then print('[v-phone] social nudge: ' .. tostring(err)) end
         end
     end)
 end

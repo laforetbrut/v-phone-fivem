@@ -2,7 +2,7 @@
 """Every check this resource has, in one command.
 
     python tools/test-all.py
-    python tools/test-all.py --fast     everything except the 52 screenshots
+    python tools/test-all.py --fast     everything except the 71 screenshots
 
 There were six ways to test this phone and no way to run them, so each one was run when
 somebody remembered it existed. This is the list, in the order that fails cheapest first: a
@@ -22,10 +22,15 @@ syntax error should not cost five minutes of screenshots to discover.
     check-fr         no French word spelled two ways in the same locale file
     test-alert-caller who a dispatch alert says called it in, which is not its subject
     test-multiphoto  four photographs on one post, and the host gate on every one
+    test-nudge       when the social apps may say what is new, and when they must stay quiet
+    test-retention   how long a social row lives, and that both sweeps ask the one function
+    test-mediaref    who still shows a photograph, before the sweep deletes it
+    test-verify      who may buy the blue tick, and that the orange one never moves with it
+    test-camera      what a photograph does when the upload host is slow or dead
     preview          the page built for a browser
     run-probe        can a cursor reach every control in all 37 apps
     probe-input      real mouse input through the compositor
-    make-shots       52 screenshots, some of which are assertions
+    make-shots       71 screenshots, some of which are assertions
 
 Exit code 1 if anything fails. Nothing here needs a database or a running server.
 """
@@ -84,16 +89,30 @@ files = [f for f in sorted(glob.glob('**/*.lua', recursive=True))
          if 'preview' not in f and 'server-test' not in f]
 bad = []
 for f in files:
-    if load(io.open(f, encoding='utf-8').read(), '@' + f) is None:
-        bad.append(f)
-for f in bad:
+    # **`load` answers `nil, err` on failure, and lupa hands that back as a TUPLE.**
+    #
+    # The first version of this asked `if load(...) is None`, which a two-element tuple never
+    # is - so this check has never once reported a broken file. It was green unconditionally,
+    # and a real syntax error in server/media.lua walked past it and stopped the resource
+    # loading on a live server. A gate that cannot fail is worse than no gate: it is a gate
+    # everybody trusts.
+    res = load(io.open(f, encoding='utf-8').read(), '@' + f)
+    fn = res[0] if isinstance(res, tuple) else res
+    if fn is None:
+        bad.append((f, (res[1] if isinstance(res, tuple) else 'unknown error')))
+for f, why in bad:
     print('does not compile:', f)
+    print('                 ', why)
 print('%d file(s)' % len(files))
 sys.exit(1 if bad else 0)
 '''
 
 JS_CHECK = ['html/app.js', 'html/sdk.js', 'tools/probe.js', 'tools/probe-input.js',
-            'tools/run-probe.js', 'tools/make-shots.js']
+            'tools/run-probe.js', 'tools/make-shots.js',
+            # The S3 signer and uploader. A server script rather than a page script, and the
+            # only one - which is exactly why it would have been left out of this list and
+            # shipped unparsed.
+            'server/s3.js']
 
 print('')
 run('lua compile', [sys.executable, '-c', LUA_CHECK])
@@ -123,6 +142,11 @@ run('test-oxjob', [sys.executable, 'tools/test-oxjob.py'])
 run('test-poll', [sys.executable, 'tools/test-poll.py'])
 run('test-alert-caller', [sys.executable, 'tools/test-alert-caller.py'])
 run('test-multiphoto', [sys.executable, 'tools/test-multiphoto.py'])
+run('test-nudge', [sys.executable, 'tools/test-nudge.py'])
+run('test-retention', [sys.executable, 'tools/test-social-retention.py'])
+run('test-mediaref', [sys.executable, 'tools/test-mediaref.py'])
+run('test-verify', [sys.executable, 'tools/test-verify.py'])
+run('test-camera', [sys.executable, 'tools/test-camera.py'])
 run('check-fr', [sys.executable, 'tools/check-fr.py'])
 
 # ── The ones that need a browser ──────────────────────────────────────────
@@ -132,7 +156,7 @@ run('probe-input', ['node', 'tools/probe-input.js'], 'real mouse through the com
 if FAST:
     print('%-16s %-4s        skipped by --fast' % ('make-shots', '--'))
 else:
-    run('make-shots', ['node', 'tools/make-shots.js'], '52 screenshots and assertions')
+    run('make-shots', ['node', 'tools/make-shots.js'], '71 screenshots and assertions')
 
 print('')
 failed = [n for n, ok in results if not ok]

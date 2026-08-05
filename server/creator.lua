@@ -601,8 +601,26 @@ V.Callback('v-phone:fan:unlock', function(src, resolve, data)
     -- The PRICE comes from the row, never from the buyer. This is the whole reason the client
     -- sends an id and nothing else.
     local post = MySQL.single.await(
-        'SELECT citizenid, price, subs_only FROM vphone_fan_posts WHERE id = ?', { id })
+        'SELECT citizenid, price, subs_only, image FROM vphone_fan_posts WHERE id = ?', { id })
     if not post then resolve({ error = 'gone' }) return end
+
+    -- **Nothing is charged for a picture that is no longer there.**
+    --
+    -- A row outlives its file: media expires on its own clock, and a paid post whose photograph
+    -- has gone still had a price, still took the money, still said "Unlocked", and showed an
+    -- empty card. Buying again answered `already`, so there was no way back and no refund.
+    --
+    -- `MediaHasUrl` is the phone's own record of what it uploaded, and the cheapest honest test
+    -- available here - a request to the host would put a network round trip in front of every
+    -- purchase.
+    -- **Without the edit recipe.** A photograph the player cropped or filtered carries
+    -- `#vp=...` on the end, `MediaHasUrl` is an exact match, and so every post made from an
+    -- edited picture would read as expired for ever and could never be sold. `imageAllowed`
+    -- above strips it for the same reason.
+    local img = tostring(post.image or ''):gsub('#.*$', '')
+    if img ~= '' and Bridge.MediaHasUrl and not Bridge.MediaHasUrl(img) then
+        resolve({ error = 'postgone' }) return
+    end
     if post.citizenid == cid then resolve({ error = 'self' }) return end
     if num(post.subs_only, 0) == 1 then resolve({ error = 'subsonly' }) return end
 

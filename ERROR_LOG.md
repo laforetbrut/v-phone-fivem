@@ -5,6 +5,333 @@ one coming back.
 
 ---
 
+## [2026-08-05 22:40] - Two sweeps over one table, and the shorter clock won in silence
+
+**Context:** wiring `socialRetentionS3` into `socKeep` so the social retentions follow the media
+provider. Checking what else deletes those rows before claiming the setting worked.
+
+**Error:** `Config.Settings.socialRetentionPosts = 60` had no effect. `vphone_social_posts` is swept
+by `socialSweep` in server/social.lua on that number AND by `PhoneRetentionSweep` in
+server/retention.lua on `Config.Retention.socialPosts = 30`, both hourly. Thirty won. The setting
+had read sixty for four releases and the docs said sixty; posts went at thirty. `socialRetentionS3`
+would have been dead on arrival for the same reason - a hundred and eighty days of feed against a
+thirty-day delete in another file.
+
+**Root cause:** two files owning one question. server/retention.lua was written to gather the
+phone's retentions into one place and took a copy of the social numbers instead of asking for them,
+so the two drifted the moment either moved. Neither sweep knew the other existed, so there was
+nothing to log and no way to see it short of reading both files.
+
+**Fix:** `SocialKeepDays` in server/social.lua is the single answer - convar, then a
+`Config.Retention.social*` key a server set for itself, then `socialRetentionS3` on s3, then
+`Config.Settings` - and retention.lua asks it for all four tables. The four social keys left the
+shipped `Config.Retention` so the settings can apply, and are still read first when present, so an
+existing config decides as it did. `tools/test-social-retention.py` asserts the two call sites
+agree per table on both providers, and was run with each half of the old arrangement put back.
+
+**Prevention:** before believing a setting works, grep for every statement that deletes from the
+table it governs. A number that is read in two files is a number that is wrong in one of them, and
+the sweep that loses is invisible: it deletes nothing, prints nothing, and looks correct in review.
+
+---
+
+## [2026-08-05 22:10] - A fallback chain read a typo as an absence
+
+**Context:** wiring `Config.Settings.socialRetentionS3` into `socKeep` in server/social.lua, so the
+four social retentions follow the media provider. The convar has to keep winning over both tables,
+and `V.Setting` cannot express that on its own - it falls back to `Config.Settings` before it ever
+reaches a default, and on s3 those four values are exactly what is being replaced.
+
+**Error:** the first version asked `tonumber(GetConvar(...))` and treated a nil as "no convar". With
+`set phone_socialRetentionPosts never` and `provider = 's3'`, posts went from being kept for ever to
+being deleted at 180 days. Caught by a harness that ran the real function under Lua 5.4 with the
+provider, the convar and both tables faked, before any of it was committed.
+
+**Root cause:** "does not parse as a number" and "was never set" are different states, and the code
+collapsed them. A convar that is set is the operator speaking, whatever they typed; the answer the
+resource has always given to an unparseable one is 0, keep for ever, because `V.Setting` hands the
+string back and `tonumber` fails on it further down.
+
+**Fix:** the test is `GetConvar('phone_' .. key, '') == ''` - the existence of the convar, not its
+value. Empty counts as unset, which is what `V.Setting` already does, so both agree on which values
+are the operator speaking. Seventeen cases now cover it, including the typo.
+
+**Prevention:** when a new source is inserted into a resolution chain, enumerate the states of the
+old one first and check each survives. A `tonumber` in a condition merges two of them silently, and
+the one it merges is always the one nobody types on purpose.
+
+---
+
+## [2026-08-05 21:10] - Zero dead space was the wrong target, and it reached the game
+
+**Context:** the collapsed nav bar reserved 54px of nothing below its row and drew the hairline
+under the lot. The measurement was right and the fix removed all 54.
+
+**Error:** reported in game, with a screenshot. "Le trait est beaucoup trop haut maintenant il
+touche les boutons" - the rule under the header ran into the two circular buttons and cut them.
+Seen in OnlyFruits, Messages and every other app.
+
+**Root cause:** the bar's bottom was derived from the row and nothing else, so the row's bottom
+edge and the bar's bottom edge became the same line. A header needs the row PLUS the space the
+platform leaves under it; removing the wrong space and removing all the space are different
+fixes and I shipped the second one.
+
+**Fix:** `--nav-gap`, measured rather than chosen. `Examples/Toolbars - Top.svg` in the iOS 26 kit
+draws a compact top toolbar as a `402 x 116` chrome band at `translate(24 23)` with its two
+`44x44 rx=22` buttons at y 85, which is screen y 62 to 106: the band ends **ten pixels** below the
+buttons, and `Scroll Edge Effect - Hard.svg` puts the hairline on that band's inner edge.
+Confirmed independently in `Examples/Menus.svg`. Cross-checked in the large-title state against
+`Examples/List.svg`: its grouped card starts 121 below that kit's status bar, ours starts 122
+below `--nav-top`. The gap is the same in both states, so the collapsed bar still hands back
+exactly the large title's block and the content still does not move.
+
+**Prevention:** when a measurement says a value is wrong, it has said nothing about what the right
+value is. Go back to the reference for the replacement instead of taking the nearest round number,
+and state the file it came from so the next person can check it.
+
+---
+
+## [2026-08-05 21:35] - A sweep that stepped by eleven, and a midpoint that meant nothing
+
+**Context:** after the ten-pixel gap landed, `tools/probe-input.js` failed: "no control ever
+scrolls into the band (Settings, 17 positions): 1 caught, e.g. Informations".
+
+**Error:** it looked like the fix had pushed a row into the home indicator's hit band. It had not.
+
+**Root cause:** two faults in the check, both of which read as a pass until something moved.
+The sweep stepped through the scroll range by 11, which visits 17 of 173 positions; an exhaustive
+sweep of the SHIPPED tree flags the same two rows at offsets 26 and 78, which no multiple of 11
+ever visits. Making the body ten pixels shorter moved those offsets to 36 and 88, and 88 is a
+multiple of 11. The phone's behaviour at the bottom of the screen was byte-identical before and
+after - measured both ways.
+The second fault is why those rows were flagged at all: the check judged a control by whether its
+MIDPOINT was in the band. A row half-clipped by the scroller has its midpoint exactly on the
+body's bottom edge, which is exactly where the band starts, and not one pixel of it is painted
+below that edge. It also missed the real case in the other direction - a row whose top half is in
+the band and whose midpoint is above it is pressable inside the band and was never counted.
+
+**Fix:** the sweep visits every position, and a control is judged by how much of it is both
+VISIBLE and inside the band, which is the area where a press meant for the row goes home instead.
+Proved able to fail rather than assumed: with `.app:not(.hasfoot) #appfoot { height: 0 }`, the
+exact defect the reserve exists to prevent, the new check reports three controls and 39.95px of
+pressable area in the band. On the shipped tree it reports 0.00px over 173 positions.
+
+**Prevention:** before changing a check that has started failing, prove which of the two moved -
+the phone or the sampling. Run the check exhaustively on the shipped tree first. And a check that
+is relaxed must be shown to still fail on the defect it was written for, in the same session.
+
+---
+
+## [2026-08-05 20:05] - A transition on a height that cannot interpolate clamped the scroller
+
+**Context:** making the collapsed nav bar hand back the block its faded large title was holding,
+with the app body taking exactly the same number as scroll padding so nothing on screen moves.
+Both sides were given `transition: .2s ease` so they would cancel at every frame and not only at
+the ends.
+
+**Error:** they did not cancel at all. Measured on Settings: a scrollTop of 140 came back as 114
+and stayed there. The content jumped 26px and did not come back.
+
+**Root cause:** `height: auto -> 0` is not interpolable. The bar snapped shut in one frame while
+the body's `padding-top` eased in over 200ms, so for those 200ms the scroller's box was 54px
+taller than its content had grown to allow. Chromium clamps the scroll offset to fit, and a clamp
+is destructive: the position does not come back when the padding catches up.
+
+**Fix:** neither side transitions. One style change, one layout pass, both halves moving together.
+Verified over 60 frames crossing the threshold in both directions in two apps: 0.00px of content
+drift, and `scrollHeight - clientHeight` identical before and after the collapse. The title's own
+fade is kept by NOT clipping it - its box collapses at the same top edge, so the text overflows
+into the pixels it already occupied and finishes the fade there, with `pointer-events: none` so
+the invisible band cannot eat the first content row's taps.
+
+**Prevention:** a compensating pair of layout changes must land in the same style recalculation.
+If either half is animated, both must be, with the same easing AND with properties that actually
+interpolate - `auto` on either end of a length means the transition silently does not run.
+
+---
+
+## [2026-08-05 19:55] - A one-shot animation class that nothing ever removed
+
+**Context:** stopping the entry stagger from replaying on a tab tap. After the gate landed, the
+harness reported `ph27-push` firing on the tab bar tap where it had reported `ph27-view-in` before.
+
+**Error:** the animation had not gone away, it had changed name. `.appbody.pushin > *` and
+`.appbody.view-enter > *` both set `animation`, so only the later rule ever ran; suppressing
+`view-enter` simply revealed the one underneath it.
+
+**Root cause:** `pushAnim()` adds `pushin` and nothing took it off. `body()` clears
+`frame-loading`, `view-enter` and `fitbody` for exactly this reason and `pushin` was missed, so a
+screen that had once pushed replayed the push over its whole body on every render afterwards.
+
+**Fix:** cleared in `body()` with the others. Every caller of `pushAnim()` runs it immediately
+after `body()`, so the push itself costs nothing.
+
+**Prevention:** when a fix removes one animation, count the animations that actually fire
+afterwards rather than assuming the number went down. A second rule setting the same property was
+invisible until the first one stopped winning.
+
+---
+
+## [2026-08-05 18:40] - A guide layer outside the handset ended up inside the photograph
+
+**Context:** making the camera's viewfinder see-through. The rule-of-thirds grid was moved out
+of the phone and onto a layer over the whole viewport, because both capture paths grab the
+screen with no crop and thirds drawn inside the handset mark the thirds of a rectangle in the
+corner of the picture rather than of the picture.
+
+**Error:** the first screenshot taken of the capture state showed the handset correctly gone
+and four white hairlines still drawn across the frame. Everything the guard was written for had
+worked; the guard simply could not see the new layer.
+
+**Root cause:** `.device.capturing { opacity: 0 }` is the whole capture guard, and it is scoped
+to `#device`. The grid was deliberately made a SIBLING of the handset so it could span the
+viewport, which put it outside the only selector that takes the phone off screen. The two
+requirements pulled in opposite directions and nothing in the code said so.
+
+**Fix:** the capture state is now carried on `<body>` as well as on `#device`, set and cleared
+by one pair of functions, with `body.capturing .camframe { display: none }`. The same pattern
+already had to exist for `camlive` itself, which is also on both elements for the same reason.
+
+**Prevention:** anything drawn outside `#device` is outside every rule that hides the phone.
+When a layer is deliberately moved out of the handset, the capture guard has to be extended in
+the same change, and the way to find out is to photograph the capture state rather than the
+framing state. Screenshotting only the state the player looks at would have missed this
+completely: the framing shot was correct in every version of this change.
+
+---
+
+## [2026-08-05 17:05] - A file extension used as a media subtype crashed the server
+
+**Context:** taking a photograph on a server with `Config.Media.provider = 's3'`, minutes after
+the capture path was rewritten to come back through `serverCapture` rather than being uploaded
+from the client.
+
+**Error:** the server process took a SIGSEGV. Mono's handler printed an empty managed stack
+trace, followed by a 2146 ms hitch reported identically on the sync thread and the network
+thread - the whole process frozen while the crash handler ran, not a workload.
+
+**Root cause:** two changes multiplied.
+
+`captureOptions()` sent `encoding = imageExt()`, and `imageExt()` exists to name a FILE and
+normalises every JPEG spelling to `jpg`. screencapture's NUI composes the canvas type by
+concatenation - `canvas.toBlob(cb, ` + backtick + `image/${encoding}` + backtick + `, quality)` -
+and `image/jpg` is not a type any canvas accepts. Per the HTML spec the browser silently falls
+back to `image/png` and ignores the quality argument, so every photograph came back a full-frame
+lossless PNG: one to two and a half megabytes where the same picture as JPEG or WebP is one to
+three hundred kilobytes, with `imageQuality = 0.7` buying nothing. The config default had just
+been flipped from `webp` - whose extension and subtype happen to be the same word, which is why
+the concatenation had been harmless until then - to `jpg`.
+
+At the same time the transport changed from `remoteUpload(..., 'blob')`, where the image stayed
+inside screencapture's Node process, to `serverCapture(..., 'base64')`. So that inflated string
+is now marshalled JS to Lua through a function reference, held in the Lua runtime, and marshalled
+Lua to JS again to the uploader - both crossings synchronous, both on the server's main thread,
+with Lua reading none of it. Nothing anywhere on the path measured its length first.
+
+The deadlines were also inverted at the layer the rework added: `server/s3.js` had a 20 s fetch
+timeout with one retry and a 500 ms backoff, a 40.5 s worst case, against a 20 s Lua poll and a
+35 s upload lease. A callback could be invoked up to 20 s after the Lua side stopped waiting, and
+none of the four exports terminated its promise chain, so a throw out of that invocation became
+an unhandled rejection.
+
+**Fix:** `imageCaptureType()` translates the extension into the subtype a canvas accepts and is
+what `captureOptions()` sends; `imageExt()` keeps naming the object. A payload ceiling refuses an
+oversized or non-string capture before either export call, with its own error string. Every
+numeric in the options table is clamped, and `src` is checked before it reaches an `emitNet`.
+`s3.js` drops to a 9 s fetch timeout (18.5 s worst case, inside every poll above it), wraps every
+callback invocation, terminates every chain, and drains response bodies. The config default is
+back to `webp`.
+
+**Prevention:** an options table handed to another resource is an interface, not a hint - read
+that resource's code before writing "which of these its build reads could not be checked, and a
+key it does not know is ignored". That sentence was in the file, and it was wrong in both halves.
+Never derive a media subtype by concatenating a file extension: `jpg` and `jpeg` are the same
+format and not the same string, and the one place that difference is invisible is the default
+that made it invisible. And nothing unmeasured crosses a runtime boundary - a length check is one
+line and turns a signal into a console message.
+
+---
+
+## [2026-08-05 16:20] - A new test passed against the bug it was written to catch
+
+**Context:** `tools/test-camera.py` was written to lock in the camera fix, then run against a
+mutant of `server/media.lua` with the old guard put back - eight seconds, disarmed by the capture
+callback - to check the test could actually tell them apart.
+
+**Error:** the mutant passed every check. Twenty-six assertions, none of which failed.
+
+**Root cause:** the scenario was wrong, not the assertions. The case exercised was "the upload
+host never answers", and `uploadCapture`'s own poll gives up at twenty seconds on both versions,
+so both answered at roughly 20.3 s and both were inside the 25 s budget being asserted. What the
+old arrangement could not bound was the SUM of the two phases: its guard was disarmed the moment
+the capture landed, so a slow grab and then a dead host cost the grab time plus the full twenty.
+The test never made the grab slow, so the two versions had no observable difference.
+
+**Fix:** added the case that separates them - `CAPTURE_MS = 7000` with a dead host. Measured
+25.0 s on the fixed file against 27.0 s on the mutant, and the mutant now fails.
+
+**Prevention:** a regression test is not finished when it passes. Mutate the file it guards, in
+the exact shape of the bug, and watch it fail - and if it does not, the scenario is wrong even
+when every assertion in it is true. Two more mutants (the dropped `place`, the call app's busy
+string) were run for the same reason and did fail, which is what made the first result readable
+as a test problem rather than a code problem.
+
+---
+
+## [2026-08-05 15:40] - Comparing against `git show HEAD:` measured the wrong thing
+
+**Context:** wanted a before-and-after for the camera work, so the new test was pointed at
+`git show HEAD:server/media.lua`.
+
+**Error:** the "before" failed checks that had nothing to do with the change - a good photograph
+answered `{ error = 'noupload' }`, which no version of this path has ever done in normal use.
+
+**Root cause:** the working tree was many commits' worth of uncommitted work ahead of HEAD.
+`HEAD:server/media.lua` was 505 lines against the working tree's 919 - a different file, from
+before `serverCapture` existed. It was not the code as found; it was ancient history.
+
+**Fix:** dropped the git comparison and built the "before" by mutating the current file, one
+behaviour at a time.
+
+**Prevention:** check `git status` before treating HEAD as the baseline. On a tree with
+uncommitted work, "before" means the file as found at the start of the session, and the only
+reliable way to produce it is a targeted mutation of the file in hand.
+
+---
+
+## [2026-08-05 14:10] - The avatar fallback letter, invisible for the second time
+
+**Context:** every avatar draws its owner's initial under the photograph so a picture that fails
+to load reveals the letter. It did not: a white letter on a disc that had no colour of its own.
+
+**Error:** measured 1.12:1 where the disc was left transparent by a `background` shorthand,
+1.15:1 and 1.28:1 where it was painted `--app-fill`. WCAG AA wants 4.5:1. Four screens - the
+contact card, the OnlyFruits faces, the Hush profile and the Hush match list - emitted no letter
+at all in the branch that has a photograph, so those were blank discs rather than faint ones.
+
+**Root cause, three of them stacked:**
+1. `background: linear-gradient(...)` is a shorthand and resets `background-color` to
+   transparent. An inline `background-image` then replaced the gradient and the disc was a hole.
+2. The discs that did name a colour named `--app-fill`, a translucent grey that is nearly the
+   card it sits on.
+3. `watchDeadShots` repaints a photograph it has proved dead with `--app-fill` too, through
+   `.deadshot.deadshot` - so the one moment the letter exists for was the one moment it was
+   guaranteed to be unreadable.
+
+**Fix:** one declared pair, `--av-bg: #545458` and `--av-label: #ffffff`, 7.54:1 measured in both
+themes and not swapped with the theme because avatars are also drawn on the always-dark call
+screen. Applied in a single block at the foot of style.css. The four screens that wrote their own
+markup now call `socAvatar`, which writes the letter in both branches.
+
+**Prevention:** a fallback that is only visible when something else fails is a fallback nobody
+sees fail. Two rules come out of it. Never write a disc colour with the `background` shorthand
+when a photograph will be laid over it - longhand `background-color`, always. And when a rule is
+meant to be the last word on a property, count the specificity of everything that already sets
+it: an earlier attempt at this exact bug was written with single classes and lost to
+`.deadshot.deadshot` and to `.row .rav.ravimg`, which is why the block is doubled and last.
+
+---
+
 ## [2026-08-04 05:20] - An audit finding whose fix would have opened the SDK permission gate
 
 **Context:** the depth audit reported that the store catalogue rides in every open and refresh
@@ -1918,3 +2245,274 @@ context was certain then had their accent corrected too.
 the print gets read, not skimmed for a count. Three separate classes of error were caught this
 way in one pass, and none of them would have failed a test — the file would have compiled, the
 screenshots would have matched, and the French would have been wrong.
+
+## [2026-08-04 —] The "lua compile" gate could never fail, and a syntax error shipped
+
+**Context:** `server/media.lua` was edited through a shell heredoc. The server refused to load
+it: `media.lua:633: ')' expected (to close '(' at line 632) near 's'`.
+
+**Error:** two, and only the second one matters.
+
+The first is the old one: a heredoc ate a backslash, so `key\'s` became `key's` and the Lua
+string closed early. Fourth time this session; the rule is already logged.
+
+The second is that `python tools/test-all.py` printed `lua compile ok` on that exact file. The
+check was:
+
+    if load(io.open(f).read(), '@' + f) is None: bad.append(f)
+
+**Root cause:** Lua's `load` answers `nil, err` on failure, and lupa hands a multiple return
+back to Python as a TUPLE. `(None, "syntax error...")` is not `None`, so the branch never ran.
+The check has been reporting success unconditionally since it was written - it has never once
+looked at a file's contents in a way that could produce a failure.
+
+**Fix:** unpack the tuple, test the first element, and print the error text. Verified by putting
+the exact broken line back: `lua compile FAIL - media.lua:633: ')' expected`.
+
+**Prevention:** every gate must be shown failing before it is trusted. This one was added
+alongside checks that DO fail and inherited their credibility without earning it. The tell was
+available and ignored: it had never printed `does not compile:` for anything, ever - a check
+that has never fired is not a check that found nothing, it is a check nobody has tested.
+
+## [2026-08-05 —] Two more checks that could not fail: the add button, and the locale duplicates
+
+**Context:** a sweep for assertions that pass unconditionally, in the two places a regression had
+already got through.
+
+**Error:** none at runtime. Both checks were green the whole time they were blind.
+
+**Root cause, the input probe.** `tools/probe-input.js` asserted the add-widget control with
+`!!document.getElementById('waddbtn')`, under the label "the add button appears". The button
+was injected only in arrange mode when that line was written. It is now permanent markup inside
+`<div class="arrangebar">` in `html/index.html`, so the expression is true before the phone has
+even been unlocked, and the assertion measures the HTML file rather than the phone. That is how
+the regression shipped where pressing the plus opened the picker and dropped out of arrange
+mode on the same pointerup: every check around it still passed, because the picker did open and
+a row did add a widget. Only the jiggling stopped.
+
+**Root cause, the locale duplicates.** `tools/check.py` matched key declarations with
+`re.match(r"\s*\[\s*'((?:ph|app)\.[a-z0-9_]+)'\s*\]\s*=", line)`. Three shapes went past it:
+a capital inside the name (`ph.bankpro_e_noTarget`), the `soc.` prefix the server writes a
+player's posts with, and any line declaring more than one key. Five real keys per locale file
+were unwatched, in a check whose entire purpose is watching. It also had no selftest, alone
+among the checks in that file.
+
+**Fix:** the probe now reads the computed style of `#arrangebar` at rest and in arrange mode,
+and after the plus is pressed it reads three things at once: `editing`, the minus badges, and
+the bar's display. `check.py` gained `LOCALE_KEY` plus `locale_key_lines()` - `finditer` over
+each line with its comment stripped - and a `locales` selftest.
+
+**Verified by breaking each one on purpose.** Setting `.arrangebar` to `display: flex` failed
+"the arrange bar is hidden outside arrange mode". Dropping the `!barPressed` guard from the home
+screen's pointerup failed "and arrange mode is still on under it" with `editing false, 0
+badge(s), bar none`, while the two checks either side of it stayed green. Adding a duplicate
+`['ph.bankpro_e_noTarget']` and `['soc.match_line']` on one line reported both; the old detector
+run over the same faulted file reported nothing. Every fault was removed afterwards.
+
+**Prevention:** an assertion on `getElementById` is an assertion about the markup, not about the
+screen. When a control moves from injected to permanent, every existence check on it becomes a
+tautology on the same day and nothing says so. Assert the property a player would notice: the
+computed style, the state the code branches on, or both. And a key-shaped regex is a claim about
+every shape in the file, which is checkable: the pattern now finds 2728 keys per locale, the
+same number the real Lua runtime loads.
+
+---
+
+## [2026-08-05 —] Camera mode ended and the app stayed open, so Backspace exited into a black rectangle
+
+**Context:** the Camera app was drawing a viewfinder of its own - a shutter, a roll thumbnail, a
+selfie flip, a mode strip, chips and a rule-of-thirds grid - over a handset that had been made
+see-through so the game showed through where its screen was.
+
+**Error:** leaving camera mode with Backspace put the player on a black screen with nothing on it.
+The controls also sat over the picture being composed, and both capture paths grab the whole
+viewport with no crop, so they were in the photograph as well.
+
+**Root cause:** two, and only the second is a bug in the sense of a line being wrong.
+
+The first is a design mistake: a NUI page is an overlay and can never show the game inside itself,
+so anything the app painted was necessarily on top of the shot. GTA already draws the viewfinder
+(`CreateMobilePhone` + `CellCamActivate`) and already names the keys in its own help box, so every
+control the phone added was a second copy of something the engine was doing better.
+
+The second is the black rectangle. `camModeOff` sends `camLive off`, and the page's only reaction
+was to drop the `camlive` class. Nothing closed the app. The class was removed in exactly one
+place that mattered - `closeApp` - so ending camera mode any other way (Backspace, the watchdog,
+the phone closing) left the Camera app on screen with no interface and an opaque black surface.
+
+**Fix:** the app draws nothing at all - `RENDER.camera` asks the client for camera mode and paints
+an empty body - and the `camLive off` handler closes the app, which returns the player to the home
+screen. `.device.camlive` is `opacity: 0` again, so the handset leaves the frame for the whole
+session, which is the premise both capture paths were already written against.
+
+**Verified:** driven in the real page under headless Chrome. With the app open and framing, a
+screenshot taken with `#device` in the document is byte-identical to one taken with it removed -
+the page is putting no pixel on screen. Posting `camLive off` then leaves `#app` without `on`,
+`openApp` null, the immersive classes gone and `#home` drawn with its tiles. `test-all.py --fast`
+passes 19 of 19.
+
+**Prevention:** a message that changes what is on screen needs an owner for every state it can
+leave behind. `camlive` had one raiser and one dropper in different files, and the dropper was
+reachable by a single route. When the engine owns a mode, the page's job is to get out of the way
+and to notice when the mode ends - not to redraw the mode's controls.
+
+---
+
+## [2026-08-05 —] Five tokens that were read and never declared, and one that was substituted in the wrong place
+
+**Context:** the foundation pass of the iOS 26 restyle. Before wiring any component to a token,
+every custom property the stylesheet reads was checked against every custom property it declares.
+
+**Error:** six faults, none of which produces an error anywhere.
+
+`--app-card2` (3 sites), `--app-fill2` (2), `--ios-ui` (4) and `--label` (1) were read and declared
+nowhere. Every site carried a `var()` fallback, so nothing broke visibly; the token layer was
+simply decoration and the literal beside it was doing the work.
+
+`body.inframe.dark` restated the dark theme for dropped-in apps but omitted `--app-sub`, so a
+third-party app in dark mode inherited the LIGHT secondary label from `:root`:
+`rgba(60,60,67,.6)` on `#1C1C1E` is 1.36:1, which is not "hard to read", it is gone.
+
+`--app-accent: var(--app-tint)` was declared only at `:root`. A `var()` is substituted where it is
+DECLARED, not where it is read, so `html` resolved it against the LIGHT tint and every descendant
+inherited that already-substituted value. On the dark chrome `--app-tint` was the dark blue while
+`--app-accent`, which is meant to be the same colour, was still the light one.
+
+`.device { z-index: var(--z-overlay) }` depended on `theme.css` loading first, with no fallback.
+
+**Root cause:** a custom property has no failure mode. An undeclared one falls back silently, a
+partially-restated theme block inherits from the wrong theme silently, and a `var()` resolved at the
+root freezes there silently. Nothing in the toolchain looked for any of the three.
+
+**Fix:** all five phantoms declared or repointed; `body.inframe.dark` given the full ladder rather
+than a subset; `--app-accent` restated in `.screen.dark`; `.device` moved to `--ph-overlay-z`, which
+is declared in this file and carries a fallback. The two `--app-fill2` sites kept their literals
+deliberately: the real `--app-fill2` is half their strength and would have faded an empty star and
+flattened a pressed state.
+
+**Verified:** a computed-value probe over 216 element and token readings, in both themes, across 20
+apps plus the home screen and both drop-in frame states, run against the page before and after. The
+only element-level changes are the four that were intended. Parsed rule count identical (3113
+before, 3113 after), so no comment or declaration swallowed a rule. `test-all.py --fast` 19 of 19,
+including `run-probe` (every control reachable, 37 apps) and `probe-input`.
+
+**Prevention:** two scans belong in `tools/check.py`: `var(--name)` where `--name` is declared
+nowhere, and a name declared in one theme block but not in its twin. Both of these classes have now
+cost two sessions.
+
+## [2026-08-05 15:20] - a half-pixel separator does not paint at half strength
+
+**Context:** the shared-component pass moved the list separator from `height: .5px` to the kit's
+measured 1px, and the reasoning written into the stylesheet beside it claimed that a .5px box
+reaches the screen at roughly half its declared alpha, so a fainter 1px paint would come out at
+about the same strength.
+
+**Error:** it does not. A six-pixel column captured across one Settings separator at device scale
+1, decoded to raw RGB and read back, gives exactly one row of `#C6C6C8` - the full-strength
+composite of `rgba(60,60,67,.29)` - for the .5px rule. Blink rounds the box up to a whole device
+pixel and paints it at full alpha. The kit's `rgba(0,0,0,.098)` at 1px gives `#E6E6E6`. So the
+swap that was described as neutral was in fact a drop in edge contrast from 1.706:1 to 1.248:1,
+a 27 percent loss, on the single most repeated line in the interface.
+
+**Root cause:** sub-pixel rendering was reasoned about instead of measured. The arithmetic was
+plausible and wrong, and it had already been written into a comment as fact.
+
+**Fix:** the thickness change stayed - 1px is the kit's measurement and it stops the line thinning
+if the device scale factor ever moves - and the paint stayed on `--app-sep`. The comment now
+carries the density argument that actually justifies the shipped value: Apple draws its 1.0pt
+hairline on a 3x display, so it lands as three device pixels of `#E6E6E6`, and one pixel saying
+the same thing needs about 0.29 alpha, which is what `--sep-nonopaque` already is.
+
+**Prevention:** any claim about what a fractional CSS length, a blend mode or a translucent
+overlay actually paints has to come from a captured pixel, not from compositing arithmetic.
+`scratchpad/s2-seppix.js` is the shape of that check: capture a clip, decode it with ffmpeg, read
+the rows, and print the contrast against the surface.
+
+
+## [2026-08-05 15:35] - a composite custom property freezes the var() inside it
+
+**Context:** the Liquid Glass pass declared the three inner shadows of `filter1_iii` as one
+reusable list, `--lg-specular`, built from `--lg-hi` and `--lg-topshade`, so that every glass
+surface could take the whole measured edge with one token. The dark block then overrode
+`--lg-hi` from `rgba(255,255,255,.28)` to `.14`, which is the value the kit's own conversion
+formula gives for a dark material.
+
+**Error:** nothing changed in dark. The computed `box-shadow` on `.navact` still read
+`rgba(255, 255, 255, 0.28)` under `.screen.dark`.
+
+**Root cause:** a custom property's value is computed at the element that DECLARES it, with its
+`var()` references already substituted. `--lg-specular` declared at `:root` therefore carries the
+`:root` value of `--lg-hi` for ever, and overriding `--lg-hi` further down the cascade reaches
+every direct use of it and none of the uses inside `--lg-specular`.
+
+**Fix:** the five composite lists (`--lg-specular`, `--lg-specular-sm`, `--lg-ring`,
+`--lg-ring-sheet`, `--lg-sides`, `--lg-sides-sm`) are restated in the dark block as well, with a
+comment on each side saying they must be edited together.
+
+**Prevention:** a token that is a LIST containing other tokens is not theme-aware by inheritance.
+Either restate it in every theme block, or do not build one. Verify by reading the computed
+property that consumes it, in both themes, not by reading the stylesheet.
+
+## [2026-08-05 15:48] - the measured glass fill was fitted over a blurred backdrop
+
+**Context:** Regular Medium/Large reduces algebraically to `rgba(246,246,246,0.73)`, fit error
+0.0031, and that value was applied to the sheet as measured.
+
+**Error:** the settings list behind the sheet was legible through it. A screenshot showed row
+labels reading straight through a modal surface, which is the exact failure the "iOS 27: glass is
+chrome" post-mortem in `html/style.css` was written about.
+
+**Root cause:** the derivation fits `out = (1-A)*B + A*c` over a backdrop the real material has
+already blurred. The composite average is right and the STRUCTURE is not: ported flat onto an
+unblurred backdrop the fill reproduces the mean and keeps the text. Dark is four times worse than
+light at the same alpha, because the ghost lands on a ground of 43 rather than 244 - the same
+absolute difference is 6.5 percent of one and 1.2 percent of the other.
+
+**Fix:** alpha raised to .96 light and .98 dark, both derived from the ghost-to-ground ratio
+rather than picked, with the measured .73 and the arithmetic written beside them. The faithful
+alternative is recorded in the same comment: one blur on the scrim, which is what Apple's own
+Control Center export does (13 glass surfaces, 11 with no blur of their own).
+
+**Prevention:** a composited fill measured from a kit is only valid over the backdrop it was
+measured against. If the blur is not being ported, the alpha is not either.
+
+## [2026-08-05 15:56] - a shape rule at (0,2,0) lost to a theme rule at (0,3,0), in one theme only
+
+**Context:** `.sheet[data-shape="alert"]` was given the alert panel fill, `--lg-panel`.
+
+**Error:** correct in light, wrong in dark. In dark the alert took `--lg-sheet`, the near-black
+base surface meant for a bottom sheet, and nearly vanished against the app behind it.
+
+**Root cause:** `.screen.dark .sheet` is (0,3,0) and `.sheet[data-shape="alert"]` is (0,2,0), so
+the theme rule wins outright and source order never gets a say. The light path had no such
+competitor, so the bug existed in exactly one theme and would have survived any check that only
+looked at one.
+
+**Fix:** the fill is written as four selectors - `.screen .sheet[data-shape=...]` and
+`.screen.dark .sheet[data-shape=...]` for both shapes - so the dark pair is (0,4,0) and beats the
+competitor on specificity rather than on position.
+
+**Prevention:** any new rule on `.sheet` has to be checked against `.screen.dark .sheet` at
+(0,3,0), and any measurement of a shared component has to be taken in both themes. This is the
+fifth specificity failure recorded in this file and the first that was theme-asymmetric.
+
+## [2026-08-05 19:40] - a Lua function returning two nils reads as a pair, not as nothing
+
+**Context:** tools/test-verify.py drives `verifyDeskAt` in server/social.lua, which answers with
+the desk AND the distance to it: `return best, bestAt`.
+
+**Error:** three assertions of the form `g.verifyDeskAt(...) is None` failed for every position
+that is genuinely nowhere near a desk, while the "no ped at all" case beside them passed.
+
+**Root cause:** lupa is built with `unpack_returned_tuples=True`, so a Lua `return nil, nil`
+arrives in Python as the tuple `(None, None)`. A tuple is not `None` and is truthy, so the test
+read "no desk here" as "a desk". The passing case took the early `return nil` a few lines above,
+which is a single value and does cross as `None`.
+
+**Fix:** the test calls a one-line Lua wrapper, `function deskAt(c) return (verifyDeskAt(c)) end`.
+The brackets truncate the return to one value, which is what "am I at a desk" actually asks.
+
+**Prevention:** any lifted function with a multi-value return needs a truncating wrapper before
+it is compared against `None` from Python. Checking the falsy case as well as the truthy one is
+what exposed it: the wrong answer was truthy, so a suite that only asserted the success path
+would have been green.

@@ -151,16 +151,44 @@ async function widgetStrip(cdp) {
   `);
   check(under === 'weather', 'the widget is what is under its own centre', 'found ' + under);
 
+  // The arrange bar, at rest. It is PERMANENT markup - the plus and Done both live inside
+  // `<div class="arrangebar">` in index.html, whether the home screen is being rearranged or
+  // not - so `!!document.getElementById('waddbtn')` is true at every moment of the phone's life
+  // and asserts nothing. It said "the add button appears" and it was measuring the HTML file.
+  //
+  // What decides whether a player can see or press the plus is `.home.arrange .arrangebar`, so
+  // that is what is read here: the computed display, and the height the bar actually occupies.
+  const barAtRest = await cdp.eval(`
+    const bar = document.getElementById('arrangebar');
+    return { editing: !!editing, display: getComputedStyle(bar).display,
+             h: Math.round(bar.getBoundingClientRect().height),
+             byId: !!document.getElementById('waddbtn') };
+  `);
+  check(barAtRest.editing === false && barAtRest.display === 'none' && barAtRest.h === 0,
+    'the arrange bar is hidden outside arrange mode',
+    'editing ' + barAtRest.editing + ', display ' + barAtRest.display + ', ' +
+      barAtRest.h + 'px tall, and getElementById already says ' + barAtRest.byId);
+
   // Holding it must enter arrange mode. The app grid's long press is wired to #pages, and the
   // strip is a sibling of #pages - so this had to be wired separately and was not.
   await cdp.press(first.x, first.y, 700);
   await sleep(400);
-  const held = await cdp.eval(`return { editing: !!editing,
-    badges: document.querySelectorAll('#widgets .wrm').length,
-    add: !!document.getElementById('waddbtn') };`);
+  const held = await cdp.eval(`
+    const bar = document.getElementById('arrangebar');
+    const add = document.getElementById('waddbtn');
+    return { editing: !!editing,
+             badges: document.querySelectorAll('#widgets .wrm').length,
+             display: getComputedStyle(bar).display,
+             h: Math.round(bar.getBoundingClientRect().height),
+             addH: add ? Math.round(add.getBoundingClientRect().height) : 0,
+             addOff: add ? !!add.disabled : true };
+  `);
   check(held.editing, 'holding a widget enters arrange mode');
   check(held.badges > 0, 'every widget gains a minus badge', held.badges + ' drawn');
-  check(held.add, 'the add button appears');
+  check(held.display !== 'none' && held.h > 0, 'and the arrange bar comes out with it',
+    'display ' + held.display + ', ' + held.h + 'px tall');
+  check(held.addH > 0 && !held.addOff, 'the add button is drawn, and enabled',
+    held.addH + 'px tall' + (held.addOff ? ', disabled' : ''));
 
   // The minus, pressed for real.
   const badge = await cdp.eval(AT('#widgets .wrm'));
@@ -181,8 +209,27 @@ async function widgetStrip(cdp) {
   if (plus) {
     await cdp.press(plus.x, plus.y);
     await sleep(600);
-    const open = await cdp.eval("return document.getElementById('sheet').classList.contains('on');");
-    check(open, 'the add button opens the picker');
+    const opened = await cdp.eval(`
+      const bar = document.getElementById('arrangebar');
+      return { open: document.getElementById('sheet').classList.contains('on'),
+               editing: !!editing,
+               badges: document.querySelectorAll('#widgets .wrm').length,
+               display: getComputedStyle(bar).display };
+    `);
+    check(opened.open, 'the add button opens the picker');
+    // And it is STILL arrange mode afterwards. This is the regression that shipped: the plus
+    // opened the picker and dropped out of arrange mode on the same pointerup, because the
+    // press had not been marked as beginning inside the bar and the home screen read the lift
+    // as a tap on the wallpaper. Everything downstream still worked - the picker drew, a row
+    // added a widget - so nothing failed. The strip simply stopped jiggling underneath, and
+    // the next thing the player wanted to rearrange needed another long press.
+    //
+    // Three readings, because one of them alone is weak: the flag the code branches on, the
+    // badges that are the visible consequence of it, and the bar that only `.home.arrange`
+    // puts on the screen.
+    check(opened.editing && opened.badges > 0 && opened.display !== 'none',
+      'and arrange mode is still on under it',
+      'editing ' + opened.editing + ', ' + opened.badges + ' badge(s), bar ' + opened.display);
     const row = await cdp.eval(AT('#sheet .row[data-add]'));
     if (row) {
       const want = await cdp.eval("return document.querySelector('#sheet .row[data-add]').dataset.add;");
@@ -363,46 +410,74 @@ async function homeBand(cdp) {
     await new Promise((r) => setTimeout(r, 800));
   `);
 
+  // EVERY scroll position, and PRESSABLE pixels rather than a midpoint.
+  //
+  // This swept every 11th position and judged a control by whether its centre landed in the
+  // band. Both were wrong, and the second one was wrong in a way that reads as a pass.
+  //
+  // The step: at 11 it sampled 17 of the 173 positions a Settings list can be at. Measured on
+  // the shipped tree, an exhaustive sweep flags rows at offsets 26 and 78 that a step of 11
+  // never visits - so a change that moved the body's height by ten pixels moved those offsets
+  // onto multiples of 11 and the check "started failing" with the phone behaving identically.
+  // A check whose result depends on which offsets happen to divide by eleven is not measuring
+  // the phone.
+  //
+  // The midpoint: a row half-clipped by the scroller has its centre exactly on the body's
+  // bottom edge, which is exactly where the band begins - and NOT ONE PIXEL of it is painted
+  // below that edge. Flagging it is a false positive, and worse, the midpoint test misses the
+  // real thing: a row whose top half is in the band and whose centre is above it is pressable
+  // inside the band and was never counted.
+  //
+  // What matters is how much of a control is BOTH visible and inside the band, because that is
+  // the area where a press meant for the row goes home instead. Proved able to fail rather than
+  // assumed: with `.app:not(.hasfoot) #appfoot { height: 0 }` - the exact defect the reserve
+  // exists to prevent - this reports three controls and 39.95px of pressable area in the band.
   const swept = await cdp.eval(`
     const body = document.getElementById('appbody');
     const bar = document.getElementById('homebar');
     const br = bar.getBoundingClientRect();
     const bandTop = br.top - 26, bandBottom = br.bottom + 14;
     const sel = 'button, a, input, textarea, select, .row, [role="switch"]';
-    const caught = [];
-    let steps = 0;
+    const caught = new Map();
+    let steps = 0, worst = 0;
     // Smooth scrolling animates an assignment, so a value read back a few milliseconds later
     // is still the old one. Turned off for the sweep and put back after.
     const wasBehaviour = body.style.scrollBehavior;
     body.style.scrollBehavior = 'auto';
-    const bodyBox = () => body.getBoundingClientRect();
-    for (let at = 0; at <= body.scrollHeight; at += 11) {
+    for (let at = 0; at <= body.scrollHeight; at += 1) {
       body.scrollTop = at;
-      await new Promise((r) => setTimeout(r, 4));
+      await new Promise((r) => setTimeout(r, 0));
       steps += 1;
-      const bb = bodyBox();
+      const bb = body.getBoundingClientRect();
       for (const el of body.querySelectorAll(sel)) {
         const r = el.getBoundingClientRect();
         if (!r.width || !r.height) continue;
-        const cy = r.top + r.height / 2;
-        // Only what is actually ON SCREEN. A row scrolled past the fold still has a layout
-        // box down there; the scroller clips it, and a clipped row is not something a finger
-        // can land on. Judging it would be the same mistake the reachability sweep made.
-        if (cy < bb.top || cy > bb.bottom) continue;
-        if (cy > bandTop && cy < bandBottom) {
-          caught.push((el.textContent || el.id || el.tagName).trim().slice(0, 20));
+        // The part of the control the scroller actually paints. A row scrolled past the fold
+        // still has a layout box down there and none of it is on screen.
+        const visTop = Math.max(r.top, bb.top);
+        const visBot = Math.min(r.bottom, bb.bottom);
+        if (visBot <= visTop) continue;
+        const overlap = Math.min(visBot, bandBottom) - Math.max(visTop, bandTop);
+        // Half a pixel, so a sub-pixel seam where the body's bottom edge meets the band is not
+        // reported as a control sitting in it. Anything a finger can find is far above this.
+        if (overlap > 0.5) {
+          const who = (el.textContent || el.id || el.tagName).trim().slice(0, 20);
+          caught.set(who, Math.max(caught.get(who) || 0, overlap));
+          worst = Math.max(worst, overlap);
         }
       }
       if (body.scrollTop < at - 1) break;   // reached the end
     }
     body.style.scrollBehavior = wasBehaviour;
-    return { steps: steps, caught: caught.slice(0, 4), n: caught.length,
+    return { steps: steps, n: caught.size, worst: Math.round(worst * 100) / 100,
+             caught: [...caught.keys()].slice(0, 4),
              bodyBottom: Math.round(body.getBoundingClientRect().bottom),
              bandTop: Math.round(bandTop) };
   `);
   check(swept.n === 0, 'no control ever scrolls into the band  (Settings, ' + swept.steps + ' positions)',
-    swept.n ? swept.n + ' caught, e.g. ' + swept.caught.join(', ') : 'body ends at ' +
-      swept.bodyBottom + ', band starts at ' + swept.bandTop);
+    swept.n ? swept.n + ' caught, worst ' + swept.worst + 'px pressable in the band, e.g. ' +
+      swept.caught.join(', ') : 'body ends at ' + swept.bodyBottom + ', band starts at ' +
+      swept.bandTop + ', 0px of any control pressable inside it');
 
   // And the bar still does its own job. Pressed for real, through the compositor: this is
   // the check that found the tap was dead in the first place, and a synthetic click would

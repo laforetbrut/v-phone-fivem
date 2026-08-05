@@ -4,6 +4,942 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.6.3] - 2026-08-05
+
+### Added
+
+- **Two badges on a social account, and they are two different things.** The blue tick is now
+  BOUGHT: `Config.SocialVerify` puts a verification desk in the world, a player walks to it,
+  interacts, and the phone raises a sheet listing Bleeter and Snapmatic with a price each. The
+  orange mark is the other one, granted with `/phoneadmin official @handle` and by nothing else -
+  no callback writes that column, so there is no message a client could send that would. They are
+  separate columns rather than two levels of one, because they are independent facts: an account
+  can hold both, revoking one leaves the other exactly where it was, and each is per app, so a
+  badge on Bleeter is not a badge on Snapmatic. Where both are held the mark beside the name is
+  the orange one - two discs after a name is clutter, not two badges - and the profile, which has
+  room for words, says both.
+  **Every refusal is answered before a single unit moves.** Already verified, not enough money,
+  the app not installed, no account on that app, the wrong app, a purchase already in flight and
+  standing nowhere near a desk are all decided first, in that order, and the payment is the last
+  thing that happens. Range is answered before anything about the account, so a forged request
+  cannot learn whether a handle exists from which refusal comes back.
+  **And the purchase is the server's.** The price comes from the config, the desk comes from the
+  ped's real position read on the server, and the badge is written only after `Bridge.RemoveMoney`
+  confirms the debit - which means qb-core, qbx_core, ox_core and ESX all work without a branch.
+  The page names an app and that is the whole of its say. Everything else is configurable:
+  whether it is on, the coordinates, the blip and whether it shows at all, the marker, the key,
+  the price per app, which purse pays, the society account credited, and how close a player has
+  to stand. The desk registers an ox_target or qb-target zone when one is running, and the key
+  press is live either way, because a target script whose zone silently fails to register must
+  not be the only route to a place the map has a blip for.
+  `tools/test-verify.py` drives the whole decision under real Lua - every refusal, the distance
+  from the desk, the two colours staying out of each other's way, and a check that a refusal
+  charged nothing at all.
+
+- **Media in your own S3 bucket.** `Config.Media.provider = 's3'` puts photographs in an
+  S3-compatible bucket instead of a hosted CDN: Amazon, MEGA S4, MinIO, Cloudflare R2. Signing
+  is AWS Signature V4, written from scratch and exercised against real buckets on Amazon S3 and
+  MEGA S4 with `vphone_s3_test`. The two secrets go in `server.cfg` as convars, never in the
+  tracked config.
+  It is a small JS server script rather than Lua, and not by preference: `PerformHttpRequest`
+  hands its body to curl without a length so it stops at the first NUL byte, which every encoded
+  image contains; that same path disables TLS peer verification, and this request carries the
+  bucket secret; and CfxLua has no SHA-256 or HMAC at all. Node has all three, and screencapture
+  is already a JS server script on any server that uses the camera.
+  **The objects have to be public, and that is a decision rather than a shortcut.** A phone shows
+  a photograph a year after it was taken and a presigned link expires after seven days at the
+  outside, so there is no signed-URL arrangement that survives the retention below. MEGA S4 needs
+  one more setting than the rest for the same reason: it serves an object publicly from the same
+  host as its S3 API with the account id as the first path segment, and without that segment the
+  request is read as an unsigned API call and answered 403 - which looks exactly like a bucket
+  that is not public and sends an operator to change settings that were already right.
+- **`vphone_s3_test`.** Two settings cannot be read out of any documentation and have to be
+  discovered against the real bucket: the region string the signature must carry, and whether
+  the service wants the bucket in the hostname or the path. A wrong region answers
+  `SignatureDoesNotMatch`, which reads exactly like a wrong secret key. The command uploads one
+  pixel under each combination, prints the pair that worked with the lines to paste into
+  server.cfg, and deletes the pixel again.
+- **`phoneclean`, emptying an app from the console.** Twenty-four names, one per app or per
+  group of apps that share their tables, plus `media` for every uploaded file and `all` for
+  everything. **Nothing deletes on the first call**: it counts and prints what would go, and only
+  a second call with `confirm` acts. These destroy content players made and there is no undo, so
+  a typo in a console must not cost a server its feed. The tables are listed by hand rather than
+  found by prefix, because a sweep that matches `vphone_` eventually matches `vphone_characters`
+  and `vphone_kv`, and the day it does there are no phones left.
+- **Per-provider retention.** `Config.Media.retentionDays` keeps a hosted CDN's files 30 days
+  and a bucket's for a year, because one is somebody else's monthly quota and the other is
+  storage the operator rents. The expiry is stamped on the row at upload, so changing the config
+  later does not move files that are already stored, and a server that switches provider keeps
+  its old files on the clock they were uploaded under. **The post has its own clock, and it follows
+  the same decision**: how long a bleet, a comment, a story or a social DM lives is the four
+  `Config.Settings.socialRetention*` numbers - 60 / 60 / 1 / 30 days - and with `provider = 's3'`
+  the four in `socialRetentionS3` are read instead, 180 / 180 / 1 / 180. Moving to a bucket
+  therefore takes the pictures from thirty days to a year and the feed from two months to six. A
+  `phone_socialRetention*` convar still wins over both, because following the provider must not
+  silence an operator who has said a number out loud. And the ordering holds whatever the two are
+  set to: the media sweep asks whether a post, a message, an avatar or a gallery still shows a file
+  before deleting it and pushes the expiry a week out when one does, so a photograph cannot go
+  while the post that shows it is still there.
+
+- **A seventeenth static check: no locale key may be defined twice.** A Lua table keeps the LAST
+  assignment of a repeated key and says nothing, so a string can be written, be correct, be in
+  both languages, and never once reach a screen. Five were in exactly that state - `ph.err_gone`,
+  `ph.err_notyours`, `ph.soc_avatar`, `ph.soc_bio` and `ph.hush_say_hi` each had a first
+  definition nothing could ever read - and they are gone. The pattern reads all three prefixes
+  the locales actually use, a capital inside a name, and a line that declares more than one key,
+  because a pattern that reads none of those misses precisely the keys nobody is watching.
+  Comments are stripped per line first, so a key written out in prose or deliberately commented
+  away is not counted as a definition. The check reports the number of keys it looked at, 5474
+  today, so coverage falling away is visible rather than silent, and `--selftest` fails if any of
+  those shapes stops matching.
+
+- **Three more browser assertions, and all three measure instead of photographing.** Each covers
+  a failure where the broken screen and the correct one are the same picture: an app label
+  squeezed to a third of a pixel, a dead photograph that occupies no space at all, and a
+  composer thumbnail zero pixels wide. They run with the screenshots and keep no image in the
+  documentation.
+
+- **The Camera app has no interface, and leaving the viewfinder now closes it.** The icon stays on
+  the home screen and in the app list; opening it goes straight into the game's camera mode. GTA
+  draws the frame itself and its own help box names the keys - Enter photographs, arrow up flips
+  to the selfie, Backspace leaves - so there was nothing for the phone to add. Everything the app
+  used to draw over the picture is gone: the shutter, the roll thumbnail, the selfie flip, the mode
+  strip, the close and help chips, the keyboard hint and the rule-of-thirds grid. A NUI page is an
+  overlay and cannot show the game inside itself, so any control it painted floated over the shot
+  the player was composing - and both capture paths grab the whole viewport with no crop, so it
+  landed in the photograph too. Measured in the real page: with the app open and framing, a
+  screenshot with the handset in the document is byte-identical to one taken with it removed.
+  **And the exit is fixed, which is the bug behind the black rectangle.** Camera mode ending sent
+  the page a message that nothing acted on, so Backspace put the player back on an app with no
+  controls, no wallpaper and nothing to look at. The app now closes itself the moment the engine
+  gives the camera back, whatever ended it, and the phone returns to the home screen.
+  Video recording goes with the mode strip that selected it; photo mode is the whole app.
+
+- **Bleeter and Snapmatic say what is new.** At most one banner an hour, per app, per player,
+  telling that player how many posts have appeared since they last opened it. A quiet feed is a
+  feed nobody opens, and nobody posts to a feed nobody opens; this is what breaks that circle.
+  **It only earns the interruption by being true**, so it holds itself to two rules. It is never
+  sent when nothing is new to THAT player - a notification that fires on a feed they have already
+  read is the notification that teaches them to ignore the next one - and the same posts are never
+  announced twice, so ignoring one does not mean receiving it again every hour. Those are two
+  different numbers and both are kept: the count is measured from the newest post they have looked
+  at, whether to speak at all from the newest post they have already been told about.
+  Opening the feed marks it read, which is the rule the notifications tab already states: opening
+  it is reading it. Somebody who has never opened the app is marked where the feed stands and told
+  nothing, rather than handed the whole history as a number on their first hour.
+  **The hour is a ceiling and not a schedule.** Nothing fires on the hour: every player carries
+  their own clock, started when they connect and spread by a few seconds, so a restart that brings
+  everybody back in the same minute does not make every handset on the server buzz in the same
+  second. The marks are in the database and the clocks are not, so a restart costs at most one
+  delayed nudge and a reconnection can never produce a duplicate.
+  It takes the path every other notification on this phone takes, so do not disturb, an app
+  silenced in Settings, an app they uninstalled, a flat battery and a phone they are not carrying
+  all stop it, and the app's own alert tone is the one it plays. An app set to silent still gets
+  the banner without the sound, which is what silent means. The silence spends the turn rather
+  than banking it, so switching do-not-disturb off cannot release an hour of held-back banners.
+  `Config.Social.nudge` carries an on/off switch and an interval for each of the two apps, on by
+  default, and `set phone_socialNudge false` turns the whole thing off without a restart. The
+  decision is held to account outside the game by `tools/test-nudge.py`.
+
+### Fixed
+
+- **Tapping a tab moved the bar 55 pixels under the finger that was pressing it.** Measured with a
+  real dispatched click on Mail's "Sent", the bar's own rect sampled every frame: 33 px up on the
+  press, then a 22 px slide back. Two separate faults. The press: `.tabbar button > span` is
+  specificity (0,1,2) and `.touch-flare` is (0,1,0), so a rule meant for the label and the icon
+  won against the press flare - which IS a span, and IS a direct child of the button - and forced
+  it from `position: absolute` to `relative`. A 76 px box then joined the button's flex column,
+  the button grew 48 to 81, the bar 73 to 106, and because the footer is pinned to the bottom of
+  the screen all of that growth went upward. The slide: `tabbar()` rewrote the whole footer on
+  every call, so a tab tap destroyed the bar and built a new one, and CSS sees a new element as an
+  element arriving - the bar replayed its entry animation from 22 px below its resting place at
+  zero opacity. The bar now survives a tab change and only the selection moves; the flare is
+  declared beyond the reach of whatever it lands in. Measured after: 0.00 px of travel, 0.00 px of
+  height, one animation, on the first tap and on the second.
+  Two more surfaces were being restyled by the same hole and are fixed with it: the flare drew as
+  a solid 34 px pink square on Music's library tiles, and as nothing at all on Cipher's burn
+  options, which had no press feedback whatsoever.
+
+- **A tab tap re-animated the whole screen, and so did every render after a push.** Changing which
+  folder Mail is showing is a change of content, not a change of screen, but it replayed the
+  staggered entry over the body. It is suppressed for the render a tab hands off to. Separately,
+  `pushAnim()` added a class that nothing ever removed, so a screen that had once pushed - a
+  thread, a store page, a profile - replayed the push over its whole body on every render
+  afterwards. It is cleared where the other one-shot classes are cleared, in `body()`.
+
+- **The two circular buttons in an app's header sat below the title they flank.** By 6 px in a
+  conversation, 7 px on a plain bar, and 56 px with a call parked in the Dynamic Island. The
+  collapsed title was pinned at `top: 58px` counted from the top of the bar, while the row it
+  heads starts at 54 and is 44 tall because the buttons in it are - so its centre was at 70 and
+  theirs at 76, and a bar that moved down for a parked call left its own title behind. The bar's
+  geometry is two variables now, the inset above the row and the row's height, and the title, the
+  hairline and the top of the body are all read from them rather than restated. Measured after:
+  0.00 px in all three cases.
+
+- **A collapsed header reserved 54 pixels of nothing and drew its divider under the lot.** The
+  large title fades out on scroll but kept its box, so in OnlyFruits the row of controls ended at
+  147.88 and the rule under the header was drawn at 201.88, with the first row of content clipped
+  behind the gap for as long as you kept scrolling. The bar hands that block back when it
+  collapses and the body takes exactly the same number as scroll padding, so the two cancel:
+  nothing already on screen moves and 54 px of content that was behind the bar becomes visible.
+  The number is read from the title rather than written in the stylesheet, because it depends on
+  the type, on the width of the bar and on whether a long name wrapped - a two-line title hands
+  back 100 px, measured. Verified over 60 frames crossing the threshold in both directions in two
+  apps: 0.00 px of content drift, and the scroll extent unchanged to the pixel.
+  **The bar keeps ten pixels below its last row, and ten is measured.** `Examples/Toolbars -
+  Top.svg` in the iOS 26 kit draws a compact top toolbar as a 402 x 116 chrome band with its two
+  circular buttons at y 62 to 106, so the band ends ten pixels below the bottom of the buttons,
+  and `Scroll Edge Effect - Hard.svg` puts the hairline on that band's inner edge. Confirmed
+  independently in `Examples/Menus.svg`, same band and same buttons. Cross-checked in the
+  large-title state against `Examples/List.svg`, a bar over a grouped list, whose first card
+  starts 121 px below its status bar where ours now starts 122 below the same inset. Measured on
+  the shipped page: the divider sits 10.00 px under the buttons in OnlyFruits, Messages, Settings,
+  Health, FruitStore, Maps, with a call parked in the island, and in fifteen more apps.
+
+- **A group conversation's name could not be tapped, and had never been able to be.** Tapping it is
+  how you see who is in the group, and the handler was put on two elements that can neither of
+  them receive one: the collapsed title is `pointer-events: none`, and the large title is
+  `display: none` on exactly the screens that wired it. The `cursor: pointer` was a promise the
+  page could not keep. The name is a real button inside the title now - it has to be a button and
+  not the title itself, because the title is a box the full width of the bar lying over both
+  circular controls, and a title that answered the pointer would answer for them.
+
+- **The guards that keep the phone out of the photograph no longer assume anything.** The page used
+  to drop its own hold 220 ms after a shutter press, which was decoration rather than a guard: the
+  class that hides the handset for the camera session was doing the work, and 220 ms is nowhere
+  near a grab that happens inside another resource's browser after a server round trip. The hold
+  now lasts until the capture answers - `shutterDone` on every photograph path, success or
+  failure - and `recording` and `recordDone`, which the client has always sent at the start and end
+  of a clip, had no handler in the page whatsoever; grep returned zero hits for either. Each hold
+  keeps a ceiling past its own path's timeout, so a lost answer cannot leave a player with an
+  invisible phone. The wait before a grab stays unconditional for the same reason: it is a tenth of
+  a second, and it is the one place a class that failed to land would show.
+
+- **`imageEncoding = 'jpg'` quietly uploaded a lossless PNG of the whole screen instead, and
+  `imageQuality` did nothing at all.** A value the config has offered since the setting existed, and
+  taking it multiplied every photograph by ten: one to two and a half megabytes where the same
+  picture as JPEG or WebP is one to three hundred kilobytes, on somebody's metered host, with
+  nothing anywhere saying why. Nobody would look for the cause in the spelling.
+  It is a file extension used as a media subtype. `Config.Media.imageEncoding` names an extension,
+  `screencapture` builds the canvas type by writing `image/` in front of whatever it is handed, and
+  `image/jpg` is not a type any canvas accepts - so per the HTML spec the browser falls back to
+  `image/png` and drops the quality argument with it. `webp` hid it for as long as it was the
+  default, because its extension and its subtype happen to be the same word.
+  The phone now translates the extension into the subtype a canvas accepts - `jpeg`, never `jpg` -
+  and keeps the extension for naming the object, so the two cannot drift apart again. `jpg` and
+  `jpeg` are the same format and not the same string, and the one place that difference was
+  invisible is the default that made it invisible.
+  **That was also a crash, and it is why the guards around the new capture path are what they
+  are.** This release moves the capture back through the server so the CDN key stops travelling to
+  players, which means the encoded image now crosses the JS/Lua boundary and crosses back to the
+  uploader, synchronously, on the server's main thread. Ten times the bytes through two runtime
+  boundaries with nothing measuring their length took the server process down on a SIGSEGV, with an
+  empty managed stack and a two-second freeze reported on the sync and network threads at once. It
+  never reached a release - the default was flipped and put back inside this one - and it stays
+  unreachable by construction rather than by the default being right: a payload ceiling refuses an
+  oversized or non-string capture before either upload export is called and says which it was,
+  every numeric in the capture options is clamped before it leaves the Lua runtime, and
+  `server/s3.js` drops its fetch deadline from 20 s to 9 s - an 18.5 s worst case with its one
+  retry - so it finishes inside the Lua poll waiting above it instead of calling back up to twenty
+  seconds after that poll gave up, with every callback wrapped, every promise chain terminated and
+  every response body drained.
+
+- **A photograph that took too long was reported as failed and then appeared anyway.** The three
+  ceilings on the capture path were in the wrong order, so the layer furthest from the work gave
+  up first. The server's own guard was armed for eight seconds and then disarmed by the capture
+  callback before the upload had even started, which left the slow half with nothing that could
+  answer the caller; the client gave up at ten; and the upload was allowed twenty more after that.
+  A slow host therefore produced "the server did not answer", no way to take another picture, and
+  the photograph in the gallery a few seconds later. One guard now covers the whole handler and
+  the ceilings are ordered innermost-first: the server answers at 25 s, the client at 28 s, the
+  request at 30 s, the page at 35 s. Measured under real Lua on a fake clock, a slow grab followed
+  by a dead host is answered at 25.0 s where the old arrangement took 27.0 s.
+- **And a player could be locked out of their own camera for the rest of the session.** The upload
+  slot was a boolean cleared only when the handler resolved, so anything that stopped it resolving
+  held the slot for ever and every later photograph answered "busy". It is a lease now, released by
+  the guard and expiring on a wall clock regardless. The message was `ph.err_busy` as well, which
+  is the Phone app's string and reads "You are already on a call" - shown to somebody standing in
+  a viewfinder pressing a shutter. The camera has its own.
+- **Every photograph taken through the recommended provider lost its location.** The Gallery files
+  a picture under where it was taken, and the media handler stores captures itself - it has to,
+  because the URL it produced would be refused by the wallpaper host allowlist the paste path uses
+  - so it inserted a row with no `place` at all. The Places view was therefore empty for exactly
+  the servers that upload. It is read at the moment of the shutter, not when the upload lands, so
+  it names where the player was standing rather than wherever they walked to while it sent.
+- **Nothing at all was shown between the shutter and the result.** The handset is off screen for
+  the whole camera session and `#toast` lives inside it, so every message this path raised -
+  including every error - was written into an invisible element, the HUD was hidden, and the one
+  cue in the entire operation was the shutter click at the start. A photograph that worked and one
+  that was lost were indistinguishable. There is a line on screen while it sends, two distinct
+  tones at the end, and a framework notification carrying the reason when it fails.
+- **A recording could not have succeeded.** The page allowed two minutes and the server budgeted
+  the clip's length plus twenty-five seconds, but the request underneath both gave up at a
+  hardcoded ten - so with the default fifteen-second clip every recording reported a timeout while
+  the server was still recording it. Requests take their own ceiling now. Unreachable today
+  because `Config.Media.video` ships nil, and config.lua invites operators to switch it back on.
+- **An upload could hang for ever, and one dropped connection lost the picture.** None of the
+  three HTTP calls in the bucket and CDN paths had a timeout, a retry or an abort signal: a host
+  that accepted the connection and then went quiet held the request open with nobody left to hand
+  it to, and a reset mid-upload - the `write EPIPE` this resource already prints an explanation of
+  - lost the photograph outright. Measured against a real local server: a 503 and a socket reset
+  are each retried once and succeed, a 401 is not retried at all, and a host that never answers
+  gives up at 20.0 s. A timeout is deliberately not retried, because two would put the worst case
+  past the guard above it.
+- **An avatar whose photograph failed showed a blank disc.** Every avatar in the phone is meant
+  to draw its owner's initial underneath the picture, so a photograph that stops answering
+  reveals the letter. Two things had taken that away. The letter was white on a disc with no
+  colour of its own, because `background:` is a shorthand and setting a photograph over it left
+  the circle transparent, or because the disc was painted with the translucent `--app-fill`;
+  measured, that is between 1.12:1 and 1.28:1 in light theme, which is a white letter on a white
+  card. And four screens wrote their own avatar markup with the letter in only one of the two
+  branches, so the contact card, the OnlyFruits faces and both Hush screens emitted nothing at
+  all where the picture was. The disc and the letter are now one declared pair, `--av-bg` and
+  `--av-label`, at 7.54:1 in both themes, and all four screens go through the single helper that
+  writes a round face.
+- **A deleted photograph took screens down with it.** An uploaded file expires, and the phone
+  had no answer for that anywhere. The sweep deleted on the clock alone with no reference check,
+  while files expired at 30 days and posts lived 60 - so a photo post older than a month has
+  always been able to lose its picture and keep its caption. Now nothing is deleted while
+  something still shows it: the expiry is pushed out instead, and only a file nothing points at
+  is removed. The check is fragment-insensitive, which is the whole trick - the gallery appends
+  its edit recipe to the URL, so `WHERE image = ?` answers "unused" for every photograph a
+  player has retouched. `tools/test-mediaref.py` covers all twenty reference sites.
+- **Deleting a photograph in the Gallery left the file exactly where it was.** The entry went and
+  the picture stayed on the operator's storage until its own retention ran out, which on a bucket
+  is a year - so somebody deleting a photograph they regretted taking went on paying for it, and
+  it stayed readable to anybody who had the address. Delete has to mean deleted. It asks the same
+  question the sweep asks before it goes, because it is the same question: a photograph in the
+  gallery may also be in a post, a message or somebody's avatar. Referenced, it stays and expires
+  on its own clock; unreferenced, it goes now.
+- **A dead wallpaper made the phone permanently black, and unrepairable.** The linked-image
+  branch painted black under the picture and dropped the gradient, so a 404 left a black
+  rectangle with the icons floating on it - every session. And tapping a built-in wallpaper did
+  not fix it: that handler sent the new id and left the link in place, so the very next paint
+  took the URL branch again. The gradient now stays underneath, and choosing a wallpaper clears
+  the link.
+- **A broken image drew nothing at all.** `photoImg` carries `alt=""`, and Blink draws no glyph,
+  no box and no space for a broken image with an empty alt - so a photo message collapsed to an
+  empty pill and a Snapmatic post became a header sitting on its own like row. It reads as a
+  phone that failed to draw. The element is replaced by a placeholder that keeps the card's
+  shape and says what happened.
+- **A clip whose file had gone was a squat black rectangle, and a live one made the feed jump.**
+  A `<video>` with no ratio falls back to 300x150, so a card resized itself every time metadata
+  arrived and a dead clip kept that shape for good. The card gives it 16:9 up front, and a clip
+  that cannot load is replaced by the same placeholder a dead photograph gets.
+- **The helper that was meant to catch a dead photograph caught almost none of them.** It queried
+  one container with a list of classes most of its targets were not inside, and it kept its record
+  of what it had already asked about per call and wrote to it only in the callbacks, which are
+  asynchronous - so a grid of sixty tiles fired sixty requests, which is the exact thing its own
+  comment said it was avoiding. It ran, it cost, and it marked nothing, which is worse than not
+  running at all: the screen looks handled. It sweeps the whole page now, remembers across calls,
+  and the list of photograph tiles reaches the contact card and the card photo, the profile cover
+  banner, the store's screenshots and its shelf and featured stills, the wallpaper preview in
+  Settings and Fruitee's banner and face, none of which had a caller of its own. A refusal is
+  forgotten after thirty seconds and whenever the phone is opened, so a two-second network blip
+  no longer costs a player every picture in the resource until they reload it.
+- **A failed host delete was indistinguishable from a successful one**, so the row was dropped
+  either way and the file stayed on the operator's bill with nothing left that knew its name.
+  The sweep now retries.
+- **The sweep stopped entirely when one retention was zero.** It returned early on a global
+  `autoDeleteDays`, which with a per-provider retention means one provider set to keep for ever
+  froze the other provider's files too. Every row already carries its own expiry.
+
+- **Two sweeps deleted the same posts on different clocks, and the shorter one won without saying
+  so.** `Config.Settings.socialRetentionPosts` said sixty days, `Config.Retention.socialPosts` said
+  thirty, and both files ran an hourly `DELETE` over `vphone_social_posts` - so a bleet was gone at
+  thirty whatever the setting above it read, and the same for comments. Nothing logged the
+  disagreement, because neither sweep knew the other had an opinion. `socialRetentionS3` could
+  never have worked at all: a hundred and eighty days of feed on a server that pays for its own
+  bucket, against a thirty-day delete in another file.
+  **One function answers it now and both sweeps ask it.** `SocialKeepDays` in server/social.lua
+  reads, in order, a `phone_socialRetention*` convar, a `Config.Retention.social*` key a server set
+  for itself, `socialRetentionS3` when the media provider is s3, and `Config.Settings` last;
+  server/retention.lua carries no number of its own for those four tables any more. The four
+  `Config.Retention` social keys are gone from the shipped config so that the settings can apply,
+  and are still read first when a server has set one, so an existing config decides exactly as it
+  did.
+  **What changes on an upgrade:** a server on the defaults keeps posts and comments for sixty days
+  rather than thirty, and a hundred and eighty on s3. Nothing is deleted that was not deleted
+  before - the change is only ever in the direction of keeping more - and the ordering against the
+  media clock is untouched, because it was never these numbers that held it: a file a post still
+  shows is not deleted whatever either says. `tools/test-social-retention.py` drives the order and
+  both call sites under real Lua, against the real config.lua, and was run against both halves of
+  the old arrangement put back to check it can tell them apart.
+
+- **OnlyFruits charged for a photograph that was no longer there.** A row outlives its file, and
+  a paid post whose picture had expired still had a price, still took the money, still said
+  "Unlocked", and showed an empty card. Buying it again answered "already unlocked", so there was
+  no way back and no refund either. The purchase is refused before any money moves, against the
+  phone's own record of what it uploaded - and with the gallery's edit recipe stripped off first,
+  because an exact match on a URL carrying `#vp=` would read every retouched photograph as
+  expired and make those posts unsellable for ever.
+  The refusal needed a sentence, and the obvious name for it was already taken two thousand lines
+  further down by a verification code. Lua keeps the last definition of a repeated key without a
+  word, so the message would have existed, been correct, been in both languages, and told the
+  buyer "Code expired, send a new one". That is the check above, written because of this.
+
+- **A profile could not be saved once one of its photographs expired.** The host gate judged every
+  picture in the payload on every save, including the ones nobody was editing, so a file that had
+  gone refused a change to the name or the bio beside it. On Hush it was worse than a locked form:
+  the switch that turns a profile off rides in the same payload, so a player whose photograph had
+  expired could not turn their profile off and could not leave the app. An unchanged value is
+  allowed through now and only a genuinely new address is judged - asking again later does not
+  test the player's honesty, it tests whether a file still exists.
+
+- **The composer showed nothing of what was attached to a post.** The thumbnail was written as a
+  block child with a height and no width, and the multi-photo composer puts it in a flex row,
+  where it collapsed to zero pixels wide. The element was in the tree, its photograph was set, and
+  the strip was empty while the same picture drew perfectly in the posted card.
+
+- **Entering arrange mode resized every app on the screen you were arranging.** The add-widget
+  control was a tile inside the widget grid, two columns wide with a 108px floor, so it almost
+  always started a row of its own: the strip grew by more than a row of icons the instant the
+  jiggle began, the page overflowed, and the fitter shrank every app on the screen trying to win
+  back room the apps had not taken. Done was 56px tall against the 45px the search pill it stands
+  in for gives back.
+  Both sit in one bar now, occupying exactly the pill's slot, so entering arrange mode costs the
+  grid nothing. Measured: the app grid used to go from 417px to 403px on the way in, which a 4x4
+  grid absorbs and a 6x7 one shows as icons resizing under the finger.
+- **And every app name disappeared while it happened.** A tile is a flex column. The icon has
+  visible overflow, so its automatic minimum is its own height and it will not shrink; the label
+  has `overflow: hidden`, so its minimum is zero. Any row too short for its contents was therefore
+  paid for entirely by the label, which collapsed to a fraction of a pixel with nothing in the
+  layout reporting anything wrong. The label is held at its natural height, so a bad fit overflows
+  the row instead - which is the thing the fitter looks for and can correct.
+- **The first drop took every icon from 60px to 44 and never gave them back.** The guard that
+  stops a drag resizing the apps keyed on a class the repaint had already removed, and Done never
+  measured them up again because nothing repainted the grid on the way out of arrange mode.
+- **The lifted icon floated over a different app.** The ghost kept the coordinates the press began
+  at, and the grid moves down when the strip above it grows, so the one label still readable
+  during a drag sat over somebody else's icon. It is corrected once, when the drag starts.
+- **A folder's preview vanished into its own padding on a tight grid.** The folder box has tracked
+  the icon size for a long time; the padding, the gap and the corners of the four cells inside it
+  were fixed at the numbers that suit a 60px icon, so at the 22px floor the fitter is allowed to
+  reach, a cell came out 3px. They scale with the box now, reproducing today's numbers at the
+  default size. The remove badge inside an open folder was anchored to the tile rather than to the
+  icon, which is a whole grid cell wide, so every badge floated out in the gap to the left of the
+  app it belonged to.
+- **Pressing a folder pressed its contents.** `.tile:active .ic` reached the four mini icons
+  inside a folder as well as a top-level app, so the box stayed still while everything in it
+  shrank, and the folder itself got no feedback at all. Press, hover and drop-target feedback are
+  scoped to the tile's own icon, and the folder box takes the press the way an app does.
+
+- **The Lua compile gate in `tools/test-all.py` had never once reported a broken file.** `load`
+  answers `nil, err` on failure and lupa hands that back as a two-element tuple, which the gate
+  compared against `None` - and a tuple never is. It was green whatever it was given, and a real
+  syntax error in `server/media.lua` walked straight past it and stopped the resource loading on
+  a live server. It reads the tuple now and prints the error beside the filename. A gate that
+  cannot fail is worse than no gate, because it is a gate everybody trusts. `server/s3.js` joined
+  the JS parse list at the same time: it is the one server script that is not Lua, which is
+  exactly how it would have shipped unparsed.
+- **`the add button appears` was measuring the HTML file.** The plus and Done are permanent
+  markup, so `getElementById('waddbtn')` is true at every moment of the phone's life, locked or
+  unlocked, and the assertion could not fail. What decides whether a player can see or press the
+  plus is `.home.arrange .arrangebar`, so the probe reads the computed display and the height the
+  bar actually occupies, at rest and after the long press, and it reads the button's own height
+  and whether it is enabled. It also asserts that arrange mode is still on underneath the picker,
+  which is a regression that had shipped: the plus opened the picker and dropped out of arrange
+  mode on the same pointerup, because the press had not been marked as beginning inside the bar
+  and the home screen read the lift as a tap on the wallpaper. Everything downstream still worked,
+  so nothing failed - the strip simply stopped jiggling, and the next thing the player wanted to
+  move needed another long press.
+
+### Security
+
+- **The media file's own header promised the CDN API key never reaches a client. Both upload
+  paths handed it over.** screencapture's `remoteUpload` emits its whole options table to the
+  capturing client and the phone passed `headers = { Authorization = <key> }` inside it, so every
+  photograph anybody took sent the operator's key to that player's machine. The capture now comes
+  back to the server through `serverCapture`, which carries no headers, and the upload is made
+  from the server. The video path did the same thing through `startVideoCaptureUpload` and was
+  missed when the photo path was moved, escaping notice only because `Config.Media.video` ships
+  unset - and the config invites an operator to switch it back on, so "unreachable today" is not
+  a fix. It sends no headers at all now: an unauthenticated POST to an endpoint that wants one
+  fails honestly and says so, which is the right outcome until that path is rebuilt on
+  `serverCaptureStream` the way the photo path was rebuilt on `serverCapture`.
+
+### Performance
+
+- **Taking a photograph, from the shutter to the picture.** The whole path was reworked, and the
+  measurements are from this machine's Chromium, the same engine FiveM's CEF is built on.
+  - **WebP encoding is eight to ten times slower than JPEG at every resolution**, and the shutter
+    pays for it on the player's own CPU beside the game's render loop, before a single byte moves:
+    176 ms against 17 ms at 1080p, 705 ms against 72 ms at 4K. That is what makes
+    `Config.Media.imageEncoding` worth knowing about. **The shipped default is still `webp`**, and
+    that is a decision rather than an oversight: `jpg` was made the default during this release and
+    crashed a server, because `screencapture` composes the canvas type by writing `image/` in
+    front of whatever it is handed and `image/jpg` is not a type any canvas accepts. That is fixed
+    at the source now - the phone translates the extension into the subtype a canvas wants - so
+    setting `imageEncoding = 'jpg'` is safe and buys the faster shutter, while `webp` stays the
+    default because it is the value that was running when the camera was last known good and the
+    one spelling that is correct however it is composed. Quality is passed explicitly at 0.7 rather
+    than left to the browser, on either format.
+  - **The capture was never given a size**, and on the shipped encoding this is the half that
+    matters. A player on a 4K monitor encoded and uploaded a 3840x2160 frame - thirty times the
+    pixels the phone can draw - and paid for it twice, once in encode time and once in a base64
+    string that crosses to the server as one event. Capped at 1280x720, which is above what the
+    gallery shows at any size, and a ninth of the pixels of a 4K frame: both the encode and the
+    payload fall with the pixel count. The paired figures - 176 ms and 309 KB to 8 ms and 165 KB at
+    1080p, 702 ms and 1207 KB to 9 ms and 204 KB at 4K - were measured with the cap AND
+    `imageEncoding = 'jpg'`, so they are the ceiling of what the two can win together rather than
+    what a stock server gets.
+  - **The phone asked for the whole gallery again after every shot.** The answer already carried
+    the photograph and the page threw it away, then made a full NUI, client, server and back trip
+    to re-read a list whose only new row was the one just discarded. The server now answers with
+    the row exactly as it stored it and the page puts it at the front of the list it already
+    holds. Counted in the real page: two calls per shutter press became one.
+  - **The viewfinder was frozen until the upload finished.** The HUD, the minimap and the camera
+    were all held from the shutter press until the host answered - seconds, on a slow one - when
+    everything after the grab is network and needs none of them. The server signals the instant
+    the frame exists and the camera is the player's again from there.
+  - **A fixed 120 ms wait before every capture**, so the handset could leave the screen. In camera
+    mode it left when the viewfinder opened. Skipped there.
+  - **The completion poll ran every 50 ms** in the shutter loop and **every 100 ms** in the
+    upload wait, adding up to 50 ms of doing nothing to the end of each. Per frame and 5 ms.
+
+- **The Dynamic Island's four audio bars animated for ever, on an island with nothing in it.** The
+  bars are in the static markup and their keyframes were unconditional, so four elements animated
+  permanently on a pill whose content is `visibility: hidden` unless a call is up - nobody could
+  see any of it. Said plainly rather than sold as a win: it is a `transform`, it runs on the
+  compositor, and at true idle it measured LayoutCount 1 and 0.1 ms of style over three seconds.
+  It is not a cause of anything. But this is a page drawn over a running game, and four layers
+  that never stop are worth not having when the condition for having them is one selector. They
+  run while a call is parked and not otherwise; the stagger between the four is unchanged.
+
+- **Changing a widget from inside Settings rebuilt the home screen behind the app.** Every tile's
+  markup thrown away and written again, every listener re-attached, and a forced layout to measure
+  the result, on a grid nobody could see. The rebuild is correct there - measured, `.home` keeps
+  its box under an open app, the same 419x352 with Settings open as with nothing open - it is
+  simply not needed until the player is looking at it. It is remembered and taken on the way out
+  of an app instead, on both routes and synchronously, so the grid is right on the first frame of
+  the zoom-out. Dropping it outright is not an option and the probe says why: nothing else
+  repaints the grid on the way out, so a widget added in Settings would leave 60px icons on a
+  strip that had grown under them.
+
+### Ajouts et correctifs (miroir francais)
+
+- **Deux certifications sur un compte social, et ce sont deux choses différentes.** La pastille
+  bleue s'ACHÈTE désormais : `Config.SocialVerify` place un guichet dans le monde, le joueur s'y
+  rend, interagit, et le téléphone ouvre une feuille listant Bleeter et Snapmatic avec un prix
+  chacun. La marque orange est l'autre, attribuée par `/phoneadmin official @handle` et par rien
+  d'autre - aucun callback n'écrit cette colonne, donc aucun message client ne peut le faire. Ce
+  sont deux colonnes distinctes plutôt que deux niveaux d'une seule, parce que ce sont deux faits
+  indépendants : un compte peut porter les deux, en retirer une laisse l'autre exactement où elle
+  était, et chacune est par application. Quand les deux sont portées, la marque affichée à côté
+  du nom est l'orange - deux pastilles après un nom, ce n'est pas deux badges, c'est du désordre -
+  et le profil, qui a la place de l'écrire, affiche les deux.
+  **Chaque refus est prononcé avant qu'une seule unité ne bouge.** Déjà certifié, pas assez
+  d'argent, application non installée, aucun compte sur cette application, mauvaise application,
+  achat déjà en cours et se tenir loin du guichet sont tous décidés d'abord, dans cet ordre, et le
+  paiement est la dernière chose qui arrive. La distance est vérifiée avant tout ce qui concerne
+  le compte, pour qu'une requête forgée ne puisse pas apprendre l'existence d'un handle à partir
+  du refus renvoyé.
+  **Et l'achat appartient au serveur.** Le prix vient de la configuration, le guichet vient de la
+  position réelle du ped lue sur le serveur, et la certification n'est écrite qu'une fois le débit
+  confirmé par `Bridge.RemoveMoney` - donc qb-core, qbx_core, ox_core et ESX fonctionnent sans
+  embranchement. La page nomme une application, et c'est tout ce qu'elle décide. Tout le reste est
+  configurable : l'activation, les coordonnées, le blip et son affichage, le marqueur, la touche,
+  le prix par application, la bourse qui paie, le compte de société crédité, et la distance
+  d'interaction. Le guichet enregistre une zone ox_target ou qb-target quand l'une tourne, et la
+  touche reste active dans tous les cas.
+  `tools/test-verify.py` exécute toute la décision sous un vrai Lua : chaque refus, la distance au
+  guichet, les deux couleurs qui ne se touchent jamais, et la vérification qu'un refus n'a rien
+  facturé.
+
+- **Les photos dans votre propre bucket S3.** `Config.Media.provider = 's3'` range les photos dans
+  un bucket compatible S3 plutot que sur un CDN heberge : Amazon, MEGA S4, MinIO, Cloudflare R2. La
+  signature est AWS Signature V4, ecrite de zero et eprouvee contre de vrais buckets Amazon S3 et
+  MEGA S4 avec `vphone_s3_test`. Les deux secrets vont dans `server.cfg` en convars, jamais dans la
+  config suivie par git. C est un script
+  serveur JS et non du Lua, et ce n est pas un gout : `PerformHttpRequest` passe son corps a curl
+  sans longueur, donc il s arrete au premier octet nul, que contient toute image encodee ; ce meme
+  chemin desactive la verification TLS alors que la requete porte le secret du bucket ; et CfxLua
+  n a ni SHA-256 ni HMAC. **Les objets doivent etre publics, et c est une decision plutot qu un
+  raccourci** : un telephone affiche une photo un an apres, et un lien signe expire au mieux au bout
+  de sept jours. MEGA S4 demande un reglage de plus pour la meme raison : il sert un objet public
+  depuis l hote de son API S3 avec l identifiant de compte en premier segment, et sans ce segment la
+  requete est lue comme un appel API non signe et repond 403 - ce qui ressemble exactement a un
+  bucket qui ne serait pas public et envoie un operateur changer des reglages deja corrects.
+- **`vphone_s3_test`.** Deux reglages ne se lisent dans aucune documentation et doivent etre
+  decouverts contre le vrai bucket : la region que la signature doit porter, et si le service veut
+  le bucket dans l hote ou dans le chemin. Une mauvaise region repond `SignatureDoesNotMatch`, ce
+  qui se lit exactement comme une mauvaise cle. La commande envoie un pixel sous chaque combinaison,
+  affiche celle qui a marche avec les lignes a coller dans server.cfg, et supprime le pixel.
+- **`phoneclean`, vider une application depuis la console.** Vingt-quatre noms, un par application
+  ou par groupe d applications partageant leurs tables, plus `media` pour tous les fichiers envoyes
+  et `all` pour tout. **Rien n est supprime au premier appel** : il compte et affiche ce qui
+  partirait, et seul un second appel avec `confirm` agit. Ces suppressions detruisent du contenu
+  fait par des joueurs et rien ne les annule, donc une faute de frappe dans une console ne doit pas
+  couter son fil a un serveur. Les tables sont listees a la main plutot que trouvees par prefixe,
+  parce qu un balayage sur `vphone_` finit par attraper `vphone_characters` et `vphone_kv`, et ce
+  jour-la il ne reste plus un telephone.
+- **Une retention par fournisseur.** `Config.Media.retentionDays` garde les fichiers d un CDN 30
+  jours et ceux d un bucket un an, parce que l un est le quota mensuel de quelqu un d autre et
+  l autre du stockage que l operateur loue. L echeance est inscrite sur la ligne au moment de
+  l envoi, donc changer la config ensuite ne deplace pas ce qui est deja stocke, et un serveur qui
+  change de fournisseur garde ses anciens fichiers sur l horloge sous laquelle ils sont partis.
+  **Le post a sa propre horloge, et elle suit la meme decision** : la duree de vie d un bleet, d un
+  commentaire, d une story ou d un message prive social est celle des quatre nombres
+  `Config.Settings.socialRetention*`, soit 60 / 60 / 1 / 30 jours, et avec `provider = 's3'` ce
+  sont les quatre de `socialRetentionS3` qui sont lus a la place, 180 / 180 / 1 / 180. Passer sur
+  un bucket fait donc passer les images de trente jours a un an et le fil de deux mois a six. Une
+  convar `phone_socialRetention*` l emporte toujours sur les deux, parce que suivre le fournisseur
+  ne doit pas faire taire un operateur qui a annonce un nombre. Et l ordre tient quels que soient
+  les reglages : le balayage des medias demande si un post, un message, un avatar ou une galerie
+  affiche encore un fichier avant de le supprimer, et recule l echeance d une semaine quand c est
+  le cas, donc une photo ne peut pas partir tant que le post qui l affiche est la.
+- **Une dix-septieme verification statique : aucune cle de locale ne peut etre definie deux fois.**
+  Une table Lua garde la DERNIERE affectation d une cle repetee et ne dit rien, donc une chaine peut
+  etre ecrite, etre juste, etre dans les deux langues, et n atteindre jamais un ecran. Cinq etaient
+  exactement dans cet etat - `ph.err_gone`, `ph.err_notyours`, `ph.soc_avatar`, `ph.soc_bio` et
+  `ph.hush_say_hi` avaient chacune une premiere definition que rien ne pouvait lire - et elles sont
+  parties. Les commentaires sont retires ligne par ligne d abord, pour qu une cle citee en prose ou
+  volontairement commentee ne compte pas comme une definition. La verification annonce le nombre de
+  cles regardees, 5474 aujourd hui, pour qu une couverture qui s effondre soit visible plutot que
+  silencieuse, et `--selftest` echoue si l une de ces formes cesse de correspondre.
+- **Trois assertions de navigateur de plus, et toutes les trois mesurent au lieu de
+  photographier.** Chacune couvre une panne dont l ecran casse et l ecran correct sont la meme
+  image : un libelle d application ecrase au tiers de pixel, une photo morte qui n occupe aucune
+  place, et une vignette de compositeur large de zero pixel. Elles tournent avec les captures
+  d ecran et ne gardent aucune image dans la documentation.
+- **L application Photo n a plus d interface, et quitter le viseur la ferme.** L icone reste sur
+  l ecran d accueil et dans la liste ; l ouvrir passe directement en mode camera du jeu. GTA dessine
+  le cadrage lui-meme et sa propre boite d aide nomme les touches - Entree photographie, fleche haut
+  retourne, retour arriere ferme - donc le telephone n avait rien a ajouter. Tout ce que
+  l application dessinait par-dessus l image est parti : le declencheur, la vignette de pellicule,
+  le retournement selfie, la bande de modes, les pastilles fermer et aide, l indice clavier et la
+  grille des tiers. Une page NUI est une surcouche et ne peut pas afficher le jeu a l interieur
+  d elle-meme, donc chaque controle flottait sur la prise en cours - et les deux chemins de capture
+  prennent tout l ecran sans recadrage, donc il finissait aussi dans la photo. Mesure dans la vraie
+  page : en cadrage, une capture avec le combine dans le document est identique octet pour octet a
+  une capture prise sans lui.
+  **Et la sortie est reparee, c est le bug derriere le rectangle noir.** La fin du mode camera
+  envoyait a la page un message que rien ne traitait, donc retour arriere ramenait le joueur sur une
+  application sans controles, sans fond d ecran et sans rien a regarder. L application se ferme
+  maintenant des que le moteur rend la camera, quelle que soit la maniere dont cela s est termine, et
+  le telephone revient a l ecran d accueil. L enregistrement video part avec la bande de modes qui le
+  selectionnait : le mode photo est toute l application.
+- **Bleeter et Snapmatic disent ce qui est nouveau.** Au plus une banniere par heure, par
+  application et par joueur, qui dit a ce joueur combien de publications sont parues depuis sa
+  derniere visite. Un fil silencieux est un fil que personne n ouvre, et personne ne publie sur un
+  fil que personne n ouvre : c est ce cercle-la que cela casse.
+  **Elle ne merite l interruption qu en etant vraie**, donc elle se tient a deux regles. Elle n est
+  jamais envoyee quand rien n est nouveau pour CE joueur - une notification qui part sur un fil
+  qu il a deja lu est celle qui lui apprend a ignorer la suivante - et les memes publications ne
+  sont jamais annoncees deux fois, donc en ignorer une ne revient pas a la recevoir de nouveau
+  toutes les heures. Ce sont deux nombres differents et les deux sont gardes : le compte se mesure
+  depuis la publication la plus recente qu il a regardee, le fait de parler ou non depuis la plus
+  recente dont on lui a deja parle.
+  Ouvrir le fil le marque comme lu, ce qui est la regle que l onglet des notifications enonce
+  deja : l ouvrir, c est le lire. Celui qui n a jamais ouvert l application est repere la ou en est
+  le fil et ne recoit rien, plutot que de se voir tendre tout l historique sous forme de nombre des
+  sa premiere heure.
+  **L heure est un plafond et non un horaire.** Rien ne part a l heure pile : chaque joueur porte
+  sa propre horloge, demarree a sa connexion et decalee de quelques secondes, donc un redemarrage
+  qui ramene tout le monde dans la meme minute ne fait pas vibrer tous les combines du serveur dans
+  la meme seconde. Les reperes sont en base de donnees et les horloges non, donc un redemarrage
+  coute au pire une notification retardee et une reconnexion ne peut jamais en produire une en
+  double.
+  Elle emprunte le chemin que prend toute autre notification de ce telephone : ne pas deranger, une
+  application coupee dans les Reglages, une application desinstallee, une batterie a plat et un
+  telephone qu on n a pas sur soi l arretent tous, et c est le son d alerte propre a l application
+  qui est joue. Une application reglee sur silencieux recoit la banniere sans le son, ce qui est le
+  sens de silencieux. Le silence depense le tour au lieu de le mettre de cote, donc desactiver ne
+  pas deranger ne peut pas liberer une heure de bannieres retenues. `Config.Social.nudge` porte un
+  interrupteur et un intervalle pour chacune des deux applications, actifs d origine, et
+  `set phone_socialNudge false` coupe l ensemble sans redemarrage. La decision est tenue a distance
+  du jeu par `tools/test-nudge.py`.
+- **Un avatar dont la photo echouait affichait un disque vide.** Chaque avatar du telephone doit
+  dessiner l initiale de son proprietaire sous l image, pour qu une photo qui ne repond plus laisse
+  la lettre. Deux choses l avaient retiree. La lettre etait blanche sur un disque sans couleur
+  propre, parce que `background:` est un raccourci et qu y poser une image laissait le cercle
+  transparent, ou parce que le disque etait peint avec `--app-fill` translucide - mesure, entre
+  1,12:1 et 1,28:1 en theme clair, soit une lettre blanche sur une carte blanche. Et quatre ecrans
+  ecrivaient leur propre avatar avec la lettre dans une seule des deux branches, donc la fiche
+  contact, les visages OnlyFruits et les deux ecrans Hush n affichaient rien la ou etait l image. Le
+  disque et la lettre sont maintenant une paire declaree, `--av-bg` et `--av-label`, a 7,54:1 dans
+  les deux themes, et les quatre ecrans passent par l unique fonction qui dessine un visage rond.
+- **Une photo supprimee emportait des ecrans avec elle.** Un fichier envoye expire, et le telephone
+  n avait de reponse a cela nulle part : le balayage supprimait a l horloge sans verifier les
+  references, les fichiers expiraient a 30 jours et les posts vivaient 60, donc un post en photo de
+  plus d un mois a toujours pu perdre son image et garder sa legende. Plus rien n est supprime tant
+  que quelque chose l affiche : l echeance est repoussee, et seul un fichier que rien ne designe
+  part. Le controle ignore le fragment, ce qui est toute l astuce - la galerie ajoute sa recette de
+  retouche a l URL, donc `WHERE image = ?` repond « inutilise » pour toute photo retouchee.
+  `tools/test-mediaref.py` couvre les vingt endroits qui referencent une image. Deux defauts du
+  meme balayage sont fermes avec : un effacement rate chez l hebergeur etait indiscernable d un
+  effacement reussi, donc la ligne partait quand meme et le fichier restait sur la facture de
+  l operateur sans que plus rien ne connaisse son nom, et il reessaie maintenant ; et le balayage
+  s arretait entierement quand une retention valait zero, donc un fournisseur regle sur « garder
+  toujours » gelait aussi les fichiers de l autre, alors que chaque ligne porte deja sa propre
+  echeance.
+- **Deux balayages supprimaient les memes posts sur des horloges differentes, et le plus court
+  gagnait sans le dire.** `Config.Settings.socialRetentionPosts` annoncait soixante jours,
+  `Config.Retention.socialPosts` en annoncait trente, et les deux fichiers lancaient chaque heure
+  un `DELETE` sur `vphone_social_posts` : un bleet partait donc a trente jours quoi qu affiche le
+  reglage au-dessus, et pareil pour les commentaires. Rien ne signalait le desaccord, puisque aucun
+  des deux balayages ne savait que l autre avait un avis. `socialRetentionS3` n aurait jamais pu
+  fonctionner du tout : cent quatre-vingts jours de fil sur un serveur qui paie son propre bucket,
+  contre une suppression a trente jours dans un autre fichier.
+  **Une seule fonction repond maintenant, et les deux balayages la consultent.** `SocialKeepDays`
+  dans server/social.lua lit, dans l ordre, une convar `phone_socialRetention*`, une cle
+  `Config.Retention.social*` qu un serveur a reglee lui-meme, `socialRetentionS3` quand
+  l hebergeur media est s3, et `Config.Settings` en dernier ; server/retention.lua ne porte plus
+  aucun nombre a lui pour ces quatre tables. Les quatre cles sociales de `Config.Retention` ont
+  quitte la config livree pour que les reglages puissent s appliquer, et elles restent lues en
+  premier quand un serveur en a defini une, donc une config existante decide exactement comme
+  avant.
+  **Ce qui change a la mise a jour :** un serveur sur les valeurs d origine garde les posts et les
+  commentaires soixante jours au lieu de trente, et cent quatre-vingts sur s3. Rien n est supprime
+  qui ne l etait pas deja - le changement ne va jamais que dans le sens de garder plus - et l ordre
+  face a l horloge des medias ne bouge pas, parce que ce n etait pas ces nombres qui le tenaient :
+  un fichier qu un post affiche encore n est pas supprime, quoi qu ils disent.
+  `tools/test-social-retention.py` verifie l ordre et les deux points d appel sous du vrai Lua,
+  contre le vrai config.lua, et a ete lance contre les deux moities de l ancien montage remises en
+  place pour verifier qu il sait les distinguer.
+- **Supprimer une photo dans la Galerie laissait le fichier exactement ou il etait.** L entree
+  partait et l image restait sur le stockage de l operateur jusqu au bout de sa propre retention,
+  soit un an sur un bucket : quelqu un qui supprimait une photo qu il regrettait continuait de la
+  payer, et elle restait lisible pour qui en avait l adresse. Supprimer doit vouloir dire supprime.
+  La suppression pose la meme question que le balayage avant de partir, parce que c est la meme
+  question : une photo de la galerie peut aussi etre dans un post, un message ou l avatar de
+  quelqu un. Referencee, elle reste et expire a son propre rythme ; sans reference, elle part tout
+  de suite.
+- **Un fond d ecran mort rendait le telephone noir, et irreparable.** La branche image peignait du
+  noir sous l image et laissait tomber le degrade, donc un 404 laissait un rectangle noir avec les
+  icones flottant dessus, a chaque session. Et toucher un fond d ecran integre ne reparait rien : ce
+  gestionnaire envoyait le nouvel identifiant et laissait le lien en place, donc le dessin suivant
+  reprenait la branche URL. Le degrade reste dessous, et choisir un fond d ecran efface le lien.
+- **Une image cassee ne dessinait rien du tout**, et un clip dont le fichier avait disparu etait un
+  rectangle noir ecrase. `photoImg` porte `alt=""`, et Blink ne dessine ni glyphe, ni cadre, ni
+  place pour une image cassee dont l alt est vide : un message photo se reduisait a une pastille
+  vide et un post Snapmatic devenait un en-tete pose sur une ligne toute seule, ce qui se lit comme
+  un telephone qui n a pas su dessiner. Un `<video>` sans ratio retombe sur 300x150, donc une carte
+  se redimensionnait a chaque arrivee de metadonnees et un clip mort gardait cette forme pour de
+  bon. La carte donne 16:9 d avance, et les deux cas sont remplaces par un substitut qui garde la
+  forme de la carte et dit ce qui s est passe.
+- **L aide censee reperer une photo morte n en reperait presque aucune.** Elle interrogeait un seul
+  conteneur avec une liste de classes dont la plupart de ses cibles ne faisaient pas partie, et elle
+  tenait sa memoire de ce qu elle avait deja demande par appel, en n ecrivant dedans que dans les
+  callbacks, qui sont asynchrones : une grille de soixante tuiles declenchait soixante requetes,
+  exactement ce que son propre commentaire disait eviter. Elle tournait, elle coutait, et elle ne
+  marquait rien, ce qui est pire que de ne pas tourner du tout, parce que l ecran a l air pris en
+  charge. Elle balaye toute la page maintenant, se souvient d un appel a l autre, et sa liste de
+  tuiles atteint la fiche contact et sa photo, la banniere de profil, les captures du magasin et ses
+  images en rayon, l apercu de fond d ecran dans les Reglages et la banniere comme le visage de
+  Fruitee, dont aucun n avait d appelant propre. Un refus est oublie au bout de trente secondes et a
+  chaque ouverture du telephone, donc une coupure reseau de deux secondes ne coute plus a un joueur
+  toutes les images de la ressource jusqu au rechargement.
+- **OnlyFruits faisait payer une photo qui n existait plus.** Une ligne survit a son fichier, et un
+  post payant dont l image avait expire avait toujours un prix, prenait toujours l argent, disait
+  toujours « Debloque » et affichait une carte vide. Le racheter repondait « deja debloque », donc
+  il n y avait ni retour en arriere ni remboursement. L achat est refuse avant que l argent ne
+  bouge, contre le registre du telephone lui-meme, et apres avoir retire la recette de retouche : une
+  comparaison exacte sur une URL portant `#vp=` lirait toute photo retouchee comme expiree et
+  rendrait ces posts invendables pour toujours. Le refus avait besoin d une phrase, et le nom evident
+  etait deja pris deux mille lignes plus bas par un code de verification, donc l acheteur aurait lu
+  « Code expire, envoyez-en un nouveau » : c est la verification ci-dessus, ecrite a cause de cela.
+- **Un profil ne pouvait plus etre enregistre des qu une de ses photos avait expire.** Le controle
+  d hote jugeait toutes les images de la charge a chaque enregistrement, y compris celles que
+  personne ne modifiait, donc un fichier disparu refusait un changement de nom ou de biographie a
+  cote. Sur Hush c etait pire qu un formulaire bloque : l interrupteur qui desactive un profil
+  voyage dans la meme charge, donc un joueur dont une photo avait expire ne pouvait ni desactiver son
+  profil ni quitter l application. Une valeur inchangee passe maintenant et seule une adresse
+  vraiment nouvelle est jugee : redemander plus tard ne teste pas l honnetete du joueur, cela teste
+  si un fichier existe encore.
+- **Le compositeur ne montrait rien de ce qui etait attache a un post.** La vignette etait ecrite en
+  bloc avec une hauteur et sans largeur, et le compositeur multi-photos la place dans une rangee
+  flex, ou elle s ecrasait a zero pixel de large. L element etait dans l arbre, sa photo etait posee,
+  et la bande restait vide pendant que la meme image s affichait parfaitement dans la carte publiee.
+- **Entrer en mode reorganisation redimensionnait toutes les applications de l ecran, et effacait
+  tous les noms pendant ce temps.** Le bouton d ajout de widget etait une tuile dans la grille des
+  widgets, large de deux colonnes avec un plancher de 108 px, donc il ouvrait presque toujours une
+  rangee a lui seul : la bande grandissait de plus d une rangee d icones des le debut du tremblement,
+  la page debordait, et l ajusteur retrecissait toutes les applications pour recuperer une place
+  qu elles n avaient pas prise. Mesure : la grille passait de 417 px a 403 px a l entree, ce qu une
+  grille 4x4 absorbe et qu une 6x7 montre comme des icones qui changent de taille sous le doigt. Les
+  deux commandes tiennent maintenant dans une seule barre qui occupe exactement la place de la
+  pastille de recherche. Quant aux noms : une tuile est une colonne flex, l icone a un debordement
+  visible donc son minimum automatique est sa propre hauteur et elle ne se comprime pas, tandis que
+  le libelle a `overflow: hidden` donc son minimum est zero - toute rangee trop courte etait donc
+  entierement payee par le libelle, qui s ecrasait a une fraction de pixel sans que rien dans la mise
+  en page ne signale quoi que ce soit. Le libelle est tenu a sa hauteur naturelle, donc un mauvais
+  ajustement deborde de la rangee, ce que l ajusteur sait voir et corriger.
+- **Le premier depot faisait passer toutes les icones de 60 px a 44 sans jamais les rendre.** Le
+  garde-fou qui empeche un glissement de redimensionner les applications s appuyait sur une classe
+  que le redessin avait deja retiree, et Termine ne les remesurait jamais parce que rien ne
+  repeignait la grille a la sortie du mode reorganisation. Trois voisins du meme ecran suivent :
+  l icone soulevee flottait au-dessus d une autre application, le fantome gardant les coordonnees du
+  debut de l appui alors que la grille descend quand la bande au-dessus grandit ; l apercu d un
+  dossier disparaissait dans sa propre marge sur une grille serree, la marge, l ecart et les coins
+  des quatre cases etant restes aux valeurs qui conviennent a une icone de 60 px, ce qui donne une
+  case de 3 px au plancher de 22 px ; et presser un dossier pressait son contenu, `.tile:active .ic`
+  atteignant les quatre mini-icones aussi bien qu une application de premier niveau.
+- **La verification de compilation Lua de `tools/test-all.py` n avait jamais signale un seul fichier
+  casse.** `load` repond `nil, err` en cas d echec et lupa rend cela sous forme de tuple, que la
+  verification comparait a `None` - et un tuple ne l est jamais. Elle etait verte quoi qu on lui
+  donne, et une vraie erreur de syntaxe dans `server/media.lua` est passee devant et a empeche la
+  ressource de charger sur un serveur en production. Elle lit le tuple maintenant et affiche l erreur
+  a cote du nom de fichier : une verification qui ne peut pas echouer est pire que pas de
+  verification, parce que c est une verification a laquelle tout le monde se fie. `server/s3.js` a
+  rejoint la liste d analyse JS au meme moment, etant le seul script serveur qui n est pas du Lua.
+  De la meme facon, l assertion `the add button appears` mesurait le fichier HTML : le plus et
+  Termine sont du balisage permanent, donc la sonde lit maintenant l affichage calcule et la hauteur
+  reellement occupee par la barre, au repos et apres l appui long - ce qui a revele une regression
+  deja livree, le plus ouvrant le selecteur et sortant du mode reorganisation dans le meme pointerup.
+- **Securite :** l en-tete du fichier media promettait que la cle API du CDN n atteint jamais un
+  client, et les deux chemins d envoi la donnaient. Le `remoteUpload` de screencapture emet toute sa
+  table d options vers le client qui capture, et le telephone y mettait `Authorization`, donc chaque
+  photo prise envoyait la cle de l operateur sur la machine de ce joueur. La capture revient
+  maintenant au serveur par `serverCapture`, qui ne porte aucun en-tete, et l envoi part du serveur.
+  Le chemin video faisait la meme chose et avait ete oublie quand le chemin photo a ete deplace, ne
+  passant inapercu que parce que `Config.Media.video` est livre desactive - et la config invite un
+  operateur a le rallumer, donc « inatteignable aujourd hui » n est pas un correctif. Il n envoie
+  plus aucun en-tete du tout.
+- **Performances :** changer un widget depuis les Reglages reconstruisait l ecran d accueil derriere
+  l application - tout le balisage jete et reecrit, tous les ecouteurs rattaches, et une mise en page
+  forcee pour mesurer le resultat, sur une grille que personne ne voyait. La reconstruction est juste
+  a cet endroit, elle n est simplement pas necessaire tant que le joueur ne regarde pas : elle est
+  retenue et effectuee a la sortie d une application, sur les deux chemins et de facon synchrone,
+  pour que la grille soit bonne des la premiere image du dezoom. La retirer n est pas une option et
+  la sonde dit pourquoi : rien d autre ne repeint la grille a la sortie, donc un widget ajoute dans
+  les Reglages laisserait des icones de 60 px sur une bande qui a grandi sous elles.
+
+- **Prendre une photo, du declencheur a l image.** Tout le chemin a ete repris, et les chiffres
+  viennent du meme moteur Chromium que celui du CEF de FiveM. L encodage WebP est huit a dix fois
+  plus lent que le JPEG a toutes les resolutions : 176 ms contre 17 ms en 1080p, 705 ms contre
+  72 ms en 4K, payes sur le processeur du joueur avant qu un seul octet ne bouge. C est ce qui rend
+  `Config.Media.imageEncoding` interessant a connaitre. **Le defaut livre reste `webp`**, et c est
+  une decision : `jpg` a ete mis en defaut pendant cette version et a fait tomber un serveur,
+  parce que `screencapture` compose le type du canvas en ecrivant `image/` devant ce
+  qu on lui donne et que `image/jpg` n est un type accepte par aucun canvas. C est corrige a la
+  source - le telephone traduit l extension vers le sous-type que veut un canvas - donc mettre
+  `imageEncoding = 'jpg'` est sans danger et gagne le declencheur rapide, tandis que `webp` reste le
+  defaut parce que c est la valeur qui tournait quand l appareil photo etait connu bon et la seule
+  orthographe correcte quelle que soit la composition. La qualite est envoyee explicitement a 0,7
+  plutot que laissee au navigateur, sur les deux formats. La capture recoit aussi une taille
+  maximale de 1280x720, qu elle n avait jamais eue : un joueur en 4K encodait et envoyait trente
+  fois plus de pixels que ce que le telephone sait afficher, et c est la moitie qui compte sur
+  l encodage livre, un neuvieme des pixels d une image 4K. Les chiffres apparies - 176 ms et 309 Ko
+  vers 8 ms et 165 Ko en 1080p - ont ete mesures avec le plafond ET `imageEncoding = 'jpg'`, donc
+  ils sont le plafond de ce que les deux peuvent gagner ensemble, pas ce qu obtient un serveur
+  d origine. Le telephone redemandait aussi toute la galerie apres chaque photo alors que la reponse
+  portait deja l image ; c est un aller-retour de moins par declencheur, compte dans la page reelle.
+  Et le viseur restait fige jusqu a la fin de l envoi, alors que tout ce qui suit la prise est du
+  reseau : la camera revient au joueur des que l image existe.
+
+- **`imageEncoding = 'jpg'` envoyait en silence un PNG sans perte de tout l ecran, et `imageQuality`
+  ne servait plus a rien.** C est une valeur que la config propose depuis que le reglage existe, et
+  la choisir multipliait chaque photo par dix : un a deux megaoctets et demi la ou la meme image en
+  JPEG ou en WebP fait cent a trois cents kilooctets, chez un hebergeur facture au volume, sans que
+  rien nulle part n en dise la raison. Personne n irait chercher la cause dans l orthographe.
+  C est une extension de fichier utilisee comme sous-type media. `Config.Media.imageEncoding` nomme
+  une extension, `screencapture` construit le type du canvas en ecrivant `image/` devant ce qu on
+  lui donne, et `image/jpg` n est un type accepte par aucun canvas : selon la specification HTML le
+  navigateur retombe donc sur `image/png` et abandonne au passage l argument de qualite. `webp` l a
+  masque aussi longtemps qu il etait le defaut, parce que son extension et son sous-type sont le
+  meme mot.
+  Le telephone traduit maintenant l extension vers le sous-type qu accepte un canvas - `jpeg`,
+  jamais `jpg` - et garde l extension pour nommer l objet, donc les deux ne peuvent plus diverger.
+  **C etait aussi un plantage, et c est ce qui explique les garde-fous du nouveau chemin de
+  capture.** Cette version fait repasser la capture par le serveur pour que la cle du CDN cesse de
+  voyager jusqu aux joueurs, donc l image encodee traverse maintenant la frontiere JS/Lua puis la
+  retraverse vers l envoi, de facon synchrone, sur le fil principal du serveur. Dix fois les octets
+  a travers deux frontieres de moteur sans que rien n en mesure la longueur a fait tomber le
+  processus sur un SIGSEGV, avec une pile geree vide et un gel de deux secondes signale a la fois
+  sur le fil de synchronisation et sur celui du reseau. Cela n a jamais atteint une version publiee
+  - le defaut a ete bascule puis remis a l interieur de celle-ci - et cela reste hors d atteinte par
+  construction plutot que parce que le defaut est bon : un plafond de charge utile refuse une
+  capture trop grosse ou qui n est pas une chaine avant meme d appeler l un des deux exports
+  d envoi et dit laquelle des deux, chaque nombre de la table d options est borne avant de quitter
+  le moteur Lua, et `server/s3.js` ramene son delai de requete de 20 s a 9 s - 18,5 s au pire avec
+  son unique reessai - pour finir a l interieur du sondage Lua qui l attend au lieu de rappeler
+  jusqu a vingt secondes apres son abandon, avec chaque rappel enveloppe, chaque chaine de promesses
+  terminee et chaque corps de reponse vide.
+
+- **Une photo trop lente etait annoncee comme ratee, puis apparaissait quand meme.** Les trois
+  limites du chemin etaient dans le mauvais ordre et la garde du serveur etait desarmee juste avant
+  la moitie lente. Une garde unique couvre desormais tout le traitement, du plus proche du travail
+  au plus loin : 25 s, 28 s, 30 s, 35 s. Le creneau d envoi etait par ailleurs un booleen qui ne
+  revenait jamais si le traitement ne se terminait pas, ce qui bloquait l appareil photo pour le
+  reste de la session avec le message de l application Telephone - "Vous etes deja en
+  communication" - montre a quelqu un qui appuie sur un declencheur. C est un bail maintenant, et
+  l appareil photo a son propre message.
+
+- **Chaque photo prise via le fournisseur recommande perdait son lieu.** Le champ etait calcule sur
+  le chemin du collage et pas sur celui de la capture, donc la vue Lieux de la Galerie etait vide
+  precisement sur les serveurs qui envoient. Il est lu au moment du declencheur.
+
+- **Rien n etait montre entre le declencheur et le resultat.** Le combine est transparent pendant
+  toute la session photo et les messages du telephone y sont dessines : une photo reussie et une
+  photo perdue etaient indiscernables. Il y a maintenant une ligne a l ecran pendant l envoi, deux
+  sons distincts a la fin, et une notification du framework avec la raison en cas d echec.
+
+- **Un envoi pouvait attendre indefiniment, et une coupure perdait l image.** Aucun des trois
+  appels HTTP n avait de delai ni de reprise. Mesure contre un vrai serveur local : un 503 et une
+  coupure de connexion sont repris une fois et aboutissent, un 401 n est jamais repris, et un hote
+  qui ne repond pas abandonne a 20,0 s.
+
+- **Un enregistrement ne pouvait pas aboutir.** La page accordait deux minutes et le serveur
+  budgetait la duree du clip plus vingt-cinq secondes, mais la requete sous les deux abandonnait a
+  dix, en dur : avec le clip de quinze secondes par defaut, chaque enregistrement annoncait un
+  depassement de delai pendant que le serveur etait encore en train de l enregistrer. Les requetes
+  prennent desormais leur propre plafond. Inatteignable aujourd hui puisque `Config.Media.video`
+  est livre nil, et config.lua invite un operateur a le rallumer.
+
+- **Les garde-fous qui tiennent le telephone hors de la photo ne supposent plus rien.** La page
+  lachait sa propre retenue 220 ms apres un declenchement, ce qui etait decoratif plutot qu un
+  garde-fou : c est la classe qui masque le combine pour la session photo qui faisait le travail, et
+  220 ms n a aucun rapport avec une capture qui se produit dans le navigateur d une autre ressource
+  apres un aller-retour serveur. La retenue dure maintenant jusqu a la reponse de la capture -
+  `shutterDone` sur chaque chemin de photo, reussite ou echec - et `recording` comme `recordDone`,
+  que le client envoie depuis toujours au debut et a la fin d un clip, n avaient absolument aucun
+  destinataire dans la page : un grep n en trouvait aucun. Chaque retenue garde un plafond au-dela
+  du delai de son propre chemin, pour qu une reponse perdue ne puisse pas laisser un joueur avec un
+  telephone invisible. L attente avant une capture reste inconditionnelle pour la meme raison :
+  c est un dixieme de seconde, et c est le seul endroit ou une classe qui ne serait pas arrivee se
+  verrait.
+- **Toucher un onglet deplacait la barre de 55 px sous le doigt.** Mesure avec un vrai clic sur
+  « Envoyes » dans Mail, le rectangle de la barre echantillonne a chaque image : 33 px vers le haut
+  a l appui, puis 22 px de glissement. Deux causes. L appui : `.tabbar button > span` est de
+  specificite (0,1,2) et `.touch-flare` de (0,1,0), donc une regle destinee au libelle et a l icone
+  l emportait sur l onde de pression, qui est un span et un enfant direct du bouton, et la forcait
+  en `position: relative` - une boite de 76 px entrait alors dans la colonne flex. Le glissement :
+  `tabbar()` reecrivait tout le pied de page a chaque appel, donc la barre etait detruite et
+  reconstruite, et le CSS voit un nouvel element comme un element qui arrive. La barre survit
+  desormais au changement d onglet et seule la selection bouge. Apres correction : 0,00 px de
+  deplacement, une seule animation. La meme faille peignait l onde en carre rose de 34 px sur les
+  tuiles de la bibliotheque Musique et en rien du tout sur les options de destruction de Cipher.
+- **Toucher un onglet rejouait l animation de tout l ecran, et chaque rendu apres une poussee
+  aussi.** Changer le dossier que Mail affiche est un changement de contenu, pas un changement
+  d ecran, et pourtant l entree en cascade etait rejouee sur tout le corps. Elle est supprimee pour
+  le rendu qu un onglet delegue. Par ailleurs `pushAnim()` ajoutait une classe que rien ne retirait
+  jamais, donc un ecran ayant pousse une fois - un fil, une page de magasin, un profil - rejouait la
+  poussee sur tout son corps a chaque rendu suivant. Elle est effacee la ou le sont les autres
+  classes a usage unique, dans `body()`.
+- **Les deux boutons ronds de l en-tete etaient plus bas que le titre qu ils encadrent.** De 6 px
+  dans une conversation, 7 px sur une barre simple, 56 px avec un appel range dans l ile. Le titre
+  replie etait fixe a `top: 58px` depuis le haut de la barre, alors que la rangee qu il coiffe
+  commence a 54 et fait 44 de haut. La geometrie de la barre tient maintenant en deux variables, et
+  le titre, le filet et le haut du corps s en deduisent. Apres : 0,00 px dans les trois cas.
+- **Un en-tete replie reservait 54 px de vide et tracait son filet dessous.** Dans OnlyFruits la
+  rangee finissait a 147,88 et le filet etait dessine a 201,88, la premiere ligne de contenu restant
+  masquee derriere. La barre rend ce bloc en se repliant et le corps reprend exactement le meme
+  nombre en marge de defilement : rien de ce qui est a l ecran ne bouge, et 54 px de contenu
+  apparaissent. Verifie sur 60 images de part et d autre du seuil : 0,00 px de derive.
+  La barre garde dix pixels sous sa derniere rangee, et ces dix sont mesures : dans le kit iOS 26,
+  `Examples/Toolbars - Top.svg` dessine une barre compacte comme un bandeau de 402 x 116 dont les
+  deux boutons ronds vont de 62 a 106, soit dix pixels sous les boutons, et `Scroll Edge Effect -
+  Hard.svg` place le filet sur ce bord. Confirme par `Examples/Menus.svg`, recoupe en grand titre
+  par `Examples/List.svg`. Mesure sur la page : 10,00 px sous les boutons dans les six ecrans
+  demandes et dans quinze applications de plus.
+- **Le nom d une conversation de groupe n avait jamais pu etre touche.** Le gestionnaire etait pose
+  sur deux elements incapables d en recevoir un. C est un vrai bouton dans le titre maintenant.
+- **Performances :** les quatre barres audio de l ile animaient sans fin sur une ile vide. Elles ne
+  tournent plus que pendant un appel.
+
+---
+
 ## [1.6.2] - 2026-08-04
 
 ### Added
@@ -416,6 +1352,190 @@ All notable changes to v-phone are documented here.
   it, so pressing close appeared to work while actually being a tap on the backdrop behind it.
   This is the same root cause as the home indicator's dead tap in 1.6.1, in a second place: a
   tap that begins on a control now reaches that control, wherever on the screen it is.
+
+### Ajouts et correctifs (miroir francais)
+
+- **Sante garde la semaine, et affiche la distance.** La page du magasin promet « Pas et distance »
+  et « Tendances » depuis le debut, et l application n avait ni l un ni l autre : le compteur de pas
+  etait un seul nombre pour la journee en cours, remis a zero a minuit sans rien conserver, donc il
+  n y avait aucune tendance a dessiner et il n y en avait jamais eu ; la distance n etait jamais
+  calculee, alors que le client mesure des metres a pied et les divise par une foulee pour produire
+  le nombre de pas. Sept journees terminees sont gardees a cote du total du jour et dessinees en
+  graphique, avec une moyenne sur les journees terminees seulement, et la distance est calculee avec
+  la meme foulee, pour que les deux nombres ne puissent pas se contredire. Un jour ou personne n a
+  joue reste vide plutot que classe comme un jour a zero pas.
+- **Jusqu a quatre photos sur un post Bleeter ou Snapmatic.** Le compositeur tient une liste au lieu
+  d une piece jointe unique : ajouter, retirer, reordonner en retirant, et le bouton Ajouter
+  decompte jusqu au plafond au lieu d ignorer en silence une cinquieme. La carte les dessine comme
+  le font les applications imitees - une remplit la carte, deux la partagent, trois posent une haute
+  a cote de deux empilees, quatre font un carre - et toucher l une d elles ouvre la visionneuse
+  plein ecran sur cette image avec les autres en bobine. `image` contient toujours la PREMIERE
+  photo, ce qui rend le changement contenu : la grille du profil, la feuille de partage, la rangee
+  des stories, le widget d accueil et tous les exports lisent ce seul champ et n ont rien eu a
+  apprendre. Les autres vivent dans une colonne `images`, ecrite seulement au-dela d une photo.
+  Chaque URL passe le controle d hote pour elle-meme : un hote autorise sur la couverture ne repond
+  pas des trois suivantes, et une version qui n aurait verifie que `image` aurait fait des trois
+  autres un passage direct autour du controle. `Config.Social.maxImages` est le plafond, le serveur
+  tronque plutot que de refuser, et un clip reste un fichier unique.
+- **`tools/check-fr.py` : la locale francaise ne peut pas ecrire un mot de deux facons.** Aucun
+  dictionnaire, aucun jugement sur le francais : le fichier fait autorite sur lui-meme. Un mot ecrit
+  avec un accent dans une chaine et sans dans une autre n est pas un choix de style, l un des deux
+  est faux. Les homographes sont listes plutot que devines, parce que le francais a vraiment des
+  paires ou les deux orthographes existent et ou seule la phrase tranche - `a` et `à`, `la` et `là`,
+  `ou` et `où`, `passe` et `passé` - et une verification qui crierait au loup six cents fois serait
+  desactivee, ce qui est la facon dont meurt une verification. Elle porte une seconde liste a cote
+  de la premiere, pour la classe que la comparaison ne peut pas voir : un mot que le fichier ecrit
+  mal PARTOUT ne laisse aucune contradiction a remarquer. `Telechargement` apparaissait cinq fois et
+  jamais une seule avec ses accents, ce qui explique exactement qu il ait survecu aux deux premieres
+  passes.
+- **La locale francaise reparee en quatre passes.** 206 apostrophes avaient ete remplacees par une
+  espace - `Ce service n a pas d application sur ce telephone` est ce que lisait un joueur - parce
+  qu une apostrophe dans une chaine Lua a guillemets simples la referme, et qu une partie du fichier
+  passait en guillemets doubles pendant que l autre laissait tomber l apostrophe. Et 139 mots
+  etaient ecrits des deux facons, 380 fois : `telephone` 41 fois a cote de `téléphone`, `numero` 32
+  a cote de `numéro`, `ecran` 10 a cote de `écran`. Deux regles ont evite d inventer du francais au
+  lieu de le restaurer : le caractere avant le moignon ne peut etre ni un marqueur ni un chiffre,
+  sans quoi `"Reçu %s de %s"` serait devenu `%s'de`, et le mot suivant doit commencer par une
+  voyelle ou un h, seul endroit ou le francais elide. Les homographes ont ete lus phrase par phrase
+  et non substitues : la regle a ete inversee - tout devient `à` sauf ce qui correspond a une liste
+  fermee de formes verbales - et chaque changement a ete imprime et relu avant d etre ecrit, ce qui
+  a rattrape treize verbes en passe de devenir des prepositions.
+- **Un champ de recherche dans Plans.** C etait la seule longue liste du telephone sans champ :
+  Notes en a un, Contacts en a un, le magasin en a un, et Plans dessinait tous les lieux que le
+  serveur connait avec des pastilles de categorie pour seul tri. La recherche porte sur tous les
+  lieux et non sur la categorie choisie, parce que quelqu un qui tape un nom veut ce nom, et
+  s entendre dire qu il n existe pas parce qu on etait sur Garages est une application qui discute.
+  Les pastilles s effacent pendant qu une requete tourne au lieu de rester allumees et de contredire
+  les resultats, la categorie revient intacte quand le champ est vide, et seule la liste est
+  repeinte pour que le champ ne soit jamais detruit par sa propre frappe.
+- **Les listes de Rappels servent enfin a quelque chose.** Quatre listes existent - personnelle,
+  travail, courses et autre - le choix etait stocke et colorait la coche, et rien nulle part ne
+  filtrait ni ne regroupait par elles, sur une application dont la fiche de magasin commence par
+  « Listes de rappels ». Une rangee de pastilles sous les onglets en choisit une, avec les memes
+  pilules que la feuille d edition et les memes couleurs que les coches. Elle n apparait qu a partir
+  du moment ou une deuxieme liste est utilisee, parce qu un filtre a quatre listes sur un telephone
+  ou tout est Personnel est quatre boutons qui ne font rien. Les cinq compteurs d onglets sont
+  recalcules pour la liste choisie au lieu de decrire autre chose.
+- **Reglages > Accessibilite, avec Reduire les animations.** La fiche de magasin nomme une section
+  accessibilite depuis longtemps et cette section n existait pas. La feuille de style respecte
+  `prefers-reduced-motion` depuis tout aussi longtemps, mais c est un reglage du systeme
+  d exploitation du joueur, hors d atteinte depuis FiveM. L interrupteur est la moitie manquante :
+  les memes regles, derriere une classe, demandees depuis le telephone. Les applications s ouvrent
+  sans zoom, les panneaux apparaissent au lieu de glisser, et les icones ne tremblent plus pendant
+  qu on les range.
+- **Copier le lien d une image.** Un bouton copier a cote du bouton fermer dans la visionneuse plein
+  ecran, et l adresse part dans le presse-papiers. Il est la plutot que dans la Galerie parce que
+  toutes les images du telephone passent par cet ecran - un message, un post Bleeter, une story
+  Snapmatic, un mail, un profil Hush - donc un seul bouton les couvre toutes et aucune application
+  n a rien eu a apprendre. Le bouton Partager de la Galerie propose maintenant AirDrop ou le lien au
+  lieu d aller droit a AirDrop. Une image que le telephone n a pas envoyee est un `data:` et non une
+  adresse : elle n offre pas de lien et dit pourquoi.
+- **`vphone_media_test` et `vphone_ox_test`, deux commandes de console.** La premiere envoie un PNG
+  d un pixel valide a l hebergeur configure, avec les en-tetes configures et hors de screencapture,
+  et affiche le statut : un envoi rate rapporte `write EPIPE`, soit l hote qui raccroche au milieu
+  du corps, sans code ni message, et les trois causes habituelles se ressemblent toutes. 401 ou 403
+  designe la cle, 413 la taille, 429 le quota, et aucune reponse du tout designe la cle et rien
+  d autre. La seconde demande a ox_core ce qu il publie vraiment : chaque acces ox du bridge est
+  dans un pcall qui echoue en refusant, ce qui est le bon comportement et aussi la raison pour
+  laquelle un export absent est invisible - un transfert qu on ne peut pas confirmer est refuse, et
+  un transfert refuse ressemble exactement a un joueur sans argent. En lecture seule : rien n y
+  deplace d argent.
+- **`python tools/test-all.py`** lance toutes les verifications de la ressource, dans l ordre qui
+  echoue au moins cher : compilations Lua, analyses JS, les verifications statiques et leur
+  autotest, les tests unitaires Lua, la construction de la preview, le balayage d accessibilite sur
+  les 37 applications, la souris reelle a travers le compositeur, et 52 captures avec leurs
+  assertions. `--fast` saute les captures. Il y avait plusieurs facons de tester ce telephone et
+  aucune facon unique de les lancer, donc chacune tournait quand quelqu un se souvenait qu elle
+  existait. Trois tests unitaires Lua s ajoutent au lot, et une seizieme verification statique : une
+  fermeture passee la ou `setNav` attend un mot, ce qui affichait le code source du bouton retour en
+  guise de libelle, sur deux lignes de la barre de navigation, et fermait l application quand on le
+  pressait, sans que ni l une ni l autre moitie ne leve la moindre erreur.
+- **Une alerte de dispatch annoncait a son SUSPECT qu elle avait ete cloturee.** Rapporte sur
+  qb-core avec les scripts doc : commettez un delit, et l application 911 annonce que l alerte vous
+  concernant est close, comme si vous l aviez signalee vous-meme. `CreateAlert` deduit beaucoup de
+  choses de `source`, et un script de dispatch y passe le joueur CONCERNE par l alerte, parce que
+  c est la que les secours doivent aller. Deux consequences suivaient du meme champ sans avoir ete
+  rapportees : la reponse de la police apparaissait dans les appels recents du delinquant, qui
+  pouvait regarder une unite accepter l appel a propos de son propre braquage, et chaque alerte
+  levee contre lui comptait dans `maxOpen`, donc quelqu un signale quatre fois ne pouvait plus
+  appeler le 911 lui-meme - ce qui transforme un joueur recherche en joueur qui ne peut pas demander
+  une ambulance. La fiche du repondant tenait le meme discours sous « Appelant » : elle distingue
+  maintenant une ligne Appelant et une ligne Concerne, et un script qui a vraiment un appelant le
+  nomme avec `callerSource` ou `callerCid`.
+- **Chaque SMS recu rejouait toute la charge de demarrage**, et pouvait defaire un reglage au
+  passage. `refresh()` est `v-phone:open` : le catalogue fusionne avec ce que possede le personnage,
+  ses preferences, tout son repertoire, toutes ses conversations, les groupes, la liste des fonds
+  d ecran, celle des sons, la config des widgets. C est ce qu il faut faire quand un telephone
+  s allume, pas a chaque message recu, a chaque message envoye et a chaque ouverture de Messages,
+  pour une seule chose entre eux : la liste des conversations. Et le gaspillage est la moitie la
+  moins grave, parce que `Object.assign(state, res)` remet la copie du serveur par-dessus
+  l interrupteur qu on venait de bouger dans les Reglages. Une lecture `inbox` etroite repond trois
+  champs et ne peut donc rien ecraser d autre.
+- **ox_core.** Les notifications d argent ne partaient jamais : qb, qbx et ESX annoncent leurs
+  propres mouvements et le telephone les ecoute, ox n a pas d evenement equivalent, c est a cela que
+  sert l echantillonneur de solde, et il etait livre desactive - neuf lignes de config decrivaient
+  une fonctionnalite desactivee sur le seul framework que ces neuf lignes nomment. L allumer aurait
+  annonce chaque virement deux fois, donc les deux fonctions par lesquelles le telephone deplace de
+  l argent comptent ce qu elles ont deplace et l echantillonneur le soustrait, branche a la porte
+  plutot qu aux huit points d appel. Bank Pro n affichait rien du tout, le solde de societe venant
+  d un script bancaire ou d esx_addonaccount dont aucun ne tourne sur un serveur ox ; il est lu
+  maintenant dans la table ou ox le garde. Le metier se lisait `police` et le grade `2`, alors que
+  le catalogue des metiers lit les libelles depuis le debut. Un personnage dans deux groupes changeait
+  d employeur tout seul, le choix etant celui que `pairs` rendait en premier : le grade le plus eleve
+  gagne maintenant, le nom departageant. Enfin, un debit bancaire ne pouvait pas aboutir et pouvait
+  tuer la requete, l export etant atteint comme test de verite hors de tout pcall alors que le proxy
+  leve pour un nom qu une ressource ne publie pas ; et un credit bancaire echoue etait verse en
+  especes puis annonce comme reussi, donc un virement rembourse revenait en billets.
+- **Sur ESX et en standalone le telephone ne pouvait rien enregistrer**, et c est la reponse a la
+  question de savoir s il est vraiment agnostique. Un citizen id fait huit caracteres sur qb et un
+  petit entier sur ox, donc `VARCHAR(16)` semblait large ; sur ESX c est `license:` suivi de
+  quarante hexadecimaux, et en standalone les quarante tout seuls. Quarante-huit colonnes
+  d identifiant dans onze fichiers etaient larges de seize : en mode strict chaque insertion levait
+  « Data too long », et sans lui l identifiant etait coupe a l ecriture et lu entier, donc rien ne
+  correspondait jamais et les messages disparaissaient des qu un fil etait ferme. Le telephone
+  s ouvrait quand meme, parce que les deux tables que possede le bridge ont toujours ete a
+  soixante-quatre. Chaque CREATE est corrige, et une passe idempotente elargit une base existante au
+  demarrage, les cles elargies sur place plutot que supprimees et recreees.
+- **Le telephone annoncait les mouvements d ESPECES**, dont il ne peut rien savoir. Un telephone est
+  une application bancaire : il lit un compte, il ne voit pas ce qu il y a dans les poches. Il
+  vibrait pour chaque achat, chaque billet passe d un joueur a un autre et chaque piece ramassee, et
+  ecrivait une ligne dans le RELEVE a propos d argent qui n avait jamais approche une banque.
+  `QBCore:Server:OnMoneyChange` se declenche pour les deux types et le gestionnaire prenait le type
+  en argument sans jamais le regarder ; ESX avait le meme trou, le compte qu il appelle `money`
+  ETANT les especes. Seul l argent en banque maintenant, avec `Config.Bank.notify.cash` pour un
+  serveur qui veut faire du telephone un afficheur d argent general.
+- **Correctifs.** Alerts etait un telechargement du magasin sur un telephone neuf, et supprimable,
+  soit exactement le bug que son propre commentaire dit corrige en 1.6.1 - le correctif avait ete
+  applique du cote qui perd. Le Garage envoyait carburant, moteur et carrosserie a chaque ouverture
+  et aucun ecran ne les dessinait, alors que sa fiche de magasin promet l etat en direct. Cinq
+  applications n avaient aucune fiche de magasin du tout, dont la seule application payante livree.
+  Deplacer une application faisait trembler toutes les autres a l unisson, chaque icone redevenant un
+  element neuf a chaque changement de point d insertion. La fiche de Property promettait des
+  locataires et un paiement a distance qui n existent nulle part, et a ete corrigee par retrait.
+  `29-map-places.png` photographiait l onglet Pins, la capture precedente posant un onglet sans le
+  remettre. La preview ne repondait rien pour Sante ni pour Plans, donc les deux s affichaient vides.
+  Un meme composant de ligne dessinait deux avatars differents selon l ecran, 38 px borde d un cote
+  et 34 px plat de l autre. Et l en-tete de la feuille de style interdisait `backdrop-filter`, que la
+  feuille utilise dix-sept fois depuis la passe iOS 27 documentee dans le meme fichier : commentaires
+  seulement, aucune declaration n a change. Les deux boutons ronds de la visionneuse plein ecran ne
+  pouvaient pas etre presses, et le bouton fermer ne l avait jamais pu depuis l ecriture de la
+  visionneuse.
+- **Performances.** Le selecteur d emoji attachait un ecouteur a chaque glyphe et les rattachait
+  tous a chaque changement d onglet, soit deux cent trente noeuds detruits, recrees et recables au
+  milieu de la frappe d un message. La reaffirmation des torches allumees coutait torches fois
+  joueurs toutes les deux secondes. Un message interrogeait la ressource d inventaire deux fois par
+  destinataire pour une reponse deja etablie. Bouger la souris sur le telephone restylait le
+  telephone entier a chaque evenement, une mise en page forcee par evenement et deux pendant un
+  geste ; mesure sur cent mouvements reels, un balayage rapide est passe d une mise en page forcee
+  par evenement a **une pour tout le geste**. Un fil chargeait et decodait cinquante photos pleine
+  resolution d un coup. Chaque cran de molette payait une remontee de styles jusqu a l ecran avant
+  que la page n ait le droit de bouger. Et l ecran d accueil remesurait sa grille a chaque
+  repeinture, jusqu a quatorze mises en page forcees, depuis dix-huit points d appel.
+- **Securite :** trois gestionnaires `playerLoaded` de framework etaient enregistres en evenements
+  reseau, donc n importe quel client pouvait les declencher en nommant l identifiant de joueur de
+  son choix. Rien ne pouvait etre falsifie, les donnees ecrites venant du framework et non de la
+  charge, mais c etait une facon non authentifiee de declencher deux requetes par appel a la
+  cadence choisie par l appelant.
 
 ---
 

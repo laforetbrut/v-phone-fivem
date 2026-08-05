@@ -9,6 +9,12 @@
  * This makes them repeatable: every shot is a named script that drives the page to one screen
  * and captures the handset, so the whole set can be retaken after any change in one command.
  *
+ * The last nine of the hand-taken ones - the setup wizard, the lock screen, the island, the
+ * control centre, Settings, Bank and the conversation list - are scripted here too now. They
+ * were the ones the README opens with, and they had been photographed once and never again, so
+ * a restyle left a third of the gallery showing a phone from July beside pictures taken the
+ * same morning. Nothing in `docs/images` is taken by hand any more.
+ *
  * Same shape as the existing ten - the whole device, bezel included, 420 x 816 - so a new shot
  * can sit in a table beside an old one without the row looking broken.
  *
@@ -110,9 +116,136 @@ const MUSIC_FIXTURE = `
 
 const SHOTS = [
   {
+    // **The nine below were the last hand-taken pictures in the README.**
+    //
+    // They were shot in a browser in July and never again, so they showed a phone two
+    // releases and one restyle out of date sitting in the same table as pictures taken this
+    // morning - and the old 05-settings even caught the wallpaper sheet halfway open.
+    // Scripted now, on the filenames the README already points at, so the gallery ages
+    // together instead of a third of it staying frozen at whatever it looked like in July.
+    name: 'setup-hello', file: '01-setup-hello.png',
+    script: `${SETUP}
+      openSetup(0);
+      await new Promise((r) => setTimeout(r, 900));
+      if (!document.getElementById('setupnext')) throw new Error('the wizard drew no button');`,
+  },
+  {
+    name: 'setup-wallpaper', file: '02-setup-wallpaper.png',
+    script: `${SETUP}
+      openSetup(3);
+      await new Promise((r) => setTimeout(r, 900));
+      const walls = document.querySelectorAll('#setup [data-setup-wall]');
+      if (walls.length < 4) throw new Error('the picker offered ' + walls.length + ' wallpapers');`,
+  },
+  {
+    name: 'setup-faceid', file: '03-setup-faceid.png',
+    script: `${SETUP}
+      openSetup(6);
+      await new Promise((r) => setTimeout(r, 900));
+      if (!document.getElementById('setupfacescan')) throw new Error('no face scanner drawn');`,
+  },
+  {
     name: 'home', file: '04-home.png',
     script: `try { unlock(); } catch (e) {}
       await new Promise((r) => setTimeout(r, 900));`,
+  },
+  {
+    name: 'lock', file: '10-lock-screen.png',
+    script: `${SETUP}
+      lockScreen();
+      await new Promise((r) => setTimeout(r, 500));
+      banner({ app: 'messages', icon: 'messages', title: 'Dana Whitlock',
+               body: 'Tu passes ce soir ?' });
+      banner({ app: 'bank', icon: 'bank', title: 'Fleeca',
+               body: 'Virement de 1 250 $ recu.' });
+      // The island lights up for four seconds when a notification lands, and it is not what
+      // this picture is about. Put back by hand rather than waited out, so the shot does not
+      // cost five seconds of sleep it does not need.
+      setIslandMode(null);
+      await new Promise((r) => setTimeout(r, 500));
+      const cards = document.querySelectorAll('#locknotifs .lnotif');
+      if (cards.length !== 2) {
+        throw new Error('the lock screen drew ' + cards.length + ' of the 2 notifications');
+      }`,
+  },
+  {
+    name: 'control-centre', file: '07-control-centre.png',
+    script: `${SETUP}
+      state._power = { battery: 68, charging: false, signal: 4 };
+      musicNow = { title: 'Nightcall', artist: 'Kavinsky', kind: 'track', id: 'fx0' };
+      openCC();
+      await new Promise((r) => setTimeout(r, 800));
+      if (!document.getElementById('cc').classList.contains('on')) {
+        throw new Error('the control centre did not open');
+      }`,
+  },
+  {
+    // The pill, mid-notification. It collapses after 4.2 seconds, so this one is a race the
+    // shot has to win: the assertion below is what makes losing it a failure rather than a
+    // photograph of an ordinary black pill.
+    name: 'island', file: '08-dynamic-island.png',
+    script: `${SETUP}
+      banner({ app: 'messages', icon: 'messages', title: 'Mara Ortiz',
+               body: 'Je suis devant le garage.' });
+      await new Promise((r) => setTimeout(r, 600));
+      if (!document.getElementById('island').classList.contains('notif')) {
+        throw new Error('the island is not showing the notification it was just handed');
+      }`,
+  },
+  {
+    name: 'settings-root', file: '05-settings.png',
+    script: `${SETUP} await open('settings', 1000);`,
+  },
+  {
+    name: 'bank', file: '06-bank.png',
+    script: `${SETUP} await open('bank', 1400);`,
+  },
+  {
+    // The conversation LIST. 23-messages is one thread; this is the screen it opens from,
+    // and the two are different enough to be worth a picture each.
+    name: 'inbox', file: '09-messages.png',
+    script: `${SETUP}
+      // The preview ships two conversations, which photographs as a phone nobody has used.
+      // Painted from a fixture, the way the thread shot below is, so the picture shows what a
+      // list looks like with unread counts and a run of days in it.
+      //
+      // **Through the post hook, not by writing state.conversations.** Opening Messages does a
+      // narrow re-read and assigns the answer straight over the list, so a fixture set on the
+      // page is gone before the first row is drawn - which is what the first version of this
+      // shot did, and it photographed the preview's two rows either way.
+      const T = Date.now();
+      const FEED = [
+        { number: '555-0188', name: 'Mara Ortiz', body: 'Je suis devant le garage.',
+          at: Math.floor((T - 240000) / 1000), unread: 2 },
+        { number: '555-0164', name: 'Ray (Garage)', body: 'La Sultan est prete.',
+          at: Math.floor((T - 5400000) / 1000), unread: 0 },
+        { number: '555-0110', name: 'Deputy Vance', body: 'Passe au poste demain matin.',
+          at: Math.floor((T - 28800000) / 1000), unread: 1 },
+        { number: '555-0143', name: 'Ines Duval', body: 'Merci pour hier soir.',
+          at: Math.floor((T - 93600000) / 1000), unread: 0 },
+        { number: '555-0176', name: 'Sofia Delgado', body: 'Tu as recu le devis ?',
+          at: Math.floor((T - 180000000) / 1000), unread: 0 },
+      ];
+      // A row titles itself from the contact book first, so the two people who are not in it
+      // printed as bare numbers beside three names.
+      state.contacts = (state.contacts || []).concat([
+        { id: 910, name: 'Ines Duval', number: '555-0143' },
+        { id: 911, name: 'Sofia Delgado', number: '555-0176' },
+      ]);
+      const under = window.__VPHONE_PREVIEW_POST__;
+      window.__VPHONE_PREVIEW_POST__ = (name, b) => {
+        if (name === 'inbox') return { ok: true, conversations: FEED, groups: [] };
+        return under ? under(name, b) : { error: 'x' };
+      };
+      await open('messages', 1200);
+      const rows = document.querySelectorAll('#appbody .row');
+      // Put the handler back before anything else runs. A wrapper left installed hands every
+      // later shot an inbox it did not ask for, which is how one shot became a picture of
+      // another shot's screen once already.
+      window.__VPHONE_PREVIEW_POST__ = under;
+      if (rows.length < FEED.length) {
+        throw new Error('the conversation list drew ' + rows.length + ' of ' + FEED.length);
+      }`,
   },
   {
     name: 'store', file: '11-fruitstore.png',
@@ -135,6 +268,31 @@ const SHOTS = [
     // it shows the same screen every time it is taken.
     name: 'messages', file: '23-messages.png',
     script: `${SETUP}
+      // **A self-contained picture, not the preview's own photo roll.**
+      //
+      // The preview ships no photographs, so the attachment used to be an empty string - and
+      // since the phone learned to say so, an empty src is a BROKEN src: the bubble drew the
+      // "photo no longer available" placeholder, and the README's picture of Messages was a
+      // picture of an expired file. Same trick the gallery shots use, and for the same reason.
+      //
+      // Landscape, and that is a layout decision rather than a taste one: a bubble keeps the
+      // picture's aspect ratio, so a tall one eats the rest of the thread. This shot exists to
+      // show a day heading, grouped bubbles, a reply, a reaction, a picture, the typing dots
+      // AND the receipt line in one frame - a portrait receipt pushed the last four off the
+      // bottom, which is a picture of one feature instead of seven.
+      const RECEIPT = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">' +
+        '<rect width="320" height="180" fill="#37414D"/>' +
+        '<rect x="86" y="14" width="148" height="152" rx="4" fill="#FBFAF6"/>' +
+        '<rect x="104" y="32" width="72" height="8" rx="2" fill="#2B2B2B"/>' +
+        '<rect x="104" y="48" width="44" height="6" rx="2" fill="#A6A6A6"/>' +
+        [0, 1, 2, 3].map((i) =>
+          '<rect x="104" y="' + (72 + i * 16) + '" width="' + (74 - i * 9) + '" height="6" ' +
+          'rx="2" fill="#BFBFBF"/><rect x="188" y="' + (72 + i * 16) + '" width="28" ' +
+          'height="6" rx="2" fill="#BFBFBF"/>').join('') +
+        '<rect x="104" y="140" width="112" height="1" fill="#D6D6D6"/>' +
+        '<rect x="104" y="150" width="34" height="8" rx="2" fill="#2B2B2B"/>' +
+        '<rect x="180" y="150" width="36" height="8" rx="2" fill="#2B2B2B"/></svg>');
       await open('messages', 700);
       thread = '555-0188';
       threadGroup = null;
@@ -147,13 +305,19 @@ const SHOTS = [
         { id: 4, mine: false, kind: 'text', at: H + 900000, body: 'Combien au final ?',
           reply: { id: 3, kind: 'text', body: 'Ils ont trouve la fuite.', mine: false } },
         { id: 5, mine: true,  kind: 'image', at: H + 960000, body: 'La facture.',
-          attachment: (state.photos && state.photos[0] && (state.photos[0].url || state.photos[0])) || '' },
+          attachment: RECEIPT },
         { id: 6, mine: false, kind: 'text', at: H + 1020000, body: 'Aie.' },
         { id: 7, mine: true,  kind: 'text', at: H + 1080000, seen: true,
           body: 'On en reparle ce soir.' },
       ], false);
       typingSet('555-0188', true);
-      await new Promise((r) => setTimeout(r, 600));`,
+      await new Promise((r) => setTimeout(r, 600));
+      // Where a conversation actually opens. paintThread draws the bubbles and leaves the
+      // body at the top, so the last four - the receipt line, the dots and the two newest
+      // messages, which are half of what this shot exists to show - sat under the fold.
+      const tb = document.getElementById('appbody');
+      tb.scrollTop = tb.scrollHeight;
+      await new Promise((r) => setTimeout(r, 300));`,
   },
   {
     // Not for the README: a folder actually in mid-drag, so the ghost can be looked at rather
@@ -191,6 +355,65 @@ const SHOTS = [
       }`,
   },
   {
+    // Arrange mode, measured rather than looked at.
+    //
+    // A label squeezed to a third of a pixel is invisible in a screenshot review and obvious to
+    // a measurement, which is why this one asserts and keeps no picture. Entering the jiggle
+    // grows the widget strip by the add button and swaps the search pill for Done, and both come
+    // out of `.pages` - the flex child of `.home` that gives. The tiles are then stretched to a
+    // row that no longer fits them, and the label, the one part of a tile with `overflow: hidden`
+    // and so a flex minimum of zero, used to absorb the entire shortfall. Every app name on the
+    // screen disappeared, with nothing in the layout reporting anything wrong.
+    name: 'arrange-labels', file: null, scratch: true, assert: true,
+    script: `try { unlock(); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 1000));
+      const read = () => {
+        const pg = document.querySelector('#pages .page');
+        const hs = [...pg.querySelectorAll('.tile:not(.gap) .nm')]
+          .map((n) => n.getBoundingClientRect().height);
+        if (!hs.length) throw new Error('no app labels were drawn at all');
+        return { isz: parseFloat(document.getElementById('pages').style.getPropertyValue('--isz')),
+                 low: Math.round(Math.min.apply(null, hs) * 10) / 10 };
+      };
+      const before = read();
+      if (before.low < 9) throw new Error('labels already crushed at rest: ' + before.low);
+
+      const tile = document.querySelector('#pages .tile:not(.gap)');
+      const b = tile.getBoundingClientRect();
+      const at = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse',
+                   clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 };
+      tile.dispatchEvent(new PointerEvent('pointerdown', at));
+      await new Promise((r) => setTimeout(r, 900));
+      const held = read();
+      if (held.low < 9) throw new Error('arrange mode crushed the labels to ' + held.low);
+
+      // The lifted clone belongs over the cell the tile left, not half a row above it. The grid
+      // moves down when the strip grows and the ghost kept the coordinates the press began at,
+      // so its label - the only one still readable - floated over a different app.
+      const gap = document.querySelector('#pages .tile.gap');
+      if (!gap) throw new Error('no placeholder was left where the tile lifted');
+      const s = gap.getBoundingClientRect();
+      const g = document.getElementById('dragghost').getBoundingClientRect();
+      const off = Math.abs((g.top + g.height / 2) - (s.top + s.height / 2));
+      if (off > 24) throw new Error('the ghost sits ' + Math.round(off) + 'px off its own cell');
+
+      window.dispatchEvent(new PointerEvent('pointerup', at));
+      await new Promise((r) => setTimeout(r, 800));
+      const dropped = read();
+      if (dropped.low < 9) throw new Error('the drop crushed the labels to ' + dropped.low);
+
+      document.getElementById('arrangedone').click();
+      await new Promise((r) => setTimeout(r, 700));
+      const done = read();
+      if (done.low < 9) throw new Error('leaving arrange mode crushed the labels to ' + done.low);
+      // The icon size is the other half of the same fault. The guard that keeps a drag from
+      // resizing the apps used to key on a class the repaint had already removed, so the first
+      // drop quietly took every icon from 60px to 44 and Done never measured them back up.
+      if (Math.abs(done.isz - before.isz) > 0.5) {
+        throw new Error('icons came back at ' + done.isz + 'px, not ' + before.isz);
+      }`,
+  },
+  {
     name: 'pins', file: '28-map-pins.png',
     script: `${SETUP}
       await open('maps', 700);
@@ -217,16 +440,35 @@ const SHOTS = [
       await openThread('555-0188');
       await new Promise((r) => setTimeout(r, 700));
       const act = document.getElementById('navact');
+      const back = document.getElementById('navback');
       const bar = document.getElementById('navbar');
       const a = act.getBoundingClientRect();
+      const k = back.getBoundingClientRect();
       const b = bar.getBoundingClientRect();
-      const gap = Math.round(b.right - a.right);
+      const screen = document.getElementById('screen').getBoundingClientRect();
+      const gap = Math.round((b.right - a.right) * 100) / 100;
+      const lead = Math.round((k.left - b.left) * 100) / 100;
       // Measured rather than eyeballed: the call button has to sit the same distance from the
       // edge as the chevron opposite, and be round.
       if (Math.abs(a.width - a.height) > 1) {
         throw new Error('call button is ' + Math.round(a.width) + 'x' + Math.round(a.height));
       }
-      if (gap < 16) throw new Error('call button only ' + gap + 'px from the edge');`,
+      // **The symmetry is the claim, and the old check never made it.** It compared the
+      // trailing gap against a flat 16 and left the leading one unmeasured, so a bar with 16
+      // on one side and 4 on the other passed. Both ends are asserted against each other now.
+      if (Math.abs(gap - lead) > 0.5) {
+        throw new Error('chevron sits ' + lead + 'px from its edge and the call button ' +
+          gap + 'px from its own');
+      }
+      // The floor is the kit's 16pt inset IN THIS HANDSET'S PIXELS, not the number 16. The
+      // screen is 352 wide against the reference's 402, so 16pt scales to 14.0 - and asserting
+      // 16 on a 352px screen asks for an inset the reference itself does not draw. Read from
+      // the live screen so a handset of another size still gets the reference's proportion.
+      const floor = Math.floor(16 * screen.width / 402);
+      if (gap < floor) {
+        throw new Error('bar buttons sit ' + gap + 'px from the edge, under the ' + floor +
+          'px that 16pt scales to on a ' + Math.round(screen.width) + 'px screen');
+      }`,
   },
   {
     name: 'music', file: 'zz-music.png', scratch: true,
@@ -528,14 +770,35 @@ const SHOTS = [
     name: 'settings', file: 'zz-settings.png', scratch: true,
     script: `${SETUP}
       await open('settings', 900);
-      // Every category has to lead somewhere. A row that draws nothing is worse than no row.
+      await new Promise((r) => setTimeout(r, 300));`,
+  },
+  {
+    // **Every category has to lead somewhere.** A row that draws nothing is worse than no row.
+    //
+    // This used to live inside the `settings` shot above, which is a PICTURE - and a picture
+    // shot that throws prints SKIPPED and lets the run pass. The literal said 9 and the list
+    // has been 10 since Accessibility was added, so the check threw on every run, printed one
+    // grey line in a wall of sixty, and never failed anything. Split out and marked `assert`
+    // so it is fatal, while the shot above keeps taking its photograph.
+    //
+    // The count is read from SETTINGS_PAGES rather than written down, so an eleventh page
+    // cannot make it stale a second time - and the ids are compared in order, which is the
+    // claim a bare count only approximates.
+    name: 'settings-cats', file: null, scratch: true, assert: true,
+    script: `${SETUP}
+      await open('settings', 900);
       const cats = [...document.querySelectorAll('.row[data-page]')];
-      if (cats.length !== 9) throw new Error('expected 9 categories, found ' + cats.length);
+      if (cats.length !== SETTINGS_PAGES.length) {
+        throw new Error('SETTINGS_PAGES declares ' + SETTINGS_PAGES.length +
+          ' categories and the front page drew ' + cats.length);
+      }
+      const drawn = cats.map((r) => r.dataset.page).join(',');
+      const declared = SETTINGS_PAGES.map((x) => x.id).join(',');
+      if (drawn !== declared) throw new Error('drew ' + drawn + ', declared ' + declared);
       for (const id of SETTINGS_PAGES.map((x) => x.id)) {
         const html = settingsSection(id);
         if (!html || html.length < 40) throw new Error('the ' + id + ' page is empty');
-      }
-      await new Promise((r) => setTimeout(r, 300));`,
+      }`,
   },
   {
     name: 'settings-sounds', file: 'zz-settings-sounds.png', scratch: true,
@@ -813,6 +1076,102 @@ const SHOTS = [
       // screen. Restored on the way out rather than left for the next shot to survive.
       window.__VPHONE_PREVIEW_POST__ = under;
       SOC.tab.hush = 'deck';
+      closeApp();
+      await new Promise((r) => setTimeout(r, 200));`,
+  },
+  {
+    // **A photograph whose file is gone.**
+    //
+    // Every uploaded picture expires eventually, and with `alt=""` Blink draws NOTHING for a
+    // broken image: no glyph, no box, not even space. A photo message collapsed to an empty
+    // pill and a Snapmatic post became a header sitting on its own like row - which reads as a
+    // phone that failed to draw rather than a picture that is no longer there.
+    //
+    // Measured, not looked at: the whole failure mode is "occupies zero pixels", and a
+    // screenshot of nothing looks exactly like a screenshot of a tidy layout.
+    name: 'photo-gone', file: 'zz-photogone.png', scratch: true, assert: true,
+    script: `${SETUP}
+      await open('notes', 700);
+      const host = document.getElementById('appbody');
+
+      // A URL that cannot resolve, which is what an expired file is.
+      host.innerHTML = '<div id="gonetest">' +
+        photoImg('https://127.0.0.1:9/definitely-not-there.webp', 'pimg') + '</div>';
+
+      const before = host.querySelector('#gonetest img');
+      if (!before) throw new Error('photoImg did not draw an img at all');
+      if (!before.getAttribute('data-full')) {
+        throw new Error('a live photo should carry data-full for the viewer');
+      }
+
+      // The error fires asynchronously. Wait for the swap rather than a fixed sleep, so this
+      // does not become a flaky test on a slow machine.
+      let span = null;
+      for (let i = 0; i < 60 && !span; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        span = host.querySelector('#gonetest .photogone');
+      }
+      if (!span) throw new Error('the broken image was never replaced');
+
+      const r = span.getBoundingClientRect();
+      if (Math.round(r.height) < 40) {
+        throw new Error('the placeholder is ' + Math.round(r.height) + 'px tall, so it is ' +
+          'invisible - which is the bug, not the fix');
+      }
+      if (!(span.textContent || '').trim()) {
+        throw new Error('a grey box with no text is a loading state, not an answer');
+      }
+      if (span.querySelector('[data-full]') || span.getAttribute('data-full')) {
+        throw new Error('a dead thumbnail still offers to open full screen');
+      }
+      // The original class survives, which is what keeps a card its shape.
+      if (!span.classList.contains('pimg')) {
+        throw new Error('the placeholder lost the class the card sized itself with');
+      }
+      if (host.querySelector('#gonetest img')) {
+        throw new Error('the broken img is still in the tree beside the placeholder');
+      }
+      closeApp();
+      await new Promise((r) => setTimeout(r, 200));`,
+  },
+  {
+    // **A flex item with no width is zero pixels wide.**
+    //
+    // `.socattached` was written as a block child - a height and no width, filling its parent.
+    // The multi-photo composer put it in a flex row and it collapsed to 0 x 190: the element
+    // was in the tree, the background was set, and the preview showed nothing while the same
+    // photograph drew perfectly in the posted card.
+    //
+    // Measured, because that is the entire failure: a screenshot of a zero-width element and a
+    // screenshot of a tidy composer are the same picture.
+    name: 'compose-thumbs', file: 'zz-composethumbs.png', scratch: true, assert: true,
+    script: `${SETUP}
+      await open('notes', 700);
+      const host = document.getElementById('appbody');
+      host.innerHTML = '<div class="socattachrow">' +
+        ['a', 'b', 'c'].map((n) =>
+          '<div class="socattached" style="background-image:url(&quot;data:image/gif;base64,' +
+          'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==&quot;)"></div>')
+          .join('') + '</div>';
+
+      const cells = [...host.querySelectorAll('.socattached')];
+      if (cells.length !== 3) throw new Error('drew ' + cells.length + ' thumbnails');
+      cells.forEach((el, i) => {
+        const r = el.getBoundingClientRect();
+        if (Math.round(r.width) < 40) {
+          throw new Error('thumbnail ' + i + ' is ' + Math.round(r.width) + 'px wide - the ' +
+            'preview is invisible even though the element is there');
+        }
+        if (Math.round(r.height) < 40) {
+          throw new Error('thumbnail ' + i + ' is ' + Math.round(r.height) + 'px tall');
+        }
+      });
+      // Side by side, not stacked: it is a strip of what is attached.
+      const first = cells[0].getBoundingClientRect();
+      const second = cells[1].getBoundingClientRect();
+      if (second.left <= first.left) {
+        throw new Error('the thumbnails are not laid out in a row');
+      }
       closeApp();
       await new Promise((r) => setTimeout(r, 200));`,
   },
@@ -2093,9 +2452,20 @@ async function main() {
     for (const shot of wanted) {
       // Back to a known state between shots: an app left open would otherwise be the
       // background of the next one.
+      //
+      // The first-run wizard is put away here rather than by the shot that opened it, and
+      // that is not a detail: a shot's script leaves the page in the state to PHOTOGRAPH, so
+      // a teardown at the end of the script runs before the capture and the three setup
+      // pictures came out as three pictures of the home screen. It is a dialog over
+      // everything with no route out that does not post, so this is the only place it fits.
       await cdp.eval(`try { closeSheet(true); } catch (e) {}
         try { closePhoto(); } catch (e) {}
         try { closeApp(true); } catch (e) {}
+        try {
+          byId('setup').classList.remove('on', 'complete');
+          byId('setup').setAttribute('aria-hidden', 'true');
+          byId('home').classList.remove('behind');
+        } catch (e) {}
         await new Promise((r) => setTimeout(r, 350));`);
       await cdp.eval(BOOTSTRAP);
 

@@ -2,10 +2,21 @@ fx_version 'cerulean'
 game 'gta5'
 lua54 'yes'
 
+-- **Required by `server/s3.js`, and only by it.**
+--
+-- The S3 uploader is built on `fetch`, `FormData` and `Blob` as globals, which arrived in
+-- Node 18, and on `node:crypto`. Without this line FiveM picks its older default runtime and
+-- the file loads but throws `fetch is not defined` the first time somebody takes a photograph
+-- - a failure that looks like a broken camera rather than a missing declaration.
+--
+-- Costs nothing on a server that never turns the camera on: the script registers exports and
+-- does nothing until Config.Media asks for them.
+node_version '22'
+
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete iOS 27 style phone for FiveM. Framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.6.2'
+version '1.6.3'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -65,6 +76,10 @@ client_scripts {
     'client/main.lua',
     -- The police forensics terminal: a point on the map and the NUI relays behind it.
     'client/police.lua',
+    -- The verification desks: blips, a marker and the interaction that raises the sheet
+    -- selling the blue tick. Must load AFTER client/main.lua, which is where the phone's own
+    -- open sequence lives and where `PhoneShowScreen` is published.
+    'client/verify.lua',
     -- The staff menu. qb-adminmenu cannot be extended from outside, so the phone brings its
     -- own - see the comment at the top of the file.
     'client/admin.lua',
@@ -100,6 +115,16 @@ client_scripts {
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
+
+    -- **The one file here that is not Lua, and it is not a preference.**
+    --
+    -- Uploading to an S3 bucket needs three things CfxLua cannot do: a request body that
+    -- survives a NUL byte (PerformHttpRequest passes it to curl without a length, so it stops
+    -- at the first one, and every encoded image contains them), TLS peer verification (that
+    -- same path disables it, and this request carries the bucket secret), and HMAC-SHA256.
+    -- Node has all three. Loaded whatever the provider is - it registers exports and does
+    -- nothing until Config.Media asks for them.
+    'server/s3.js',
     -- Framework detection, per-character storage and the integrations every app reads.
     -- migrate.lua runs first: it moves an earlier build's tables to the vphone_ prefix.
     'bridge/server/migrate.lua',
@@ -119,6 +144,11 @@ server_scripts {
     -- whose `chargeRateAt` asks `PaidChargeOk` on every battery tick - the same arrangement
     -- as outage.lua above.
     'server/charging.lua',
+    -- Who still shows a photograph. Before main.lua: the sweep asks it, and a reference
+    -- check that loads after the thing that calls it is a nil global at the worst moment.
+    'server/mediaref.lua',
+    -- Emptying an app from the console. Nothing here deletes without `confirm`.
+    'server/adminclean.lua',
     'server/main.lua',
     -- Home screen widgets. Straight after main.lua, whose `prefsOf` and `PhoneHasApp` decide
     -- who is entitled to what, and BEFORE every file that registers a builder with it.

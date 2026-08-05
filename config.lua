@@ -45,23 +45,33 @@
 --
 --  WHAT IS WHERE
 --  ─────────────
---  Line numbers, so any section is one jump away. **Regenerate this rather than editing
---  it**: every entry was wrong by up to a thousand lines the last time it was checked by
---  hand, which is what a hand-maintained index does. tools/check.py could own it.
+--  Every section below, at the line its own title sits on, so any of them is one jump away.
+--  **Regenerate this rather than editing it**: every entry was once wrong by up to a
+--  thousand lines, which is what a hand-maintained index does. tools/check.py could own it.
 --
---    79    COMPATIBILITY          3653  HOW LONG THE PHONE KEEPS THINGS
---    426   SETTINGS               3715  HOME SCREEN WIDGETS
---    562   LICENCE NAMES          3756  THE UPDATE CHECK
---    622   HOW A NUMBER IS DISPLAYED 3788  A PHONE HEARD RINGING
---    1736  WRITING A POSITION     3844  COMMANDS
---    2324  PAID CHARGING          3866  THE SDK EXAMPLE APP
---    2414  ADMIN                  4038  EXTERNAL CHARGING
---    2420  LOGGING                4060  POLICE FORENSICS
---    2430  911                    4062  THE HEALTH RECORD
---    2669  BANK PRO               4102  HOSPITALS
---    3335  THE CLOCK              4130  PROPERTY
---    3351  THE NETS UNDER THE PHONE 4161  GARAGES
---    3396  ONLYFRUITS             4180  BANK
+--    89    COMPATIBILITY                      3610  ONLYFRUITS
+--    133   Two notifications for one payment  3622  FruitBrawl: the duel
+--    436   SETTINGS                           3674  FlappyFruit: the arcade board
+--    587   LICENCE NAMES                      3717  Fruitee: donation pages
+--    647   HOW A NUMBER IS DISPLAYED          3867  HOW LONG THE PHONE KEEPS THINGS
+--    1944  WRITING A POSITION                 3929  HOME SCREEN WIDGETS
+--    2029  THE LOOK                           3970  THE UPDATE CHECK
+--    2073  PLACES                             4002  A PHONE HEARD RINGING
+--    2155  THE FRUITSTORE                     4058  COMMANDS
+--    2236  EXPORT                             4080  THE SDK EXAMPLE APP
+--    2379  REPAIR                             4252  EXTERNAL CHARGING
+--    2488  PLUGGING IN                        4274  POLICE FORENSICS
+--    2538  PAID CHARGING                      4276  THE HEALTH RECORD
+--    2628  ADMIN                              4316  HOSPITALS
+--    2634  LOGGING                            4344  PROPERTY
+--    2644  911                                4375  GARAGES
+--    2883  BANK PRO                           4394  BANK
+--    2987  ALERTS                             4629  MEDIA
+--    3130  ZUBER                              4816  FACETIME
+--    3331  TAXI                               4846  PAYPHONES
+--    3441  LOTTERY                            5025  MUSIC
+--    3549  THE CLOCK                          5156  VEHICLE REMOTE
+--    3565  THE NETS UNDER THE PHONE           5225  FRUITSTORE
 --
 --  IF SOMETHING DOES NOT BEHAVE
 --  ────────────────────────────
@@ -483,10 +493,38 @@ Config.Settings = {
     social          = true,
     socialMaxLength = 280,
     socialFeedSize  = 50,
+    -- How long social content lives, in days.
+    --
+    -- **These follow the media provider**, because content and the photographs in it should
+    -- not expire on different clocks - a post that outlives its picture is a caption over a
+    -- grey box. `Config.Media.retentionDays` decides the files; this decides the posts.
+    --
+    -- Nothing warns about the pair at boot, and nothing needs to: the media sweep asks whether
+    -- a post, a message, an avatar or a gallery still shows a file BEFORE it deletes it, and
+    -- pushes the expiry a week out when one does. Those numbers are a floor rather than a
+    -- guillotine, so the phone cannot take a picture away from the post that shows it whatever
+    -- the two clocks say. See `Bridge.MediaReferencedBy` in server/mediaref.lua.
+    --
+    -- **These are about the POST, not about its picture.** A media host's own retention is a
+    -- different clock and lives in `Config.Media.retentionDays`: fivemanage keeps a file for
+    -- thirty days, and that is a fact about the file, not a reason to delete the post around
+    -- it. Halving these to match the host would have deleted every post and comment between
+    -- thirty and sixty days old on the first sweep after an upgrade, on every server, with no
+    -- way back and nothing in the changelog to warn anybody.
+    --
+    -- With `provider = 's3'` these four are replaced by `socialRetentionS3` just below:
+    -- `socKeep` in server/social.lua reads that table instead when the provider is s3, and a
+    -- `phone_socialRetention*` convar still wins over both.
     socialRetentionPosts    = 60,
     socialRetentionComments = 60,
     socialRetentionStories  = 1,
     socialRetentionMessages = 30,
+
+    -- The same four, for a server storing its media in its own bucket. Six months of feed
+    -- against a year of files: the picture always outlives the post that shows it.
+    socialRetentionS3 = {
+        posts = 180, comments = 180, stories = 1, messages = 180,
+    },
     socialHush      = true,
     socialDailyLikes = 30,
 }
@@ -1545,6 +1583,33 @@ Config.Social = {
     -- whole of their life. `retention.stories` is the sweep; this is what a viewer sees.
     storyHours = 24,
 
+    -- ── The "what's new" nudge ─────────────────────────────────
+    -- A banner telling one player how many posts have appeared on Bleeter or Snapmatic since
+    -- they last opened it. A quiet feed is a feed nobody opens, and nobody posts to a feed
+    -- nobody opens; this is what breaks that circle.
+    --
+    -- **It is never sent on an empty feed.** The count is what is new to THAT player, measured
+    -- from the newest post they have actually looked at, and the same posts are never announced
+    -- twice - so ignoring one does not mean receiving it again every hour.
+    --
+    -- `minutes` is a CEILING, not a schedule. Nothing fires on the hour: each player has their
+    -- own clock, started when they connect, so a restart that brings everybody back in the same
+    -- minute does not make every handset on the server buzz in the same second. A player who has
+    -- never opened the app is marked where the feed stands and told nothing, so nobody is handed
+    -- the whole history as a number on their first hour.
+    --
+    -- Do not disturb, an app the player has silenced, an app they have uninstalled, a flat
+    -- battery and a player not carrying their phone all stop it, exactly as they stop every
+    -- other notification. An app set to silent still gets the banner without the sound, which is
+    -- what silent means.
+    --
+    -- `set phone_socialNudge false` turns the whole thing off on a running server.
+    nudge = {
+        enabled = true,
+        bleeter = { enabled = true, minutes = 60 },
+        snap    = { enabled = true, minutes = 60 },
+    },
+
     -- ── Hush ───────────────────────────────────────────────────
     hush = {
         enabled = true,
@@ -1590,6 +1655,97 @@ Config.Social = {
         'i.imgur.com', 'imgur.com',
         'cdn.discordapp.com', 'media.discordapp.net',
         'i.ibb.co', 'raw.githubusercontent.com',
+    },
+}
+
+-- ── Verification: the two badges ───────────────────────────────
+-- **Two badges, not two levels of one badge.**
+--
+--   BLUE     bought. A player walks to a desk on the map, pays, and their account on that
+--            app carries a blue tick from then on. Staff can still grant it and take it back.
+--   ORANGE   official. `/phoneadmin official @handle` grants it and nothing else does. No
+--            amount of money buys it, which is the only thing that makes it worth holding.
+--
+-- They are two separate flags on the account, so one account can hold both, and taking one
+-- away leaves the other exactly where it was. Both are PER APP: a tick on Bleeter is not a
+-- tick on Snapmatic, and the price is set per app below.
+--
+-- Where they both show, the ORANGE one is what is drawn next to a name. Two discs after one
+-- name is not two badges, it is clutter, and the official mark is the stronger of the two
+-- claims. The profile page has room to say it in words and says both there, so nobody loses
+-- sight of what they paid for.
+--
+-- **The desk is the only way to buy one, and the server is what checks that.** The price,
+-- the distance to the desk and the payment all live on the server; the phone sends "the blue
+-- tick on Bleeter, please" and nothing else. A page claiming to stand at a desk is refused,
+-- because the ped's real position is read on the server before a single unit moves.
+Config.SocialVerify = {
+    -- Off takes away the desks, their blips and the purchase. It does NOT touch a badge
+    -- anybody already holds, and staff can still grant either colour: this switch is about
+    -- SELLING, not about the badges.
+    enabled = true,
+
+    -- ── What it costs ──────────────────────────────────────────
+    -- Per app, because a tick on the app your server actually uses is worth more than a tick
+    -- on the one nobody opens. 0 hands that app's badge to anybody who walks in, which is a
+    -- price rather than a switch - use `apps` below to stop selling one altogether.
+    price = { bleeter = 25000, snap = 25000 },
+
+    -- Which apps the desk sells at all. Take one out and the desk stops offering it; anybody
+    -- who has already paid keeps what they bought.
+    apps = { 'bleeter', 'snap' },
+
+    -- Which purse pays: 'bank' or 'cash'. A desk with a card machine is 'bank'.
+    money = 'bank',
+
+    -- Where the money GOES: a job or society account name, credited through your banking
+    -- script exactly as `Config.PaidCharging.account` is. '' pays nobody - the money leaves
+    -- the player and the desk is scenery.
+    account = '',
+
+    -- Whether the player must have the app installed before its badge can be sold to them. On,
+    -- because a badge on an app they cannot open is money taken for nothing.
+    requireApp = true,
+
+    -- ── Reaching a desk ────────────────────────────────────────
+    -- How close a player must stand, in metres. **This is what the SERVER checks before it
+    -- takes any money**, so it is the real gate rather than a hint to the marker. A point's
+    -- own `radius` wins over it.
+    distance = 2.0,
+
+    -- **The key press is always live**, exactly as at the police terminal and for the same
+    -- reason: a target script whose zone fails to register must not be the only way in.
+    key = 38,              -- E. Any control id from the FiveM list.
+    marker = true,         -- the small marker on the ground at each desk
+    helpText = true,       -- and the "[E] Verification desk" prompt when you are in range
+    useTarget = true,      -- also register an ox_target / qb-target zone when one is running
+
+    -- ── On the map ─────────────────────────────────────────────
+    -- One blip per desk. `enabled = false` hides them all, for a server that would rather the
+    -- desk was somewhere you are told about in character.
+    blip = {
+        enabled = true,
+        sprite  = 480,
+        colour  = 5,        -- yellow, which is as close as the game's palette comes to the badge
+        scale   = 0.75,
+        shortRange = true,  -- on the minimap when you are near, not across the whole map
+        -- Left nil, this reads "Verification desk" in the player's own language. A string here
+        -- is used exactly as written, so a server can call it whatever it likes.
+        label = nil,
+    },
+
+    -- Where the desks are. As many as you like; one is shipped, because one is what makes it
+    -- a place people go to rather than a menu that happens to be everywhere.
+    --
+    -- Positions may be written either way - `x = ..., y = ..., z = ...` or
+    -- `coords = vector3(...)` - the same as every other list of places in this file.
+    --
+    --   label    what the blip and the prompt say. nil reads in the player's own language.
+    --   radius   how close they must stand, overriding `distance` above.
+    --   blip     false hides this one desk's blip while the others keep theirs.
+    --   enabled  false closes one desk without deleting it.
+    points = {
+        { label = 'Weazel News, reception', x = -598.51, y = -929.98, z = 23.86 },
     },
 }
 
@@ -1875,6 +2031,12 @@ Config.Chargers = {
       coords = vector3(-1223.0, -1493.0, 4.4), radius = 6.0 },
 }
 normalisePlaces(Config.Chargers)
+
+-- The verification desks, run through the same normaliser as everything else that sits on a
+-- coordinate. It happens here rather than beside `Config.SocialVerify` for one dull reason:
+-- `normalisePlaces` is declared further down this file than the social settings are, and a
+-- local is only in scope after its own line.
+normalisePlaces(Config.SocialVerify.points)
 
 -- ══════════════════════════════════════════════════════════════
 --  THE LOOK  (one place that changes the colour of the phone)
@@ -3751,11 +3913,22 @@ Config.Retention = {
     calls          = 30,   -- the call log
     voicemail      = 30,
 
-    socialPosts    = 30,   -- Bleeter and Snapmatic
-    socialComments = 30,
-    socialMessages = 30,   -- social direct messages
-    socialStories  = 1,    -- a story's whole life is a day
-    socialNotifs   = 14,
+    -- ── The social apps are not listed here, and that is the point ──
+    -- A bleet, a comment, a story and a social DM are swept by this file AND by the social
+    -- module's own sweep, out of the same four tables. While both carried a number the shorter
+    -- one won without saying so: posts set to sixty days above went at thirty, and
+    -- `socialRetentionS3` - a hundred and eighty days of feed for a server paying for its own
+    -- bucket - could never have taken effect at all.
+    --
+    -- One place answers it now: `Config.Settings.socialRetention*`, replaced by
+    -- `socialRetentionS3` when the media provider is s3, because those four follow the provider
+    -- and this section cannot see which one is running.
+    --
+    -- **A server that set one of them here still gets it.** `socialPosts`, `socialComments`,
+    -- `socialStories` and `socialMessages` are read before anything else except a convar, so an
+    -- existing config decides exactly as it did. They are absent by default, which is what lets
+    -- the settings above apply.
+    socialNotifs   = 14,   -- the notification rows, which no other sweep touches
 
     mail           = 30,   -- a letter nobody saved. Saved mail is kept whatever its age,
                            -- because saving it is somebody saying to keep it.
@@ -4494,7 +4667,9 @@ Config.Media = {
     enabled = false,
 
     -- 'fivemanage' is the one wired here. 'custom' posts to `endpoint` with `headers`,
-    -- for any host that takes a multipart file and answers with a URL.
+    -- for any host that takes a multipart file and answers with a URL. 's3' puts the file in
+    -- an S3-compatible bucket you rent yourself - Amazon, MEGA S4, MinIO, Cloudflare R2 - and
+    -- is configured in the `s3` block further down.
     provider = 'fivemanage',
 
     -- The upload endpoint. Fivemanage's v3 file API takes both images and video.
@@ -4508,8 +4683,49 @@ Config.Media = {
     -- The multipart field name the endpoint expects. Fivemanage uses `file`.
     formField = 'file',
 
-    -- Image encoding for photos: 'webp' (small), 'jpg', or 'png'.
+    -- Image encoding for photos: 'webp', 'jpg' or 'png'.
+    --
+    -- **'webp', and it is back to 'webp' because 'jpg' crashed a server.** The argument for JPEG
+    -- is real and unchanged: the frame is encoded in the player's own browser, on the same CPU
+    -- the game is rendering with, and in the Chromium engine FiveM's CEF is built on WebP takes
+    -- eight to ten times longer at every resolution. Half a second of shutter is worth having
+    -- back.
+    --
+    -- What made it dangerous was not JPEG. `screencapture` composes the canvas type by writing
+    -- `image/` in front of whatever this says, and `image/jpg` is not a type any canvas accepts:
+    -- the browser silently produced a full-frame lossless PNG instead, ten times the bytes, with
+    -- `imageQuality` ignored. That is fixed at the source now - server/media.lua translates the
+    -- extension into the media subtype the canvas wants, so every value here is safe.
+    --
+    -- This is still 'webp' rather than 'jpg' because 'webp' is the value that was running when
+    -- the camera was last known good, and because it is the one spelling that is correct however
+    -- it is composed. Set 'jpg' for the faster shutter once you have taken a photograph and
+    -- confirmed with `vphone_media_last` that the stored file is a few hundred kilobytes.
     imageEncoding = 'webp',
+
+    -- How hard the frame is compressed, 0..1. Ignored by 'png', which is lossless.
+    --
+    -- **0.7 rather than 0.85, and it was measured rather than picked.** JPEG is much faster to
+    -- encode than WebP but it is not smaller: at 0.85 a 1080p frame comes out at 436 KB against
+    -- WebP's 309 KB, and those extra bytes travel from the player's machine to the server as a
+    -- single event. On a modest upstream that hands back most of what the faster encode won.
+    --
+    -- At 0.7 the same frame is 311 KB - within one percent of WebP at both 1080p and 1440p -
+    -- and still encodes in a tenth of the time. So the file on the wire is the size it always
+    -- was, and only the wait is gone. Nothing here is a trade.
+    imageQuality = 0.7,
+
+    -- **The size the photograph is encoded and sent at, which is not the size of the screen.**
+    --
+    -- Never sent before, so a player on a 4K monitor encoded and uploaded a 3840x2160 frame -
+    -- thirty times the pixels the phone can draw, paid for twice over: once in encode time on
+    -- their machine, once in a base64 string that travels to the server as a single net event
+    -- and can reach several megabytes. The gallery shows a thumbnail at about 400 px and a
+    -- full-screen photograph at about 800.
+    --
+    -- Raise it if your players view photographs outside the phone; 0 removes the cap.
+    maxWidth = 1280,
+    maxHeight = 720,
 
     -- ── Video recording: OFF ───────────────────────────────────
     -- `video = nil` removes it entirely: the Video tab is not drawn, the record button does
@@ -4533,6 +4749,56 @@ Config.Media = {
     --  },
     video = nil,
 
+    -- ── Your own bucket ────────────────────────────────────────
+    -- Only read when `provider = 's3'`.
+    --
+    -- **The two secrets go in server.cfg, never here.** config.lua is a file people copy,
+    -- diff and paste into a support channel; server.cfg is not. The convars win over anything
+    -- written below, and are the documented way:
+    --
+    --     set phone_s3_key    "AKIA..."
+    --     set phone_s3_secret "..."
+    --
+    -- Before going live, run `vphone_s3_test` once in the server console. Two values cannot be
+    -- read out of any documentation and have to be discovered against the real bucket - the
+    -- region string the service expects in the signature, and whether it wants path-style or
+    -- virtual-hosted addressing - and a wrong region answers `SignatureDoesNotMatch`, which
+    -- reads exactly like a wrong secret and sends you to check the wrong thing. The command
+    -- uploads one pixel, tries the combinations, prints the pair that worked, and tidies up.
+    s3 = {
+        -- The service host, WITHOUT the bucket and without https://.
+        --   Amazon      s3.eu-west-3.amazonaws.com
+        --   MEGA S4     s3.g.megas4.com
+        --   MinIO       storage.example.com
+        endpoint = '',
+
+        bucket = '',
+
+        -- The region as it appears in the signature. `vphone_s3_test` finds it for you.
+        region = 'us-east-1',
+
+        -- false puts the bucket in the hostname (`bucket.host`), true puts it in the path
+        -- (`host/bucket`). `vphone_s3_test` finds this too.
+        pathStyle = false,
+
+        -- A folder inside the bucket, so the phone's files sit apart from anything else you
+        -- keep there. Trailing slash added for you.
+        keyPrefix = 'vphone',
+
+        -- The address a PLAYER loads the picture from, if it is not the bucket's own.
+        -- Leave empty unless the bucket sits behind a CDN or a custom domain.
+        --
+        -- **The bucket must serve these objects publicly.** A phone shows a photograph a year
+        -- after it was taken, and a presigned link expires after seven days at the outside, so
+        -- there is no signed-URL arrangement that survives the retention below. Grant public
+        -- object access on the phone's bucket - and only on it.
+        publicBase = '',
+
+        -- Used only when the convars above are unset. Prefer the convars.
+        accessKey = '',
+        secretKey = '',
+    },
+
     -- ── Auto-deletion ──────────────────────────────────────────
     -- The phone tracks every file it uploaded in `vphone_media` and removes it after this
     -- many days: the row goes, and the file is deleted from the host if `deleteEndpoint`
@@ -4541,6 +4807,23 @@ Config.Media = {
     -- Fivemanage also has its own retention; this is the phone's own clock on top of it,
     -- so a server keeps control even if it changes host.
     autoDeleteDays = 30,
+
+    -- Per provider, because the two are not the same kind of storage.
+    --
+    -- A hosted CDN is somebody else's quota on a monthly plan; thirty days is generous there.
+    -- A bucket you rent by the gigabyte is yours, and keeping a year of it is the reason to
+    -- pay for one. Whichever provider uploaded a file decides its life, and the expiry is
+    -- stamped on the row at upload - so changing this later does not retroactively move files
+    -- that are already stored.
+    --
+    -- **A file that something still shows is never deleted, whatever these say.** The sweep
+    -- asks first and pushes the expiry out if a post, a message, an avatar or a gallery still
+    -- points at it. These are a floor, not a guillotine.
+    retentionDays = {
+        fivemanage = 30,
+        custom     = 30,
+        s3         = 365,
+    },
 
     -- How the host deletes a file, if it can. `{id}` and `{url}` are filled in. Left
     -- empty, the phone only forgets the file (drops the row) and leaves the host to its

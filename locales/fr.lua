@@ -88,6 +88,15 @@ local T = {
     ['ph.soc_already_attached'] = "Cette photo est déjà jointe.",
     ['ph.pick_photo'] = "Choisir une photo",
     ['ph.soc_verified'] = "Compte certifié",
+    ['ph.soc_official'] = "Compte officiel",
+    -- Le point sur la carte qui vend la certification bleue. L'orange ne se vend jamais.
+    ['ph.verify_desk']  = "Guichet de certification",
+    ['ph.verify_title'] = "Se faire certifier",
+    ['ph.verify_line']  = "Une pastille à côté de votre nom, sur l'application de votre choix.",
+    ['ph.verify_foot']  = "Une certification par application. L'acheter sur l'une laisse l'autre en l'état.",
+    ['ph.verify_bank']  = "Payé depuis votre compte bancaire.",
+    ['ph.verify_cash']  = "Payé en espèces.",
+    ['ph.verify_done']  = "Votre compte est certifié",
     ['ph.soc_pick_avatar'] = "Choisir une photo de profil",
     ['ph.soc_pick_cover'] = "Choisir une photo de couverture",
     ['ph.all_photos'] = "Toutes",
@@ -224,9 +233,6 @@ local T = {
     ['ph.err_badop'] = 'Action non supportee',
     ['ph.mail_forward'] = "Transferer",
     ['app.gallery'] = "Galerie",
-    ['ph.cam_photo'] = 'PHOTO',
-    ['ph.landscape'] = 'Paysage',
-    ['ph.vf_hint'] = 'Entrée photographie, flèche haut retourne, retour arrière ferme',
     ['ph.airdrop'] = "FruitDrop",
     ['ph.airdrop_share'] = "Partager avec FruitDrop",
     ['ph.airdrop_hint'] = "Appareils à proximité avec le Bluetooth activé.",
@@ -262,6 +268,7 @@ local T = {
     ['ph.cam_exit_hint'] = 'Fermer : ~INPUT_CELLPHONE_CANCEL~',
     ['ph.cam_flip_hint'] = 'Avant/arrière : ~INPUT_PHONE~',
     ['ph.cam_shoot_hint'] = 'Prendre la photo : ~INPUT_CELLPHONE_SELECT~',
+    ['ph.cam_sending_hint'] = 'Envoi de la photo...',
     ['ph.code_copied']      = 'Code copié',
     ['ph.use_code']         = 'Utiliser le code',
     ['ph.send']      = 'Envoyer',
@@ -397,7 +404,8 @@ local T = {
     ['ph.err_denied'] = "Non autorisé",
     ['ph.err_disabled'] = "C'est désactivé sur ce serveur",
     ['ph.err_forbidden'] = "Non autorisé",
-    ['ph.err_gone'] = "Ce n'est plus là",
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.err_inuse'] = "C'est déjà pris",
     ['ph.err_key'] = "Vous n'avez pas la clé",
     ['ph.err_length'] = "C'est trop long",
@@ -413,6 +421,11 @@ local T = {
     ['ph.err_notatbooth'] = "Vous n'êtes pas à une cabine",
     ['ph.err_notatterminal'] = "Vous n'êtes pas au terminal",
     ['ph.err_notinstalled'] = "Cette application n'est pas installée",
+    -- Les refus du guichet de certification. Chacun sert aussi de sous-titre à la ligne qu'il
+    -- refuse, pour que la raison soit à l'écran avant le clic et non après.
+    ['ph.err_badapp'] = "Cette application ne se certifie pas ici",
+    ['ph.err_hasbadge'] = "Ce compte est déjà certifié",
+    ['ph.err_paying'] = "Un achat est déjà en cours",
     ['ph.err_nourl'] = "Aucun lien indiqué",
     ['ph.err_nouser'] = "Aucun compte de ce nom",
     ['ph.err_passcode'] = "Code incorrect",
@@ -436,6 +449,7 @@ local T = {
     ['ph.err_callfull']  = 'Cet appel est complet',
     ['ph.err_addbusy']   = "Quelqu'un est déjà en train d'être appelé",
     ['ph.err_already']   = 'Cette personne est déjà sur cet appel',
+    ['ph.err_postgone']  = "Cette publication n'est plus disponible",
     ['ph.err_fields']   = 'Un nom et un numéro sont nécessaires',
     ['ph.err_unknown']  = 'Application inconnue',
     ['ph.home'] = 'Accueil',
@@ -738,7 +752,8 @@ local T = {
     ['ph.glass_hint'] = 'À quel point le verre diffuse ce qui est derrière lui.',
     ['ph.err_funds'] = "Vous n'avez pas les moyens",
     ['ph.err_noprop'] = "Ce logement n'existe pas",
-    ['ph.err_notyours'] = "Ce n'est pas à vous de le contrôler",
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.err_nosource'] = "Ce n'est plus en lecture",
     ['ph.err_far'] = 'Vous êtes trop loin',
     ['ph.err_notcop'] = 'Réservé à la police',
@@ -839,7 +854,6 @@ local T = {
     ['ph.no_photos'] = 'Aucune photo',
     ['ph.fullscreen']      = 'Plein écran',
     ['ph.photo_del_sure']  = 'Supprimer cette photo ?',
-    ['ph.shooting'] = 'Prise de la photo',
     ['ph.set_wallpaper'] = "Définir comme fond d'écran",
     ['ph.wall_set'] = "Fond d'écran modifié",
     ['ph.wall_url'] = 'Lien de l’image',
@@ -1072,6 +1086,8 @@ local T = {
     ['ph.err_noupload'] = 'Aucune destination d’envoi configurée',
     ['ph.err_capture']  = "L'enregistrement n'est pas allé au bout",
     ['ph.err_upload'] = "L'envoi a échoué",
+    ['ph.err_shotbusy'] = "La photo précédente est encore en cours d'envoi",
+    ['ph.err_toolarge'] = 'Cette photo était trop lourde pour être envoyée',
     ['ph.no_card'] = 'Aucune carte bancaire',
     ['ph.no_card_hint'] = 'Commandez-en une à une banque ou un distributeur.',
     ['ph.copy_link']    = 'Copier le lien',
@@ -2029,9 +2045,11 @@ local T = {
     ['ph.err_password'] = "Mot de passe trop court (4 min.)",
     ['ph.err_exists'] = "Vous avez déjà un compte",
     ['ph.err_badpass'] = "Mot de passe incorrect",
-    ['ph.soc_avatar'] = "Lien d'avatar (facultatif)",
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.soc_cover'] = "URL de l'image de couverture",
-    ['ph.soc_bio'] = 'Bio (facultatif)',
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.soc_create'] = 'Créer le compte',
     ['ph.soc_made'] = 'Bienvenue sur le réseau',
     ['ph.bleet_new'] = 'Nouveau bleet',
@@ -2420,6 +2438,7 @@ local T = {
     ['ph.view_in_store'] = 'Voir dans le FruitStore',
     ['ph.action_app_saved'] = 'Bouton Action configuré',
     ['ph.pick_contact'] = 'Choisir un contact',
+    ['ph.photo_gone'] = "Photo n'est plus disponible",
     ['ph.photo'] = 'Photo',
     ['ph.confirm'] = 'Confirmer',
     ['ph.share'] = 'Partager',
@@ -2449,6 +2468,12 @@ local T = {
     ['ph.soc_n_follow'] = "{who} vous suit",
     ['ph.soc_n_mention'] = "{who} vous a mentionné",
     ['ph.soc_n_other'] = "{who} a fait quelque chose",
+    -- La notification horaire. `%s` est le nom de l'application, `%d` le nombre de publications
+    -- parues depuis la dernière visite de ce joueur. Deux chaînes plutôt qu'une avec « (s) »,
+    -- parce que le singulier est le cas le plus fréquent sur un serveur calme.
+    ['ph.soc_nudge_title'] = 'Du nouveau sur %s',
+    ['ph.soc_nudge_one'] = '1 nouvelle publication depuis votre dernière visite',
+    ['ph.soc_nudge_many'] = '%d nouvelles publications depuis votre dernière visite',
     ['ph.soc_trending'] = "Tendances",
     ['ph.soc_save'] = "Enregistrer",
     ['ph.soc_saved'] = "Enregistres",
@@ -2503,7 +2528,8 @@ local T = {
     ['ph.soc_day'] = 'j',
     ['ph.hush_matches'] = 'Matchs',
     ['ph.hush_write'] = 'Message',
-    ['ph.hush_say_hi'] = 'Vous avez matche. Dites quelque chose.',
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.hush_unmatch_hint'] = 'Retirer le match supprime la conversation sur les deux téléphones. Aucun des deux ne peut revenir en arrière.',
     ['ph.hush_unmatched'] = 'Match retire.',
     ['ph.hush_no_matches'] = 'Aucun match',
@@ -2541,12 +2567,9 @@ local T = {
     ['ph.err_nothing'] = 'Rien à annuler',
     -- Social, cote serveur : ce que le telephone ecrit pour le joueur
     ['soc.match_line'] = 'On a matche sur Hush !',
-    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reinitialise.',    ['ph.cam_video'] = 'VIDÉO',
-    ['ph.clip_ready'] = 'Clip prêt',
-    ['ph.clip_posted'] = 'Clip publie',
+    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reinitialise.',
     ['ph.facetime'] = 'FaceTime',
     ['ph.facetime_video'] = 'Appel vidéo',
-    ['ph.cam_selfie'] = 'Camera avant',
 
     -- Appels, confidentialite et notifications, dans les Reglages
     ['ph.calls_privacy'] = 'Appels et confidentialité',

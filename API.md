@@ -236,29 +236,125 @@ phone:SocialPostAs(citizenid, 'text', 'Body', imageUrl)  --> boolean
 ```lua
 phone:GetPhoneInfo()
 --> {
---     version = '1.0.2', framework = 'qb', frameworkResource = 'qb-core',
---     inventory = 'ox_inventory', numberFormat = '555-####',
+--     version = <whatever fxmanifest.lua declares>, framework = 'qb',
+--     frameworkResource = 'qb-core', inventory = 'ox_inventory',
+--     numberFormat = '555-####',
 --     apps = { 'phone', 'messages', ... }, social = true,
 --   }
 ```
 
-Useful in a `/phonedebug` command: it says what the phone decided at boot, which is the
-first question when an integration is not behaving.
+`version` is read from the resource metadata at call time rather than written anywhere in Lua,
+so it is always the running build. Useful in a `/phonedebug` command: this says what the phone
+decided at boot, which is the first question when an integration is not behaving.
 
 #### Console commands
+
+Every one of these is **server console only** - `src ~= 0` returns immediately - because what
+they print is headers, addresses and credentials-adjacent detail.
 
 ```
 vphone_update       ask GitHub whether a newer release exists, and print the answer
 vphone_media_test   post a one-pixel PNG to the configured upload endpoint, and print the
                     status the host answers with
+vphone_s3_test      upload one pixel to the S3 bucket under every plausible region and
+                    addressing style, print the pair that worked with the `set` lines to
+                    paste, then fetch the same object with no credentials to say whether a
+                    browser can read it
+vphone_media_last   the last five rows of `vphone_media`: the stored address, the key or
+                    file id beside it, image or clip, and the expiry or `never`
+vphone_ox_test      ask ox_core which of the exports the money path reads actually answer,
+                    what raised, and whether the account arrives with its methods
 ```
 
-Both are server console only. `vphone_media_test` exists because a failed upload reports
-`write EPIPE`, which is the host closing the connection part way through the body: no status
-code, no message, and a rejected key, an exhausted quota and an oversized file all look exactly
-alike. The command takes screencapture out of the middle and asks the endpoint directly, with a
-file small enough that size cannot be the answer. **401 or 403 is the key. 413 is the size. 429
-is the quota. No answer at all means the host hung up on a one-pixel file, which is the key.**
+`phoneclean` is the sixth, and the only one that is not console-exclusive: it also runs in game
+behind `Config.Admin.ace`. See [the README](README.md#emptying-an-app).
+
+`vphone_media_test` exists because a failed upload reports `write EPIPE`, which is the host
+closing the connection part way through the body: no status code, no message, and a rejected key,
+an exhausted quota and an oversized file all look exactly alike. The command takes screencapture
+out of the middle and asks the endpoint directly, with a file small enough that size cannot be the
+answer. **401 or 403 is the key. 413 is the size. 429 is the quota. No answer at all means the
+host hung up on a one-pixel file, which is the key.**
+
+`vphone_s3_test` answers the two questions no documentation can: the region string the signature
+must carry, and path-style against virtual-hosted addressing. A wrong region answers
+`SignatureDoesNotMatch`, which reads exactly like a wrong secret key. The probe writes under
+`<keyPrefix>/probe/`, the same prefix real uploads use, so a bucket policy correctly scoped to
+that prefix does not fail a test it should pass. The pixel is deleted once the answer is known,
+and **left in place with its key printed** when the readability check could not be made from the
+server at all.
+
+### Media and storage
+
+Photographs are captured through `screencapture` and uploaded **from the server**, so the
+credential that pays for the storage never reaches a player. Where they go is
+`Config.Media.provider`, or `set phone_media_provider` which beats it: `fivemanage`, `custom`, or
+`s3` for a bucket you rent yourself. The whole of the setup is in
+[the README](README.md#media-hosting); this is what the code publishes.
+
+**None of the following is an `exports[...]` call from another resource.** They are globals inside
+this resource's own server context, which is where a drop-in app's server file runs too - see
+[DEVELOPERS.md](DEVELOPERS.md). They are listed because an app that stores a picture has to know
+what the sweep will do with it.
+
+```lua
+Bridge.MediaEnabled()             --> boolean. Hosting on AND `screencapture` started.
+                                  --  Both. A bucket with no capture resource is off.
+Bridge.MediaVideoEnabled()        --> boolean. The above, and Config.Media.video set.
+
+Bridge.MediaRetentionDays(prov)   --> days for that provider, or for the current one when
+                                  --  no name is given. 0 means keep for ever.
+Bridge.MediaHasUrl(url)           --> boolean. Did this phone upload that address?
+Bridge.MediaReferencedBy(url)     --> the place still showing it, or nil. The PLACE, not a
+                                  --  boolean, so a log can say why a file was kept.
+Bridge.MediaForgetSettings(url)   --  clear the settings that merely point at it (wallpaper,
+                                  --  avatar, gallery tile), so they fall back to their
+                                  --  designed placeholder rather than to a hole.
+Bridge.MediaDeleteOne(url, id)    --> boolean. Ask the host to delete one file, the same way
+                                  --  the sweep asks. false means it refused or was unreachable.
+Bridge.S3DeleteObject(key)        --> boolean. One object, by KEY. A full URL is refused
+                                  --  rather than guessed at.
+Bridge.MediaSweep()               --> how many rows it removed this pass.
+```
+
+**A file something still shows is never deleted**, whatever the retention says: the expiry moves
+a week out instead. So an app that puts a phone photograph on screen should store the URL in a
+table `Bridge.MediaReferencedBy` knows about, or accept that its picture expires on the file's own
+clock. The reference check ignores the fragment, because the gallery appends its edit recipe there
+and an exact match would read every retouched photograph as unused.
+
+#### The Node side
+
+`server/s3.js` is the one server script in this resource that is not Lua, and it is JS for three
+reasons: `PerformHttpRequest` hands its body to curl without a length so it stops at the first NUL
+byte, which every encoded image contains; that same path disables TLS peer verification, and this
+request carries the bucket secret; and CfxLua has no SHA-256 or HMAC, which AWS Signature V4 needs.
+It requires `node_version '22'`, declared in `fxmanifest.lua` and used by nothing else.
+
+Its four exports are called by `server/media.lua` and take the whole configuration per call, so a
+convar changed at run time takes effect with no restart and there is no second copy of the
+credentials to keep in step. Every one answers through a callback with a JSON string.
+
+```lua
+exports[GetCurrentResourceName()]:s3Put(cfgJson, key, payload, contentType, cb)
+--> { ok = true, url = '...', key = '...' }
+--> { ok = false, error = 'http'|'toolarge'|'empty'|<transport>, status = 403, body = '<XML>' }
+
+exports[GetCurrentResourceName()]:s3Delete(cfgJson, key, cb)
+--> { ok = true|false, status = 204 }     -- 404 counts as ok: for a sweep it is the same outcome
+
+exports[GetCurrentResourceName()]:s3Probe(cfgJson, regionsJson, cb)
+--> { ok = true, region = '...', pathStyle = false, url = '...', publicRead = 200,
+--    leftBehind = nil, tried = { { region, pathStyle, ok, status, error }, ... } }
+
+exports[GetCurrentResourceName()]:mediaPost(url, headersJson, fieldName, payload, cb)
+--> { ok = true, response = <parsed JSON>, raw = nil }   -- the hosted-CDN multipart POST
+```
+
+`payload` is a `data:` URI or a bare base64 string; both shapes are accepted because which one
+`screencapture` answers with has changed between its releases. A PUT is retried once because it is
+idempotent; the multipart POST is retried once too and never after a 4xx, which is a deliberate
+trade - a duplicated file on your quota is cheaper than a lost photograph.
 
 ### 911
 
@@ -552,6 +648,12 @@ phone:StopMusic(src)
 -- whitelist script can do it as part of something bigger.
 phone:SetVerified('bleeter', handle, true)   --> boolean
 phone:VerifiedHandles('bleeter')             --> { handle, ... }
+
+-- The ORANGE official mark, which is a different badge rather than a higher one. Players buy
+-- the blue tick at a desk on the map; nothing buys this. It is a separate column, so granting
+-- or revoking either colour never touches the other.
+phone:SetOfficial('bleeter', handle, true)   --> boolean
+phone:OfficialHandles('bleeter')             --> { handle, ... }
 ```
 
 #### Paid charging
@@ -642,10 +744,20 @@ brick    [id|cid] (minutes)                  take one handset out of service
 unbrick  [id|cid]
 bricked                                      who is out of service
 
-verify   [@handle] (off) (snap)              the verified badge
-verified (snap)
+verify     [@handle] (off) (snap)            the BLUE verified badge
+verified   (snap)                            who holds the blue one
+unverifyall (bleeter|snap)                   take the blue tick off every account, both apps
+                                             when no app is named
+official   [@handle] (off) (snap)            the ORANGE official mark
+officials  (snap)                            who holds the orange one
 wipe     [id|cid] confirm                    IRREVERSIBLE
 ```
+
+**The two badges are two separate columns, not two levels of one.** The blue tick is bought by
+the player at a desk in the world (`Config.SocialVerify`); the orange mark is granted here and by
+nothing else - no callback writes that column, so there is no message a client could send that
+would. An account can hold both, revoking one leaves the other where it was, and each is per app.
+Both go through exports rather than callbacks.
 
 Each subcommand has its own switch in `Config.Admin.actions`, so an action you do not want
 staff to have can be removed entirely rather than trusted not to be typed.
@@ -903,7 +1015,109 @@ phone:GetPhoneInfo()
 ```
 
 Utile dans une commande `/phonedebug` : il dit ce que le telephone a decide au
-demarrage, ce qui est la premiere question quand une integration se comporte mal.
+demarrage, ce qui est la premiere question quand une integration se comporte mal. `version` est
+lu dans les metadonnees de la ressource au moment de l appel, donc c est toujours la version qui
+tourne.
+
+#### Commandes console
+
+Toutes sont **console serveur uniquement** - `src ~= 0` sort immediatement - parce que ce qu elles
+affichent, ce sont des en-tetes et des adresses.
+
+```
+vphone_update       demander a GitHub si une release plus recente existe
+vphone_media_test   envoyer un PNG d un pixel a l endpoint configure et afficher le statut
+vphone_s3_test      envoyer un pixel dans le bucket S3 sous chaque region et chaque style
+                    d adressage plausibles, afficher la paire qui a marche avec les lignes
+                    `set` a coller, puis relire le meme objet sans identifiant pour dire si
+                    un navigateur peut le lire
+vphone_media_last   les cinq dernieres lignes de `vphone_media` : l adresse enregistree, la
+                    cle ou l identifiant de fichier a cote, image ou clip, et l echeance
+vphone_ox_test      demander a ox_core lesquels des exports lus par le chemin argent repondent
+```
+
+`phoneclean` est la sixieme, et la seule qui ne soit pas exclusivement console : elle tourne aussi
+en jeu derriere `Config.Admin.ace`. Voir [le README](README.md#vider-une-application).
+
+**401 ou 403, c est la cle. 404, c est l endpoint. 413, c est la taille. 429, c est le quota.**
+Aucune reponse du tout veut dire que l hote a raccroche sur un fichier d un pixel, ce qui est
+encore la cle.
+
+### Medias et stockage
+
+Les photos sont capturees par `screencapture` et envoyees **depuis le serveur**, pour que
+l identifiant qui paie le stockage n atteigne jamais un joueur. Ou elles vont est
+`Config.Media.provider`, ou `set phone_media_provider` qui l emporte : `fivemanage`, `custom`, ou
+`s3` pour un bucket que vous louez vous-meme. Toute la mise en place est dans
+[le README](README.md#hébergement-des-médias) ; voici ce que le code publie.
+
+**Rien de ce qui suit n est un appel `exports[...]` depuis une autre ressource.** Ce sont des
+globales du contexte serveur de cette ressource, la ou tourne aussi le fichier serveur d une
+application deposee - voir [DEVELOPERS.md](DEVELOPERS.md). Elles sont listees parce qu une
+application qui range une image doit savoir ce que le balayage en fera.
+
+```lua
+Bridge.MediaEnabled()             --> booleen. Hebergement actif ET `screencapture` demarre.
+                                  --  Les deux. Un bucket sans ressource de capture est inactif.
+Bridge.MediaVideoEnabled()        --> booleen. Le precedent, et Config.Media.video renseigne.
+
+Bridge.MediaRetentionDays(prov)   --> jours pour cet hebergeur, ou pour l actuel sans nom.
+                                  --  0 signifie garder pour toujours.
+Bridge.MediaHasUrl(url)           --> booleen. Ce telephone a-t-il envoye cette adresse ?
+Bridge.MediaReferencedBy(url)     --> l endroit qui l affiche encore, ou nil. L ENDROIT, pas un
+                                  --  booleen, pour qu un journal puisse dire pourquoi un
+                                  --  fichier est garde.
+Bridge.MediaForgetSettings(url)   --  effacer les reglages qui ne font que pointer dessus (fond
+                                  --  d ecran, avatar, vignette), pour qu ils retombent sur
+                                  --  l espace reserve prevu plutot que sur un trou.
+Bridge.MediaDeleteOne(url, id)    --> booleen. Demander la suppression d un fichier chez
+                                  --  l hebergeur, exactement comme le fait le balayage.
+Bridge.S3DeleteObject(cle)        --> booleen. Un objet, par CLE. Une URL entiere est refusee
+                                  --  plutot que devinee.
+Bridge.MediaSweep()               --> le nombre de lignes retirees a ce passage.
+```
+
+**Un fichier que quelque chose affiche encore n est jamais supprime**, quoi que dise la
+retention : l echeance recule d une semaine a la place. Une application qui met une photo du
+telephone a l ecran doit donc ranger l URL dans une table que `Bridge.MediaReferencedBy` connait,
+ou accepter que son image expire sur l horloge du fichier. Le controle ignore le fragment, parce
+que la galerie y ajoute sa recette de retouche et qu une comparaison exacte lirait toute photo
+retouchee comme inutilisee.
+
+#### Le cote Node
+
+`server/s3.js` est le seul script serveur de cette ressource qui n est pas du Lua, et il est en JS
+pour trois raisons : `PerformHttpRequest` passe son corps a curl sans longueur, donc il s arrete au
+premier octet nul, que contient toute image encodee ; ce meme chemin desactive la verification TLS
+alors que la requete porte le secret du bucket ; et CfxLua n a ni SHA-256 ni HMAC, dont AWS
+Signature V4 a besoin. Il exige `node_version '22'`, declare dans `fxmanifest.lua` et utilise par
+rien d autre.
+
+Ses quatre exports sont appeles par `server/media.lua` et recoivent toute la configuration a chaque
+appel, pour qu un convar change a l execution prenne effet sans redemarrage et qu il n y ait pas
+une seconde copie des identifiants a tenir a jour. Chacun repond par un callback portant une
+chaine JSON.
+
+```lua
+exports[GetCurrentResourceName()]:s3Put(cfgJson, cle, payload, contentType, cb)
+--> { ok = true, url = '...', key = '...' }
+--> { ok = false, error = 'http'|'toolarge'|'empty'|<transport>, status = 403, body = '<XML>' }
+
+exports[GetCurrentResourceName()]:s3Delete(cfgJson, cle, cb)
+--> { ok = true|false, status = 204 }     -- 404 compte comme ok : pour un balayage, meme resultat
+
+exports[GetCurrentResourceName()]:s3Probe(cfgJson, regionsJson, cb)
+--> { ok = true, region = '...', pathStyle = false, url = '...', publicRead = 200,
+--    leftBehind = nil, tried = { { region, pathStyle, ok, status, error }, ... } }
+
+exports[GetCurrentResourceName()]:mediaPost(url, headersJson, fieldName, payload, cb)
+--> { ok = true, response = <JSON analyse>, raw = nil }   -- le POST multipart vers le CDN
+```
+
+`payload` est une URI `data:` ou une simple chaine base64 ; les deux formes sont acceptees parce
+que celle que renvoie `screencapture` a change entre ses versions. Un PUT est retente une fois
+parce qu il est idempotent ; le POST multipart aussi, et jamais apres un 4xx, ce qui est un
+arbitrage assume : un fichier en double sur votre quota coute moins cher qu une photo perdue.
 
 ### Recharge externe
 
@@ -1091,6 +1305,12 @@ phone:StopMusic(src)
 -- exports sont la pour qu un script de liste blanche puisse le faire dans un ensemble plus large.
 phone:SetVerified('bleeter', handle, true)   --> boolean
 phone:VerifiedHandles('bleeter')             --> { handle, ... }
+
+-- La marque officielle ORANGE, qui est un autre badge et non un badge superieur. Les joueurs
+-- achetent la pastille bleue a un guichet sur la carte ; rien n achete celle-ci. C est une
+-- colonne separee : accorder ou retirer une couleur ne touche jamais l autre.
+phone:SetOfficial('bleeter', handle, true)   --> boolean
+phone:OfficialHandles('bleeter')             --> { handle, ... }
 ```
 
 #### Recharge payante

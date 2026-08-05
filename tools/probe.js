@@ -106,6 +106,12 @@ async function vphoneProbe() {
   // The list is captured, and put back before each app. Several renderers call `refresh()`,
   // which replaces `state.apps` with the server's own - so the twelve installed above vanished
   // partway through and the sweep quietly finished on twenty-one of thirty-three.
+  // An app that draws nothing is normally a renderer that failed. The Camera is the exception
+  // and it is deliberate: the viewfinder belongs to the game, so opening the app asks the client
+  // for camera mode and paints not one pixel. Anything it drew would float over the shot the
+  // player is composing and land in the photograph, because the capture is the whole viewport.
+  const DRAWS_NOTHING = new Set(['camera']);
+
   const all = (state.apps || []).slice();
   const problems = [];
   for (const app of all) {
@@ -119,7 +125,7 @@ async function vphoneProbe() {
 
     const body = document.getElementById('appbody');
     const text = (body ? body.textContent : '').trim();
-    if (body && body.innerHTML.trim().length < 40) row.empty = true;
+    if (body && body.innerHTML.trim().length < 40 && !DRAWS_NOTHING.has(app.id)) row.empty = true;
     const key = text.match(/\b(?:ph|app)\.[a-z0-9_]+/); if (key) row.rawLocaleKey = key[0];
     const junk = text.match(/\bundefined\b|\bNaN\b|\[object Object\]/); if (junk) row.printed = junk[0];
     if (body && body.scrollWidth > body.clientWidth + 1) row.scrollsSideways = body.scrollWidth - body.clientWidth;

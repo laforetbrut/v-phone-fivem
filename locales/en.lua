@@ -86,6 +86,15 @@ local T = {
     ['ph.pick_photo_n'] = 'Add a photo ({n}/{max})',
     ['ph.soc_already_attached'] = 'That photo is already attached.',
     ['ph.soc_verified'] = "Verified account",
+    ['ph.soc_official'] = "Official account",
+    -- The desk on the map that sells the blue tick. The orange one is never sold.
+    ['ph.verify_desk']  = "Verification desk",
+    ['ph.verify_title'] = "Get verified",
+    ['ph.verify_line']  = "A tick beside your name, on the app you choose.",
+    ['ph.verify_foot']  = "One badge per app. Buying it on one leaves the other as it was.",
+    ['ph.verify_bank']  = "Paid from your bank account.",
+    ['ph.verify_cash']  = "Paid in cash.",
+    ['ph.verify_done']  = "Your account is verified",
     ['ph.soc_pick_avatar'] = "Choose a profile picture",
     ['ph.soc_pick_cover'] = "Choose a cover photo",
     ['ph.all_photos'] = "All",
@@ -222,9 +231,6 @@ local T = {
     ['ph.err_badop'] = 'Unsupported action',
     ['ph.mail_forward'] = "Forward",
     ['app.gallery'] = "Gallery",
-    ['ph.cam_photo'] = 'PHOTO',
-    ['ph.landscape'] = 'Landscape',
-    ['ph.vf_hint'] = 'Enter photographs, arrow up flips, backspace closes',
     ['ph.airdrop'] = "FruitDrop",
     ['ph.airdrop_share'] = "Share with FruitDrop",
     ['ph.airdrop_hint'] = "Nearby devices with Bluetooth on.",
@@ -260,6 +266,10 @@ local T = {
     ['ph.cam_exit_hint'] = 'Close: ~INPUT_CELLPHONE_CANCEL~',
     ['ph.cam_flip_hint'] = 'Front/back: ~INPUT_PHONE~',
     ['ph.cam_shoot_hint'] = 'Take the photo: ~INPUT_CELLPHONE_SELECT~',
+    -- On screen while the picture is on its way to the host. It is the only thing a player can
+    -- see during an upload: the handset is off screen for the whole camera session, so every
+    -- message the phone itself raises here is drawn on something invisible.
+    ['ph.cam_sending_hint'] = 'Sending the photo...',
     ['ph.code_copied']      = 'Code copied',
     ['ph.use_code']         = 'Use code',
     ['ph.send']      = 'Send',
@@ -395,7 +405,8 @@ local T = {
     ['ph.err_denied'] = "Not allowed",
     ['ph.err_disabled'] = "That is switched off on this server",
     ['ph.err_forbidden'] = "Not allowed",
-    ['ph.err_gone'] = "That is no longer there",
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.err_inuse'] = "That is already taken",
     ['ph.err_key'] = "You do not have a key for that",
     ['ph.err_length'] = "That is too long",
@@ -411,6 +422,11 @@ local T = {
     ['ph.err_notatbooth'] = "You are not at a phone box",
     ['ph.err_notatterminal'] = "You are not at the terminal",
     ['ph.err_notinstalled'] = "That app is not installed",
+    -- The verification desk's refusals. Each is also the subtitle on the row it refuses, so
+    -- the reason is on screen before anything is tapped rather than after.
+    ['ph.err_badapp'] = "That app cannot be verified here",
+    ['ph.err_hasbadge'] = "That account is already verified",
+    ['ph.err_paying'] = "A purchase is already going through",
     ['ph.err_nourl'] = "No link given",
     ['ph.err_nouser'] = "No such account",
     ['ph.err_passcode'] = "Wrong passcode",
@@ -434,6 +450,12 @@ local T = {
     ['ph.err_callfull']  = 'This call is full',
     ['ph.err_addbusy']   = 'Someone is already being called',
     ['ph.err_already']   = 'They are already on this call',
+    -- A paid post whose photograph has expired. Refused BEFORE the money moves.
+    --
+    -- NOT `err_expired`: that name is already taken further down for a verification code, and
+    -- a duplicate key in a Lua table keeps the LAST one - so this string existed, was never
+    -- reached, and the player was told "Code expired, send a new one" instead.
+    ['ph.err_postgone']  = 'That post is no longer available',
     ['ph.err_fields']   = 'A name and a number are needed',
     ['ph.err_unknown']  = 'Unknown app',
     ['ph.home'] = 'Home',
@@ -736,7 +758,8 @@ local T = {
     ['ph.glass_hint'] = 'How much the glass diffuses what is behind it.',
     ['ph.err_funds'] = 'You cannot afford that',
     ['ph.err_noprop'] = 'No such property',
-    ['ph.err_notyours'] = 'That is not yours to control',
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.err_nosource'] = 'That is no longer playing',
     ['ph.err_far'] = 'You are too far away',
     ['ph.err_notcop'] = 'Police only',
@@ -837,7 +860,6 @@ local T = {
     ['ph.no_photos'] = 'No photos yet',
     ['ph.fullscreen']      = 'Full screen',
     ['ph.photo_del_sure']  = 'Delete this photo?',
-    ['ph.shooting'] = 'Taking the picture',
     ['ph.set_wallpaper'] = 'Use as wallpaper',
     ['ph.wall_set'] = 'Wallpaper changed',
     ['ph.wall_url'] = 'Image link',
@@ -1070,6 +1092,14 @@ local T = {
     ['ph.err_noupload'] = 'No upload destination is configured',
     ['ph.err_capture']  = 'The recording did not finish',
     ['ph.err_upload'] = 'The upload failed',
+    -- The camera's own "one at a time". It used to answer with `ph.err_busy`, which is the
+    -- CALL app's string and reads "You are already on a call" - shown to somebody standing in
+    -- a viewfinder pressing a shutter, which explains nothing and names the wrong app.
+    ['ph.err_shotbusy'] = 'The last picture is still being sent',
+    -- The capture came back larger than the server is willing to hand to the uploader. A player
+    -- cannot fix this and should not be told to try; the console line beside it names the size
+    -- and the ceiling, and that is the one an operator acts on.
+    ['ph.err_toolarge'] = 'That picture was too large to send',
     ['ph.no_card'] = 'No bank card',
     ['ph.no_card_hint'] = 'Order one at a bank or an ATM.',
     ['ph.copy_link']    = 'Copy link',
@@ -2027,9 +2057,11 @@ local T = {
     ['ph.err_password'] = "Password too short (min 4)",
     ['ph.err_exists'] = "You already have an account",
     ['ph.err_badpass'] = "Wrong password",
-    ['ph.soc_avatar'] = 'Avatar link (optional)',
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.soc_cover'] = "Cover image URL",
-    ['ph.soc_bio'] = 'Bio (optional)',
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.soc_create'] = 'Create the account',
     ['ph.soc_made'] = 'Welcome to the network',
     ['ph.bleet_new'] = 'New bleet',
@@ -2418,6 +2450,7 @@ local T = {
     ['ph.view_in_store'] = 'View in FruitStore',
     ['ph.action_app_saved'] = 'Action button configured',
     ['ph.pick_contact'] = 'Choose a contact',
+    ['ph.photo_gone'] = 'Photo no longer available',
     ['ph.photo'] = 'Photo',
     ['ph.confirm'] = 'Confirm',
     ['ph.share'] = 'Share',
@@ -2447,6 +2480,12 @@ local T = {
     ['ph.soc_n_follow'] = "{who} followed you",
     ['ph.soc_n_mention'] = "{who} mentioned you",
     ['ph.soc_n_other'] = "{who} did something",
+    -- The hourly "what's new" nudge. `%s` is the app's own name, `%d` how many posts have
+    -- appeared since that player last opened it. Two strings rather than one with "(s)",
+    -- because the singular is the case a quiet server hits most.
+    ['ph.soc_nudge_title'] = 'New on %s',
+    ['ph.soc_nudge_one'] = '1 new post since your last visit',
+    ['ph.soc_nudge_many'] = '%d new posts since your last visit',
     ['ph.soc_trending'] = "Trending",
     ['ph.soc_save'] = "Save",
     ['ph.soc_saved'] = "Saved",
@@ -2501,7 +2540,8 @@ local T = {
     ['ph.soc_day'] = 'd',
     ['ph.hush_matches'] = 'Matches',
     ['ph.hush_write'] = 'Message',
-    ['ph.hush_say_hi'] = 'You matched. Say something.',
+    -- (this key is defined again further down, and Lua keeps the LAST one - so the
+    -- string that used to sit here never reached a screen)
     ['ph.hush_unmatch_hint'] = 'Unmatching removes the conversation from both phones. Neither of you can undo it.',
     ['ph.hush_unmatched'] = 'Unmatched.',
     ['ph.hush_no_matches'] = 'No matches yet',
@@ -2539,12 +2579,9 @@ local T = {
     ['ph.err_nothing'] = 'Nothing to undo',
     -- Social, server side: what the phone writes on a player's behalf
     ['soc.match_line'] = 'We matched on Hush!',
-    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reset.',    ['ph.cam_video'] = 'VIDEO',
-    ['ph.clip_ready'] = 'Clip ready',
-    ['ph.clip_posted'] = 'Clip posted',
+    ['soc.dm_photo'] = 'Photo',    ['ph.phone_reset'] = 'iFruit reset.',
     ['ph.facetime'] = 'FaceTime',
     ['ph.facetime_video'] = 'Video call',
-    ['ph.cam_selfie'] = 'Flip camera',
 
     -- Calls, privacy and notifications, in Settings
     ['ph.calls_privacy'] = 'Calls & Privacy',

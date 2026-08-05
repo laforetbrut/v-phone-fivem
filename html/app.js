@@ -58,9 +58,12 @@ const POST_TIMEOUT = {
   _default: 20000,
   // The server records for as long as it was asked to, then uploads what it recorded.
   record: 120000,
-  // Capture, upload to the host, store. The server's own guard is under ten seconds.
-  photo: 45000,
-  camShoot: 45000,
+  // **`shoot`, which is the name this page actually posts.** The two keys here were `photo` and
+  // `camShoot`, and neither matches any `post()` call - the camera has always called
+  // `post('shoot')`, so the whole capture ran on the 20 s `_default` while this table read as
+  // though it had been tuned for it. Outermost of the four ceilings on the path: the server
+  // answers at 25 s, the client's timer at 28 s, `V.Request` at 30 s, and this at 35 s.
+  shoot: 35000,
   // The deck is asked, and a broadcast to every nearby client is waited on.
   music: 30000,
 };
@@ -329,6 +332,10 @@ setInterval(tick, 10000);
 // The island is the phone's face. It should react to the phone being locked and unlocked
 // the way a real one does: a short pinch around a padlock, then back to a pill.
 let glanceTimer = null, shutterTimer = null;
+// A capture is in flight. Module scope rather than inside the camera's setup, because that
+// setup runs again on every re-render and a flag scoped to it would be reset by the very draw
+// that follows a shutter press. See the `#shoot` handler.
+let shootBusy = false;
 const ISLAND_MODES = ['live', 'notif', 'glance'];
 
 // Dynamic Island modes are mutually exclusive. Calls always win: a notification or
@@ -1083,6 +1090,8 @@ function tileHTML(a, i) {
 }
 
 function renderHome() {
+  // A repaint of everything is a superset of a deferred refit, so nothing is left owing.
+  refitPending = false;
   byId('pages').classList.remove('jiggle');
   const apps = (state.apps || []).slice();
   // The last four go in the dock, the way iOS ships: the apps you reach for without
@@ -1144,6 +1153,8 @@ function fitGrid(cols, rows) {
   if (h <= 0 || w <= 0) return;
 
   const apply = (size) => {
+    // Recorded here rather than at the end, so the value survives however the function leaves.
+    gridFitSize = size;
     pg.style.setProperty('--isz', size + 'px');
     pg.style.setProperty('--iradius', Math.round(size * 0.225) + 'px');
     pg.style.setProperty('--ilabel', (size >= 52 ? 11.5 : size >= 42 ? 10.5 : 9.5) + 'px');
@@ -1158,6 +1169,21 @@ function fitGrid(cols, rows) {
   // short, so the estimate is only a starting point: what settles it is measuring.
   // Nothing that decides the answer has moved, so the answer is the one from last time and
   // the loop below is skipped entirely.
+  // **A tile in hand does not get to resize the apps.**
+  //
+  // The gap the drag opens can push the last row over the edge and pull it back on the next
+  // seam the finger crosses, so measuring mid-drag reads as "the apps no longer fit" and shrinks
+  // them three pixels at a time. From the outside that is "moving one app resizes all of them".
+  //
+  // **Keyed on the live drag, not on the jiggle class.** It used to test for `.jiggle`, and
+  // `renderHome` REMOVES that class before it repaints - so the one repaint that matters, the
+  // one after a drop, sailed straight past this guard and re-measured against a page the arrange
+  // chrome had shortened. The icons silently dropped from 60px to 44px and stayed there, because
+  // leaving arrange mode never repainted the pages either. `arr` is exactly the mid-drag case
+  // this comment describes, and it is null everywhere else - including the two boundaries, which
+  // is where the fit SHOULD be taken again.
+  if (arr && gridFitSize > 0) { apply(gridFitSize); return; }
+
   const key = cols + '|' + rows + '|' + Math.round(w) + '|' + Math.round(h);
   if (gridFitKey === key && gridFitSize > 0) { apply(gridFitSize); return; }
 
@@ -1176,6 +1202,12 @@ function fitGrid(cols, rows) {
     size -= 3;
     apply(size);
   }
+
+  // **The answer, kept.** Neither of these was ever assigned outside its declaration, so the
+  // early return above could not fire and the fourteen-turn reflow loop ran on every one of the
+  // eighteen calls to `renderHome` - an incoming message re-measured a grid that had not
+  // changed. The cache the comment above describes existed only as a comment.
+  gridFitKey = key;
 }
 
 // The track is what slides; the pager around it is a fixed window that clips.
@@ -1379,9 +1411,14 @@ function openFolder(i, key) {
     const a = appById(id);
     if (!a) return '';
     return editing
+      // **Inside `.wrap`, not before it.** `.wrap` is the icon's own box and the only
+      // positioned ancestor whose corners are the icon's corners; the tile around it is a full
+      // grid cell, several times wider. Anchored to the tile, every badge floated out in the
+      // gap to the left of the app it belonged to. This is where the home screen's remove badge
+      // already sits, for exactly the same reason.
       ? tileHTML(a, k).replace('<span class="wrap">',
-          '<span class="unfolder" data-out="' + esc(a.id) + '">' + svg('xmark')
-          + '</span><span class="wrap">')
+          '<span class="wrap"><span class="unfolder" data-out="' + esc(a.id) + '">'
+          + svg('xmark') + '</span>')
       : tileHTML(a, k);
   }).join('');
   host.classList.toggle('arranging', editing);
@@ -1572,6 +1609,15 @@ byId('folderview').addEventListener('click', (e) => {
 let arr = null;          // the live drag session, or null
 let arrWired = false;
 
+/// Both boundaries re-measure the grid, and that is the point.
+///
+/// Arrange mode changes the height of everything around the app grid: the strip above it gains
+/// the add button, the search pill below it is replaced by Done. `.home` is a flex column and
+/// `.pages` is the child that gives, so the grid is a different size on each side of both
+/// boundaries - and neither of these functions used to repaint it. Nothing re-fitted the icons
+/// on the way in, so the tiles were stretched into rows too short for them; and nothing repainted
+/// on the way out, so whatever size the last drop had settled on stayed there. Measured once each
+/// way, against the height that is actually available.
 function enterArrange() {
   editing = true;
   byId('arrangedone').textContent = L('ph.arrange_done');
@@ -1581,6 +1627,7 @@ function enterArrange() {
   // reading rather than re-fetched: entering arrange mode changes what the strip DRAWS, not what
   // it knows, and a request on every long press would be a request nobody asked for.
   paintWidgets(byId('widgets'), widgetLast);
+  refitPages();
 }
 function exitArrange() {
   editing = false;
@@ -1588,6 +1635,58 @@ function exitArrange() {
   byId('home').classList.remove('arrange');
   byId('pages').classList.remove('jiggle');
   paintWidgets(byId('widgets'), widgetLast);
+  refitPages();
+}
+
+/// Is the home screen the thing in front of the player?
+///
+/// Three ways it is not: the handset is pocketed, the lock screen or the setup wizard is over it,
+/// or an app is open on top of it. In none of those does the grid lose its BOX - `.home` is never
+/// `display: none` and the page keeps the same width and height under an open app, which is why a
+/// measurement taken there is correct. It is simply not needed yet.
+function homeOnScreen() {
+  return !byId('device').classList.contains('hidden')
+    && !byId('home').classList.contains('behind')
+    && !byId('app').classList.contains('on');
+}
+
+/// A refit asked for while the home screen was somewhere else, still owed.
+let refitPending = false;
+
+/// Repaint the pages and take the fit again, with the cached answer thrown away first.
+///
+/// `paintPages` alone would reuse it: the cache is keyed on the column count, the row count and
+/// the size of the page, and the page is measured as it was BEFORE the arrange chrome moved.
+///
+/// **Not while an app is covering the home screen.** The widget picker is reachable from inside
+/// Settings, so adding or dropping a widget from there rebuilt the whole grid - every tile's
+/// markup thrown away and written again, every click listener re-attached, then a forced layout
+/// to measure the result - behind an app the grid cannot be seen under. Nothing about the TILES
+/// changes when a widget does; the only thing that moves is the height the strip leaves them, and
+/// that is a number nobody is reading yet. So it is remembered and taken on the way out, once,
+/// however many widgets were added and dropped in between.
+///
+/// Deferring it cannot leave a stale answer behind: `saveWidgets` has already thrown the cached
+/// fit away, so the next `fitGrid` measures whatever the strip has become.
+function refitPages() {
+  if (!homeOnScreen()) { refitPending = true; return; }
+  refitPending = false;
+  forgetGridFit();
+  paintPages(layoutItems());
+  byId('pages').classList.toggle('jiggle', editing);
+  // The badges lose their listeners with every repaint of the pages, so they are re-wired
+  // wherever the jiggle is turned on. Three call sites, because there are three ways into edit
+  // mode - the long press, a drop, and Done being cancelled.
+  if (editing) wireRemoveBadges();
+}
+
+/// Take the deferred refit, now that the home screen is back.
+///
+/// Nothing else repaints the grid on the way out of an app - that is deliberate, and the note on
+/// `paintBadges` says why - so this is what stops a widget added from Settings arriving as a grid
+/// still sized for the strip it had before.
+function flushRefit() {
+  if (refitPending) refitPages();
 }
 
 function ptOf(e) {
@@ -1937,11 +2036,14 @@ function initArrange() {
   if (arrWired) return;
   arrWired = true;
   const pagesEl = byId('pages');
-  let hold = null, downTile = null, downXY = null;
+  let hold = null, downTile = null, downXY = null, downBox = null;
 
   pagesEl.addEventListener('pointerdown', (e) => {
     const tile = e.target.closest ? e.target.closest('.tile:not(.gap)') : null;
     downXY = { x: e.clientX, y: e.clientY };
+    // Where the pressed tile was AT THE PRESS, which is what the pointer coordinates mean.
+    // Arrange mode moves it; see the ghost note in the hold below.
+    downBox = tile ? tile.getBoundingClientRect() : null;
     if (editing) { downTile = tile; if (tile) beginDrag(tile, e); return; }
     if (!tile) return;
     downTile = tile;
@@ -1956,6 +2058,30 @@ function initArrange() {
       arrSwallowClick = true;
       enterArrange();
       beginDrag(tile, e);
+      // **The grid moved out from under the finger, so the ghost is corrected for it.**
+      //
+      // `beginDrag` places the lifted clone at the coordinates this gesture began at, and by the
+      // time it runs the cell those coordinates pointed at has been painted twice more.
+      // `enterArrange` swaps the search pill below the pages for the arrange bar and then re-takes
+      // the icon fit with the cached answer thrown away, so the icon size, the label size and both
+      // gaps are all decided again; `beginDrag` paints once more with the pressed tile lifted out
+      // of the flow and a placeholder standing in its slot. Neither pass promises the cell comes
+      // back at the same pixel, and when it does not the ghost draws off its own icon, over a
+      // different app, and looks like a stray label floating in the wrong place.
+      //
+      // The placeholder left behind is the same grid cell the tile was in, measured after the
+      // move: the difference between it and where the tile was at the press is exactly what the
+      // ghost is short by. Applied once, here - the next pointer move hands the ghost back to
+      // the finger, which is where it belongs for the rest of the drag.
+      if (arr && downBox) {
+        const slot = pagesEl.querySelector('.tile.gap');
+        if (slot) {
+          const now = slot.getBoundingClientRect();
+          const p = ptOf(e), g = byId('dragghost');
+          g.style.left = (p.x + (now.left - downBox.left)) + 'px';
+          g.style.top = (p.y + (now.top - downBox.top)) + 'px';
+        }
+      }
       // A held FOLDER can now be MOVED, which it could not before: this branch used to open the
       // manage sheet and return, so the one gesture that reorders everything else on the home
       // screen did nothing at all to a folder.
@@ -2012,12 +2138,20 @@ function initArrange() {
     // Asked of where the press BEGAN, not of where the pointer is now. A finger that starts on
     // a widget and drifts a few pixels off the strip before lifting releases over the app grid,
     // and reading the release target would call that a tap on the wallpaper.
-    if (editing && !downTile && !wPressed) exitArrange();
+    // **`.arrangebar` counts as inside.** The press is a tap on the wallpaper only if it began
+    // on none of the three surfaces arrange mode owns: the pages, the widget strip, and the bar
+    // under them. Moving the add control out of the strip took it out of `wPressed`'s reach, so
+    // the picker opened and edit mode closed underneath it - the exact bug `wPressed` was added
+    // to fix for the strip, walked back in through the new control.
+    if (editing && !downTile && !wPressed && !barPressed) exitArrange();
+    barPressed = false;
     wPressed = false;
     downTile = null;
   });
 
   byId('arrangedone').addEventListener('click', exitArrange);
+  // Capture, so it is recorded before anything inside the bar can stop the event.
+  byId('arrangebar').addEventListener('pointerdown', () => { barPressed = true; }, true);
 }
 
 // A new page, made mid-drag by holding at the right edge of the last one.
@@ -2375,6 +2509,9 @@ function widgetUnits(ids) {
 }
 
 function saveWidgets(ids) {
+  // A widget added or removed changes how much room is left for the apps, and the fit key is
+  // built from the grid and the screen - neither of which moves when a widget does.
+  forgetGridFit();
   state.prefs = state.prefs || {};
   state.prefs.widgets = ids;
   return post('prefs', { widgets: ids });
@@ -2450,14 +2587,19 @@ function paintWidgets(host, d) {
       '</button>';
   }).join('');
 
-  // The add button only exists in arrange mode, and only while there is room and something left
-  // to add. Offering a control that answers "no" is worse than not offering it.
-  const room = widgetUnits(widgetIds()) < WIDGET_MAX_UNITS && widgetChoices().length;
-  host.innerHTML = html + (editing && room
-    ? '<button class="widget wadd" type="button" id="waddbtn" style="--wspan:2">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"' +
-      ' stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></button>'
-    : '');
+  host.innerHTML = html;
+
+  // **The add control is in the arrange bar, under the pages, not in this grid.**
+  //
+  // It used to be a tile here: half the width, 108px tall, and almost always a new row - so the
+  // widget block grew taller than a row of icons the moment edit mode opened, and the icon
+  // fitter shrank every app on the screen to win back room nothing had taken. A control that
+  // rearranges the screen you are rearranging is the wrong control.
+  //
+  // Disabled rather than removed when there is no room or nothing left to add: a button that
+  // disappears takes the bar's balance with it and reads as a bug.
+  const add = byId('waddbtn');
+  if (add) add.disabled = !(widgetUnits(widgetIds()) < WIDGET_MAX_UNITS && widgetChoices().length);
   host.classList.toggle('jiggle', !!editing);
   wireWidgets(host);
 }
@@ -2487,10 +2629,16 @@ function wireWidgets(host) {
       const ids = widgetIds().filter((x) => x !== b.dataset.wrm);
       saveWidgets(ids);
       paintWidgets(host, widgetLast);
+      // A widget gone is a row of strip gone, and the app grid below it is the flex child that
+      // takes the difference. `saveWidgets` has already thrown the cached fit away; this is what
+      // takes the new one, against the strip as it now stands.
+      refitPages();
     });
   });
+  // `onclick`, not `addEventListener`: the button is in the page markup and survives every
+  // repaint, so a listener added per repaint would open the picker once per repaint.
   const add = byId('waddbtn');
-  if (add) add.addEventListener('click', (e) => { e.stopPropagation(); widgetPicker(); });
+  if (add) add.onclick = (e) => { e.stopPropagation(); widgetPicker(); };
 }
 
 /// The live reorder. Its own small drag rather than the app grid's, because the grid's is built
@@ -2505,6 +2653,9 @@ let wholdAt = null;
 /// The app grid's pointerup handler needs to know, and it cannot ask the event: a press that
 /// starts on a widget and lifts two pixels lower has released over #pages.
 let wPressed = false;
+/// The same, for the arrange bar: a press that begins on the plus or on Done is not a press on
+/// the wallpaper. Declared beside `wPressed` because they answer the same question.
+let barPressed = false;
 /// Set when a hold has already acted, so the `click` riding the same pointerup does not act
 /// again. Its own flag rather than a second meaning for `wdragMoved`: sharing one made the
 /// pointerup handler save a reorder that had not happened.
@@ -2603,6 +2754,9 @@ function initWidgetDrag() {
     if (!wdragMoved) return;
     saveWidgets(d.ids);
     paintWidgets(host2, widgetLast);
+    // A reorder can change how the strip PACKS - a four-unit widget moved past two two-unit ones
+    // takes a different number of rows - so the grid below is measured again.
+    refitPages();
   });
 }
 
@@ -2657,8 +2811,9 @@ function widgetPicker() {
         saveWidgets(ids);
         closeSheet(true);
         // Straight back to the strip, still in arrange mode: adding one widget is usually the
-        // start of arranging the strip, not the end of it.
-        renderWidgets();
+        // start of arranging the strip, not the end of it. The grid below is re-fitted once the
+        // strip has actually been drawn - a widget added is height the apps no longer have.
+        renderWidgets().then(refitPages);
       });
     });
     [...byId('sheet').querySelectorAll('.row[data-nofit]')].forEach((b) => {
@@ -2671,7 +2826,8 @@ function widgetPicker() {
         await saveWidgets(widgetIds().filter((x) => x !== b.dataset.drop));
         ui('toggleoff');
         closeSheet(true);
-        renderWidgets();
+        await renderWidgets();
+        refitPages();
         if (openApp && openApp.id === 'settings') settingsRedraw();
       });
     });
@@ -2703,8 +2859,13 @@ function clearAppVisualState() {
   app.classList.remove('black', 'camfull', 'nowplaying');
   byId('screen').classList.remove('appblack', 'cipher-open');
   byId('navbar').classList.remove('hidden');
-  // Leaving the camera drops the selfie camera, or it would follow the player out.
-  if (camFront) { camFront = false; post('camFacing', { front: false }); }
+  // **And the off-screen state, which every route out of an app now passes through.**
+  //
+  // `camlive` used to be dropped in exactly one place, inside `closeApp`, and a phone that stays
+  // invisible is the worst thing this path can leave behind. Lua's `camLive off` can be lost - a
+  // resource restart mid-session, a `forceReset`, a raise inside `camModeOff` - so the page
+  // clears it wherever an app is left rather than trusting the message.
+  setCamLive(false);
 }
 
 /// Has the app currently open painted anything yet?
@@ -2843,14 +3004,12 @@ function closeApp(instant) {
   flapStop();
 
   // Whatever route out of an app is taken, the camera's first-person hold and hidden HUD
-  // must not survive it. Cheap to call when no camera was open.
+  // must not survive it. Cheap to call when no camera was open, and harmless when camera mode
+  // is what closed the app: `camModeOff` returns at once for a camera that is already off.
   if (camAppOpen) {
     camAppOpen = false;
-    byId('device').classList.remove('camlive');
+    setCamLive(false);
     post('camMode', { on: false });
-    // `landscape` is module state and survived the visit, so a phone turned sideways in the
-    // camera stayed sideways everywhere afterwards with no control left to turn it back.
-    if (landscape) setLandscape(false);
   }
   beginView();
   const app = byId('app');
@@ -2876,6 +3035,8 @@ function closeApp(instant) {
     delete app.dataset.app;
     openApp = null; thread = null; threadGroup = null;
     clearSocialAccounts();
+    // The grid is uncovered again, so anything the widget picker put off is taken here.
+    flushRefit();
     return;
   }
   app.classList.remove('on');
@@ -2898,6 +3059,9 @@ function closeApp(instant) {
     if (app.dataset.app === closingId && !app.classList.contains('on')) delete app.dataset.app;
   }, 300);
   openApp = null; thread = null; threadGroup = null; clearSocialAccounts();
+  // Synchronously, not on the next frame: the app zooms out over 300ms and the grid is visible
+  // underneath it for every one of them, so it has to be the right size on the first.
+  flushRefit();
 }
 
 function setNav(title, backLabel, action, onBack) {
@@ -2933,8 +3097,37 @@ function setNav(title, backLabel, action, onBack) {
     act.classList.add('hidden');
     act.onclick = null;
   }
-  byId('navbar').classList.remove('collapsed');
+  navCollapsed(false);
   fitNavTitle();
+}
+
+/// The bar's collapse, and the height that goes with it.
+///
+/// `.collapsed` fades the large title out. `.navshort` on the app is the other half: the bar
+/// hands back the block that title was holding, and `.app.navshort .appbody` takes exactly the
+/// same number as scroll padding. Measured in OnlyFruits before this: the row ended at 147.88
+/// and the hairline under the header was drawn at 201.88, so a collapsed bar reserved 54px of
+/// nothing and clipped the first row of content behind it.
+///
+/// **The number is read from the title, not written in the stylesheet.** Its block depends on
+/// the type scale, on the width of the bar and on whether a long app name wrapped, and a
+/// constant in the CSS would be a second opinion about all three - which is the mistake this
+/// whole pass is undoing. `offsetHeight` rather than a rect: the collapsing title is under a
+/// `scale(.55)` transform and a rect would report the scaled box.
+///
+/// Read ONCE, on the way in. While the bar stays collapsed there is nothing to measure, and a
+/// conversation header has no large title at all, so there is nothing to give back either.
+function navCollapsed(on) {
+  const bar = byId('navbar');
+  const app = byId('app');
+  if (!bar || !app) return;
+  bar.classList.toggle('collapsed', !!on);
+  if (!on) { app.classList.remove('navshort'); return; }
+  if (app.classList.contains('navshort') || bar.classList.contains('facenav')) return;
+  const h = byId('navtitle').offsetHeight;
+  if (!h) return;
+  app.style.setProperty('--nav-title-h', h + 'px');
+  app.classList.add('navshort');
 }
 
 /// Keep the collapsed title clear of the back button.
@@ -2993,14 +3186,20 @@ function fitNavTitle() {
 ///
 /// `setNav` writes `textContent` on every screen, so whatever is put here is wiped the moment
 /// another screen is opened. That is the cleanup: there is none to forget.
-function navFace(name, photo) {
+///
+/// `onTap` makes the face and the name a real control - a group conversation opens its member
+/// list from its own name, the way a phone does. It has to be a BUTTON inside the title and not
+/// a handler on the title, because `.navtitle-sm` is `pointer-events: none` and cannot stop
+/// being: it is a box the exact size of the row, laid over both circular bar buttons, so a
+/// title that took events back would take theirs. A button inside it claims only its own box.
+function navFace(name, photo, onTap) {
   const bar = byId('navbar');
   const el = byId('navtitlesm');
   if (!bar || !el) return;
   bar.classList.add('tightnav', 'facenav');
   const initials = String(name || '').trim().split(/\s+/).slice(0, 2)
     .map((w) => w.charAt(0).toUpperCase()).join('');
-  el.innerHTML =
+  const inner =
     '<span class="navface"' +
       // `inlineBackground`, which is this file's own way of putting a URL in a style
       // attribute. The url() here was UNQUOTED and escaped with `encodeURI`, which
@@ -3010,6 +3209,10 @@ function navFace(name, photo) {
       (photo ? ' style="' + inlineBackground(photo) + '"' : '') + '>' +
       (photo ? '' : esc(initials)) + '</span>' +
     '<span class="navwho">' + esc(name || '') + '</span>';
+  if (typeof onTap !== 'function') { el.innerHTML = inner; return; }
+  el.innerHTML = '<button class="navwhobtn" type="button" aria-label="' +
+    esc(L('ph.group_members').replace('{n}', '').trim() || name) + '">' + inner + '</button>';
+  el.querySelector('.navwhobtn').addEventListener('click', onTap);
 }
 
 /// The three levels, for one app.
@@ -3144,6 +3347,15 @@ byId('navact').addEventListener('click', (event) => {
   event.stopImmediatePropagation();
 }, true);
 
+/// When the last tab tap happened, so a content swap does not animate like a new screen.
+///
+/// `.appbody.view-enter > *` staggers `ph27-view-in` over the first five children, which is
+/// right for arriving at a screen and wrong for changing which folder it is showing: tapping
+/// Mail's "Sent" replayed the entry animation over the whole body. A timestamp rather than a
+/// flag, because the renderers a tab hands off to are async - `body()` runs several awaits
+/// after the tap, and a synchronous flag would already have been cleared.
+let quietRender = 0;
+
 const body = (html) => {
   appPainted = true;
   const host = byId('appbody');
@@ -3155,6 +3367,12 @@ const body = (html) => {
   // clears it here. Self-cleaning on purpose: a class the leaving view has to remember to take
   // off is a class that gets left on, and a screen stuck at overflow:hidden loses content.
   host.classList.remove('fitbody');
+  // `pushin` is the same shape of promise and was the one that got left on: `pushAnim()` adds
+  // it and nothing ever took it off, so a screen that had once pushed - a thread, a store page,
+  // a profile - replayed `ph27-push` over its whole body on every render afterwards, including
+  // a tab tap. Every caller of `pushAnim()` runs it immediately after `body()`, so clearing it
+  // here costs the push nothing and stops it outliving the step it belonged to.
+  host.classList.remove('pushin');
   host.innerHTML = html;
   // Chromium may scroll an overflow-hidden ancestor when a focused control near the
   // bottom disappears during navigation. Pinning the screen prevents the mysterious
@@ -3164,7 +3382,7 @@ const body = (html) => {
   // Restart a short native transition for view-to-view navigation. A forced layout is
   // intentional here: without it, two renders in the same frame collapse into one state.
   void host.offsetWidth;
-  host.classList.add('view-enter');
+  if (Date.now() - quietRender > 600) host.classList.add('view-enter');
 };
 /// The app's footer, and the one thing that knows whether there IS one.
 ///
@@ -3224,7 +3442,7 @@ const pushAnim = () => {
 
 // The large title collapses into the bar on scroll, as it does on iOS.
 byId('appbody').addEventListener('scroll', (e) => {
-  byId('navbar').classList.toggle('collapsed', e.target.scrollTop > 22);
+  navCollapsed(e.target.scrollTop > 22);
 });
 
 // Pull to refresh on every native app. The renderer remains the owner of its data; this
@@ -4341,9 +4559,27 @@ function photoImg(value, cls) {
   // every list in the phone, and a feed is fifty posts of two-thousand-pixel screenshots: they
   // were all fetched and all decoded the moment the list entered the tree. `aspect-ratio` is
   // set above for a cropped picture, so nothing shifts when one arrives late.
+  // **What the phone shows when the file is gone.**
+  //
+  // An uploaded photograph does not live for ever: it expires, the operator changes host, the
+  // account lapses. With `alt=""` Blink draws NOTHING for a broken image - not a glyph, not a
+  // box, not even space - so a photo message collapsed into an empty pill and a Snapmatic post
+  // became a header sitting on its own like row. That reads as a phone that failed to draw.
+  // Giving it an `alt` instead is worse: Blink draws its broken-image glyph AND the text.
+  //
+  // Replaced by a span rather than restyled, which is what `exportPic` does and for the same
+  // reason: a pseudo-element on a replaced element is not something to rely on, and a span
+  // takes text and CSS without argument. It keeps the original classes, so a card that sized
+  // itself around the picture keeps its shape.
+  //
+  // The class name is ours and cannot contain a quote, which is what makes this inline handler
+  // safe to build by concatenation.
+  const goneCls = esc((cls || '') + ' photogone');
   return '<img class="' + esc(cls || '') + '" src="' + esc(r.url)
     + '" loading="lazy" decoding="async"'
-    + ' style="' + style + '" data-full="' + esc(r.url) + '" alt="" />';
+    + ' style="' + style + '" data-full="' + esc(r.url) + '" alt=""'
+    + ' onerror="this.outerHTML=&quot;<span class=\'' + goneCls + '\'>'
+    + esc(L('ph.photo_gone')) + '</span>&quot;" />';
 }
 /// A URL, safe to sit inside a CSS `url("...")`.
 ///
@@ -4378,6 +4614,143 @@ function setBackground(el, url) {
   if (!el) return;
   el.style.backgroundImage = url ? 'url("' + cssUrl(url) + '")' : '';
 }
+/// Mark every element under `root` whose background photograph will not load.
+///
+/// A `background-image` has no `error` event, so the only way to know is to fetch the picture
+/// separately and watch that. One request per DISTINCT url per call - the browser serves the
+/// second from cache anyway, and a grid of sixty tiles must not become sixty extra requests.
+///
+/// Adds `.deadshot` and clears the background, so the element shows the neutral placeholder in
+/// the stylesheet rather than a coloured rectangle that reads as a photograph still loading.
+///
+/// Shared across calls rather than per call: the same picture appears in a feed, in a profile
+/// grid and in the composer, and asking about it once is enough.
+///
+/// **A "no" is never permanent.** It used to be: one failed probe wrote `false` and that
+/// photograph was blank until the player reloaded the phone, so a two-second network blip cost
+/// them every picture in the resource for the rest of the session. Worse, a probe that never
+/// settled left `null` behind and nothing could ever overwrite it, because `null` only meant
+/// "somebody is already asking" and no one was.
+///
+/// So: `true` is the only value kept for good, and it is safe to keep because a picture that
+/// loaded once is in the browser cache. Everything else is `{ ok, at }` - `false` for a
+/// failure, `null` for a probe still out - and carries the moment it was written, so both
+/// expire and the url is asked about again.
+const shotAlive = {};
+
+/// How long a failure, or a probe that never answered, blocks a retry. Long enough that a grid
+/// of sixty tiles does not re-ask about a genuinely missing photograph on every repaint, short
+/// enough that a player who waits out a blip on one screen sees pictures again on the next.
+const SHOT_RETRY_MS = 30000;
+
+/// Forget every answer that was not a success. Called when the phone opens, which is the
+/// clearest statement a player can make that they expect things to work now: it costs one probe
+/// per photograph actually on screen, and nothing at all for the ones that already loaded.
+function shotAliveReset() {
+  for (const url in shotAlive) if (shotAlive[url] !== true) delete shotAlive[url];
+}
+
+/// Every class that is a photograph tile: what the callers pass, plus the tiles that carry a
+/// background photograph on screens with no caller of their own.
+///
+/// `mark` needs a list of its own because it sweeps the whole document rather than one
+/// container, and it may not sweep it by "has an inline background-image" - see there.
+///
+/// A tile added to a caller's selector belongs here too, or a dead picture in it stays a
+/// coloured rectangle. `mark` also queries the caller's own selector, so the miss is limited
+/// to the tiles of OTHER screens still in the DOM rather than the ones being scanned.
+///
+/// **The entry test is the markup, not the name.** A class earns a place here by being written
+/// with an inline `background-image` on a photograph, which is the only thing `mark` can match
+/// on. Two kinds of name have been in here and matched nothing:
+///
+/// - `.gtile` and `.photocell`, which came in with a Gallery caller that named classes this
+///   resource has never written. The Gallery grid tile is `.shot`, its album cover is
+///   `.galcardart` and its viewer strip is `.prollone`.
+/// - `.mimg`, which is real but is the class `photoImg` puts on an `<img>`, in a message bubble
+///   and in a Hush chat. An `<img>` has an `error` event and that helper already uses it to swap
+///   in a "photo gone" span, so there is nothing here to do. The Mail attachment is the one that
+///   IS a background, and it is `.mailimg`.
+const SHOT_TILES = '.shot, .galcardart, .prollone, .socthumb, .storyphoto, .socattached, .pgcell,'
+  + ' .pav, .socav, .comav, .storyav, .socbigav, .fancover, .fanface, .hphoto,'
+  // Contacts: the card face, and the photo shown above both card forms.
+  + ' .cface, .cardphoto,'
+  // Mail: an attached photograph, drawn as a background like the rest rather than as an <img>,
+  // so nothing else would ever have marked it.
+  + ' .mailimg,'
+  // Bleeter and Snapmatic: the cover banner above a profile.
+  + ' .soccover,'
+  // The store: an operator's screenshot, a shelf card's still, the featured still.
+  + ' .stshot, .stcardart, .stfeatfilm,'
+  // Settings: the preview of a custom wallpaper. Not `#wallpaper` and not `#screen` - those two
+  // are guarded in `mark` and keep their own gradient fallback.
+  + ' .wallpreview,'
+  // Fundee: the banner and the face on an opened page.
+  + ' .fundhero, .fundface';
+
+/// Mark every element under `root` whose background photograph will not load.
+///
+/// A `background-image` has no `error` event, so the only way to know is to fetch the picture
+/// separately and watch that.
+///
+/// **The first version of this was mostly decorative and it is worth saying why.** It kept its
+/// `seen` map per call and only wrote to it in the callbacks, which are asynchronous - so a
+/// grid of sixty tiles fired sixty requests before the first answer arrived, exactly what the
+/// comment claimed it avoided. And it queried one container with a selector list that most of
+/// its targets were not inside. A helper that runs, costs, and marks nothing is worse than no
+/// helper: it makes the screen look handled.
+function watchDeadShots(root, sel) {
+  const host = (typeof root === 'string') ? byId(root) : root;
+  if (!host) return;
+
+  const mark = (url) => {
+    // Everywhere on the page, not just under `root`: the same dead picture may be in a sheet,
+    // a feed and a grid at once, and they are all wrong together. `#sheet` sits outside
+    // `#appbody`, so scoping this to the app body would miss exactly that case.
+    //
+    // **Photograph tiles by name, never `[style*="background-image"]`.** That query also picked
+    // up `#wallpaper` and `#screen`, which carry an inline `background-image` written by
+    // `applyWallpaper`. A wallpaper URL that stopped answering therefore turned the whole phone
+    // into the flat grey `.deadshot` rectangle for the rest of the session, and choosing another
+    // wallpaper could not undo it, because nothing ever takes the class off. The wallpaper has
+    // its own fallback - the gradient kept underneath the photograph - and wants no help here.
+    //
+    // The caller's `sel` is queried alongside the shared list so a screen whose tiles were never
+    // added to `SHOT_TILES` still marks its own.
+    [...document.querySelectorAll(SHOT_TILES + ', ' + sel)].forEach((el) => {
+      // The invariant, stated rather than assumed: whatever a caller passes as `sel`, the two
+      // elements that ARE the phone are never marked.
+      if (el.id === 'wallpaper' || el.id === 'screen') return;
+      if ((el.style.backgroundImage || '').indexOf(url) < 0) return;
+      el.classList.add('deadshot');
+      el.style.backgroundImage = 'none';
+    });
+  };
+
+  [...host.querySelectorAll(sel)].forEach((el) => {
+    const m = /url\("([^"]+)"\)/.exec(el.style.backgroundImage || '');
+    if (!m) return;
+    const url = m[1];
+    const known = shotAlive[url];
+    if (known === true) return;
+    // A failure, or a probe still out, but only while it is fresh. Past `SHOT_RETRY_MS` both
+    // fall through and the picture is asked about again - which is the whole point: a `false`
+    // written during a blip, and a `null` from a probe that never called either callback, must
+    // not survive the session.
+    if (known && Date.now() - known.at < SHOT_RETRY_MS) {
+      if (known.ok === false) mark(url);
+      return;
+    }
+    // Recorded BEFORE the request goes out. Otherwise sixty tiles of one photograph each start
+    // their own, which is the bug the old comment denied having.
+    shotAlive[url] = { ok: null, at: Date.now() };
+    const probe = new Image();
+    probe.onload = () => { shotAlive[url] = true; };
+    probe.onerror = () => { shotAlive[url] = { ok: false, at: Date.now() }; mark(url); };
+    probe.src = url;
+  });
+}
+
 function photoStyle(v) {
   const r = photoRow(v);
   // The grid stays square, as a photo grid does, but it shows the band the player framed
@@ -5020,18 +5393,20 @@ async function openGroup(id, name) {
       typingSet(null, false);
       RENDER.messages();
     });
-  // A group has no one face, so it gets its initials and the same chevron-only header.
-  navFace(name, null);
+  // A group has no one face, so it gets its initials and the same chevron-only header - and the
+  // name is the second way into the member list, for anybody who reaches for it rather than for
+  // the corner.
+  //
+  // It used to be an `onclick` put on `#navtitle` and `#navtitlesm` after the body was drawn,
+  // and NEITHER of them could ever receive it: `.navtitle-sm` is `pointer-events: none`, and
+  // `#navtitle` is `display: none` under `.facenav`, which every group thread sets. The feature
+  // has been dead since it was written and the `cursor: pointer` was a promise the page could
+  // not keep. It is a button inside the title now - see `navFace`.
+  navFace(name, null, () => groupMembersSheet(id, name));
   loading();
   const res = await post('conversation', { group: id });
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
   paintThread(res.messages || []);
-  // The large title is a button too, for anybody who reaches for the name rather than the
-  // corner. Wired after the body is drawn, because `setNav` writes the title element.
-  ['navtitle', 'navtitlesm'].forEach((elId) => {
-    const el = byId(elId);
-    if (el) { el.style.cursor = 'pointer'; el.onclick = () => groupMembersSheet(id, name); };
-  });
   // No unread to clear: a group row carries an id and a name and nothing else, so group
   // messages have never counted towards the badge on the icon. Worth having, and a bigger
   // change than this - it needs the count in the query that builds the list.
@@ -6176,14 +6551,14 @@ function myCardEdit() {
 
 /// The head of a card: the face, the name, and the row of round buttons under it.
 ///
-/// A photograph when there is one, initials when there is not - and the initials are drawn from
-/// the name rather than shipped as a placeholder image, so a card is never a broken picture.
+/// The initial is drawn from the name rather than shipped as a placeholder image, so a card is
+/// never a broken picture - and it is drawn whether or not there is a photograph, because the
+/// card that needs it most is the one whose picture has stopped answering. This wrote its own
+/// face until it did not: two branches, and only the empty one carried the letter. `socAvatar`
+/// is the one helper that writes a round face in this phone.
 function cardHead(c, sub) {
-  const initial = String(c.name || '?').trim().charAt(0).toUpperCase();
   return '<div class="ccard">' +
-      (c.photo
-        ? '<div class="cface" style="' + inlineBackground(c.photo) + '"></div>'
-        : '<div class="cface letter">' + esc(initial) + '</div>') +
+      socAvatar({ name: c.name, avatar: c.photo }, 'cface') +
       '<div class="cname">' + esc(c.name || '') + '</div>' +
       (sub ? '<div class="csub">' + esc(sub) + '</div>' : '') +
     '</div>';
@@ -8053,7 +8428,11 @@ function wireSettings() {
 
   rows('.row', (r) => r.addEventListener('click', async () => {
     if (r.dataset.w) {
-      const res = await post('prefs', { wallpaper: r.dataset.w });
+      // **`wallpaperUrl` is cleared too.** Without it, choosing a built-in wallpaper wrote the
+      // new id and left the link in place - and the link is what the screen actually paints,
+      // so the tap appeared to do nothing at all. Somebody whose linked wallpaper had expired
+      // had no way back to a working screen.
+      const res = await post('prefs', { wallpaper: r.dataset.w, wallpaperUrl: '' });
       if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedrawKeepDraft(); }
     } else if (r.dataset.t === 'blocked') {
       blockedSheet();
@@ -8264,22 +8643,46 @@ function applyWallpaper() {
     w.classList.remove('wall-' + x);
     screen.classList.remove('wall-' + x);
   });
+  // **The gradient stays underneath a linked image.**
+  //
+  // It used to be replaced by `background-color: #000`, on the reasoning that a class list
+  // could leave a stripe of the old gradient at the edges. The picture covers it either way -
+  // `background-size: cover` - so the stripe was never the risk. What WAS the risk is a URL
+  // that stops answering: an uploaded wallpaper expires, and with black underneath the phone
+  // becomes a black rectangle with icons floating on it, on the lock screen and the home
+  // screen, every session, with nothing the player can do about it.
+  //
+  // With the gradient still there, a dead link is a phone that quietly returns to its default
+  // wallpaper. Nobody has to know why.
+  const selected = p.wallpaper || 'ifruit';
+  w.classList.add('wall-' + selected);
+  byId('screen').classList.add('wall-' + selected);
+
   if (p.wallpaperUrl) {
-    // A linked image replaces the gradient rather than sitting on top of it, so the
-    // class list cannot leave a stripe of the old one showing at the edges.
+    // **A fallback layer under the photograph, not instead of it.**
+    //
+    // Adding the gradient CLASS was only half the fix: `setBackground` writes an inline
+    // `background-image`, and an inline property beats a class, so the gradient never painted
+    // and a dead URL was still a black screen. Both images are set in one declaration - the
+    // photograph first, the wallpaper's own gradient behind it - so a picture that fails to
+    // load reveals the gradient rather than nothing.
     setBackground(w, p.wallpaperUrl);   // cssUrl, not concatenation: a quote or a backslash in the path used to kill the wallpaper silently
+    // `none` as the fallback, never a bare `var(--wall)`: an unresolvable custom property
+    // invalidates the WHOLE declaration at computed-value time, so a missing gradient would
+    // take the photograph with it and leave a blank screen - a worse failure than the one
+    // this line exists to prevent.
+    w.style.backgroundImage = w.style.backgroundImage + ', var(--wall, none)';
     w.style.backgroundSize = (p.wallFit === 'contain') ? 'contain' : 'cover';
     // The band chosen when the photo was framed in the gallery, not blindly the middle.
     w.style.backgroundPosition = (p.wallFocus === undefined || p.wallFocus === null)
       ? 'center' : ('50% ' + focusOf(p.wallFocus) + '%');
     w.style.backgroundRepeat = 'no-repeat';
-    w.style.backgroundColor = '#000';
     setBackground(screen, p.wallpaperUrl);   // cssUrl, not concatenation: a quote or a backslash in the path used to kill the wallpaper silently
+    screen.style.backgroundImage = screen.style.backgroundImage + ', var(--wall, none)';
     screen.style.backgroundSize = (p.wallFit === 'contain') ? 'contain' : 'cover';
     screen.style.backgroundPosition = (p.wallFocus === undefined || p.wallFocus === null)
       ? 'center' : ('50% ' + focusOf(p.wallFocus) + '%');
     screen.style.backgroundRepeat = 'no-repeat';
-    screen.style.backgroundColor = '#000';
   } else {
     w.style.backgroundImage = '';
     w.style.backgroundSize = '';
@@ -8287,11 +8690,6 @@ function applyWallpaper() {
     screen.style.backgroundImage = '';
     screen.style.backgroundSize = '';
     screen.style.backgroundColor = '';
-    const selected = p.wallpaper || 'ifruit';
-    w.classList.add('wall-' + selected);
-    // The screen itself carries the same material. During app/setup transforms this
-    // prevents its old black fallback from flashing as a strip along the bottom edge.
-    screen.classList.add('wall-' + selected);
   }
 }
 
@@ -10134,7 +10532,15 @@ function resetTransientUI() {
 
   byId('toast').classList.remove('on');
   byId('hud').classList.remove('on');
-  byId('device').classList.remove('peeking', 'buzz', 'capturing');
+  byId('device').classList.remove('peeking', 'buzz');
+  // Through the one function that owns the class and its timer, rather than by naming the
+  // class here: a capture left held is a handset nobody can see.
+  releaseCapturing();
+  // The camera's off-screen state goes with `appblack` below, which is the other half of the
+  // same screen. Locking, a side button and an admin reset all land here without passing
+  // through `closeApp`, and any of them leaving `camlive` behind would hand the player a
+  // handset that is simply not drawn.
+  setCamLive(false);
   byId('app').classList.remove('black');
   byId('screen').classList.remove('appblack');
   setIslandMode(call ? 'live' : null);
@@ -12015,54 +12421,50 @@ function remEdit(r) {
 // -- Camera -----------------------------------------------------
 // Real, and only as real as the operator made it: with no upload target configured there
 // is nowhere for a photo to go, and the app says so rather than pretending to save one.
-// The camera, drawn like the iOS one: a black viewfinder with framing marks, a shutter
-// ring, the last shot as a roll thumbnail, and a control to lay the phone on its side.
-let camMode = 'photo';     // 'photo' | 'video' (video only when the server hosts media)
-let camRecording = false;
-let camFront = false;      // selfie: a game camera in front of the ped
+//
+// **The app has no interface of its own.** Opening it hands the framing to GTA's own cellphone
+// camera, which draws the viewfinder and its own help box naming the keys - Enter photographs,
+// arrow up flips to the selfie, Backspace leaves. This page draws nothing at all while that
+// runs: a NUI page is an overlay and can never show the game inside itself, so every control it
+// painted would sit over the shot the player is composing - and both capture paths grab the
+// whole viewport with no crop, so it would be in the photograph as well.
 let camAppOpen = false;    // the Camera app is up, so closeApp knows to tear it down
 
-// Record a clip. The client relay hides the phone, the server records and uploads through
-// screencapture, and the URL comes back. The countdown is cosmetic - the server owns the
-// real clock and the cap.
-async function cameraRecord() {
-  if (camRecording) return;
-  camRecording = true;
-  const seconds = Math.max(1, Math.min(30, Number(state.mediaVideoMax) || 15));
-  const rec = byId('camrec');
-  if (rec) rec.classList.remove('hidden');
-  let n = 0;
-  const tick = setInterval(() => {
-    n += 1;
-    if (byId('camrectime')) byId('camrectime').textContent = String(n);
-    if (n >= seconds) clearInterval(tick);
-  }, 1000);
-
-  const res = await post('record', { seconds });
-  clearInterval(tick);
-  camRecording = false;
-  if (rec) rec.classList.add('hidden');
-  if (!res || !res.ok || !res.url) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
-  // A clip is a media item: offer to post it, and keep it on the roll.
-  clipShareSheet(res.url);
+/// The handset off screen for the whole camera session.
+///
+/// One class, on `#device`, `opacity: 0`. A stuck class is the worst failure this path has - an
+/// invisible phone with no way to get it back - so it is raised and dropped here alone and every
+/// route out of an app clears it rather than trusting the message that raised it.
+function setCamLive(on) {
+  byId('device').classList.toggle('camlive', on === true);
 }
 
-// After a clip, ask where it goes. Straight to Bleeter or Snapmatic, or just kept.
-function clipShareSheet(url) {
-  sheet(L('ph.clip_ready'),
-    UI.row({ icon: 'bleet', title: L('app.bleeter'), data: { to: 'bleeter' } }) +
-    UI.row({ icon: 'snap', title: L('app.snap'), data: { to: 'snap' } }) +
-    '<video class="clippreview" src="' + esc(url) + '" muted loop autoplay playsinline></video>',
-    () => {
-      [...byId('sheet').querySelectorAll('[data-to]')].forEach((el) =>
-        el.addEventListener('click', async () => {
-          const app = el.dataset.to;
-          const epoch = sheetEpoch;
-          const r = await post('social', { op: 'post', kind: 'video', image: url, body: '', app });
-          if (!closeSheet(false, epoch)) return;
-          toast(r && r.ok ? L('ph.clip_posted') : L('ph.err_' + ((r && r.error) || 'x')));
-        }));
-    });
+/// Take the handset out of the frame for as long as a capture lasts.
+///
+/// `.device.capturing` is `opacity: 0`. In camera mode `camlive` already holds the handset
+/// there for the whole session, so this covers the frames on either side of it - the shutter can
+/// be pressed on the frame a class is landing or being dropped - and both capture paths grab the
+/// entire viewport with no crop, so a handset half drawn is a handset in the photograph.
+///
+/// The ceiling is a dead-man's switch, not a schedule. Every path answers - `shutterDone` from
+/// `shoot`, `recordDone` from `record` - and each has its own timeout below this one, so this
+/// can only fire when nothing at all is coming back. An invisible phone with no way to get it
+/// back is the worst failure this path has.
+function holdCapturing(ceiling) {
+  const device = byId('device');
+  // Restart it rather than assume it is off: a second capture arriving while the first is
+  // still held must not inherit the first one's timer.
+  device.classList.remove('capturing');
+  void device.offsetWidth;
+  device.classList.add('capturing');
+  clearTimeout(shutterTimer);
+  shutterTimer = setTimeout(releaseCapturing, Math.max(220, Number(ceiling) || 30000));
+}
+
+function releaseCapturing() {
+  clearTimeout(shutterTimer);
+  shutterTimer = null;
+  byId('device').classList.remove('capturing');
 }
 
 // Is the Camera app usable? The server always sends an explicit boolean, so ABSENT means
@@ -12073,98 +12475,55 @@ function clipShareSheet(url) {
 // An operator who switches it off gets `false`, which is caught here. Nothing else is.
 const cameraOn = () => state.camera !== false;
 
-RENDER.camera = async (cached) => {
+RENDER.camera = () => {
   if (!cameraOn()) { body(UI.empty(L('ph.camera_off'), 'camera')); return; }
-  const d = await photosList(cached);
-  const shots = (d && d.photos) || [];
-  const last = shots[0];
 
-  // Immersive: no title bar, no padding, the black fills the screen edge to edge.
+  // Immersive and EMPTY. No title bar, no padding, no controls: the viewfinder belongs to the
+  // game, and the only thing this app has to do is ask for it. The `#000` these classes carry
+  // is what the screen looks like for the frame or two before the client answers, after which
+  // `camlive` takes the whole handset off screen.
   byId('navbar').classList.add('hidden');
   byId('app').classList.add('camfull');
   byId('screen').classList.add('appblack');
-  // The viewfinder shows the world, not a black rectangle. `camlive` makes the screen and
-  // the app surface transparent so the game is visible THROUGH the handset - which is the
-  // preview of the photograph about to be taken, and needs no capture loop to produce.
-  //
-  // Lua is told at the same moment: it puts the player in first person and hides the HUD and
-  // minimap, so what is framed is what is photographed.
-  // Only on the way IN. `RENDER.camera` is re-run by the landscape and selfie buttons, so
-  // anything done here unconditionally would fight them.
-  //
-  // The `camlive` CLASS is Lua's to set, not this function's: it is what makes the screen
-  // see-through, and it must appear at the same moment the cursor leaves. Two owners for one
-  // class is how it ended up on screen with a cursor still over it.
-  const entering = !camAppOpen;
+  body('');
+
   camAppOpen = true;
-  if (entering) {
-    // The engine frames the shot and the handset leaves the screen while it does. The phone
-    // is drawn again the moment the camera closes, which Lua signals.
-    post('camMode', { on: true, front: camFront });
-  }
-
-  body(
-    '<div class="camui">' +
-      '<div class="camtop">' +
-        '<button class="camchip back" id="camback" type="button" aria-label="' + esc(L('ph.back')) + '">' +
-          svg('chevron') + '</button>' +
-        '<button class="camchip ' + (landscape ? 'on' : '') +
-          '" id="camland" type="button" aria-label="' + esc(L('ph.landscape')) + '">' +
-          svg('landscape') + '</button>' +
-      '</div>' +
-      '<div class="camview">' +
-        '<span class="cammark tl"></span><span class="cammark tr"></span>' +
-        '<span class="cammark bl"></span><span class="cammark br"></span>' +
-        '<div class="camgrid"></div>' +
-        '<div class="camhint">' + esc(L('ph.vf_hint')) + '</div>' +
-      '</div>' +
-      // Photo, and - when the server has video hosting on - a Video mode toggle.
-      '<div class="cammode">' +
-        '<span class="' + (camMode === 'photo' ? 'on' : '') + '" data-mode="photo">' + esc(L('ph.cam_photo')) + '</span>' +
-        (state.mediaVideo ? '<span class="' + (camMode === 'video' ? 'on' : '') + '" data-mode="video">' +
-          esc(L('ph.cam_video')) + '</span>' : '') +
-      '</div>' +
-      '<div class="camctl">' +
-        (last ? '<button class="camroll" id="camroll" type="button" style="' + photoStyle(last) + '"></button>'
-              : '<span class="camroll empty"></span>') +
-        '<button class="camshutter' + (camMode === 'video' ? ' video' : '') + '" id="shoot" type="button" aria-label="' +
-          esc(L('ph.shooting')) + '"><span></span></button>' +
-        '<button class="camflip' + (camFront ? ' on' : '') + '" id="camselfie" type="button" aria-label="' +
-          esc(L('ph.cam_selfie')) + '">' + svg('camrotate') + '</button>' +
-      '</div>' +
-      '<div class="camrec hidden" id="camrec"><span class="camrecdot"></span><span id="camrectime">0</span>s</div>' +
-    '</div>'
-  );
-
-  rows('.cammode span[data-mode]', (el) => el.addEventListener('click', () => {
-    // The mode is a local choice: the photo list did not change.
-    camMode = el.dataset.mode; RENDER.camera(true);
-  }));
-
-  byId('shoot').addEventListener('click', async () => {
-    if (camMode === 'video') { cameraRecord(); return; }
-    toast(L('ph.shooting'));
-    const res = await post('shoot');
-    photosForget();               // a new photo exists; the list held here no longer has it
-    if (!res || res.error) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
-    RENDER.camera();
-  });
-  byId('camback').addEventListener('click', () => closeApp());
-  const toggle = () => { setLandscape(!landscape); RENDER.camera(true); };
-  byId('camland').addEventListener('click', toggle);
-  // Flip to the front camera: a game camera in front of the ped, facing back, so a photo
-  // or clip is of the player. The client sets it up and tears it down.
-  byId('camselfie').addEventListener('click', () => {
-    camFront = !camFront;
-    post('camFacing', { front: camFront });
-    RENDER.camera(true);
-  });
-  const roll = byId('camroll');
-  if (roll) roll.addEventListener('click', () => {
-    const a = (state.apps || []).find((x) => x.id === 'gallery');
-    if (a) enterApp(a, null); else photoSheet(shots, 0);
-  });
+  // Lua hands the mouse to the engine, hides the HUD and the minimap and puts GTA's own phone
+  // camera in charge, so what the player frames is what is photographed. The `camlive` CLASS is
+  // its to raise, not this function's: it must land at the same moment the cursor leaves, and
+  // two owners for one class is how it once ended up on screen with a cursor still over it.
+  post('camMode', { on: true });
 };
+
+/// The shutter, which is a key and nothing else.
+///
+/// Lua's key handler sends `camShoot` when the player presses Enter - the binding its own help
+/// box names - and there is no button, so this is the one route to a photograph.
+///
+/// Nothing is said here on the way through. Every surface this page owns lives inside `#device`,
+/// and `#device` is off screen for the whole camera session, so a toast raised from here would
+/// be written onto an invisible element. The client reports a failure with the framework's own
+/// notification, which is drawn outside this resource's browser.
+async function cameraShoot() {
+  // **One capture at a time, refused here rather than at the far end.** Holding the key fired a
+  // `post('shoot')` per repeat, each one a full request asking another resource to grab and
+  // encode a frame. The server's upload slot refused all but the first, which is why this was
+  // invisible - but the requests still crossed to it, and that is the path that crashed a
+  // server. The cheapest place to stop a second capture is before it is asked for.
+  if (shootBusy) return;
+  shootBusy = true;
+  try {
+    const res = await post('shoot');
+    // The roll has a new picture on it, so the Gallery must read the list again rather than
+    // draw the one it is holding. Nothing on screen needs it now - this app has no thumbnail.
+    if (res && !res.error) photosForget();
+  } finally {
+    // `finally`, so a failed photograph cannot latch the shutter off for the rest of the
+    // session. That is the failure being removed from the server and the client alike, and it
+    // must not be reintroduced here.
+    shootBusy = false;
+  }
+}
 
 // The Gallery: every photo, tap to view, and from there set it as wallpaper, AirDrop it,
 // or delete it. Same store as the camera - one shoots, one keeps.
@@ -12248,6 +12607,13 @@ function paintViewer() {
   const now = strip && strip.querySelector('.prollone.on');
   if (now) strip.scrollLeft = now.offsetLeft - strip.clientWidth / 2 + now.clientWidth / 2;
 
+  // The roll, and only the roll. The picture above it is a real `<img>` and needs no probe; the
+  // strip is `.prollone` buttons painted with `photoStyle`, which is a background and therefore
+  // silent when it fails. This screen used to ask about `.shot`, `.gtile` and `.photocell` -
+  // none of which it draws - so the strip was never marked; the fix moved the grid's own call to
+  // the grid and left nothing here at all.
+  watchDeadShots('appbody', '.prollone');
+
   qrows('proll', '.prollone', (b) => b.addEventListener('click', () => {
     viewAt = Number(b.dataset.i);
     paintViewer();
@@ -12292,8 +12658,13 @@ function paintViewer() {
         });
       });
   });
+  // The Gallery, and only the Gallery: `viewRows` holds the player's own photographs, so the
+  // editing controls are the caller's to offer.
+  // The REAL gallery positions travel with the list, because `viewRows` is filtered by album
+  // and a position in it is not a position in the roll.
   byId('pedit').addEventListener('click', () => photoSheet(
-    viewRows.map((r) => r.raw), viewRows.findIndex((r) => r === row), viewAlbums));
+    viewRows.map((r) => r.raw), viewRows.findIndex((r) => r === row), viewAlbums,
+    true, viewRows.map((r) => r.i)));
   byId('pdel').addEventListener('click', () => confirmSheet(
     L('ph.photo_del_sure'), L('ph.delete'), async () => {
       await post('photos', { op: 'del', index: row.i + 1 });
@@ -12371,6 +12742,10 @@ RENDER.gallery = async (cached) => {
       ? '<div class="galcards">' + boxes.map(galleryCard).join('') + '</div>'
       : UI.empty(L('ph.album_none'), 'images')));
     wireGalleryTabs();
+    // An album cover is a background too, and its url comes from the first photograph in the
+    // album - so an unreachable host gives a wall of coloured rectangles that read as covers
+    // still loading. `.galcardart` is the span `galleryCard` paints with `photoStyle`.
+    watchDeadShots('appbody', '.galcardart');
     rows('.galcard', (b) => b.addEventListener('click', () => {
       galleryAlbum = b.dataset.alb;
       galleryKind = b.dataset.kind;
@@ -12401,6 +12776,12 @@ RENDER.gallery = async (cached) => {
   });
   wireGalleryTabs();
   viewAlbums = albums;
+  // Here, where the grid actually is. This used to sit in `paintViewer`, which paints a single
+  // <img> and a strip of `.prollone` buttons - so it queried `#appbody` for `.shot`, `.gtile`
+  // and `.photocell`, none of which are on that screen, and the last two are not markup this
+  // resource has ever written. The grid tile is `.shot`, the div `RENDER.gallery` paints with
+  // `photoStyle` a few lines above.
+  watchDeadShots('appbody', '.shot');
   rows('.shot', (el) => el.addEventListener('click', () => {
     // The viewer is handed the rows AS SHOWN - so paging through a place album pages
     // through that album, not through the whole roll behind it - and each row keeps the
@@ -12481,7 +12862,40 @@ function wirePhotoZoom(wrapId, imgId) {
   apply();
 }
 
-function photoSheet(shots, i, albums) {
+/// The full-screen photograph, and its editor.
+///
+/// **`own` is what makes editing safe.** This function knows an array and a position, and its
+/// Save, Album and Delete handlers turn that position into `photos[i + 1]` on the SERVER - the
+/// caller's own gallery. From the Gallery those are the same list. From the fourth photograph
+/// of a stranger's post they are not: `i` is 3, and Save rewrote the player's own fourth
+/// gallery photo, Delete deleted it, both with a success toast.
+///
+/// So the editing controls exist only when the caller states these are the player's own
+/// photographs. Everything else opens a viewer. The default is read-only on purpose: the route
+/// that caused this was a caller added later, and a capability that has to be asked for cannot
+/// be forgotten into existence.
+///
+/// `own` answers one question and `slots` answers another: whether the controls appear, and
+/// which slot of the roll each picture is. A caller can want the first without having the
+/// second, which is why they are two arguments.
+function photoSheet(shots, i, albums, own, slots) {
+  // **Where each photograph really sits in the gallery.**
+  //
+  // `i` is a position in `shots`, and `shots` is whatever list the caller had on screen - which
+  // in the Gallery is FILTERED by album. The Save, Album and Delete handlers turn that position
+  // into `photos[i + 1]` on the server, so with an album open they wrote to a different
+  // photograph and reported success. The delete button one line below the caller already got
+  // this right with `row.i`, which is what made the inconsistency easy to miss.
+  //
+  // `slots` is that mapping and only that: position in `shots` to position in the roll. Leave
+  // it out when the list IS the roll in order, and a position is already the slot.
+  //
+  // It rode on `own` for one release, and the two meanings collided at the first caller that
+  // had one without the other: the camera roll shortcut owns its photographs but has no
+  // filtered list to map, so it passed nothing at all and the sheet read as somebody else's.
+  // A player without the Gallery app installed lost Save, Album and Delete on a photograph
+  // taken a second earlier. One flag, one list, and neither can be mistaken for the other.
+  const slotOf = (n) => (Array.isArray(slots) ? (Number(slots[n]) || 0) : n) + 1;
   const r = photoRow(shots[i]);
   // The bare link for the <img> on this screen - the browser must not be handed a fragment
   // it would try to resolve - and the encoded one for anything that LEAVES the phone.
@@ -12518,14 +12932,18 @@ function photoSheet(shots, i, albums) {
     '</div>' +
     // Save first, and it says whether there is anything to save. A button that is always
     // available on a screen where nothing has changed teaches people to ignore it.
-    '<div class="shotsave" id="shotsavebar">' +
-      '<button class="shotrevert" id="srevert" type="button">' + esc(L('ph.revert')) + '</button>' +
-      '<button class="shotkeep" id="skeep" type="button">' + esc(L('ph.save')) + '</button>' +
-    '</div>' +
-    UI.button(L('ph.album_set'), 'salbum', 'plain') +
+    (own
+      ? '<div class="shotsave" id="shotsavebar">' +
+          '<button class="shotrevert" id="srevert" type="button">' + esc(L('ph.revert')) + '</button>' +
+          '<button class="shotkeep" id="skeep" type="button">' + esc(L('ph.save')) + '</button>' +
+        '</div>' +
+        UI.button(L('ph.album_set'), 'salbum', 'plain')
+      : '') +
     UI.button(L('ph.airdrop_share'), 'sshare', 'tinted') +
     UI.button(L('ph.set_wallpaper'), 'swall') +
-    UI.button(L('ph.delete'), 'sdel', 'destructive'),
+    // Sharing and setting a wallpaper act on the URL in front of you and are right either way.
+    // Deleting acts on a gallery slot, so it belongs with the editor.
+    (own ? UI.button(L('ph.delete'), 'sdel', 'destructive') : ''),
     () => {
       // Draw whatever shape is current. `cover` on the img plus a ratio on the frame is the
       // whole crop: no canvas, no re-upload, and the stored filter still applies because
@@ -12564,10 +12982,13 @@ function photoSheet(shots, i, albums) {
       };
       dirty();
 
-      byId('skeep').addEventListener('click', async () => {
+      // Guarded: these four exist only when `own` is set, and an unguarded byId(...) on a
+      // missing one throws and takes the rest of this callback - Share, Set as wallpaper -
+      // with it.
+      if (byId('skeep')) byId('skeep').addEventListener('click', async () => {
         if (!changed()) return;
         // One write for the whole edit, so a half-saved picture is not a state that exists.
-        const res = await post('photos', { op: 'edit', index: i + 1,
+        const res = await post('photos', { op: 'edit', index: slotOf(i),
           crop: crop === 'none' ? '' : crop, focus, filter: filter === 'none' ? '' : filter });
         if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
         photosForget();
@@ -12582,7 +13003,7 @@ function photoSheet(shots, i, albums) {
         else RENDER.gallery();
       });
 
-      byId('srevert').addEventListener('click', () => {
+      if (byId('srevert')) byId('srevert').addEventListener('click', () => {
         crop = was.crop; focus = was.focus; filter = was.filter;
         const slider0 = byId('sfocus');
         if (slider0) slider0.value = focus;
@@ -12613,7 +13034,7 @@ function photoSheet(shots, i, albums) {
           [...byId('sfilters').querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
           dirty();
         }));
-      byId('salbum').addEventListener('click', () => {
+      if (byId('salbum')) byId('salbum').addEventListener('click', () => {
         const list = (albums || []).slice();
         sheet(L('ph.album_set'),
           UI.field('albname', L('ph.album_name'), r.album || '', 'maxlength="40"') +
@@ -12623,13 +13044,13 @@ function photoSheet(shots, i, albums) {
             byId('albgo').addEventListener('click', async () => {
               const album = byId('albname').value.trim();
               const epoch = sheetEpoch;
-              await post('photos', { op: 'edit', index: i + 1, album });
+              await post('photos', { op: 'edit', index: slotOf(i), album });
           photosForget();
               if (closeSheet(false, epoch)) RENDER.gallery();
             });
             [...byId('sheet').querySelectorAll('.row')].forEach((el) => el.addEventListener('click', async () => {
               const epoch = sheetEpoch;
-              await post('photos', { op: 'edit', index: i + 1, album: el.dataset.alb });
+              await post('photos', { op: 'edit', index: slotOf(i), album: el.dataset.alb });
           photosForget();
               if (closeSheet(false, epoch)) RENDER.gallery();
             }));
@@ -12645,12 +13066,13 @@ function photoSheet(shots, i, albums) {
         if (r && r.ok) { state.prefs = r.prefs; applyWallpaper(); toast(L('ph.wall_set')); }
         else toast(L('ph.err_' + ((r && r.error) || 'x')));
       });
-      byId('sdel').addEventListener('click', async () => {
+      if (byId('sdel')) byId('sdel').addEventListener('click', async () => {
         const epoch = sheetEpoch;
-        await post('photos', { op: 'del', index: i + 1 });
+        await post('photos', { op: 'del', index: slotOf(i) });
         if (!closeSheet(false, epoch)) return;
         toast(L('ph.photo_deleted'));
-        if (openApp && openApp.id === 'gallery') RENDER.gallery(); else RENDER.camera();
+        // Only the Gallery can be looking at a photograph. The Camera draws nothing.
+        if (openApp && openApp.id === 'gallery') RENDER.gallery();
       });
     });
 }
@@ -16480,19 +16902,55 @@ function onSearch(fn) {
 }
 
 // ══ Tab bar ════════════════════════════════════════════════════
+/// The bar SURVIVES a tab change; only the selection moves.
+///
+/// It used to rewrite `#appfoot` on every call, so a tab tap destroyed the bar and built a new
+/// one - and `.app.on .tabbar { animation: ph27-dock-in }` sees a new element as an element
+/// arriving, so the bar replayed its entry: measured from 22.19px below its resting place at
+/// opacity 0, sliding up over 380ms, under the finger that had just pressed it.
+///
+/// Keyed on the tab IDS only, deliberately: a badge count changes while the app is open (a
+/// queue fills, a warrant lands) and re-keying on the count would rebuild the bar - and replay
+/// the animation - every time a number moved. The badge is updated in place instead.
+///
+/// The click is DELEGATED and bound once. A listener per button per render was fine while
+/// every render threw the buttons away; now that they persist, per-render binding would stack
+/// one handler on top of another on every tab change.
 function tabbar(tabs, current, onPick) {
-  foot('<div class="tabbar">' + tabs.map((t) => {
-    // A count on the icon, the way Messages carries unread. Drawn only when there is one:
-    // `badge: 0` is a tab with nothing waiting, not a tab wearing a zero.
-    const n = Number(t.badge) || 0;
-    return '<button class="' + (t.id === current ? 'on' : '') + '" data-t="' + esc(t.id) +
+  const host = byId('appfoot');
+  const shape = tabs.map((t) => t.id).join(',');
+  // A count on the icon, the way Messages carries unread. Drawn only when there is one:
+  // `badge: 0` is a tab with nothing waiting, not a tab wearing a zero.
+  const badge = (n) => (n ? '<i class="tbadge">' + esc(n > 99 ? '99+' : String(n)) + '</i>' : '');
+  let bar = host.querySelector('.tabbar');
+
+  if (!bar || bar.dataset.shape !== shape) {
+    foot('<div class="tabbar" data-shape="' + esc(shape) + '">' + tabs.map((t) =>
+      '<button class="' + (t.id === current ? 'on' : '') + '" data-t="' + esc(t.id) +
       '" type="button" aria-current="' + (t.id === current ? 'page' : 'false') + '">' +
-      '<span class="tbicon">' + svg(t.icon) +
-        (n ? '<i class="tbadge">' + esc(n > 99 ? '99+' : String(n)) + '</i>' : '') + '</span>' +
-      '<span>' + esc(L(t.label)) + '</span></button>';
-  }).join('') + '</div>');
-  [...byId('appfoot').querySelectorAll('button')].forEach((b) =>
-    b.addEventListener('click', () => onPick(b.dataset.t)));
+      '<span class="tbicon">' + svg(t.icon) + badge(Number(t.badge) || 0) + '</span>' +
+      '<span>' + esc(L(t.label)) + '</span></button>').join('') + '</div>');
+    bar = host.querySelector('.tabbar');
+    bar.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('button');
+      if (!b || !bar.contains(b)) return;
+      // A tab is a change of CONTENT, not a change of screen: see `body`.
+      quietRender = Date.now();
+      if (typeof bar.__pick === 'function') bar.__pick(b.dataset.t);
+    });
+  } else {
+    [...bar.querySelectorAll('button')].forEach((b, i) => {
+      const t = tabs[i] || {};
+      const on = t.id === current;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-current', on ? 'page' : 'false');
+      const ic = b.querySelector('.tbicon');
+      if (ic) ic.innerHTML = svg(t.icon) + badge(Number(t.badge) || 0);
+    });
+  }
+  // Re-pointed on every call rather than captured once: the renderer that owns the tabs is
+  // re-entered on each switch and closes over its own state.
+  bar.__pick = onPick;
 }
 
 
@@ -17402,16 +17860,95 @@ const SOC = {
 
 const socialKind = (appId) => (appId === 'snap' ? 'photo' : 'text');
 
+/// **The one place a round face is written.** Not only the social apps: the contact card, the
+/// OnlyFruits creator faces and both Hush screens come through here too, because each of them
+/// had grown its own copy of this markup and every copy had lost the letter in the branch that
+/// has a photograph. A person is named by `handle` in the social apps and by `name` everywhere
+/// else, so both are read and the first one present wins.
 function socAvatar(row, cls) {
   const url = row && row.avatar;
-  const letter = esc(String((row && row.handle) || '?').slice(0, 1).toUpperCase());
-  return url
-    ? '<span class="' + (cls || 'pav') + '" style="' + inlineBackground(url) + '"></span>'
-    : '<span class="' + (cls || 'pav') + '">' + letter + '</span>';
+  const who = String((row && (row.handle || row.name)) || '').trim();
+  const letter = esc((who || '?').slice(0, 1).toUpperCase());
+  // The letter goes in whether or not there is a picture. A background that fails to load is
+  // silent, so an avatar whose file expired showed an empty disc - worse than having no avatar
+  // at all, which at least shows the initial. Now the picture merely covers it.
+  return '<span class="' + (cls || 'pav') + '"' +
+    (url ? ' style="' + inlineBackground(url) + '"' : '') + '>' + letter + '</span>';
 }
 
-const socVerified = (row) => (row && row.verified)
-  ? '<span class="pverif" aria-hidden="true">' + svg('check') + '</span>' : '';
+/// The badge beside a name, and there is only ever ONE of them.
+///
+/// Blue is bought at a desk on the map; orange is granted by staff and says the account is who
+/// it claims to be. **Orange wins where an account holds both.** Two discs after one name is
+/// not two badges, it is clutter, and the official mark is the stronger of the two claims - a
+/// mark that cannot be bought subsumes one that can. Nothing is hidden by that: the profile
+/// page has room to say it in words and says both there.
+const socVerified = (row) => {
+  if (!row) return '';
+  if (row.official) {
+    return '<span class="pverif isofficial" aria-hidden="true">' + svg('check') + '</span>';
+  }
+  return row.verified
+    ? '<span class="pverif" aria-hidden="true">' + svg('check') + '</span>' : '';
+};
+
+// ── The verification desk ──────────────────────────────────────
+// A place on the map sells the blue tick, one app at a time.
+//
+// **Nothing here decides anything.** The price, whether this player is really standing at a
+// desk, whether they hold an account on that app, and the payment are all the server's; this
+// sheet sends the name of an app and nothing else. A page cannot claim to be at the desk - the
+// ped's real position is read on the server before a single unit moves. See the Verification
+// section of server/social.lua.
+//
+// The ORANGE mark is not for sale and has no control here. Staff grant it with
+// `/phoneadmin official @handle`, and nothing a client sends can write that column.
+async function verifyDeskSheet() {
+  const r = await post('social', { op: 'verifyDesk' });
+  if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+
+  const apps = r.apps || [];
+  if (!apps.length) { toast(L('ph.err_off')); return; }
+
+  // A row that cannot be bought says WHY before it is tapped rather than after. `verdict` is
+  // the same word the purchase itself would answer with, so the two can never disagree.
+  const cells = apps.map((a) => UI.row({
+    icon: a.app === 'snap' ? 'snap' : 'bleet',
+    tint: a.app === 'snap' ? '#FFCC00' : '#0A84FF',
+    title: a.name || a.app,
+    subtitle: a.verdict === 'ok'
+      ? (a.handle ? '@' + a.handle : '')
+      : L('ph.err_' + a.verdict),
+    value: a.verdict === 'ok' ? money(a.price) : '',
+    chevron: a.verdict === 'ok',
+    data: { vapp: a.app, vgo: a.verdict === 'ok' ? '1' : '0', vwhy: a.verdict },
+  }));
+
+  sheet(L('ph.verify_title'),
+    '<div class="airbig">' + svg('check') +
+      '<span>' + esc(r.label ? L(String(r.label)) : L('ph.verify_desk')) + '</span></div>' +
+    '<div class="airfrom">' + esc(L('ph.verify_line')) + '</div>' +
+    UI.group(cells, { footer: L('ph.verify_foot') }) +
+    '<div class="groupfoot">' +
+      esc(L(r.money === 'cash' ? 'ph.verify_cash' : 'ph.verify_bank')) + '</div>',
+    () => {
+      const epoch = sheetEpoch;
+      // `rows()` searches #appbody, and this is a sheet. Every other sheet in the phone that
+      // wires more than one row reaches into #sheet by hand for exactly that reason.
+      [...byId('sheet').querySelectorAll('.row[data-vapp]')].forEach((el) =>
+        el.addEventListener('click', async () => {
+          if (el.dataset.vgo !== '1') { toast(L('ph.err_' + el.dataset.vwhy)); return; }
+          const res = await post('social', { op: 'verifyBuy', app: el.dataset.vapp });
+          if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+          ui('money');
+          if (!closeSheet(false, epoch)) return;
+          // No redraw from here. The server tells the phone the account changed, and the
+          // router redraws only when that app is the one on screen - the right amount of work
+          // for a badge bought from a sheet over the home screen.
+          toast(L('ph.verify_done'));
+        }));
+    });
+}
 
 // "il y a 3 min" beats a timestamp nobody reads. The server sends SQL datetimes in
 // server time, so this compares the two as text-free numbers rather than parsing a zone.
@@ -17451,7 +17988,12 @@ function postCard(pst, appId) {
   const shots = postImages(pst);
   const image = pst.kind === 'video'
     ? (pst.image
-        ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls></video>'
+        // `onerror` replaces the player, the same way a dead photograph is replaced. Without
+        // it a clip whose file is gone is a 150px black slab with native controls that do
+        // nothing when pressed - which reads as a broken player rather than a missing file.
+        ? '<video class="pimg" src="' + esc(pst.image) + '" muted loop playsinline controls'
+          + ' onerror="this.outerHTML=&quot;<span class=\'pimg photogone\'>'
+          + esc(L('ph.photo_gone')) + '</span>&quot;"></video>'
         : '')
     : (shots.length
         ? (shots.length === 1
@@ -17510,7 +18052,18 @@ function popHeart(card) {
   setTimeout(() => el.remove(), 700);
 }
 
-function wirePosts(appId, reload) {
+/// Wire a feed's controls.
+///
+/// `root` because a post card is not always in the app body: opening one from a profile
+/// thumbnail puts it in the sheet, and every selector here used to query `#appbody` only - so
+/// none of the thirteen matched, and every control on that card was dead. Not one handler bound,
+/// silently.
+function wirePosts(appId, reload, root) {
+  // **Scoped to where the card actually is.** `rows` at the top of this file always queries
+  // `#appbody`; a post opened from a profile thumbnail lives in `#sheet`, so not one of the
+  // selectors below matched and every control on that card was dead. `qrows` already exists
+  // for exactly this and was simply not used here.
+  const rows = (sel, fn) => qrows(root || 'appbody', sel, fn);
   rows('.post .plike', (b) => b.addEventListener('click', async () => {
     const id = Number(b.closest('.post').dataset.id);
     const r = await post('social', { op: 'like', id, app: appId });
@@ -17595,22 +18148,34 @@ function wirePosts(appId, reload) {
     let shots = [];
     try { shots = JSON.parse(cell.parentNode.dataset.pgall || '[]'); } catch (e) { shots = []; }
     if (!Array.isArray(shots) || !shots.length) return;
-    photoSheet(shots, Math.min(Number(cell.dataset.pg) || 0, shots.length - 1), []);
+    // **The viewer, not the editor.** `photoSheet` is the crop-and-filter screen for your own
+    // gallery; opening it on somebody else's post offers to retouch a photograph that is not
+    // yours, over a set of controls nobody asked for. A tap on a picture in a feed means
+    // "show me that picture".
+    const i = Math.min(Number(cell.dataset.pg) || 0, shots.length - 1);
+    openPhoto(shots[i], '');
   }));
 
   rows('.post .pcomment', (b) => b.addEventListener('click', () =>
     commentSheet(appId, Number(b.closest('.post').dataset.id), b.querySelector('span'))));
+  // **Leaving a card that is in a sheet has to close the sheet first.**
+  //
+  // These three navigate the app underneath. Opened from a profile thumbnail the card lives in
+  // the sheet, so the new screen was drawn behind it and the player was left looking at the
+  // post they had just navigated away from. `socPostSheet` already had this right.
+  const leaveCard = (go) => { if (root === 'sheet') closeSheet(true); go(); };
+
   rows('.post .phead', (b) => b.addEventListener('click', () =>
-    socialProfile(appId, b.dataset.who)));
+    leaveCard(() => socialProfile(appId, b.dataset.who))));
   // A tag opens its own timeline, a mention opens that profile. `stopPropagation` because
   // both sit inside a card that has its own handlers.
   rows('.post .soctag', (b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
-    socialTagFeed(appId, b.dataset.tag);
+    leaveCard(() => socialTagFeed(appId, b.dataset.tag));
   }));
   rows('.post .socmention', (b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
-    socialProfile(appId, b.dataset.who);
+    leaveCard(() => socialProfile(appId, b.dataset.who));
   }));
   rows('.post .pdel', (b) => b.addEventListener('click', () => {
     const card = b.closest('.post');
@@ -17624,17 +18189,54 @@ function wirePosts(appId, reload) {
 
 // A small yes/no, because deleting a post from a feed you are scrolling should take one
 // deliberate extra tap rather than none.
-function confirmSheet(question, confirmLabel, onConfirm) {
-  sheet(question,
-    UI.button(confirmLabel, 'socyes', 'neg') + UI.button(L('ph.cancel'), 'socno', 'plain'),
-    () => {
-      const epoch = sheetEpoch;
-      byId('socyes').addEventListener('click', () => {
+/// An iOS alert.
+///
+/// MEASURED from `Alert.svg` and `Examples/Alert.svg`: a 300-wide card at radius 34, title
+/// 17 Bold and message 17 Regular both LEFT aligned in the same column, and a row of 48-tall
+/// capsules at radius 24 with an 8px gap, inset 14 from the card's left, right and bottom.
+/// Two short actions sit side by side and split the 272pt content width 132 / 8 / 132, with
+/// the primary on the TRAILING side; three actions, or a label too long for 132, stack full
+/// width at a 56 pitch - which is the same 48 plus the same 8. Height, radius and label style
+/// are identical between the two layouts; that is the whole difference.
+///
+/// `actions` is `[{ label, style, onClick }]` in display order. `style` is '' (primary),
+/// 'cancel' or 'destructive'. An action with no `onClick` just closes.
+function alertSheet(title, body, actions, opts) {
+  const list = (actions || []).filter((a) => a && a.label);
+  // 14 characters is 132pt of 17pt Bold with a little air. Past that the pair cannot share
+  // a row without one of them ellipsising, and the kit's answer to that is to stack.
+  const longest = list.reduce((n, a) => Math.max(n, String(a.label).length), 0);
+  const stacked = list.length !== 2 || longest > 14;
+  const html = '<div class="alertacts' + (stacked ? ' stack' : '') + '">' +
+    list.map((a, i) => '<button class="alertbtn ' + esc(a.style || 'primary') +
+      '" id="alertact' + i + '" type="button">' + esc(a.label) + '</button>').join('') +
+    '</div>';
+  sheet(title, html, () => {
+    const epoch = sheetEpoch;
+    list.forEach((a, i) => {
+      const btn = byId('alertact' + i);
+      if (!btn) return;
+      btn.addEventListener('click', () => {
         if (!closeSheet(false, epoch)) return;
-        onConfirm();
+        if (typeof a.onClick === 'function') a.onClick();
       });
-      byId('socno').addEventListener('click', () => closeSheet(false, epoch));
     });
+  }, 'alert', Object.assign({ shape: 'alert', handle: false, subtitle: body || '' }, opts || {}));
+}
+
+/// The destructive confirmation, now drawn as an alert rather than as a bottom sheet.
+///
+/// The two ids stay `socyes` and `socno` because they have been the handle on this control
+/// since it was written, and an alias costs two lines against a grep across 21 call sites.
+function confirmSheet(question, confirmLabel, onConfirm) {
+  alertSheet(question, '', [
+    { label: L('ph.cancel'), style: 'cancel' },
+    { label: confirmLabel, style: 'destructive', onClick: onConfirm },
+  ]);
+  const no = byId('alertact0');
+  const yes = byId('alertact1');
+  if (no) no.id = 'socno';
+  if (yes) yes.id = 'socyes';
 }
 
 // ── Comments ───────────────────────────────────────────────────
@@ -17848,7 +18450,7 @@ function socPeopleSheet(appId, title, people, emptyKey, emptyIcon) {
   sheet(title + (list.length ? ' (' + list.length + ')' : ''),
     list.length
       ? '<div class="group socpeople">' + list.map((v) =>
-          '<button class="row lead socfind" data-who="' + esc(v.handle) + '" type="button">' +
+          '<button class="row lead av two socfind" data-who="' + esc(v.handle) + '" type="button">' +
             socAvatar(v, 'socav') +
             '<span class="rmain"><span class="rt">' + esc(v.displayname || v.handle) +
               socVerified(v) + '</span>' +
@@ -17896,7 +18498,7 @@ function socSharePost(appId, pst) {
     sheet(L('ph.soc_share'),
       (threads.length
         ? '<div class="group socpeople">' + threads.map((t) =>
-            '<button class="row lead socshareto" data-who="' + esc(t.handle) + '" type="button">' +
+            '<button class="row lead av two socshareto" data-who="' + esc(t.handle) + '" type="button">' +
               socAvatar(t, 'socav') +
               '<span class="rmain"><span class="rt">' + esc(t.displayname || t.handle) +
                 '</span><span class="rs">@' + esc(t.handle) + '</span></span>' +
@@ -17933,7 +18535,7 @@ async function socialSearch(appId, query) {
   if (!host) return;
   const list = (r && r.accounts) || [];
   host.innerHTML = list.length ? UI.group(list.map((a) =>
-    '<button class="row lead socfind" data-who="' + esc(a.handle) + '" type="button">' +
+    '<button class="row lead av two socfind" data-who="' + esc(a.handle) + '" type="button">' +
       socAvatar(a, 'socav') +
       // `rmain`/`rt`/`rs`, which is what the row styles are actually called. This said
       // `rowtext`/`rowtitle`/`rowsub` - three classes that appear nowhere in the stylesheet -
@@ -18038,12 +18640,18 @@ async function socialProfile(appId, handle) {
     // would cost the header its shape for nothing.
     (a.cover ? '<div class="soccover" style="' + inlineBackground(a.cover) + '"></div>' : '') +
     '<div class="socprof' + (a.cover ? ' hascover' : '') + '">' + socAvatar(a, 'socbigav') +
-      '<div class="socname' + (a.verified ? ' isverified' : '') + '">' +
+      '<div class="socname' + ((a.verified || a.official) ? ' isverified' : '') + '">' +
         esc(a.displayname || a.handle) + socVerified(a) + '</div>' +
       '<div class="sochandle">@' + esc(a.handle) + '</div>' +
       // Said in words on the profile, not only as a badge. A blue tick is a convention the
       // reader has to already know; the line under it is what makes an account visibly
       // official to somebody who has never seen one before.
+      //
+      // **Both are said when both are held.** The badge beside the name can only be one mark,
+      // and somebody who paid for the blue tick should still be able to see what they paid
+      // for. The official line comes first because it is the stronger claim.
+      (a.official ? '<div class="socverifline isofficial">' + svg('check') + '<span>' +
+        esc(L('ph.soc_official')) + '</span></div>' : '') +
       (a.verified ? '<div class="socverifline">' + svg('check') + '<span>' +
         esc(L('ph.soc_verified')) + '</span></div>' : '') +
       (a.bio ? '<div class="socbio">' + esc(a.bio) + '</div>' : '') +
@@ -18085,11 +18693,15 @@ async function socialProfile(appId, handle) {
     byId('socfollow').addEventListener('click', () => socialFollow(appId, a.handle, byId('socfollow')));
     byId('socdm').addEventListener('click', () => socialDmThread(appId, a.handle));
   }
+  watchDeadShots('appbody', '.socthumb, .shot, .storyphoto, .socattached, .pgcell,'
+    + ' .pav, .socav, .comav, .storyav, .socbigav, .fancover, .fanface, .hphoto');
   if (grid) rows('.socthumb', (b) => b.addEventListener('click', () => {
     const one = posts.find((p) => String(p.id) === b.dataset.id);
     if (!one) return;
     sheet(L('app.snap'), '<div class="socone">' + postCard(one, appId) + '</div>', () => {
-      wirePosts(appId, () => socialRender(appId));
+      // In the SHEET, not the app body. Without saying so, none of wirePosts' selectors match
+      // and every control on this card is dead - like, comment, repost, save, the grid cells.
+      wirePosts(appId, () => socialRender(appId), 'sheet');
     });
   }));
   else wirePosts(appId, () => socialProfile(appId, handle));
@@ -18137,7 +18749,7 @@ async function socialDmList(appId) {
   if (!socialActive(appId, epoch)) return;
   const threads = (r && r.threads) || [];
   body(threads.length ? UI.group(threads.map((t) =>
-    '<button class="row lead socdmrow" data-who="' + esc(t.handle) + '" type="button">' +
+    '<button class="row lead av two socdmrow" data-who="' + esc(t.handle) + '" type="button">' +
       socAvatar(t, 'socav') +
       '<span class="rmain"><span class="rt">' + esc(t.displayname || t.handle) + socVerified(t) + '</span>' +
       '<span class="rs">' + esc((t.mine ? L('ph.you') + ' ' : '') + (t.body || L('ph.photo'))) + '</span></span>' +
@@ -18475,6 +19087,9 @@ function socCompose(appId) {
               esc(L('ph.remove')) + '">' + svg('xmark') + '</button>' +
           '</div>').join('') + '</div>'
       : '';
+    // A photograph whose file is gone is the one thing a composer must not show as a blank
+    // square: the player is about to post it.
+    watchDeadShots('socattach', '.socattached');
     rows('[data-drop]', (b) => b.addEventListener('click', () => {
       images.splice(Number(b.dataset.drop), 1);
       paintAttach();
@@ -20038,12 +20653,14 @@ RENDER.fruitee = async () => {
 let fanTab = 'feed';
 let fanData = null;
 
-/// A small round face, from a picture when there is one and an initial when there is not.
+/// A small round face: the picture, over the initial.
+///
+/// It had two branches and only the empty one wrote a letter, and the picture branch also added
+/// an `img` class whose only job in the stylesheet was `color: transparent`. Two ways of taking
+/// the same fallback away, on the one app in the phone where every avatar is a URL somebody
+/// pasted. Both are gone; the size variants are all this still decides.
 function fanFace(name, photo, cls) {
-  const c = 'fanface ' + (cls || '');
-  return photo
-    ? '<span class="' + c + ' img" style="' + inlineBackground(photo) + '"></span>'
-    : '<span class="' + c + '">' + esc(String(name || '?').slice(0, 1).toUpperCase()) + '</span>';
+  return socAvatar({ name: name, avatar: photo }, 'fanface ' + (cls || ''));
 }
 
 /// What this picture costs, said once and in one place.
@@ -20861,8 +21478,12 @@ async function hushProfile() {
 
   body(
     '<div class="socprof">' +
-      (pf.photo ? '<span class="socbigav" style="' + inlineBackground(pf.photo) + '"></span>'
-                : '<span class="socbigav">' + svg('heart') + '</span>') +
+      // Your own face, through the one helper that writes a round face. It used to be a heart
+      // when there was no picture and an empty disc when there was one that would not load -
+      // which is the wrong way round: the heart said "you have not chosen a photograph yet",
+      // and the case that needed telling apart was the photograph that has stopped answering.
+      // The name is this phone's owner name, since `hushMe` returns a profile and not a person.
+      socAvatar({ name: myCard().name, avatar: pf.photo }, 'socbigav') +
       '<div class="socbio">' + esc(pf.bio || L('ph.hush_nobio')) + '</div>' +
       (lim.premium
         ? '<div class="hprobadge">' + svg('sparkles') + esc(L('ph.hush_pro')) + '</div>'
@@ -21025,9 +21646,11 @@ async function hushMatches() {
   if (!r || r.error) { body(UI.empty(L('ph.err_' + ((r && r.error) || 'x')), 'hush')); return; }
   const list = r.matches || [];
   body(list.length ? UI.group(list.map((m, i) =>
-    '<button class="row lead hushmatch" data-i="' + i + '" type="button">' +
-      (m.photo ? '<span class="socav" style="' + inlineBackground(m.photo) + '"></span>'
-               : '<span class="socav">' + esc(String(m.name || '?').slice(0, 1)) + '</span>') +
+    '<button class="row lead av two hushmatch" data-i="' + i + '" type="button">' +
+      // Two branches and a letter in one of them, so a match whose photograph had expired was a
+      // blank circle beside their name. The same helper every other round face in the phone
+      // goes through, which writes the initial under the picture in both cases.
+      socAvatar({ name: m.name, avatar: m.photo }, 'socav') +
       '<span class="rmain"><span class="rt">' +
         esc(m.name || '?') + (m.age ? ', ' + m.age : '') + '</span>' +
       '<span class="rs">' + esc(m.bio || '') + '</span></span>' +
@@ -22100,7 +22723,18 @@ function enqueuePrompt(show, ttlMs) {
   pumpPrompts();
 }
 
-function sheet(title, html, after, variant) {
+/// Raise the one sheet.
+///
+/// `variant` is the existing eleven-string axis and is untouched: it says WHAT this sheet is
+/// (spotlight, comments, sdk-picker...). `opts.shape` is a second, orthogonal axis that says
+/// what SHAPE it takes - a bottom sheet, an alert, or a menu - and it is written to `#sheet`
+/// and `#scrim` as `data-shape` so the scrim can dim differently for each, which the kit does:
+/// a modal sheet is `black` @ .20, an alert is `#29293A` @ .23.
+///
+/// With no `opts` the emitted markup is byte-for-byte what it has always been, which is what
+/// makes this safe across 112 call sites. `opts.handle: false` drops the grab handle (an alert
+/// has none), `opts.subtitle` adds the second line the kit draws under an alert title.
+function sheet(title, html, after, variant, opts) {
   if (sheetCancel) {
     const cancel = sheetCancel;
     sheetCancel = null;
@@ -22108,9 +22742,25 @@ function sheet(title, html, after, variant) {
   }
   sheetEpoch += 1;
   sheetReturn = null;
-  byId('sheet').dataset.variant = variant || '';
-  byId('sheet').innerHTML = `<div class="grab"></div><div class="sh">${esc(title)}</div>${html}`;
-  byId('sheet').classList.add('on');
+  const o = opts || {};
+  const host = byId('sheet');
+  host.dataset.variant = variant || '';
+  // The scrim carries the variant too, so a variant can dim differently without a
+  // `:has()` (which CEF does not have) and without the scrim guessing from a sibling.
+  // The spotlight needs this: it covers the screen, so the measured .20 modal scrim
+  // leaves the home grid bright enough to read through a 96.5% opaque panel.
+  byId('scrim').dataset.variant = variant || '';
+  if (o.shape) {
+    host.dataset.shape = o.shape;
+    byId('scrim').dataset.shape = o.shape;
+  } else {
+    delete host.dataset.shape;
+    delete byId('scrim').dataset.shape;
+  }
+  const grab = o.handle === false ? '' : '<div class="grab"></div>';
+  const sub = o.subtitle ? `<div class="shsub">${esc(o.subtitle)}</div>` : '';
+  host.innerHTML = `${grab}<div class="sh">${esc(title)}</div>${sub}${html}`;
+  host.classList.add('on');
   byId('scrim').classList.add('on');
   ui('sheet');
   if (after) after();
@@ -22136,6 +22786,9 @@ function closeSheet(force, expectedEpoch) {
     document.activeElement.blur();
   }
   sheetHost.dataset.variant = '';
+  delete sheetHost.dataset.shape;
+  delete byId('scrim').dataset.shape;
+  byId('scrim').dataset.variant = '';
   clearTimeout(promptExpiryTimer);
   promptExpiryTimer = null;
   sheetDrag = null;
@@ -22154,6 +22807,11 @@ byId('scrim').addEventListener('click', () => closeSheet());
 let sheetDrag = null;
 byId('sheet').addEventListener('pointerdown', (e) => {
   const host = byId('sheet');
+  // An alert and a menu are not draggable: neither has a grab handle, and the top 58px of
+  // both is content - the alert's title, the menu's chip row. A pointer captured there
+  // never delivers its click to the control underneath, which is the same failure the
+  // opt-out below was written for, one step earlier.
+  if (host.dataset.shape === 'alert' || host.dataset.shape === 'menu') return;
   const r = host.getBoundingClientRect();
   if (e.clientY > r.top + 58) return;
   // A sheet that puts a control in its own header - the spotlight's close button, for
@@ -22813,25 +23471,36 @@ function sdkPhotoPicker(settle) {
     }, 'sdk-picker');
 }
 
+/// A drop-in app's action sheet, drawn as the measured context menu.
+///
+/// MEASURED, `Context Menu.svg`: rows are 40 tall with the icon LEADING at 36 from the panel
+/// edge and the label at 59.53, 17pt Regular. A destructive row differs by COLOUR ONLY - same
+/// row height, same icon size, same weight, no separate fill and no divider - and the cancel
+/// is separated from the group by a 1pt `#E6E6E6` line inset 24, with 10 of padding either
+/// side of it. That separator is the whole of the kit's "detached cancel"; the heavier,
+/// gapped Cancel button of iOS 18 does not appear anywhere in the export.
+///
+/// A settings list was the wrong idiom here: those rows carried a coloured 30px tile each,
+/// which is the Settings app's language, not a menu's.
 function sdkActionSheet(settle, options, confirmation) {
   const choices = (options.actions || []).slice(0, 8);
-  const rowHtml = choices.map((choice) => UI.row({
-    icon: choice.icon || (choice.destructive ? 'trash' : 'chevron'),
-    tint: choice.destructive ? '#FF3B30' : (choice.tint || '#0A84FF'),
-    title: choice.label || choice.title || choice.id,
-    value: choice.value,
-    data: { 'sdk-action': choice.id },
-  }));
+  const menuRow = (choice, id, destructive) =>
+    '<button class="menurow' + (destructive ? ' destructive' : '') + '" type="button" ' +
+      'data-sdk-action="' + esc(id) + '">' +
+      (choice.icon ? svg(choice.icon) : '') +
+      '<span>' + esc(choice.label || choice.title || choice.id) + '</span>' +
+      (choice.value ? '<em class="menuval">' + esc(choice.value) + '</em>' : '') +
+    '</button>';
+  let rowHtml = choices.map((choice) => menuRow(choice, choice.id, choice.destructive));
   if (confirmation) {
-    rowHtml.push(UI.row({
-      icon: 'xmark', tint: '#8E8E93',
-      title: options.cancelLabel || L('ph.cancel'),
-      data: { 'sdk-action': '__cancel' },
-    }));
+    rowHtml.push('<div class="menusep"></div>');
+    rowHtml.push(menuRow(
+      { label: options.cancelLabel || L('ph.cancel'), icon: 'xmark' }, '__cancel', false
+    ));
   }
   sheet(options.title || (confirmation ? L('ph.confirm') : L('ph.app_actions')),
     (options.message ? '<div class="sheethint">' + esc(options.message) + '</div>' : '') +
-      UI.group(rowHtml),
+      rowHtml.join(''),
     () => {
       sheetCancel = () => settle({ ok: false, cancelled: true });
       [...byId('sheet').querySelectorAll('[data-sdk-action]')].forEach((row) => {
@@ -22844,7 +23513,7 @@ function sdkActionSheet(settle, options, confirmation) {
             : { ok: true, id, confirmed: confirmation ? true : undefined });
         });
       });
-    }, confirmation ? 'sdk-confirm' : 'sdk-actions');
+    }, confirmation ? 'sdk-confirm' : 'sdk-actions', { shape: 'menu', handle: false });
 }
 
 function copySdkText(value) {
@@ -23407,6 +24076,10 @@ window.addEventListener('message', (e) => {
     torchCommit += 1;
     torchPending = false;
     resetTransientUI();
+    // Every photograph that failed, or was still being asked about, gets another chance. The
+    // host may have come back, the player may have fixed their connection, and taking the phone
+    // out again is the moment they expect to find out.
+    shotAliveReset();
     S = d.strings || {};
     // A different character is holding this phone - a switch, or staff looking at somebody
     // else's. Their notifications go, and so do the badges an app set for the last one:
@@ -23557,32 +24230,50 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'buzz') {
     buzzDevice();
   } else if (d.action === 'camLive') {
-    // Framing happens through the handset: `camlive` makes its screen see-through so the
-    // camera view shows in it. Lua has the cursor, so the phone's buttons are labels now -
-    // the keys named on screen do the work.
-    byId('device').classList.toggle('camlive', d.on === true);
+    // The handset leaves the screen for the whole camera session, and comes back when the
+    // engine gives the camera up.
+    setCamLive(d.on === true);
+    // **And the app goes with it.** The viewfinder is the GAME's - `CreateMobilePhone` plus
+    // `CellCamActivate` draw it, and the game's own help box names the keys - so this app is
+    // nothing but the way into it. Once the engine hands the camera back there is nothing left
+    // for the app to be, and leaving it open put the player back on a screen with no controls,
+    // no wallpaper and nothing to look at: the black rectangle Backspace used to exit into.
+    // Closing here covers every way camera mode can end, because they all pass through
+    // `camModeOff` and it sends exactly this message.
+    if (d.on !== true && camAppOpen) closeApp();
     return;
   } else if (d.action === 'camShoot') {
-    // The on-screen shutter, fired from Lua's key handler. Same path as the button, so
-    // there is one capture and one set of error messages.
-    const b = byId('shoot');
-    if (b) b.click();
+    // Enter, from Lua's key handler. There is no button any more, so this is the shutter.
+    cameraShoot();
     return;
   } else if (d.action === 'shutter') {
-    const device = byId('device');
-    device.classList.remove('capturing');
-    void device.offsetWidth;
-    device.classList.add('capturing');
+    // The handset is already off screen for the camera session; this holds it there across the
+    // grab as well, so the frames on either side of `camlive` cannot land in the photograph.
+    // Released by `shutterDone`, which every capture path sends on success and on failure.
+    //
+    // The timer stays as a ceiling rather than a schedule. It is past the media path's own
+    // 28s finish and the screenshot-basic path's 20s, so it can only fire when no answer is
+    // coming at all - and a lost answer must not leave a player with an invisible phone.
+    holdCapturing();
     ui('shutter');
-    clearTimeout(shutterTimer);
-    shutterTimer = setTimeout(() => {
-      device.classList.remove('capturing');
-      shutterTimer = null;
-    }, 220);
+  } else if (d.action === 'recording') {
+    // The same hold, for a clip rather than a frame. The ceiling is the clip's own budget: 30s
+    // is the longest that can be asked for and the server answers at `seconds + 25`, so 65s is
+    // past anything that can still arrive.
+    holdCapturing(65000);
+  } else if (d.action === 'recordDone') {
+    releaseCapturing();
   } else if (d.action === 'shutterDone') {
-    clearTimeout(shutterTimer);
-    shutterTimer = null;
-    byId('device').classList.remove('capturing');
+    releaseCapturing();
+    // **Sound is the only channel that reaches the player here.**
+    //
+    // `.device.camlive` holds the handset at opacity 0 for the whole camera session, and
+    // `#toast` lives inside `#device` - so every message this path writes, success or failure,
+    // is drawn on an invisible element. The entire operation used to produce exactly one cue,
+    // the shutter click at the start, and nothing at all at the end: a photograph that worked
+    // and one that was lost sounded and looked identical. Two distinct tones close it, and the
+    // client raises the framework's own notification for an error.
+    ui(d.ok === true ? 'success' : 'error');
   } else if (d.action === 'voiceBroadcast') {
     // A staff member is speaking into every phone on the server. The voice itself is the
     // client's business; this is the strip that says why a voice is coming out of a handset,
@@ -23627,6 +24318,11 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'airdrop') {
     const offer = d.offer || {};
     enqueuePrompt(() => airdropOffer(offer), offer.ttlMs);
+  } else if (d.action === 'verifyDesk') {
+    // Somebody interacted with a verification desk. Queued rather than raised, like every
+    // other prompt: the phone may still be opening, and a sheet drawn before `action=open`
+    // has reset the page is a sheet that is about to be thrown away.
+    enqueuePrompt(() => verifyDeskSheet(), 30000);
   } else if (d.action === 'chargeOffer') {
     const offer = d.offer || {};
     enqueuePrompt(() => chargeOfferSheet(offer), Math.max(5, Number(offer.seconds) || 45) * 1000);

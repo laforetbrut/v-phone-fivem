@@ -759,6 +759,60 @@ IS_FUNCTION_ARG = re.compile(r"""^(?:async\s+)?(?:
 )""", re.X)
 
 
+#: One locale key declaration, in any of the forms locales/*.lua actually uses.
+#:
+#: The first version of this pattern was anchored to the start of a line, demanded an all
+#: lowercase key and knew only the `ph.` and `app.` prefixes. Three shapes went straight past
+#: it, five real keys per file: a capital inside the name (`ph.bankpro_e_noTarget`), the `soc.`
+#: table the server writes a player's posts with, and the lines that declare more than one key.
+#: Those keys were the ones nothing was watching, in a check whose whole job is watching.
+LOCALE_KEY = re.compile(r"""\[\s*(['"])((?:ph|app|soc)\.[A-Za-z0-9_]+)\1\s*\]\s*=""")
+
+
+def locale_key_lines(src):
+    """Every locale key a file declares, as `(key, line number)`, in file order.
+
+    Comments go first, per line, so a declaration written out in prose - or one deliberately
+    commented away - is not counted as a definition. `finditer` rather than `match`, because a
+    line is allowed to declare several.
+    """
+    found = []
+    for n, line in enumerate(src.splitlines(), start=1):
+        for m in LOCALE_KEY.finditer(strip_line_comments(line, True)):
+            found.append((m.group(2), n))
+    return found
+
+
+def check_duplicate_locale(report):
+    """No locale key may be defined twice in one table.
+
+    Lua keeps the LAST assignment silently. So a string can be added, be correct, be in both
+    languages, and never once reach a screen - which is what happened to the OnlyFruits
+    "post no longer available" message: the name was already taken by a verification-code
+    string two thousand lines further down, and players tapping Unlock on an expired photograph
+    were told "Code expired, send a new one".
+
+    Nothing warns. The file loads, the key resolves, and the wrong sentence appears.
+    """
+    problems, counted = [], 0
+    for lang in ('en', 'fr'):
+        path = os.path.join(ROOT, 'locales', lang + '.lua')
+        if not os.path.exists(path):
+            continue
+        seen = {}
+        for key, i in locale_key_lines(read(path)):
+            counted += 1
+            if key in seen:
+                problems.append('%s.lua defines %s twice, at line %d and line %d - Lua keeps '
+                                'the second, so the first is dead'
+                                % (lang, key, seen[key], i))
+            else:
+                seen[key] = i
+
+    report('locale duplicates', '%d key(s) across en and fr' % counted, problems)
+    return not problems
+
+
 def check_setnav(report):
     """`setNav(title, backLabel, action, onBack)` - the word, then the behaviour.
 
@@ -934,6 +988,7 @@ CHECKS = [
     ('zero is true', check_zero_is_true),
     ('app metadata', check_app_metadata),
     ('setNav shape', check_setnav),
+    ('locale duplicates', check_duplicate_locale),
 ]
 
 
@@ -992,6 +1047,27 @@ def selftest():
            and IS_FUNCTION_ARG.match(good[1].strip()) is None
            and IS_FUNCTION_ARG.match(good[2].strip()) is None)
     print('  setNav    ' + ('sees a closure in the label slot, not in the object'
+                            if hit else 'FAILED'))
+    ok = ok and hit
+
+    # Every shape a locale key is written in, with the duplicate on the one shape the old
+    # pattern could not see. Miss the capital, miss `soc.`, anchor to the start of a line again,
+    # or stop stripping comments, and the list below stops matching.
+    sample = ("local T = {\n"
+              "    ['ph.plain'] = 'one',\n"
+              "    ['ph.bankpro_e_noTarget'] = 'two',\n"
+              "    ['app.store'] = 'three',\n"
+              "    ['soc.match_line'] = 'four',\n"
+              "    ['soc.dm_photo'] = 'five',    ['ph.phone_reset'] = 'six',\n"
+              "    -- ['ph.plain'] = 'commented away, so not a definition',\n"
+              "    ['ph.bankpro_e_noTarget'] = 'the second one, which is the bug',\n"
+              "}\n")
+    found = [k for k, _ in locale_key_lines(sample)]
+    dupes = [k for i, k in enumerate(found) if k in found[:i]]
+    hit = (found == ['ph.plain', 'ph.bankpro_e_noTarget', 'app.store', 'soc.match_line',
+                     'soc.dm_photo', 'ph.phone_reset', 'ph.bankpro_e_noTarget']
+           and dupes == ['ph.bankpro_e_noTarget'])
+    print('  locales   ' + ('reads capitals, soc. and two keys on one line'
                             if hit else 'FAILED'))
     ok = ok and hit
 

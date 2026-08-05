@@ -25,12 +25,29 @@ local sdkApps = {}           -- installed iframe apps allowed for this open sess
 local pendingUiActions = {}  -- prompts received while the asynchronous open is in flight
 local applyServerCall
 local camModeOff            -- defined with the camera mode, used by closePhone above it
+-- Same reason, one line further down the file: the upload lease at ~2498 calls this, and its
+-- definition is 68 lines BELOW that call. Without this declaration the call resolved against
+-- _ENV and threw "attempt to call a nil value (global 'cameraQuiet')" at runtime. The chunk
+-- compiles either way, so no static check could see it.
+local cameraQuiet
 -- The camera's state, declared here because `startGuard` sits above the block that owns it
 -- and watches these. Lua binds lexically: from up there, a later `local` is a nil global.
 local camActive = false
 local camHidHud, camHidRadar = false, false   -- only restore what we hid
-local camShooting = false   -- a capture is in flight; the help box must stay off screen for
-                            -- all of it, not just the frame the shutter was pressed on
+-- **Two states, because the screen has to be clean for one of them and not the other.**
+--
+-- There was one flag covering both, and it was held from the shutter press until the CDN had
+-- answered - so the viewfinder froze, the HUD stayed hidden and the player was shown nothing at
+-- all for as long as an upload took, which on a poor connection is seconds.
+--
+--   camShooting   the frame has not been grabbed yet. Nothing may be drawn: the grab is done by
+--                 another resource, in its own browser, and anything on screen lands IN the
+--                 photograph.
+--   camUploading  the frame exists and is on its way to the host. The camera is the player's
+--                 again; the only thing still owed is an answer about whether it was stored.
+local camShooting = false
+local camUploading = false
+local camUploadingAt = 0    -- when the shutter was pressed, so a lost answer cannot latch it on
 local camTick = 0           -- last frame the camera thread ran, so the guard can notice it
                             -- is flagged on with nothing running it
 local refreshPose           -- re-plays the hold animation; the camera block below needs it
@@ -1250,6 +1267,8 @@ local function forceReset(quiet)
     end)
     camHidHud, camHidRadar = false, false
     camShooting = false
+    camUploading = false
+    camUploadingAt = 0
     selfieReset()
 
     -- Focus back to the game, both kinds, in case only one was cleared.
@@ -1445,6 +1464,18 @@ local function sendWhenOpen(message)
         expires = now + math.max(1, seconds) * 1000,
     }
     openPhone()
+end
+
+--- Raise a screen on the phone, opening it first if it is pocketed.
+---
+--- `sendWhenOpen`, `isOpen` and `openPhone` are file-level locals in here, which is right: the
+--- open sequence has one owner. But a world interaction in another client file has to be able
+--- to put something on the phone - client/verify.lua walks a player up to a desk and the phone
+--- is where the purchase happens - and a file-level local reads as a global from over there and
+--- is nil at runtime, silently, inside whatever pcall happens to be around it.
+function PhoneShowScreen(message)
+    if type(message) ~= 'table' then return end
+    sendWhenOpen(message)
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -2111,6 +2142,11 @@ local SOCIAL_OPS = {
     requestCode = true, verifyCode = true, register = true, login = true, logout = true,
     -- Forgot the password: the same texted code, then a new one.
     resetCode = true, resetPassword = true,
+    -- The verification desk. `verifyBuy` MOVES MONEY, so it is here on the same footing as
+    -- everything else: the client permits the name, the server decides whether this character
+    -- may buy it - including whether they are really standing at a desk - and takes the
+    -- payment before granting anything. Nothing here can write the ORANGE mark.
+    verifyDesk = true, verifyBuy = true,
     -- People: a profile, the directory, following.
     profile = true, search = true, follow = true,
     -- And the people behind the numbers: who liked a post, who follows an account and who it
@@ -2249,8 +2285,10 @@ end)
 -- qb-phone's sequence, because it is the one that produces a photograph: SetNuiFocus off,
 -- CreateMobilePhone(1) - GTA's own phone camera, which is what draws the frame - then
 -- CellCamActivate, the HUD hidden per frame, and both destroyed on the way out. The handset is
--- hidden while it runs so nothing of the page bleeds into the shot. Enter shoots, Backspace
--- leaves, arrow up flips to the selfie: the keys a QBCore player already knows.
+-- taken off screen for the whole session so nothing of the page is in the shot, and the app it
+-- came from has no interface at all: the frame the player composes is the game's, and this help
+-- box is the only thing drawn over it. Enter shoots, Backspace leaves, arrow up flips to the
+-- selfie: the keys a QBCore player already knows.
 --
 -- **`camActive` is not redeclared here.** It lives at the top of this file because the input
 -- guard and the stuck-detector both sit above this block and read it; a `local` here shadowed it
@@ -2401,26 +2439,35 @@ RegisterNUICallback('camMode', function(data, cb)
                 if front then selfieApply() end
             elseif IsControlJustPressed(1, 177) then
                 break
-            elseif IsControlJustPressed(1, 176) then
-                -- Off screen for the whole capture, not just this frame. `shoot` lowers this
-                -- again when the photograph is actually finished.
+            elseif IsControlJustPressed(1, 176) and not camUploading then
+                -- Off screen until the frame has been GRABBED, which is not the same moment the
+                -- photograph is finished. `v-phone:media:captured` lowers this; `shoot` lowers
+                -- it too, for the paths that have no such event to send.
                 camShooting = true
+                camUploading = true
+                camUploadingAt = GetGameTimer()
                 ClearHelp(true)
                 Wait(0)
                 -- One capture path, the same one the shutter button uses, so there is one set
                 -- of error messages rather than two.
                 SendNUIMessage({ action = 'camShoot' })
 
-                -- Wait for the capture rather than a guessed 1200ms, and keep the watchdog fed
+                -- Wait for the GRAB rather than a guessed 1200ms, and keep the watchdog fed
                 -- while doing it: it kills camera mode after 1500ms without a tick, which a
                 -- blind wait came within 200ms of tripping - close enough to explain a camera
-                -- that occasionally died mid-photograph. Capped so a capture that never calls
-                -- back cannot strand the player in the viewfinder.
-                local waited = 0
-                while camShooting and camActive and isOpen and waited < 15000 do
+                -- that occasionally died mid-photograph.
+                --
+                -- **Per frame, not every 50ms.** This loop already runs every frame for the
+                -- viewfinder, so polling at the frame rate costs nothing and removes up to a
+                -- fiftieth of a second of doing nothing at the end of every single photograph.
+                --
+                -- Eight seconds, not fifteen. This is now the wait for a screen grab and an
+                -- encode - a few hundred milliseconds of work - and no longer covers the
+                -- upload, which continues behind the viewfinder.
+                local until_ = GetGameTimer() + 8000
+                while camShooting and camActive and isOpen and GetGameTimer() < until_ do
                     camTick = GetGameTimer()
-                    Wait(50)
-                    waited = waited + 50
+                    Wait(0)
                 end
                 camShooting = false
                 ClearHelp(true)
@@ -2444,13 +2491,44 @@ RegisterNUICallback('camMode', function(data, cb)
                 end
             end
 
-            -- The handset is not on screen, so the keys have to be. `~INPUT_...~` rather
-            -- than key names: the game substitutes whatever the player actually has bound, so
-            -- this stays true for somebody who rebound them - which hardcoded "ENTER" did not.
-            -- Nothing on screen while a capture is in flight. `ClearHelp` on the shutter
-            -- frame was not enough: the shot lands several frames later, and this loop redrew
-            -- the box on every one of them - so the instructions were in the photograph.
-            if not camShooting then
+            -- **The only thing on screen for the whole session, and the phone draws nothing.**
+            -- `~INPUT_...~` rather than key names, so the game substitutes whatever the player
+            -- actually has bound - which hardcoded "ENTER" did not.
+            --
+            -- Nothing at all while a capture is in flight. `ClearHelp` on the shutter frame was
+            -- not enough: the shot lands several frames later, and this loop redrew the box on
+            -- every one of them - so the instructions were in the photograph.
+            --
+            -- **And something IS on screen while the upload runs.** Between the shutter and the
+            -- answer the player saw nothing whatsoever: the handset is at opacity 0 for the whole
+            -- camera session, so every toast this path raises - including every error - is drawn
+            -- on an invisible element, the HUD is hidden, and the only cue in the entire
+            -- operation was one shutter sound at the start. On a slow host that is several
+            -- seconds of a phone that looks broken. Safe to draw, because the frame has already
+            -- been taken.
+            -- **A lease on the shutter, for the same reason the server's slot has one.**
+            -- `camUploading` is lowered by the answer to `shoot`, and the one thing that can
+            -- stop that answer arriving is the page never being asked - a `camShoot` message
+            -- delivered while the Camera is not the view with a shutter in it. The flag would
+            -- then stay up and the shutter would be dead for the rest of the session, which is
+            -- precisely the failure being removed from the server side, reintroduced on the
+            -- client. Past every ceiling on the path, so it can only fire when nothing is
+            -- coming.
+            if camUploading and camUploadingAt > 0
+               and (GetGameTimer() - camUploadingAt) > 36000 then
+                camUploading = false
+                camShooting = false
+                camUploadingAt = 0
+                cameraQuiet(false)
+            end
+
+            if camShooting then
+                -- The grab has not happened yet. Nothing at all, or it is in the photograph.
+            elseif camUploading then
+                BeginTextCommandDisplayHelp('STRING')
+                AddTextComponentString(L('ph.cam_sending_hint'))
+                EndTextCommandDisplayHelp(0, false, false, -1)
+            else
                 BeginTextCommandDisplayHelp(front and 'FOURSTRINGS' or 'THREESTRINGS')
                 AddTextComponentString(L('ph.cam_shoot_hint'))
                 AddTextComponentString(L('ph.cam_flip_hint'))
@@ -2485,12 +2563,6 @@ RegisterNUICallback('camMode', function(data, cb)
     end)
 end)
 
---- The selfie from the phone's own button, for the moment before the camera view opens.
-RegisterNUICallback('camFacing', function(data, cb)
-    cb({ ok = true })
-    if camActive then frontCam(data and data.front == true) end
-end)
-
 --- Nothing on the screen but the world, for as long as a capture takes.
 ---
 --- The camera's own loop already calls `HideHudAndRadarThisFrame` every frame, and that is not
@@ -2509,7 +2581,7 @@ end)
 local camQuiet = false
 local camQuietRadar = false
 
-local function cameraQuiet(on)
+function cameraQuiet(on)
     if on == camQuiet then return end
     camQuiet = on
     TriggerEvent('v-phone:camera:capturing', on)
@@ -2537,15 +2609,43 @@ local function cameraQuiet(on)
     end)
 end
 
+--- The frame has been taken. Everything after this is somebody else's network.
+---
+--- Sent by server/media.lua from inside screencapture's callback, which is the exact instant the
+--- image exists - not a guess at how long a grab takes. Three things become safe at once, and
+--- all three used to wait for the CDN instead:
+---
+---   * the HUD and the minimap come back, rather than staying hidden for up to twenty seconds
+---   * the viewfinder is the player's again, so they can frame and move
+---   * the help box may be drawn, which is the only feedback channel that works while the
+---     handset is held off screen for the capture
+---
+--- It deliberately does NOT say the photograph is saved, and nothing here shows it. That answer
+--- is still owed and still comes from `shoot`'s own callback: a picture that failed to upload
+--- must not have been put on the roll in the meantime.
+RegisterNetEvent('v-phone:media:captured', function()
+    camShooting = false
+    cameraQuiet(false)
+    ClearHelp(true)
+end)
+
 RegisterNUICallback('shoot', function(_, cb)
     local finished = false
     local focusReleased = false
     local captureRequest = openRequest
-    -- Down before anything is asked for, up again in `finish` whichever way the capture ends.
+    -- Down before anything is asked for, up again on `v-phone:media:captured` or in `finish`,
+    -- whichever the path offers.
     cameraQuiet(true)
     -- Held here rather than in the key handler so both routes to a photograph - the Enter key
-    -- and the on-screen shutter - keep the help box out of the frame for the whole capture.
-    if camActive then camShooting = true end
+    -- and the on-screen shutter - keep the help box out of the frame until the grab.
+    if camActive then
+        camShooting = true
+        camUploading = true
+        -- Only if the key handler has not already stamped it: the on-screen shutter and the
+        -- Enter key both arrive here, and restarting the lease from the second one would give
+        -- a shot that came through the key handler a longer lease than it asked for.
+        if camUploadingAt == 0 then camUploadingAt = GetGameTimer() end
+    end
 
     -- screenshot-basic and the upload endpoint are both asynchronous. Whichever path
     -- finishes first owns the reply; late callbacks become harmless no-ops.
@@ -2554,10 +2654,28 @@ RegisterNUICallback('shoot', function(_, cb)
         finished = true
         result = type(result) == 'table' and result or { error = 'x' }
 
-        -- The photograph is taken: the viewfinder may show its instructions again.
+        -- The photograph is finished, one way or the other: the viewfinder may show its
+        -- instructions again and the shutter is live.
         camShooting = false
+        camUploading = false
+        camUploadingAt = 0
         cameraQuiet(false)
         ClearHelp(true)
+
+        -- **The one message on this path that a player can actually see.**
+        --
+        -- `#toast` lives inside `#device`, and `.device.camlive` holds the handset at opacity 0
+        -- for the whole camera session - so every `toast(L('ph.err_...'))` the page raises here
+        -- is written into an invisible element. A failed photograph was therefore completely
+        -- silent: no text, no sound, nothing on screen, and the player's only evidence was that
+        -- their gallery had not changed. The framework's own notification is drawn outside this
+        -- resource's browser, so it is the channel that always works.
+        --
+        -- Errors only. A success needs no words: the shutter sound closes with its own tone and
+        -- the picture is on the roll.
+        if not result.ok then
+            V.Notify(L('ph.err_' .. tostring(result.error or 'x')), 'error')
+        end
 
         -- Not while the camera is framing. In camera mode Lua has deliberately taken the
         -- cursor away so the mouse aims the shot, and handing it back after every capture
@@ -2586,17 +2704,27 @@ RegisterNUICallback('shoot', function(_, cb)
         SendNUIMessage({ action = 'shutter' })
         focusReleased = true
         SetNuiFocus(false, false)
+        -- The wait exists so the phone leaves the frame before the grab. In camera mode there is
+        -- nothing left to wait for - `camlive` has held the whole handset at opacity 0 since the
+        -- viewfinder opened, seconds ago - but a tenth of a second is cheap next to a photograph
+        -- with a phone in the corner of it, and this is the one place a class that failed to
+        -- land would show. The grab is the entire viewport with no crop.
         Wait(120)
-        SetTimeout(20000, function() finish({ error = 'upload' }) end)
+        -- **Three ceilings, ordered innermost-first**, so the layer closest to the work is the
+        -- one that reports and the player is told what actually failed. The server answers at
+        -- 25 s, this at 28 s, and `V.Request` at 30 s. They were 8 s, 20 s and 10 s, in that
+        -- order, which is why a slow upload reported "the server did not answer" while the
+        -- server was still working and the photograph turned up in the gallery afterwards.
+        SetTimeout(28000, function() finish({ error = 'upload' }) end)
         V.Request('v-phone:media:photo', function(r)
             if not r or not r.ok then finish(r or { error = 'upload' }) return end
             -- The server already put it in the gallery - it made the URL, so it needs no
             -- allowlist check and no second round trip. Older builds answered without
             -- `stored`, so that case still adds it the long way.
-            if r.stored then finish({ ok = true, url = r.url }) return end
+            if r.stored then finish({ ok = true, url = r.url, photo = r.photo }) return end
             V.Request('v-phone:photo', function(res) finish(res or { error = 'x' }) end,
                 { op = 'add', url = r.url })
-        end, {})
+        end, {}, 30000)
         return
     end
 
@@ -2610,7 +2738,9 @@ RegisterNUICallback('shoot', function(_, cb)
         return
     end
 
-    -- Hide the phone for the shot, or every photo is a picture of the phone.
+    -- Hide the phone for the shot, or every photo is a picture of the phone. Sent in camera
+    -- mode too, where `camlive` already has it off screen: one message, one path, and no
+    -- assumption here about which class is currently doing the hiding.
     SendNUIMessage({ action = 'shutter' })
     focusReleased = true
     SetNuiFocus(false, false)
@@ -2623,7 +2753,10 @@ RegisterNUICallback('shoot', function(_, cb)
         exports['screenshot-basic']:requestScreenshotUpload(
             target,
             'files[]',
-            { encoding = 'jpg', quality = 0.85 },
+            -- Capped, the same way the media path is capped. This one already asked for JPEG at
+            -- 0.85 and then encoded the player's whole screen at whatever resolution they run:
+            -- a 4K monitor was uploading thirty times the pixels the gallery can draw.
+            { encoding = 'jpg', quality = 0.85, maxWidth = 1280, maxHeight = 720 },
             function(raw)
                 if finished then return end
                 local ok, res = pcall(json.decode, raw)
@@ -2675,9 +2808,9 @@ end
 -- The scripted cam above is now ONLY for FaceTime, where the phone is at the player's ear
 -- and there is no camera app open to hand the job to the engine.
 --
--- The Camera app's own flip is registered further up and uses `CellFrontCamActivate`. There
--- used to be a second `camFacing` callback here that drove this scripted cam instead - and
--- being registered later it won, so the app's selfie button reached the wrong mechanism and
+-- Camera mode's own flip is the arrow-up key handled in the viewfinder loop above, and it uses
+-- `CellFrontCamActivate`. There used to be a `camFacing` callback here that drove this scripted
+-- cam instead - and being registered later it won, so the flip reached the wrong mechanism and
 -- pointed a camera at a head the engine was not drawing.
 AddEventHandler('v-phone:internal:selfie', function(on) setSelfie(on == true) end)
 
@@ -2721,8 +2854,18 @@ RegisterNUICallback('record', function(data, cb)
     -- Hide the phone for the whole recording, then restore.
     SendNUIMessage({ action = 'recording' })
     SetNuiFocus(false, false)
+
+    -- **A recording could not have succeeded.** The page allows two minutes and the server's own
+    -- budget is the clip's length plus twenty-five seconds, but `V.Request` gave up at a
+    -- hardcoded ten - so with the fifteen-second default every recording reported a timeout
+    -- while the server was still recording it. Unreachable today only because
+    -- `Config.Media.video` ships nil, and config.lua invites operators to switch it back on.
+    --
+    -- The same innermost-first order as the photograph: the server answers at `seconds + 25`,
+    -- so this waits `seconds + 30`.
+    local seconds = math.max(1, math.min(30, math.floor(tonumber(data and data.seconds) or 15)))
     V.Request('v-phone:media:video', function(r) finish(r or { error = 'x' }) end,
-        { seconds = tonumber(data and data.seconds) })
+        { seconds = seconds }, (seconds + 30) * 1000)
 end)
 
 -- ══════════════════════════════════════════════════════════════

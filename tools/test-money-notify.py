@@ -14,7 +14,7 @@ import os
 
 import lupa
 
-ROOT = r'C:\Users\Jimmy\Documents\github\fivem-autres\v-phone'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = io.open(os.path.join(ROOT, 'server', 'bank.lua'), encoding='utf-8').read()
 
 lua = lupa.LuaRuntime(unpack_returned_tuples=True)

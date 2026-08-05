@@ -172,7 +172,21 @@ else
         end
     end
 
-    function V.Request(name, cb, data)
+    --- Ten seconds is far past any QUERY this phone makes, and far under two of the things it
+    --- asks for. A photograph is a screen grab encoded in the player's own browser, sent to
+    --- the server, uploaded to a CDN and written to the database; a recording is all of that
+    --- after standing still for its own duration. Both were losing to this ceiling while every
+    --- layer underneath was still working, so the player was told the server had not answered
+    --- and the file appeared in their gallery a few seconds later.
+    ---
+    --- So the ceiling is per call now, with the default unchanged for the ninety-odd requests
+    --- that genuinely are queries. The rule for the ones that pass a value: **the layer closest
+    --- to the work must be the one that reports.** This is the outermost of the three guards on
+    --- the media path, so it sits above the client's own SetTimeout, which sits above the
+    --- server's.
+    local REQUEST_TIMEOUT = 10000
+
+    function V.Request(name, cb, data, timeout)
         ticketSeq = ticketSeq + 1
         local ticket = ticketSeq
         pending[ticket] = function(result)
@@ -180,18 +194,18 @@ else
             cb(result)
         end
         TriggerServerEvent(CB_REQUEST, ticket, name, data)
-        -- A server that never answers must not leak a callback for the session. Ten
-        -- seconds is far past any query this phone makes.
-        SetTimeout(10000, function()
+        -- A server that never answers must not leak a callback for the session.
+        local ceiling = math.max(1000, math.floor(tonumber(timeout) or REQUEST_TIMEOUT))
+        SetTimeout(ceiling, function()
             local waiting = pending[ticket]
             if not waiting then return end
             pending[ticket] = nil
             -- The third silent failure, named like the other two: no answer at all. A handler
             -- that returns without ever calling `resolve` ends up here, and used to be
             -- indistinguishable from one that threw.
-            print(('[v-phone] %s: no answer from the server after 10s - a handler that '
+            print(('[v-phone] %s: no answer from the server after %ds - a handler that '
                 .. 'returned without resolving, or the server event never arrived.')
-                :format(tostring(name)))
+                :format(tostring(name), math.floor(ceiling / 1000)))
             pcall(waiting, { error = 'timeout', name = name })
         end)
     end

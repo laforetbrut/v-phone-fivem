@@ -19,7 +19,7 @@ import os
 
 import lupa
 
-ROOT = r'C:\Users\Jimmy\Documents\github\fivem-autres\v-phone'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = io.open(os.path.join(ROOT, 'bridge', 'server', 'migrate.lua'), encoding='utf-8').read()
 
 start = src.index('local ID_COLUMNS')

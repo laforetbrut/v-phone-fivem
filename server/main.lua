@@ -166,7 +166,7 @@ V.Module({
 
         { key = 'socialRetentionPosts', label = 'Keep posts for (days)', type = 'number',
           default = Config.Social.retention.posts, min = 0, max = 365, step = 1,
-          hint = 'Swept at boot and then hourly. 0 keeps them for ever.' },
+          hint = 'Swept at boot and then hourly. 0 keeps them for ever. These four follow the media provider: with Config.Media.provider = \'s3\' the four in Config.Settings.socialRetentionS3 are read instead.' },
 
         { key = 'socialRetentionComments', label = 'Keep comments for (days)', type = 'number',
           default = Config.Social.retention.comments, min = 0, max = 365, step = 1,
@@ -4421,6 +4421,20 @@ local function photoPlaceOf(at)
     return best
 end
 
+--- Where a player is standing, as a place name, for anything outside this file that files a
+--- photograph.
+---
+--- server/media.lua stores the capture itself - it has to, because the URL it produced would be
+--- refused by the wallpaper host allowlist that `op = 'add'` below runs every pasted link past -
+--- and it had no way to reach either of the two locals this needs. So on the default, documented
+--- provider every photograph was filed with no location at all, and the Gallery's Places view was
+--- empty for exactly the servers that upload. Published rather than duplicated: two copies of
+--- "which district is this" drift, and the answer goes into the database once per photograph and
+--- is never recomputed.
+function Bridge.PhotoPlaceOf(src)
+    return photoPlaceOf(coordsOf(src)) or ''
+end
+
 V.Callback('v-phone:photo', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -4435,6 +4449,9 @@ V.Callback('v-phone:photo', function(src, resolve, data)
     -- A photo used to be a bare URL. It is a row now - url, album, filter - and old
     -- string entries are lifted into one as they are read, so nobody loses a picture.
     local changed = false
+    -- The address a `del` freed, carried past the write below because the file cannot be
+    -- chased until the gallery row no longer holds it. Nothing else sets it.
+    local freed = nil
     for i, v in ipairs(shots) do
         if type(v) == 'string' then shots[i] = { url = v, album = '', filter = '' } changed = true end
     end
@@ -4452,7 +4469,14 @@ V.Callback('v-phone:photo', function(src, resolve, data)
         changed = true
     elseif op == 'del' then
         local i = math.floor(num(data and data.index, 0))
-        if shots[i] then table.remove(shots, i) changed = true end
+        if shots[i] then
+            -- Only the address leaves this branch. The file itself is chased after the write
+            -- at the bottom of this handler, for the reason recorded there.
+            local url = shots[i].url
+            table.remove(shots, i)
+            changed = true
+            if url and url ~= '' then freed = url end
+        end
     elseif op == 'edit' then
         -- Retouching is a stored filter name, not a re-encoded image: the phone never
         -- holds pixels, only the link and how to draw it.
@@ -4486,7 +4510,61 @@ V.Callback('v-phone:photo', function(src, resolve, data)
         end
     end
     -- Waited on: an album, a filter or a crop is an edit the player made on purpose.
-    if changed then p.SetMetadataSync('photos', shots) end
+    local stored = false
+    if changed then stored = p.SetMetadataSync('photos', shots) end
+
+    -- **The file goes too, when nothing else is showing it.**
+    --
+    -- Deleting a photograph used to remove the gallery entry and leave the file on the
+    -- operator's storage until its retention ran out - a year, on a bucket. So somebody
+    -- deleting a picture they regretted taking kept paying for it, and it stayed readable to
+    -- anyone who had the address. "Delete" has to mean deleted.
+    --
+    -- Asked the same way the sweep asks, because the answer is the same question: a photograph
+    -- in the gallery may also be in a post, a message or somebody's avatar, and removing the
+    -- file would blank all of those. Referenced, it stays and expires on its own clock;
+    -- unreferenced, it goes now.
+    --
+    -- **Why the asking happens here and not in the `del` branch above.**
+    --
+    -- The gallery IS one of the places the reference check looks: `Bridge.MediaReferencedBy`
+    -- finishes by scanning `vphone_kv` for the URL, and `photos` is a `vphone_kv` row. So the
+    -- check can only answer correctly once the write above has landed WITHOUT the photograph
+    -- in it. Spawned from inside the branch, the thread and that write raced - the thread
+    -- starts on the next scheduler tick, which is while the write is still in flight, and
+    -- which of the two the database finished first decided the answer. The old order won that
+    -- race in practice, but only by accident: the kv scan is the LAST of the eighteen queries
+    -- the check makes, and the write is dispatched before the first of them, so it had
+    -- seventeen round trips of head start. That ordering lives in another file and is
+    -- documented there as a decision about SPEED, the unindexed blob scan going last so the
+    -- cheap indexed ones get first refusal. Move it earlier for any reason and the head start
+    -- is gone, the answer becomes a coin toss, and this feature starts silently keeping files
+    -- with nothing to show for it.
+    --
+    -- Below the write there is no race left to lose. `SetMetadataSync` returns only once the
+    -- row has landed, so the scan reads a database that no longer holds the photograph.
+    --
+    -- Fail-safe in the same direction as before, and now over the write as well: a write that
+    -- raises unwinds this handler before the spawn, and one that reports failure leaves
+    -- `stored` false. Either way nothing is deleted, which is exactly what a failed reference
+    -- check answers. A file kept costs storage and still goes at its retention date; a file
+    -- deleted while something draws it costs the photograph.
+    --
+    -- The player waits for none of this. The write was already awaited before the answer this
+    -- handler sends, and `CreateThread` returns the instant it has queued the coroutine.
+    if stored and freed then
+        CreateThread(function()
+            local held = Bridge.MediaReferencedBy and Bridge.MediaReferencedBy(freed)
+            if held then return end
+            if Bridge.MediaDeleteOne then
+                local id = MySQL.scalar.await(
+                    'SELECT media_id FROM vphone_media WHERE url = ? LIMIT 1', { freed })
+                if Bridge.MediaDeleteOne(freed, id) ~= false then
+                    MySQL.query.await('DELETE FROM vphone_media WHERE url = ?', { freed })
+                end
+            end
+        end)
+    end
 
     -- The albums that actually exist, worked out from the photos rather than kept in a
     -- second list that could disagree with them.
