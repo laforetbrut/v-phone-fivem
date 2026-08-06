@@ -1,5 +1,5 @@
 /* ============================================================
-   v-phone — iFruit · iOS 27 "Liquid Glass"
+   v-phone — iFruit · FruitOS "Glass"
 
    Two rules govern everything below.
 
@@ -11,19 +11,19 @@
 
       A real `backdrop-filter` is used, deliberately, on the chrome and nowhere
       else: the navigation bar, the tab bar, sheets, the banner, the island, the
-      control centre, the lock screen. That is one blur per surface over opaque
+      quick settings, the lock screen. That is one blur per surface over opaque
       content, which is affordable; it is not the dozen NESTED full-screen blurs
-      the earlier "Clear Glass" pass put on every group, field and post, which was
-      not. The reasoning is in the "iOS 27: glass is chrome, content is opaque"
+      the earlier glass pass put on every group, field and post, which was
+      not. The reasoning is in the "glass is chrome, content is opaque"
       section, and `--chrome-blur` is the one place the recipe lives.
 
       So: reach for `.glass` on a panel. Reach for `--chrome-blur` on a bar. Do
       not put either on content that scrolls.
 
    2. **The chrome is the phone's; the accent is the server's.** Structure,
-      radii, materials and motion are iOS. The accent colour comes from v-ui, so
-      a server that themes the framework purple gets a purple iPhone rather than
-      an orange rectangle in a purple world.
+      radii, materials and motion are FruitOS. The accent colour comes from v-ui,
+      so a server that themes the framework purple gets a purple handset rather
+      than an orange rectangle in a purple world.
 
    CEF safe: no color-mix(), no :has(), no nesting, no @import.
    ============================================================ */
@@ -50,25 +50,27 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 input { font: inherit; }
 
 /* ── Tokens ────────────────────────────────────────────────────
-   SF Pro is not ours to ship, so the stack falls through to whatever the host
-   has that is closest in structure. On Windows that is Segoe UI Variable. */
+   The stack falls through to whatever the host has that is closest in structure.
+   On Windows that is Segoe UI Variable, which is what a FiveM client always is:
+   there is no Mac client, so a Mac-only family in front of these would never
+   once resolve. Nothing here is shipped as a file. */
 :root {
-  --ios-font: -apple-system, 'SF Pro Display', 'SF Pro Text', 'Segoe UI Variable Display',
+  --fruitos-font: 'Segoe UI Variable Display',
               'Segoe UI', Inter, system-ui, sans-serif;
   /* **Declared, at last, and it is the same bug `--app-sub` was.** Four surfaces that live
      outside the handset - the admin banner, the emergency card, the forensics screen and
-     the payphone booth - all ask for `var(--ios-ui, system-ui, sans-serif)`, and nothing
-     anywhere declared `--ios-ui`. They have been drawing in the browser's system font while
+     the payphone booth - all ask for `var(--fruitos-ui, system-ui, sans-serif)`, and nothing
+     anywhere declared `--fruitos-ui`. They have been drawing in the browser's system font while
      everything inside the phone drew in the phone's, which is why they never looked quite
      like part of it. This is what all four meant. */
-  --ios-ui: var(--ios-font);
-  /* `--ios-num` used to be declared here as well as at the second :root five thousand lines
+  --fruitos-ui: var(--fruitos-font);
+  /* `--fruitos-num` used to be declared here as well as at the second :root five thousand lines
      below. Two declarations of one name at equal specificity: the later one wins, so this
      one had never once decided anything - and it was the one WITHOUT a fallback on
      `--v-font-num`, so it was also the broken one. Deleted rather than fixed. The live
      declaration is the one beside `--ph-display`. */
 
-  /* iOS greys, on the dark side of the system palette. */
+  /* FruitOS greys, on the dark side of the system palette. */
   --l1: #ffffff;                       /* label */
   --l2: rgba(235, 235, 245, .62);      /* secondary label */
   --l3: rgba(235, 235, 245, .32);      /* tertiary label */
@@ -76,8 +78,8 @@ input { font: inherit; }
   --fill: rgba(120, 120, 128, .24);    /* system fill */
   --fill2: rgba(120, 120, 128, .16);
 
-  /* ── Liquid Glass, iOS 27 ──
-     iOS 27 changed the foundations of the material rather than its shape: it
+  /* ── Glass ──
+     This pass changed the foundations of the material rather than its shape: it
      diffuses what is behind it more aggressively so text stays legible, it gained
      a DARKENED edge outside the bright rim, and its specular highlights got
      brighter. All three are below.
@@ -93,12 +95,12 @@ input { font: inherit; }
 
   --rim: rgba(255, 255, 255, .28);
   --rim-soft: rgba(255, 255, 255, .14);
-  --edge: rgba(0, 0, 0, .55);                 /* the iOS 27 darkened edge */
+  --edge: rgba(0, 0, 0, .55);                 /* the FruitOS darkened edge */
 
   /* ── App surfaces ──
-     The chrome (lock, home, control centre) lives over the wallpaper and is dark
-     glass. An APP is a different surface: on iOS it is light by default, and
-     that one difference is most of why a screenshot reads as an iPhone rather
+     The chrome (lock, home, quick settings) lives over the wallpaper and is dark
+     glass. An APP is a different surface: on FruitOS it is light by default, and
+     that one difference is most of why a screenshot reads as a handset rather
      than a dark web page. Dark mode swaps these six values and nothing else. */
   /* These six names are the ones eleven thousand lines below already write. They are now
      ALIASES onto the measured ladders declared further down this block, so there is one
@@ -114,7 +116,7 @@ input { font: inherit; }
      unresolvable var() invalidates the declaration at computed-value time, so `color` fell back
      to inheritance and every one of those secondary lines has been painting at FULL label
      strength - pure black on light, pure white on dark - with nothing to say why. This is the
-     iOS secondary label, which is what all 21 sites meant. */
+     FruitOS secondary label, which is what all 21 sites meant. */
   --app-sub: var(--label-2);
   --app-sep: var(--sep-nonopaque);
   --app-fill: var(--sysfill-3);
@@ -131,12 +133,12 @@ input { font: inherit; }
   --app-fill4: var(--sysfill-4);
   --app-placeholder: var(--label-placeholder);
   --app-disabled: var(--label-disabled);
-  /* **Reconciled.** This held `#007aff` thirty lines above `--ios-blue` holding `#0A84FF`,
+  /* **Reconciled.** This held `#007aff` thirty lines above `--fruitos-blue` holding `#0A84FF`,
      so "the system blue" had two different answers inside one token block and neither was
-     the current one. It is now the single theme-aware name: the MEASURED iOS 26 light blue
+     the current one. It is now the single theme-aware name: the MEASURED light blue
      here, the dark spelling under `.screen.dark`.
 
-     `#007AFF` appears in ZERO of the 76 files in Apple's iOS 26 kit. `#0088FF` appears 34
+     `#007AFF` appears in ZERO of the 76 files in the reference kit. `#0088FF` appears 34
      times across 17 of them. The cost is stated rather than hidden: as text on white the
      new blue measures 3.52:1 where the old measured 4.02:1, so it is a better FILL and a
      slightly worse LABEL. That is what the 27 per-app darkened tints below exist to solve,
@@ -154,8 +156,9 @@ input { font: inherit; }
      other site wrote the value out by hand. An operator who changed "the green" changed four
      things and the phone stayed green, which is what "the theme is half done" meant.
 
-     They are also unified. iOS ships a light and a dark spelling of each of these - #34C759 and
-     #30D158 are both "green" - and this file used both, at random, chosen by whichever
+     They are also unified. The platform this takes after ships a light and a dark spelling of
+     each of these - #34C759 and #30D158 are both "green" - and this file used both, at
+     random, chosen by whichever
      reference was open at the time. One token each now, set to whichever spelling already
      dominated, so almost nothing changed appearance and the stragglers stopped disagreeing.
 
@@ -164,23 +167,23 @@ input { font: inherit; }
      flipped with the mode would have taken the light variant onto a black background. Changing
      one here changes it everywhere, which is the thing that was actually missing.
 
-     **What these ten are, exactly, now that the kit has been measured.** They are Apple's
-     PUBLISHED PRE-26 DARK palette, and that is the right thing for them to be: they paint on
-     the always-dark chrome, where a light spelling would be wrong. There is no iOS 26 dark
-     palette to correct them against, because the 76-file kit contains no dark surface at all
-     (see the measured layer below). So they stay, tagged G rather than M, and the measured
-     iOS 26 LIGHT spellings live beside them as `--ios-*-l`. What flips with the theme is the
+     **What these ten are, exactly, now that the kit has been measured.** They are the
+     PUBLISHED DARK palette of the generation before it, and that is the right thing for them
+     to be: they paint on the always-dark chrome, where a light spelling would be wrong. There
+     is no dark palette in the kit to correct them against, because its 76 files contain no
+     dark surface at all (see the measured layer below). So they stay, tagged G rather than M,
+     and the measured LIGHT spellings live beside them as `--fruitos-*-l`. What flips is the
      `--app-*` family, which is what content inside an app should be reaching for. */
-  --ios-blue:   #0A84FF;
-  --ios-green:  #30D158;
-  --ios-red:    #FF453A;
-  --ios-orange: #FF9F0A;
-  --ios-yellow: #FFD60A;
-  --ios-indigo: #5E5CE6;
-  --ios-pink:   #FF375F;
-  --ios-teal:   #40C8E0;
-  --ios-purple: #BF5AF2;
-  --ios-grey:   #8E8E93;
+  --fruitos-blue:   #0A84FF;
+  --fruitos-green:  #30D158;
+  --fruitos-red:    #FF453A;
+  --fruitos-orange: #FF9F0A;
+  --fruitos-yellow: #FFD60A;
+  --fruitos-indigo: #5E5CE6;
+  --fruitos-pink:   #FF375F;
+  --fruitos-teal:   #40C8E0;
+  --fruitos-purple: #BF5AF2;
+  --fruitos-grey:   #8E8E93;
   /* An avatar's disc, and the initial drawn on it. A surface and its label, the way
      `--key-bg`/`--key-label` and `--mat`/`--mat-label` below are a surface and its label.
 
@@ -204,14 +207,17 @@ input { font: inherit; }
   --mat-label: #000; --mat-label2: rgba(60, 60, 67, .68);
 
   /* ══════════════════════════════════════════════════════════════════════════════════
-     THE MEASURED LAYER - iOS 26, read out of Apple's own design kit
+     THE MEASURED LAYER - read out of the reference kit
      ──────────────────────────────────────────────────────────────────────────────────
-     Everything below was read literally out of a 76-file iOS 26 SVG export, or derived
-     arithmetically from geometry that was. Every line carries where it came from:
+     "The reference kit" below means a 76-file SVG export of the mobile design language
+     this interface takes after, measured once so that a number here is a number somebody
+     read rather than a number somebody remembered. Nothing from it is shipped: a measured
+     length or a measured hex is a fact about a shape, not an asset. Every line carries
+     where it came from:
 
        M  measured    read out of a named file as an attribute: a fill, an rx, a width
        D  derived     arithmetic on measured geometry; the working is cited
-       G  guidelines  Apple's published value, or what this file already shipped. NOT in
+       G  guidelines  a published value, or what this file already shipped. NOT in
                       the export. These are the ones to be suspicious of.
        U  unknown     not determinable from the kit. Where a value still appears it is a
                       house choice and says so.
@@ -230,14 +236,14 @@ input { font: inherit; }
         ascender / 0.7383) and weights from stem width / size. LETTER-SPACING IS NOT
         RECOVERABLE from outlines, which is why there is deliberately no --tr-* family
         here. Any tracking the phone applies is a house tuning and must be commented as
-        one, never presented as an iOS value.
+        one, never presented as a measured value.
 
      3. TWO SYSTEM COLOURS ARE NOT WHAT EVERYONE REMEMBERS. `#007AFF` appears in zero of
-        the 76 files, and so does `#FF3B30`. The iOS 26 spellings are `#0088FF` (34
+        the 76 files, and so does `#FF3B30`. The measured spellings are `#0088FF` (34
         occurrences across 17 files) and `#FF383C` (13 across 7).
 
      4. TWO THIRDS OF EVERY ROUNDED RECTANGLE IS A CAPSULE. 458 of the 679 rects carrying
-        an `rx` have `rx = height / 2`. iOS 26 does not have a t-shirt radius ladder; it has
+        an `rx` have `rx = height / 2`. The kit does not have a t-shirt radius ladder; it has
         per-component radii and a great many capsules, which is why the scale below is
         semantic rather than sm/md/lg.
 
@@ -245,55 +251,56 @@ input { font: inherit; }
      pass has one place to read a value from instead of inventing one.
      ══════════════════════════════════════════════════════════════════════════════════ */
 
-  /* ── The iOS 26 system palette, LIGHT spellings ────────────────────────────────────
+  /* ── The system palette, LIGHT spellings ───────────────────────────────────────────
      The authoritative tint list is `Examples/Color Picker.svg`, ten 30x30 rx=15 circles.
      The four single-occurrence tints appear only in that swatch row, so they are lower
      confidence than blue, red, green, yellow and cyan.
      Mint is deliberately absent: it is not in the export and nothing here needs it. Teal
      is not in the export either, but the phone already paints one on its chrome, so a
-     light twin is declared for it from Apple's published palette and tagged G. */
-  --ios-blue-l:    #0088FF;   /* M  17 files, 34x   (the remembered #007AFF: 0 files) */
-  --ios-green-l:   #34C759;   /* M   4 files,  6x                                     */
-  --ios-red-l:     #FF383C;   /* M   7 files, 13x   (the remembered #FF3B30: 0 files)  */
-  --ios-orange-l:  #FF8D28;   /* M   1 file,   1x   low confidence                     */
-  --ios-yellow-l:  #FFCC00;   /* M   3 files,  5x                                      */
-  --ios-pink-l:    #FF2D55;   /* M   1 file,   1x   low confidence                     */
-  --ios-purple-l:  #AF52DE;   /* M   1 file,   2x                                      */
-  --ios-indigo-l:  #6155F5;   /* M   3 files,  3x   also used as a widget background    */
-  --ios-magenta-l: #CB30E0;   /* M   1 file,   1x   new in iOS 26, no pre-26 equivalent */
-  --ios-brown-l:   #AC7F5E;   /* M   1 file,   1x   low confidence                      */
-  --ios-cyan-l:    #00C0E8;   /* M   2 files,  4x                                       */
-  --ios-teal-l:    #30B0C7;   /* G  Apple published. Teal is absent from the export.     */
-  --ios-grey-l:    #8E8E93;   /* G  no grey is named as a tint anywhere in the export    */
-  --ios-faceid-green: #87FA89;/* M  Face ID.svg, 2x                                     */
+     light twin is declared for it from the published palette and tagged G. */
+  --fruitos-blue-l:    #0088FF;   /* M  17 files, 34x   (the remembered #007AFF: 0 files) */
+  --fruitos-green-l:   #34C759;   /* M   4 files,  6x                                     */
+  --fruitos-red-l:     #FF383C;   /* M   7 files, 13x   (the remembered #FF3B30: 0 files)  */
+  --fruitos-orange-l:  #FF8D28;   /* M   1 file,   1x   low confidence                     */
+  --fruitos-yellow-l:  #FFCC00;   /* M   3 files,  5x                                      */
+  --fruitos-pink-l:    #FF2D55;   /* M   1 file,   1x   low confidence                     */
+  --fruitos-purple-l:  #AF52DE;   /* M   1 file,   2x                                      */
+  --fruitos-indigo-l:  #6155F5;   /* M   3 files,  3x   also used as a widget background    */
+  --fruitos-magenta-l: #CB30E0;   /* M   1 file,   1x   newest tint, no older equivalent     */
+  --fruitos-brown-l:   #AC7F5E;   /* M   1 file,   1x   low confidence                      */
+  --fruitos-cyan-l:    #00C0E8;   /* M   2 files,  4x                                       */
+  --fruitos-teal-l:    #30B0C7;   /* G  published. Teal is absent from the export.           */
+  --fruitos-grey-l:    #8E8E93;   /* G  no grey is named as a tint anywhere in the export    */
+  --fruitos-faceunlock-green: #87FA89;
+                                  /* M  the face-recognition screen, 2x                      */
 
   /* ── The theme-aware palette ───────────────────────────────────────────────────────
-     `--ios-*` is CHROME and stays dark. `--app-*` is CONTENT and flips. Inside an app,
-     reach for these; on the lock screen, the home screen, the control centre, the call
-     screen and the emergency card, reach for `--ios-*`.
+     `--fruitos-*` is CHROME and stays dark. `--app-*` is CONTENT and flips. Inside an app,
+     reach for these; on the lock screen, the home screen, the quick settings, the call
+     screen and the emergency card, reach for `--fruitos-*`.
 
      These are for FILLS, switches, badges and glyphs. They are not a text colour: the 27
      per-app darkened tints further down exist precisely because the bright system colours
      are unreadable as text on white, and this family does not replace them. */
-  --app-blue:    var(--ios-blue-l);
-  --app-green:   var(--ios-green-l);
-  --app-red:     var(--ios-red-l);
-  --app-orange:  var(--ios-orange-l);
-  --app-yellow:  var(--ios-yellow-l);
-  --app-pink:    var(--ios-pink-l);
-  --app-purple:  var(--ios-purple-l);
-  --app-indigo:  var(--ios-indigo-l);
-  --app-brown:   var(--ios-brown-l);
-  --app-cyan:    var(--ios-cyan-l);
-  --app-teal:    var(--ios-teal-l);
-  --app-grey:    var(--ios-grey-l);
-  /* Magenta is theme-FIXED, deliberately. It is new in iOS 26, so there is no published
+  --app-blue:    var(--fruitos-blue-l);
+  --app-green:   var(--fruitos-green-l);
+  --app-red:     var(--fruitos-red-l);
+  --app-orange:  var(--fruitos-orange-l);
+  --app-yellow:  var(--fruitos-yellow-l);
+  --app-pink:    var(--fruitos-pink-l);
+  --app-purple:  var(--fruitos-purple-l);
+  --app-indigo:  var(--fruitos-indigo-l);
+  --app-brown:   var(--fruitos-brown-l);
+  --app-cyan:    var(--fruitos-cyan-l);
+  --app-teal:    var(--fruitos-teal-l);
+  --app-grey:    var(--fruitos-grey-l);
+  /* Magenta is theme-FIXED, deliberately. It is the newest tint, so there is no published
      dark twin to derive one from, and inventing one would be a guess. The light spelling
      measures 4.17:1 on white and 4.08:1 on #1C1C1E, so it carries both surfaces. */
-  --app-magenta: var(--ios-magenta-l);
+  --app-magenta: var(--fruitos-magenta-l);
 
   /* ── Backgrounds: the grouped family and the plain family ──────────────────────────
-     iOS draws a list screen on the GROUPED ladder and a content screen on the PLAIN one,
+     FruitOS draws a list screen on the GROUPED ladder and a content screen on the PLAIN one,
      and at the first two levels the two ladders are each other swapped: a grouped screen
      is grey with white cards, a plain screen is white with grey behind it. That is the
      whole reason two names are needed instead of one. */
@@ -305,8 +312,8 @@ input { font: inherit; }
   --bg-plain-3:   #FFFFFF;  /* G                                                          */
 
   /* ── Labels: the four levels ───────────────────────────────────────────────────────
-     `#3C3C43` is rgb(60,60,67), the classic iOS label base, and it survives unchanged in
-     iOS 26 at three alphas. Composites and contrasts are over --bg-grouped-2 (#FFFFFF). */
+     `#3C3C43` is rgb(60,60,67), the classic system label base, and it survives unchanged in
+     the kit at three alphas. Composites and contrasts are over --bg-grouped-2 (#FFFFFF). */
   --label-1: #000000;                /* M  312x / 35 files.  21.00:1                     */
   --label-2: rgba(60, 60, 67, .60);  /* M   22x /  8 files.  -> #8A8A8E,  3.44:1         */
   --label-3: rgba(60, 60, 67, .30);  /* M   27x / 12 files.  -> #C4C4C7,  1.73:1         */
@@ -332,11 +339,11 @@ input { font: inherit; }
   --label-glass-3: #BFBFBF;   /* M   20x / 16 files, also the search placeholder */
 
   /* ── Fills: the four levels ────────────────────────────────────────────────────────
-     The base hex really does shift one unit per level; that is Apple's own systemFill
+     The base hex really does shift one unit per level; that is the kit's own systemFill
      family and all four were read literally. Composites are over #FFFFFF.
 
      NOT to be confused with `--fill` / `--fill2` at the top of this block, which are the
-     DARK chrome fills used on the lock screen, the home screen and the control centre. */
+     DARK chrome fills used on the lock screen, the home screen and the quick settings. */
   --sysfill-1: rgba(120, 120, 120, .20);  /* M  #787878  slider unfilled track  -> #E4E4E4 */
   --sysfill-2: rgba(120, 120, 128, .16);  /* M  #787880  text field, alert 2nd  -> #E9E9EB */
   --sysfill-3: rgba(118, 118, 128, .12);  /* M  #767680  segmented, popup pill  -> #EFEFF0 */
@@ -350,12 +357,12 @@ input { font: inherit; }
      1.25:1.
 
      What this file ships composites to `#C6C6C8` at 1.70:1, which is THREE TIMES stronger.
-     That is not an error to be corrected quietly. On an iPhone held at reading distance the
+     That is not an error to be corrected quietly. On a handset held at reading distance the
      kit's line is right; on a game overlay at monitor distance a 1.25:1 hairline may lose
      its job entirely. So both exist, `--app-sep` points at the one that ships, and the
      component pass makes the call with the numbers in front of it rather than by feel.
 
-     Amusingly, `#C6C6C8` is Apple's own `opaqueSeparator`. The phone has been drawing the
+     Amusingly, `#C6C6C8` is the kit's own `opaqueSeparator`. The phone has been drawing the
      opaque separator translucently all along. */
   --sep-nonopaque: rgba(60, 60, 67, .29);  /* house, legibility-tuned. -> #C6C6C8, 1.70:1 */
   --sep-opaque:    #C6C6C8;                /* M  but ONE occurrence in ONE file. Weak.    */
@@ -364,8 +371,8 @@ input { font: inherit; }
   --sep-h:         1px;    /* M  57 mask blocks. NOT 0.5px.                        */
   --sep-inset:     16px;   /* M  every plain row, every file                       */
   --sep-inset-lead: 58px;  /* house: 16 pad + 30 tile + 12 gap, and it already ships.
-                              The kit's own icon-row inset is 56, measured in
-                              Activity View - iPhone.svg, on a smaller tile.       */
+                              The kit's own icon-row inset is 56, measured on the
+                              share sheet, on a smaller tile.                     */
   --sep-inset-av:  66px;   /* house: 16 pad + 38 avatar + 12 gap                   */
   --sep-inset-img: 136px;  /* M  Examples/List.svg, row with a 68pt leading image   */
 
@@ -388,7 +395,7 @@ input { font: inherit; }
      ONLY FOUR WEIGHTS EXIST in the whole export. There is nothing above Bold anywhere.
      The sixteen non-standard weights this file currently declares (510, 520, 540, 550,
      560, 620, 640, 650, 660, 670, 680, 690, 720, 740, 750, 760) have no counterpart in
-     Apple's kit, and they render as sixteen distinct weights on Windows 11 and collapse
+     the kit, and they render as sixteen distinct weights on Windows 11 and collapse
      to three on Windows 10 - two different phones from one stylesheet.
 
      There is deliberately NO --tr-* tracking family. See fact 2 above. */
@@ -398,18 +405,18 @@ input { font: inherit; }
   --fw-bold:     700;  /* D  ~0.136  / 0.1426 */
 
   --fs-caption2:   11px;  --lh-caption2:   14px;  --fw-caption2:   var(--fw-regular);
-  /* M leading: Activity View - iPhone.svg, baselines 323.0 and 337.0 */
+  /* M leading: the share sheet, baselines 323.0 and 337.0 */
   --fs-caption1:   12px;  --lh-caption1:   16px;  --fw-caption1:   var(--fw-medium);
   /* D size, G leading. The app-icon label, the widget name, the context-menu chip */
   --fs-footnote:   13px;  --lh-footnote:   18px;  --fw-footnote:   var(--fw-regular);
   /* G leading */
   --fs-subhead2:   14px;  --lh-subhead2:   18px;  --fw-subhead2:   var(--fw-medium);
-  /* M leading: Control Center - iPhone.svg, baselines 594.0 and 612.0 */
+  /* M leading: the quick settings screen, baselines 594.0 and 612.0 */
   --fs-subhead:    15px;  --lh-subhead:    20px;  --fw-subhead:    var(--fw-regular);
   /* G leading. 15/Medium is the single most frequent pair in the corpus, 36 runs */
   --fs-body:       17px;  --lh-body:       22px;  --fw-body:       var(--fw-regular);
   /* M leading: Examples/Alert.svg wrapped message, baselines 316.00 and 338.00. This is
-     the one pair that matches Apple's published table exactly, which is the check that
+     the one pair that matches the published table exactly, which is the check that
      the whole derivation method is sound. */
   --fs-headline:   17px;  --lh-headline:   22px;  --fw-headline:   var(--fw-semibold);
   /* D  the alert title and the alert/action-sheet button labels: Semibold, NOT Bold.
@@ -430,21 +437,21 @@ input { font: inherit; }
   /* D  cap 84.59, stem ratio 0.134, tabular advance 69.34 */
 
   /* ── The radius scale ──────────────────────────────────────────────────────────────
-     Semantic, not sm/md/lg, because iOS 26 does not have a t-shirt ladder (fact 4).
+     Semantic, not sm/md/lg, because the kit does not have a t-shirt ladder (fact 4).
      `ry` is used zero times in 76 files, so every corner in the kit is symmetric. */
   --ph-r-key:      8.5px;  /* D  keyboard key, squircle run / 1.6, 62x / 1 file      */
   --ph-r-knob:     12px;   /* M  switch knob, slider knob, icon badge                */
-  --ph-r-cctile:   14px;   /* M  control-centre 53.7pt rounded square                */
+  --ph-r-cctile:   14px;   /* M  quick-settings 53.7pt rounded square                */
   --ph-r-icontile: 16px;   /* M  64pt app-icon tile in the share sheet               */
   --ph-r-notif:    23px;   /* M  notification banner, 36 rects / 4 files             */
   --ph-r-card:     26px;   /* M  grouped card, text field, 52pt CTA, expanded
                                  notification, notification action menu. 18x         */
   --ph-r-widget:   28px;   /* M  home widget, and it is SIZE-INDEPENDENT: a 163pt
                                  square and a 628x300 rect both use 28               */
-  --ph-r-tile:     30px;   /* M  control-centre 2x2, context-menu preview card       */
+  --ph-r-tile:     30px;   /* M  quick-settings 2x2, context-menu preview card       */
   --ph-r-tabbar:   31px;   /* M  tab bar container, a capsule on a 62-tall bar       */
   --ph-r-modal:    34px;   /* M  alert, action sheet, context menu, sheet top, and
-                                 the Liquid Glass Regular swatch itself. 25x / 9     */
+                                 the Glass Regular swatch itself. 25x / 9            */
   --ph-r-dock:     38px;   /* M  dock; also the activity-view sheet top              */
   --ph-r-sheet-b:  58px;   /* D  modal sheet BOTTOM corners, squircle / 1.6          */
   --ph-r-screen:   47px;   /* U  the kit draws the identical 402x874 clip six ways
@@ -470,7 +477,7 @@ input { font: inherit; }
                                touch target, both of which are still 44.            */
   --ph-row-h2:    68px;  /* M  two-line row, and a row with a 68pt leading image     */
 
-  --spring: cubic-bezier(.32, .72, 0, 1);   /* the iOS sheet curve */
+  --spring: cubic-bezier(.32, .72, 0, 1);   /* the FruitOS sheet curve */
   --snap: cubic-bezier(.2, .9, .3, 1);
 }
 
@@ -485,7 +492,7 @@ input { font: inherit; }
   z-index: 80;
   padding: 9px 16px;
   color: #fff;
-  font-family: var(--ios-ui, system-ui, sans-serif);
+  font-family: var(--fruitos-ui, system-ui, sans-serif);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: .02em;
@@ -502,7 +509,7 @@ input { font: inherit; }
    phone still stacks above the game. This rule was already being rescued by a second
    `.device` block five thousand lines below that had made the same fix; now both agree. */
 .device { position: fixed; right: 3vw; bottom: 2.5vh; width: 372px; height: 784px;
-  z-index: var(--ph-overlay-z); font-family: var(--ios-font); color: var(--l1);
+  z-index: var(--ph-overlay-z); font-family: var(--fruitos-font); color: var(--l1);
   animation: ph-rise .38s var(--spring); }
 
 /* The entrance does NOT touch opacity, and must not. An animation that fades in from
@@ -540,8 +547,8 @@ input { font: inherit; }
 .btn-side.power    { right: -2px; top: 196px; width: 3px; height: 92px; border-radius: 0 2px 2px 0; }
 
 /* ══ Dark mode ═══════════════════════════════════════════════════════════════════════
-   **EVERY VALUE IN THIS BLOCK IS INVENTED, and that is not a slip.** Apple's iOS 26
-   design kit is light only: across 76 files there is not one dark surface, not one dark
+   **EVERY VALUE IN THIS BLOCK IS INVENTED, and that is not a slip.** The reference kit
+   is light only: across 76 files there is not one dark surface, not one dark
    material, not one dark separator and not one dark tint. Every white-on-dark value in
    the corpus is content sitting over a photographic wallpaper, drawn as additive white,
    which is a different thing entirely.
@@ -551,14 +558,15 @@ input { font: inherit; }
    of how much they should be trusted:
 
      1. what this phone already ships, which has been looked at in game;
-     2. Apple's published pre-26 dark palette, which is where the shipped values came from;
+     2. the published dark palette of the generation before the kit, which is where the
+        shipped values came from;
      3. the light ladder's own shape, mirrored.
 
    Contrasts below are computed against `--bg-grouped-2` = #1C1C1E, which is the surface a
    label or a fill actually lands on inside an app. Against #000 every figure is higher.
    ═══════════════════════════════════════════════════════════════════════════════════ */
 .screen.dark {
-  /* Backgrounds. Source 1 and 2: the shipped pair, which is Apple's published ladder.
+  /* Backgrounds. Source 1 and 2: the shipped pair, which is the published ladder.
      The grouped family inverts against the plain one, exactly as in light. */
   --bg-grouped-1: #000000;   /* shipped. The app backdrop.                            */
   --bg-grouped-2: #1C1C1E;   /* shipped. Label #FFF on it measures 15.85:1.           */
@@ -567,7 +575,7 @@ input { font: inherit; }
   --bg-plain-2:   #1C1C1E;   /* published                                              */
   --bg-plain-3:   #2C2C2E;   /* published                                              */
 
-  /* Labels. Source 1 and 2: `rgba(235,235,245,a)` is Apple's dark label base and what
+  /* Labels. Source 1 and 2: `rgba(235,235,245,a)` is the published dark label base and what
      this file already shipped. Level 4 is 0.16 rather than the light ladder's 0.18
      because that is the published dark quaternary; both are decoration-only anyway. */
   --label-1: #ffffff;                    /* -> #FFFFFF on #1C1C1E, 15.85:1            */
@@ -601,28 +609,28 @@ input { font: inherit; }
   --sep-kit:       rgba(84, 84, 88, .65); /* no dark equivalent exists; see above   */
   --sep-kit-soft:  rgba(84, 84, 88, .45);
 
-  /* Tints. Source 1 and 2: the ten `--ios-*` above, which are the published pre-26 dark
-     palette and which this phone already paints on its dark chrome. There is no measured
-     iOS 26 dark spelling of anything, so aliasing them is the honest move: it says "this
-     is the value we already trusted" rather than dressing a guess as a measurement.
+  /* Tints. Source 1 and 2: the ten `--fruitos-*` above, which are the published dark palette
+     of the generation before the kit and which this phone already paints on its dark chrome.
+     There is no measured dark spelling of anything, so aliasing them is the honest move: it
+     says "this is the value we already trusted" rather than dressing a guess as a measurement.
      Contrasts as text on #1C1C1E: blue 4.66, green 8.42, red 4.99, orange 8.28,
      yellow 12.05, pink 4.83, purple 4.83, teal 8.55, grey 5.22, indigo 3.36. */
-  --app-blue:   var(--ios-blue);
-  --app-green:  var(--ios-green);
-  --app-red:    var(--ios-red);
-  --app-orange: var(--ios-orange);
-  --app-yellow: var(--ios-yellow);
-  --app-pink:   var(--ios-pink);
-  --app-purple: var(--ios-purple);
-  --app-teal:   var(--ios-teal);
-  --app-grey:   var(--ios-grey);
+  --app-blue:   var(--fruitos-blue);
+  --app-green:  var(--fruitos-green);
+  --app-red:    var(--fruitos-red);
+  --app-orange: var(--fruitos-orange);
+  --app-yellow: var(--fruitos-yellow);
+  --app-pink:   var(--fruitos-pink);
+  --app-purple: var(--fruitos-purple);
+  --app-teal:   var(--fruitos-teal);
+  --app-grey:   var(--fruitos-grey);
   /* Indigo is the one that fails. #5E5CE6 measures 3.36:1 on #1C1C1E, under the 4.5 a
      label needs, which is the same finding the four indigo apps below already act on by
      lifting their tint to #8B89FF. As a FILL it is fine and it stays the system colour;
      anything setting indigo TEXT in dark must use the lift, not this. */
-  --app-indigo: var(--ios-indigo);
-  /* Brown and cyan have no `--ios-*` twin because nothing in the phone's chrome uses
-     them. Source 2: Apple's published dark spellings. Brown #AC8E68 is 5.53:1 and cyan
+  --app-indigo: var(--fruitos-indigo);
+  /* Brown and cyan have no `--fruitos-*` twin because nothing in the phone's chrome uses
+     them. Source 2: the published dark spellings. Brown #AC8E68 is 5.53:1 and cyan
      #64D2FF is 9.89:1 on #1C1C1E. */
   --app-brown: #AC8E68;
   --app-cyan:  #64D2FF;
@@ -687,22 +695,22 @@ input { font: inherit; }
 .wall-night  { --wall: radial-gradient(130% 100% at 50% 110%, #2a2a55 0%, #101828 40%, #07090f 100%); }
 .wall-ember  { --wall: radial-gradient(120% 95% at 28% 6%, #a84d16 0%, #3a1d0a 38%, #170f0a 72%, #0a0706 100%); }
 
-/* The wallpaper blurs and pulls back while an app is open — the iOS depth cue. */
+/* The wallpaper blurs and pulls back while an app is open — the FruitOS depth cue. */
 .screen.app-open .wallpaper { filter: blur(18px) saturate(120%); transform: scale(1.08); }
 
-/* ── Liquid Glass primitive ────────────────────────────────────
+/* ── Glass primitive ────────────────────────────────────
    Composed, not sampled: the material is built from layers rather than blurring
    what is behind it. Not because a blur cannot be had - the chrome uses a real
    one, see `--chrome-blur` - but because this is the PANEL material, and panels
-   are many. A blur per panel is what the Clear Glass pass did and what the iOS 27
+   are many. A blur per panel is what the earlier glass pass did and what the current
    section further down was written to undo.
 
    Four of them, in order:
-     1. a specular sheen along the top edge, and a second diagonal one (iOS 27
+     1. a specular sheen along the top edge, and a second diagonal one (FruitOS
         made these brighter, and they are what stops glass reading as plastic)
      2. the diffusing tint, whose density is the transparency slider
      3. a bright half-pixel rim just inside the border
-     4. a DARKENED edge outside it -- new in iOS 27, and the single change that
+     4. a DARKENED edge outside it -- new in FruitOS, and the single change that
         most separates a glass panel from the wallpaper behind it */
 .glass { position: relative;
   background:
@@ -725,11 +733,11 @@ input { font: inherit; }
               0 0 0 .5px var(--edge),
               0 12px 38px rgba(0,0,0,.5); }
 
-/* ══ Status bar & Dynamic Island ══════════════════════════════ */
+/* ══ Status bar & the Island ══════════════════════════════════ */
 .status { position: absolute; top: 0; left: 0; right: 0; height: 54px; z-index: 40;
   display: flex; align-items: center; justify-content: space-between;
   /* Both groups sit OUTSIDE the pill, which is what the padding is for. */
-  padding: 16px 20px 0; font-family: var(--ios-num); font-size: 15px; font-weight: 600;
+  padding: 16px 20px 0; font-family: var(--fruitos-num); font-size: 15px; font-weight: 600;
   letter-spacing: .01em; pointer-events: none; }
 .status .sright { display: flex; align-items: center; gap: 5px; }
 .status svg { width: 17px; height: 12px; }
@@ -746,7 +754,7 @@ input { font: inherit; }
   border-radius: 0 1px 1px 0; background: var(--sb-dim, rgba(255,255,255,.4)); }
 
 /* The island: a pill, and it EXPANDS for a live activity (a call). That expansion
-   is the single most recognisable thing about a modern iPhone. */
+   is the single most recognisable thing about a modern handset. */
 .island { position: absolute; left: 50%; top: 13px; z-index: 45;
   /* 108, not 124: at 124 the pill was 35% of the screen and its right edge ran
      6px under the signal bars. The hardware one is nearer 31%. */
@@ -801,14 +809,14 @@ input { font: inherit; }
    looked like any other notification. Green, with a white handset, is what the live activity
    for a call is on the phone this is dressed as, and it is legible at 15px in a black pill. */
 .island.live .idot {
-  background: var(--ios-green);
+  background: var(--fruitos-green);
   color: #fff;
   box-shadow: 0 0 0 .5px rgba(255, 255, 255, .18), 0 2px 8px rgba(48, 209, 88, .40);
 }
 .island.live .idot svg { fill: currentColor; stroke: currentColor; }
 /* The little waveform beside it belongs to the same call, so it is the same colour. Leaving it
    on the accent made the pill two-tone for no reason anybody could name. */
-.island.live .iwave i { background: var(--ios-green); }
+.island.live .iwave i { background: var(--fruitos-green); }
 
 /* ══ Scrollbars ═══════════════════════════════════════════════ */
 /* A phone has no scrollbars. Chromium draws one on every overflowing element, and this
@@ -840,7 +848,7 @@ input { font: inherit; }
   transition: opacity .4s var(--spring), transform .4s var(--spring); }
 .lock.out { opacity: 0; transform: scale(1.12); pointer-events: none; }
 .lockdate { font-size: 17px; font-weight: 600; letter-spacing: .01em; color: rgba(255,255,255,.9); }
-.lockclock { font-family: var(--ios-num); font-size: 82px; font-weight: 500;
+.lockclock { font-family: var(--fruitos-num); font-size: 82px; font-weight: 500;
   letter-spacing: -.035em; line-height: 1.02; margin-top: 2px; }
 .lockmeta { margin-top: 4px; font-size: 13px; color: var(--l2); }
 
@@ -876,7 +884,7 @@ input { font: inherit; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lnotif .lw { font-size: var(--fs-caption1); color: var(--mat-label2); flex: 0 0 auto; }
 
-/* Two glass quick actions, exactly where iOS puts them. */
+/* Two glass quick actions, exactly where FruitOS puts them. */
 .lockquick { position: absolute; bottom: 34px; left: 0; right: 0; z-index: 21;
   display: flex; justify-content: space-between; padding: 0 40px; }
 .qbtn { width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center;
@@ -912,14 +920,14 @@ input { font: inherit; }
 .tile { display: flex; flex-direction: column; align-items: center; gap: 6px;
   animation: ph-in .2s var(--spring) backwards; }
 .tile .wrap { position: relative; }
-/* iOS icon geometry: 60px, corner radius 22.5% of the side. */
+/* FruitOS icon geometry: 60px, corner radius 22.5% of the side. */
 .tile .ic { width: 60px; height: 60px; border-radius: 13.5px; overflow: hidden;
   display: flex; align-items: center; justify-content: center; color: #fff;
   box-shadow: 0 4px 12px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.35),
               inset 0 0 0 .5px rgba(255,255,255,.18);
   transition: transform .22s var(--snap); }
 .tile .ic svg { width: 34px; height: 34px;
-  /* iOS 27 renders icons sharper. A hair more stroke and a crisp edge does the
+  /* FruitOS renders icons sharper. A hair more stroke and a crisp edge does the
      same job at this size without shipping a second icon set. */
   stroke-width: 2; shape-rendering: geometricPrecision; }
 /* **Scoped to the top-level icon.** Every tile is `button.tile > span.wrap > (.ic | .folder)`, so
@@ -933,8 +941,8 @@ input { font: inherit; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .badge { position: absolute; top: -5px; right: -6px; min-width: 21px; height: 21px;
   padding: 0 6px; display: flex; align-items: center; justify-content: center;
-  border-radius: 99px; background: var(--ios-red); color: #fff;
-  font-family: var(--ios-num); font-size: 12px; font-weight: 600;
+  border-radius: 99px; background: var(--fruitos-red); color: #fff;
+  font-family: var(--fruitos-num); font-size: 12px; font-weight: 600;
   box-shadow: 0 0 0 2px rgba(0,0,0,.28); }
 
 .dots { display: flex; justify-content: center; gap: 7px; padding: 10px 0 8px; }
@@ -948,7 +956,7 @@ input { font: inherit; }
 
 /* ══ App ══════════════════════════════════════════════════════
    Opens by scaling out of the icon it was launched from: transform-origin is set
-   in JS from the tile's position, which is what makes it feel like iOS rather
+   in JS from the tile's position, which is what makes it feel like FruitOS rather
    than a page swap. */
 .app { position: absolute; inset: 0; z-index: 30; display: none; flex-direction: column;
   background: var(--app-bg); color: var(--app-label);
@@ -960,7 +968,7 @@ input { font: inherit; }
   to   { opacity: 1; transform: none; border-radius: 47px; }
 }
 
-/* Navigation bar with an iOS large title that collapses on scroll.
+/* Navigation bar with a FruitOS large title that collapses on scroll.
 
    THE BAR'S GEOMETRY IS THREE NUMBERS, AND EVERYTHING ELSE IS DERIVED FROM THEM.
    `--nav-top` is the inset above the row - the status bar, or the parked call in the island,
@@ -1006,9 +1014,9 @@ input { font: inherit; }
 .navtitle { font-size: 34px; font-weight: 700; letter-spacing: -.028em; padding: 2px 0 6px;
   transform-origin: left center; transition: opacity .2s ease, transform .2s ease; }
 .navbar.collapsed .navtitle { opacity: 0; transform: scale(.55) translateY(-8px); }
-/* iOS 27: content scrolling under a floating bar gets a UNIFORM toolbar across the
+/* Content scrolling under a floating bar gets a UNIFORM toolbar across the
    top rather than a hairline, so the title never sits on top of moving content. */
-/* iOS 27: content scrolling under a floating bar gets a uniform toolbar. Over an
+/* Content scrolling under a floating bar gets a uniform toolbar. Over an
    app that toolbar is the app's own surface, not glass. */
 .navbar.collapsed { box-shadow: 0 .5px 0 var(--app-sep); background: var(--app-bg); }
 
@@ -1032,18 +1040,19 @@ input { font: inherit; }
    and padding could not fix it: padding only adds space after the LAST row, and the problem is
    every row that passes through the band on the way past.
 
-   Reserving the strip is what iOS does with its safe area, and it is one rule. */
+   Reserving the strip is what FruitOS does with its safe area, and it is one rule. */
 .app:not(.hasfoot) #appfoot { height: 40px; }
 .appbody::-webkit-scrollbar { width: 0; }
 
-/* ══ iOS list rows ════════════════════════════════════════════
+/* ══ FruitOS list rows ════════════════════════════════════════════
    Inset grouped style: a rounded card per section, separators inset from the
    left so they start after the leading icon. */
 .group { border-radius: var(--ph-r-card); overflow: hidden; margin-bottom: 22px;
   background: var(--app-card); }
-/* Sentence case, footnote size. UIKit stopped auto-uppercasing inset-grouped headers in
-   iOS 13 and the kit draws none; the 12.5px/560/uppercase block that used to override this
-   two thousand lines below has gone with the sixteen off-ladder weights. */
+/* Sentence case, footnote size. The platform this takes after stopped auto-uppercasing
+   inset-grouped headers years ago and the kit draws none; the 12.5px/560/uppercase block
+   that used to override this two thousand lines below has gone with the sixteen off-ladder
+   weights. */
 .grouphead { padding: 0 16px 7px; font-size: var(--fs-footnote);
   line-height: var(--lh-footnote); color: var(--app-label2); }
 .groupfoot { padding: 7px 16px 0; font-size: var(--fs-footnote);
@@ -1081,7 +1090,7 @@ input { font: inherit; }
    **The paint stays `--app-sep` and does NOT become the kit's `--sep-kit`, and this is the
    measurement that settles it.** Sampled at the pixel, `--sep-kit` paints #E6E6E6 on white -
    an edge contrast of 1.248:1 - against 1.706:1 for what ships. It looks like the shipped
-   value is 37% too strong. It is not: Apple draws that 1.0pt line on a 3x display, so it
+   value is 37% too strong. It is not: the kit draws that 1.0pt line on a 3x display, so it
    lands as THREE device pixels of #E6E6E6, and this phone has one pixel to say the same
    thing in. One pixel carrying three pixels' worth of line needs roughly 0.29 alpha, and
    0.29 is what `--sep-nonopaque` already is. The shipped value is the density-corrected port
@@ -1102,7 +1111,7 @@ input { font: inherit; }
 .row .ricon svg { width: 16px; height: 16px; }
 .row .rav { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, var(--ios-grey), #545458); color: #fff;
+  background: linear-gradient(180deg, var(--fruitos-grey), #545458); color: #fff;
   font-size: 15px; font-weight: 500; }
 .row .rmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .row .rt { font-size: var(--fs-body); line-height: var(--lh-body);
@@ -1113,9 +1122,9 @@ input { font: inherit; }
   text-overflow: ellipsis; }
 .row .rval { flex: 0 0 auto; font-size: var(--fs-body); line-height: var(--lh-body);
   color: var(--app-label2); }
-.row .rval.num { font-family: var(--ios-num); }
-.row .rval.pos { color: var(--ios-green); }
-.row .rval.neg { color: var(--ios-red); }
+.row .rval.num { font-family: var(--fruitos-num); }
+.row .rval.pos { color: var(--fruitos-green); }
+.row .rval.neg { color: var(--fruitos-red); }
 /* **The box, not the path.** An inline <svg> with a viewBox and no width or height resolves
    to 100% of its span and then derives a square box from the 1:1 viewBox, so an 8x13 span
    drew an 8x8 svg and about 2.3 x 5.3 px of actual ink. The kit's disclosure glyph is
@@ -1126,14 +1135,14 @@ input { font: inherit; }
 .row .rchev svg { display: block; width: 16px; height: 16px; stroke-width: 2.6; }
 .row .rbadge { flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px;
   display: flex; align-items: center; justify-content: center; border-radius: 99px;
-  background: var(--ios-red); color: #fff; font-family: var(--ios-num);
+  background: var(--fruitos-red); color: #fff; font-family: var(--fruitos-num);
   font-size: var(--fs-footnote); font-weight: 600; }
 /* `--app-label2`, not `--app-label3`. A timestamp is information, and 30% alpha measures
    1.73:1 on a white card, which is a decoration contrast. */
 .row .rtime { flex: 0 0 auto; font-size: var(--fs-footnote); line-height: var(--lh-footnote);
   color: var(--app-label2); }
 
-/* **The iOS 26 switch is 64 x 28 with a 38 x 24 capsule knob, and nothing in the export
+/* **The FruitOS switch is 64 x 28 with a 38 x 24 capsule knob, and nothing in the export
    resembles the 51 x 31 everybody remembers.** Three files carry byte-identical geometry:
    track `rx="14"` (a true capsule), knob `rx="12"`, inset 2 on every side, travel
    64 - 38 - 2 - 2 = 22. The knob is 59% of the track where the pre-26 knob was 53%, which is
@@ -1196,7 +1205,7 @@ input { font: inherit; }
      variant       fill                            label               light    dark
      (default)     --app-tint                      #FFFFFF             3.52     3.65
                    (3.52 with --app-blue #0088FF; 3.65 in the 30-odd apps whose per-app rule
-                    still says --ios-blue #0A84FF)
+                    still says --fruitos-blue #0A84FF)
      .tinted       --app-accent-soft  -> #D2E3F8   --app-tint          2.78     5.16
      .plain        --sysfill-2        -> #DEDEE4   --app-label        15.74    15.02
      .destructive  --app-red-soft     -> #F4DCE1   --label-destructive 5.04     6.50
@@ -1234,7 +1243,7 @@ input { font: inherit; }
   line-height: var(--lh-body); caret-color: var(--app-tint);
   outline: none; border: none; }
 .field::placeholder { color: var(--app-label3); }
-/* Two native widgets no iPhone has, both live in this phone today: Chromium draws its own
+/* Two native widgets no handset has, both live in this phone today: Chromium draws its own
    search X - invisible on a dark card - and a spinner on every one of the eight
    `type="number"` fields the bank, the store and the tip sheets use. */
 .field::-webkit-search-cancel-button,
@@ -1291,7 +1300,7 @@ input { font: inherit; }
 /* Big number, for a balance. */
 .bignum { text-align: center; padding: 12px 0 22px; }
 .bignum .bl { font-size: 14px; color: var(--app-label2); }
-.bignum .bv { font-family: var(--ios-num); font-size: 44px; font-weight: 600;
+.bignum .bv { font-family: var(--fruitos-num); font-size: 44px; font-weight: 600;
   letter-spacing: -.03em; margin-top: 2px; color: var(--app-label); }
 .bignum .bs { font-size: 14px; color: var(--app-label2); margin-top: 4px; }
 
@@ -1318,7 +1327,7 @@ input { font: inherit; }
 .bub + .bub { margin-top: 0; }
 
 /* ── A run of messages from one person ───────────────────────── */
-/* iOS draws consecutive messages from the same voice as one block: full corners on all but the
+/* FruitOS draws consecutive messages from the same voice as one block: full corners on all but the
    last, a tail only on the one at the bottom, and barely any gap between them. `joinabove` and
    `joinbelow` say which neighbour a bubble is glued to, which is what decides both. */
 .bub.joinbelow.them  { border-bottom-left-radius: 20px; }
@@ -1358,7 +1367,7 @@ input { font: inherit; }
 /* The quoted line sits above the bubble and inherits its side, so a reply reads top to bottom:
    what was said, then the answer. Deliberately dimmer and smaller than a real message - it is a
    citation, and a citation that looked like a bubble would be read as one. */
-/* Tucked half under the bubble it belongs to, the way iOS stacks the two, and narrower than a
+/* Tucked half under the bubble it belongs to, the way FruitOS stacks the two, and narrower than a
    message so the pair reads as one object. Dimmed with a translucent background rather than
    `opacity`, which would have taken the text down with it and left it muddy. */
 .mquote { max-width: 62%; padding: 5px 12px 11px; border-radius: 14px 14px 14px 14px;
@@ -1407,10 +1416,10 @@ input { font: inherit; }
 .replybar .rbx svg { width: 14px; height: 14px; }
 
 /* ── Reactions ───────────────────────────────────────────────── */
-/* On the outer top corner of the bubble, the way a Tapback sits: their messages carry it on the
-   right, yours on the left, so it never covers the tail. Absolutely positioned, so a bubble that
-   gains one does not change width; `hasreact` adds the room above it instead. */
-/* It sits ON the bubble's top outer corner, overlapping it, the way a Tapback does - not
+/* On the outer top corner of the bubble: their messages carry it on the right, yours on the
+   left, so it never covers the tail. Absolutely positioned, so a bubble that gains one does
+   not change width; `hasreact` adds the room above it instead. */
+/* It sits ON the bubble's top outer corner, overlapping it - not
    floating in the gap above, which is what made it read as a separate little object belonging
    to nothing. Half of it covers the bubble; the rest hangs past the corner. */
 .bub.hasreact { margin-top: 14px; }
@@ -1437,12 +1446,12 @@ input { font: inherit; }
   opacity: .8; }
 
 /* The six, offered above everything else on a long press. */
-.tapback { display: flex; justify-content: center; gap: 4px; margin: 2px 0 14px; }
-.tapback .tb { width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1;
+.reactbar { display: flex; justify-content: center; gap: 4px; margin: 2px 0 14px; }
+.reactbar .tb { width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1;
   display: flex; align-items: center; justify-content: center; background: var(--app-card);
   transition: transform .16s var(--snap); }
-.tapback .tb:active { transform: scale(.86); }
-.tapback .tb.on { box-shadow: inset 0 0 0 2px var(--app-tint); }
+.reactbar .tb:active { transform: scale(.86); }
+.reactbar .tb.on { box-shadow: inset 0 0 0 2px var(--app-tint); }
 
 /* ══ Gallery ═══════════════════════════════════════════════════ */
 /* Two halves: every picture, and the albums they fall into. Albums come in two kinds and
@@ -1559,7 +1568,7 @@ input { font: inherit; }
 .clockopt:active { transform: scale(.98); }
 .clockopt.on { box-shadow: inset 0 0 0 2px var(--app-tint); }
 .clockdemo { flex: 0 0 96px; display: flex; align-items: baseline; justify-content: center;
-  gap: 2px; font-family: var(--ios-num); font-size: 30px; font-weight: 500;
+  gap: 2px; font-family: var(--fruitos-num); font-size: 30px; font-weight: 500;
   letter-spacing: -.03em; line-height: 1; }
 .clockdemo i { font-style: normal; }
 .clockdemo .cdh::after { content: ':'; opacity: .55; }
@@ -1722,7 +1731,7 @@ input { font: inherit; }
 /* The reserved height is the height of a digit, not a guess under it: at 44px the empty
    display was shorter than a filled one, so the whole keypad hopped the moment the first
    number was typed. */
-.dialed { text-align: center; font-family: var(--ios-num); font-size: 34px; font-weight: 400;
+.dialed { text-align: center; font-family: var(--fruitos-num); font-size: 34px; font-weight: 400;
   letter-spacing: .01em; height: 54px; min-height: 54px; padding: 6px 0 2px;
   display: flex; align-items: center; justify-content: center; color: var(--app-label); }
 /* One line, always. A contact name long enough to wrap moved the keypad down as soon as
@@ -1736,7 +1745,7 @@ input { font: inherit; }
   align-items: center; justify-content: center; gap: 1px;
   background: var(--key-bg); transition: filter .1s ease, transform .1s ease; }
 .key:active { filter: brightness(.86); transform: scale(.95); }
-.key b { font-family: var(--ios-num); font-size: 32px; font-weight: 400; line-height: 1; color: var(--key-label); }
+.key b { font-family: var(--fruitos-num); font-size: 32px; font-weight: 400; line-height: 1; color: var(--key-label); }
 .key i { font-size: 10px; font-style: normal; letter-spacing: .12em; color: var(--app-label2);
   height: 11px; }
 /* A three-column grid matching the keypad, so the call button stays in the middle column
@@ -1750,7 +1759,7 @@ input { font: inherit; }
 .dialrow .callbtn { grid-column: 2; }
 .dialrow .delbtn { grid-column: 3; }
 .dialrow .dialspace { grid-column: 1; }
-.callbtn { width: 74px; height: 74px; border-radius: 50%; background: var(--ios-green); color: #fff;
+.callbtn { width: 74px; height: 74px; border-radius: 50%; background: var(--fruitos-green); color: #fff;
   display: flex; align-items: center; justify-content: center;
   transition: transform .16s var(--snap); }
 .callbtn svg { width: 32px; height: 32px; }
@@ -1766,11 +1775,11 @@ input { font: inherit; }
   animation: ph-in .3s var(--spring); }
 .callui.on { display: flex; }
 .callav { width: 96px; height: 96px; border-radius: 50%; margin-bottom: 18px;
-  background: linear-gradient(180deg, var(--ios-grey), #48484a); display: flex; align-items: center;
+  background: linear-gradient(180deg, var(--fruitos-grey), #48484a); display: flex; align-items: center;
   justify-content: center; font-size: 38px; font-weight: 400; color: #fff; }
 .callnum { font-size: 30px; font-weight: 400; letter-spacing: -.01em; }
 .callstate { margin-top: 6px; font-size: 16px; color: var(--l2); }
-.calltimer { margin-top: 6px; font-family: var(--ios-num); font-size: 16px; color: var(--l2); }
+.calltimer { margin-top: 6px; font-family: var(--fruitos-num); font-size: 16px; color: var(--l2); }
 .callpad { position: absolute; bottom: 118px; left: 0; right: 0;
   display: grid; grid-template-columns: 68px; gap: 20px 30px;
   justify-content: center; }
@@ -1786,10 +1795,10 @@ input { font: inherit; }
   justify-content: center; color: #fff; transition: transform .16s var(--snap); }
 .cbtn:active { transform: scale(.92); }
 .cbtn svg { width: 32px; height: 32px; }
-.cbtn.ok { background: var(--ios-green); }
-.cbtn.no { background: var(--ios-red); }
+.cbtn.ok { background: var(--fruitos-green); }
+.cbtn.no { background: var(--fruitos-red); }
 
-/* ══ Control centre ═══════════════════════════════════════════ */
+/* ══ Quick settings ═══════════════════════════════════════════ */
 .cc { position: absolute; inset: 0; z-index: 55; display: none; padding: 60px 14px 0;
   border-radius: 47px; background: rgba(0,0,0,.42);
   animation: ph-cc .34s var(--spring); }
@@ -1865,7 +1874,7 @@ input { font: inherit; }
 }
 .appbody.frame-loading .appframe { opacity: 0; }
 
-/* Heavy Clear Glass layers stay clipped to the handset and the active scroll surface,
+/* Heavy Glass layers stay clipped to the handset and the active scroll surface,
    preventing CEF from repainting the desktop-sized NUI behind them on every gesture. */
 .screen,
 .appbody { contain: paint; }
@@ -1876,7 +1885,7 @@ input { font: inherit; }
 }
 
 /* ══ Slider ═══════════════════════════════════════════════════
-   iOS 27's transparency control. A real slider, because the value it sets is a
+   FruitOS's transparency control. A real slider, because the value it sets is a
    real preference the whole material derives from. */
 .sliderow { padding: 14px 16px; border-radius: 12px; margin-bottom: 22px;
   background: var(--app-card); }
@@ -1885,7 +1894,7 @@ input { font: inherit; }
 /* **A base for every range input in the phone, at (0,0,1) so it cannot beat anything.**
    Two of the four sliders here - the setup glass control and the photo-editor focus - carry
    no `-webkit-appearance: none` and no track or thumb rule at all, so CEF draws Chromium's
-   stock widget in the browser's own colours inside an iOS screen. One element selector fixes
+   stock widget in the browser's own colours inside a FruitOS screen. One element selector fixes
    both and, because it is the weakest selector in the file, cannot disturb the two that are
    already styled (`.sliderow` here, `.musicvolume` in Music).
 
@@ -1952,18 +1961,18 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
    without looking. Stacked from the top, as it was, it read as a form with buttons under it. */
 .calcwrap { position: relative; display: flex; flex-direction: column;
   justify-content: flex-end; min-height: 100%; padding-bottom: 4px; }
-.calcout { text-align: right; padding: 26px 8px 22px; font-family: var(--ios-num);
+.calcout { text-align: right; padding: 26px 8px 22px; font-family: var(--fruitos-num);
   font-size: 68px; font-weight: 300; letter-spacing: -.035em; line-height: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Square cells, so the circles are circles at any device width rather than at one of them. */
 .calcgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.ckey { aspect-ratio: 1; border-radius: 50%; font-family: var(--ios-num); font-size: 30px;
+.ckey { aspect-ratio: 1; border-radius: 50%; font-family: var(--fruitos-num); font-size: 30px;
   font-weight: 400; display: flex; align-items: center; justify-content: center;
   background: #333333; color: #fff;
   transition: filter .1s ease, transform .1s ease; }
 .ckey:active { filter: brightness(1.35); transform: scale(.94); }
 .ckey.fn { background: #A5A5A5; color: #000; font-size: 26px; }
-.ckey.op { background: var(--ios-orange); color: #fff; font-size: 33px; font-weight: 300; }
+.ckey.op { background: var(--fruitos-orange); color: #fff; font-size: 33px; font-weight: 300; }
 /* The wide zero keeps the row's height and takes two columns of width, so it is a stadium and
    not an ellipse. Its label sits where the other keys' labels sit in their own column. */
 .ckey.wide { grid-column: span 2; aspect-ratio: auto; border-radius: 100px;
@@ -1980,7 +1989,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .calcpanel.on { transform: none; }
 .calcpanelhead { display: flex; align-items: center; gap: 10px; font-size: 15px;
   font-weight: 600; color: #fff; padding-bottom: 8px; }
-.calcclear { margin-left: auto; font-size: 13px; color: var(--ios-orange); }
+.calcclear { margin-left: auto; font-size: 13px; color: var(--fruitos-orange); }
 .calcx { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center;
   justify-content: center; background: rgba(255,255,255,.12); color: #fff; }
 .calcx svg { width: 13px; height: 13px; }
@@ -1992,9 +2001,9 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   box-shadow: inset 0 -0.5px 0 rgba(255,255,255,.08); }
 .calcline:last-child { box-shadow: none; }
 .calcline:active { background: rgba(255,255,255,.06); }
-.calcq { display: block; font-family: var(--ios-num); font-size: var(--fs-footnote);
+.calcq { display: block; font-family: var(--fruitos-num); font-size: var(--fs-footnote);
   color: rgba(235,235,245,.55); }
-.calca { display: block; font-family: var(--ios-num); font-size: 22px; font-weight: 300;
+.calca { display: block; font-family: var(--fruitos-num); font-size: 22px; font-weight: 300;
   color: #fff; letter-spacing: -.02em; }
 .calcempty { padding: 30px 0; text-align: center; font-size: 13px;
   color: rgba(235,235,245,.5); }
@@ -2032,7 +2041,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .shade { position: absolute; inset: 0; z-index: 53; display: none; padding: 62px 14px 0;
   border-radius: 47px; background: rgba(0,0,0,.5); animation: ph-cc .3s var(--spring); }
 .shade.on { display: block; }
-.shadeclock { text-align: center; font-family: var(--ios-num); font-size: 40px;
+.shadeclock { text-align: center; font-family: var(--fruitos-num); font-size: 40px;
   font-weight: 600; letter-spacing: -.03em; line-height: 1; }
 .shadedate { text-align: center; font-size: 13px; color: var(--l2); margin-bottom: 14px; }
 .shadelist { display: flex; flex-direction: column; gap: 8px; }
@@ -2051,10 +2060,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .bankcard .chip { width: 38px; height: 28px; border-radius: 6px;
   background: linear-gradient(150deg, #f0d27a, #b58a2c);
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
-.bankcard .num { font-family: var(--ios-num); font-size: 19px; letter-spacing: .08em; }
+.bankcard .num { font-family: var(--fruitos-num); font-size: 19px; letter-spacing: .08em; }
 .bankcard .foot { display: flex; justify-content: space-between; align-items: flex-end;
   font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,.82); }
-.bankcard .bal { font-family: var(--ios-num); font-size: 17px; text-transform: none;
+.bankcard .bal { font-family: var(--fruitos-num); font-size: 17px; text-transform: none;
   letter-spacing: 0; color: #fff; }
 .storebtn.get { font-weight: 700; letter-spacing: .03em; }
 
@@ -2097,7 +2106,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
 .ring .bg { stroke: var(--app-fill); }
 .ring .val { position: absolute; inset: 0; display: flex; align-items: center;
-  justify-content: center; font-family: var(--ios-num); font-size: 19px; font-weight: 600;
+  justify-content: center; font-family: var(--fruitos-num); font-size: 19px; font-weight: 600;
   color: var(--app-label); }
 .ring .lab { font-size: 12px; color: var(--app-label2); }
 
@@ -2153,7 +2162,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   background-position: center; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1); }
 
 /* ══ Search field ═════════════════════════════════════════════
-   Every iOS list app has one directly under the large title. Its absence is one
+   Every FruitOS list app has one directly under the large title. Its absence is one
    of the things that made these read as web pages. */
 .search { display: flex; align-items: center; gap: 7px; padding: 8px 10px; margin-bottom: 14px;
   border-radius: 10px; background: var(--app-fill); color: var(--app-label2); }
@@ -2178,8 +2187,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
    over the edge of the bar - and over the rounded background the active tab draws. */
 .tbicon .tbadge { position: absolute; top: 0; left: 12px; min-width: 17px; height: 17px;
   padding: 0 5px; display: flex; align-items: center; justify-content: center;
-  border-radius: 99px; background: var(--ios-red); color: #fff;
-  font-family: var(--ios-num); font-size: 11px; font-weight: 600; font-style: normal;
+  border-radius: 99px; background: var(--fruitos-red); color: #fff;
+  font-family: var(--fruitos-num); font-size: 11px; font-weight: 600; font-style: normal;
   /* A ring in the bar's own colour would be wrong on the glass bar, which is translucent and
      shows whatever scrolled under it. A small drop shadow lifts it off any of them. */
   box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
@@ -2195,7 +2204,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   color: #fff; position: relative; text-align: left; font: inherit; border: 0; }
 .widget .wtop { display: flex; align-items: center; justify-content: space-between;
   font-size: 13px; font-weight: 600; }
-.widget .wbig { font-family: var(--ios-num); font-size: 34px; font-weight: 500;
+.widget .wbig { font-family: var(--fruitos-num); font-size: 34px; font-weight: 500;
   letter-spacing: -.02em; }
 .widget .wsub { font-size: 12px; color: rgba(255,255,255,.8); }
 /* **The icon serves the title; it does not compete with it.**
@@ -2206,15 +2215,15 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .widget .wicon { display: flex; align-items: center; opacity: .78; }
 .widget .wicon svg { width: 15px; height: 15px; }
 .widget.w-calendar .wday { font-size: 12px; font-weight: 700; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--ios-red); }
-.widget.w-calendar .wnum { font-family: var(--ios-num); font-size: 40px; font-weight: 500; line-height: 1; }
+  text-transform: uppercase; color: var(--fruitos-red); }
+.widget.w-calendar .wnum { font-family: var(--fruitos-num); font-size: 40px; font-weight: 500; line-height: 1; }
 
 /* ══ Search pill above the dock ═══════════════════════════════ */
 .searchpill { display: flex; align-items: center; justify-content: center; gap: 6px;
   align-self: center; padding: 7px 16px 7px 14px; border-radius: 99px;
   font-size: 13px; font-weight: 500; letter-spacing: -.01em;
   color: rgba(255,255,255,.92); margin-bottom: 10px;
-  /* Liquid glass, the same recipe as the dock: a tint, a lit top edge and a rim, rather
+  /* Glass, the same recipe as the dock: a tint, a lit top edge and a rim, rather
      than a flat wash. The old pill had no material at all - it read as loose text. */
   background:
     linear-gradient(160deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 42%),
@@ -2233,7 +2242,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .ccslider span svg { width: 20px; height: 20px; }
 .cctiles .ccpill { width: 100%; aspect-ratio: 1; border-radius: 22px; }
 
-/* The calculator is black on iOS in both themes, and always has been. It is the one
+/* The calculator is black on FruitOS in both themes, and always has been. It is the one
    app whose surface is its own rather than the system's. */
 .app.black { background: #000; color: #fff; }
 .app.black .calcout { color: #fff; }
@@ -2262,7 +2271,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* The Calculator is dark whatever the phone is, so it cannot read the theme-aware glass
    tokens - under a LIGHT `.screen` those resolve to the light material and would paint a
    near-white capsule on a black bar. These two restate the dark values literally, which
-   is the same reason `--ios-*` and `--av-*` are theme-fixed elsewhere in this file.
+   is the same reason `--fruitos-*` and `--av-*` are theme-fixed elsewhere in this file.
    Both selectors are (0,3,0) and beat the (0,1,0)/(0,2,0) pair that draws them. */
 .app.black .navback,
 .app.black .navact.round {
@@ -2284,7 +2293,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 #bars rect.off { opacity: .28; }
 .nosvc { font-size: 11px; font-weight: 700; letter-spacing: .06em; }
 
-/* ══ iOS pass extras ══════════════════════════════════════════ */
+/* ══ FruitOS pass extras ══════════════════════════════════════════ */
 .ic { display: flex; align-items: center; justify-content: center; color: #fff; }
 .ic svg { width: 58%; height: 58%; }
 .row .ic.appx { width: 30px; height: 30px; border-radius: 7px; flex: 0 0 auto;
@@ -2306,7 +2315,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
      Moving a tile rewrites the whole page's markup whenever the insertion point changes, so
      every icon becomes a brand-new element and its animation restarts from frame zero - all of
      them, at the same instant, on every seam the finger crosses. That is a synchronised snap to
-     -1.7deg rather than the continuous independent wobble iOS has, and it is most visible on a
+     -1.7deg rather than the continuous independent wobble FruitOS has, and it is most visible on a
      full page where a drag crosses eight or nine seams.
 
      A negative delay starts an animation already in progress, and `--i` is the tile's own index,
@@ -2321,7 +2330,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .appbody.pushin > * { animation: ph-push .3s var(--spring); }
 
 /* ══ Pull-down surfaces ═══════════════════════════════════════
-   The shade, control centre and switcher were a 40% tint over the home grid,
+   The shade, quick settings and switcher were a 40% tint over the home grid,
    which left the grid fighting the content for attention. They are their own
    LAYER now: near-opaque, with the modules given real fills, because a control
    you have to squint at is a control that does not exist. */
@@ -2380,7 +2389,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   margin-bottom: 10px; }
 .post .phead { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
 .post .pav { width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
-  background: linear-gradient(180deg, var(--ios-grey), #545458) center/cover; color: #fff;
+  background: linear-gradient(180deg, var(--fruitos-grey), #545458) center/cover; color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 600; }
 .post .ph { font-size: 14px; font-weight: 700; color: var(--app-label); }
@@ -2390,16 +2399,16 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .post .pimg { width: 100%; border-radius: 10px; margin-top: 8px; display: block; }
 .post .pfoot { display: flex; align-items: center; gap: 6px; margin-top: 9px; }
 .post .plike { display: flex; align-items: center; gap: 5px; padding: 4px 10px;
-  border-radius: 99px; font-family: var(--ios-num); font-size: 13px;
+  border-radius: 99px; font-family: var(--fruitos-num); font-size: 13px;
   color: var(--app-label2); background: var(--app-fill); }
 .post .plike svg { width: 15px; height: 15px; }
-.post .plike.on { color: var(--ios-pink); background: rgba(255, 45, 85, .12); }
-.post .plike.on svg { fill: var(--ios-pink); stroke: var(--ios-pink); }
+.post .plike.on { color: var(--fruitos-pink); background: rgba(255, 45, 85, .12); }
+.post .plike.on svg { fill: var(--fruitos-pink); stroke: var(--fruitos-pink); }
 
 /* ══ Hush ═════════════════════════════════════════════════════ */
 .hushcard { border-radius: 20px; overflow: hidden; background: var(--app-card);
   box-shadow: 0 10px 26px rgba(0, 0, 0, .18); margin-bottom: 14px; }
-.hushcard .hphoto { aspect-ratio: 4 / 5; background: linear-gradient(180deg, var(--ios-grey), #48484a)
+.hushcard .hphoto { aspect-ratio: 4 / 5; background: linear-gradient(180deg, var(--fruitos-grey), #48484a)
   center/cover; display: flex; align-items: flex-end; }
 .hushcard .hname { width: 100%; padding: 40px 16px 12px; font-size: 24px; font-weight: 700;
   color: #fff; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .62)); }
@@ -2412,12 +2421,12 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .hushbtn:active { transform: scale(.9); }
 .hushbtn svg { width: 27px; height: 27px; }
 .hushbtn.no { color: var(--app-label2); }
-.hushbtn.yes { color: var(--ios-pink); }
-.hushbtn.yes svg { fill: var(--ios-pink); stroke: var(--ios-pink); }
+.hushbtn.yes { color: var(--fruitos-pink); }
+.hushbtn.yes svg { fill: var(--fruitos-pink); stroke: var(--fruitos-pink); }
 
 /* ══ Status ink follows the surface ═══════════════════════════
    Over the wallpaper the bar is white. Over a light app it turns black, which is
-   what iOS does and what "23:11 disappeared" was about. Dark mode and the black
+   what FruitOS does and what "23:11 disappeared" was about. Dark mode and the black
    calculator keep white ink; the home indicator follows the same rule, because
    an exit you cannot see is an exit that does not exist. */
 .status { color: var(--sb-ink, #fff); }
@@ -2468,7 +2477,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .stfeat { position: relative; border-radius: 18px; overflow: hidden; margin-bottom: 22px;
   padding: 16px; min-height: 168px; display: flex; flex-direction: column;
   justify-content: flex-end; color: #fff;
-  background: linear-gradient(135deg, #1D9BF0 0%, var(--ios-indigo) 55%, var(--ios-pink) 100%);
+  background: linear-gradient(135deg, #0FA3D8 0%, var(--fruitos-indigo) 55%, var(--fruitos-pink) 100%);
   box-shadow: 0 12px 28px rgba(0, 0, 0, .28); }
 .stfeat .stkick { font-size: 11px; font-weight: 700; letter-spacing: .14em;
   text-transform: uppercase; color: rgba(255, 255, 255, .8); margin-bottom: auto; }
@@ -2531,9 +2540,9 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* A paid app's button carries its price, and looks like a price: tabular figures so two prices
    line up, and slightly tighter padding because a number is wider than "Get". A player finding
    out an app was paid only once the money had gone was the bug this answers. */
-.stget.paid { padding: 6px 16px; font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.stget.paid { padding: 6px 16px; font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .stdel { padding: 6px 14px; border-radius: 99px; font-size: 14px; font-weight: 600;
-  background: var(--app-fill); color: var(--ios-red); }
+  background: var(--app-fill); color: var(--fruitos-red); }
 .stmeta { display: flex; }
 /* **Direct children only.** Written as `.stmeta div` this reached the two divs INSIDE each
    column as well, so `.mk` - which follows `.mv` - matched `div + div` and drew a border of
@@ -2547,7 +2556,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .stmeta .mv { font-size: 15px; font-weight: 600; color: var(--app-label); margin-top: 2px; }
 
 /* ===============================================================
-   Control centre, notifications and island - iOS 27 Liquid Glass
+   Quick settings, notifications and island - FruitOS Glass
    rework. Everything below is last-wins over the older CC rules.
    =============================================================== */
 
@@ -2573,33 +2582,33 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .island .int2 { font-size: var(--fs-footnote); color: rgba(235,235,245,.72); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 
-/* -- Control centre -- */
+/* -- Quick settings -- */
 .cc { position: absolute; inset: 0; z-index: 55; display: none; padding: 56px 15px 0;
   /* CEF cannot blur, so the panel is nearly opaque rather than see-through - a
-     translucent control centre just makes the home screen behind it fight the text. */
+     translucent quick settings just makes the home screen behind it fight the text. */
   background: linear-gradient(180deg, rgba(22,22,28,.985), rgba(8,8,11,.99)); }
 .cc.on { display: block; animation: cc-in .34s var(--spring); }
 @keyframes cc-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 .cc .cctop { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 /* Rounder. 28px on a 152px-tall card reads as a rounded rectangle; the rest of this phone -
    the handset itself, the app tiles, the sheets - is drawn with a much softer corner, and the
-   control centre was the one surface that looked like it came from somewhere else. */
+   quick settings was the one surface that looked like it came from somewhere else. */
 .cc .ccmod { border-radius: 34px; padding: 15px; min-height: 152px; position: relative;
   background: rgba(120,120,128,.28);
   box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14), inset 0 1px 0 rgba(255,255,255,.16),
     0 8px 24px rgba(0,0,0,.34); }
 
-/* Connectivity: four round buttons, real iOS colours when on. */
+/* Connectivity: four round buttons, real FruitOS colours when on. */
 .ccconn { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 11px; }
 .ccbtn { width: 100%; aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center;
   justify-content: center; color: #fff; background: rgba(120,120,128,.55);
   box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12); transition: background .2s ease, transform .12s; }
 .ccbtn:active { transform: scale(.92); }
 .ccbtn svg { width: 22px; height: 22px; }
-.ccbtn.on.air { background: var(--ios-orange); }
-.ccbtn.on.cel { background: var(--ios-green); }
-.ccbtn.on.wif { background: var(--ios-blue); }
-.ccbtn.on.blu { background: var(--ios-blue); }
+.ccbtn.on.air { background: var(--fruitos-orange); }
+.ccbtn.on.cel { background: var(--fruitos-green); }
+.ccbtn.on.wif { background: var(--fruitos-blue); }
+.ccbtn.on.blu { background: var(--fruitos-blue); }
 
 /* Now playing. */
 .ccnow { display: flex; flex-direction: column; }
@@ -2610,7 +2619,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   /* Both halves carry a fallback. `--v-accent-400` is not defined anywhere - the theme ships
      300, 600 and 700 - and one unresolvable var() invalidates the whole declaration, which
      left this tile transparent on every server. */
-  background: linear-gradient(135deg, var(--v-accent-400, var(--ios-pink)),
+  background: linear-gradient(135deg, var(--v-accent-400, var(--fruitos-pink)),
                               var(--v-accent-600, #A6103C)); display: flex;
   align-items: center; justify-content: center; color: #fff; }
 .ccnow .nowart svg { width: 20px; height: 20px; }
@@ -2653,7 +2662,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .cctoggles .ccpill:active { transform: scale(.92); }
 .cctoggles .ccpill svg { width: 22px; height: 22px; }
 .cctoggles .ccpill.on { background: #fff; color: #1c1c1e; }
-.cctoggles .ccpill.on.focus { background: var(--ios-indigo); color: #fff; }
+.cctoggles .ccpill.on.focus { background: var(--fruitos-indigo); color: #fff; }
 .cctoggles .ccpill.on.torch { background: #fff; color: #1c1c1e; }
 
 /* -- Notification shade -- */
@@ -2667,7 +2676,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .shbtn { padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
   color: #fff; background: rgba(120,120,128,.5);
   box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); }
-.shbtn.danger { color: var(--ios-red); }
+.shbtn.danger { color: var(--fruitos-red); }
 .shbtn.hidden { display: none; }
 
 .shadelist { display: flex; flex-direction: column; gap: 14px; padding-bottom: 40px; }
@@ -2678,7 +2687,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   flex: 1; text-transform: uppercase; letter-spacing: .03em; }
 .ngrouphead .gmute { padding: 4px 11px; border-radius: 99px; font-size: 12px; font-weight: 600;
   color: #fff; background: rgba(120,120,128,.5); }
-.ngrouphead .gmute.on { background: var(--ios-red); }
+.ngrouphead .gmute.on { background: var(--fruitos-red); }
 
 .ncard { position: relative; display: flex; align-items: flex-start; gap: 11px;
   padding: 12px 13px; border-radius: 20px; background: rgba(44,44,48,.72);
@@ -2774,7 +2783,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   font-size: 18px; background: rgba(120,120,128,.24); display: flex; align-items: center;
   justify-content: center; }
 
-/* ── Gallery + AirDrop ─────────────────────────────────────────── */
+/* ── Gallery + FruitDrop ─────────────────────────────────────────── */
 .airhint { font-size: 13px; color: var(--app-label2); padding: 2px 4px 12px; }
 .airscan, .airbig span { text-align: center; }
 .airscan { padding: 28px 0; color: var(--app-label2); font-size: 14px; }
@@ -2907,13 +2916,13 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   box-shadow: 0 10px 26px rgba(0,0,0,.28); }
 .jobname { font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
 .jobgrade { font-size: var(--fs-subhead2); color: rgba(255,255,255,.82); margin-top: 2px; }
-.jobpay { font-family: var(--ios-num); font-size: 26px; font-weight: 600; margin-top: 12px; }
-.jobpay span { font-family: var(--ios-font); font-size: 12px; font-weight: 500;
+.jobpay { font-family: var(--fruitos-num); font-size: 26px; font-weight: 600; margin-top: 12px; }
+.jobpay span { font-family: var(--fruitos-font); font-size: 12px; font-weight: 500;
   color: rgba(255,255,255,.7); }
 .jobbar { height: 8px; border-radius: 99px; background: var(--app-fill); overflow: hidden;
   margin: 4px 2px 14px; }
 .jobbar i { display: block; height: 100%; border-radius: 99px;
-  background: linear-gradient(90deg, #6E6BFF, var(--ios-green)); transition: width .4s var(--spring); }
+  background: linear-gradient(90deg, #6E6BFF, var(--fruitos-green)); transition: width .4s var(--spring); }
 
 /* The icon size is computed from the cell a chosen grid actually gives it. */
 .pages .tile .ic { width: var(--isz, 60px); height: var(--isz, 60px);
@@ -2968,7 +2977,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 /* ===============================================================
-   Clear Glass 27 — final visual system
+   Glass — final visual system
 
    This section intentionally comes last. It consolidates the visual
    language without changing the public markup contract used by app.js,
@@ -2983,14 +2992,14 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 
 :root {
   /* Safe fallbacks when v-ui is starting late or is not installed. */
-  --ph-accent: var(--v-accent, var(--ios-blue));
+  --ph-accent: var(--v-accent, var(--fruitos-blue));
   --ph-accent-300: var(--v-accent-300, #64d2ff);
-  --ph-accent-400: var(--v-accent-400, var(--ios-blue));
+  --ph-accent-400: var(--v-accent-400, var(--fruitos-blue));
   --ph-accent-600: var(--v-accent-600, #0066cc);
   --ph-accent-line: var(--v-accent-line, rgba(10, 132, 255, .58));
-  --ph-accent-grad: var(--v-grad-accent, linear-gradient(145deg, #64d2ff, var(--ios-blue) 56%, #0066cc));
+  --ph-accent-grad: var(--v-grad-accent, linear-gradient(145deg, #64d2ff, var(--fruitos-blue) 56%, #0066cc));
   --ph-overlay-z: var(--z-overlay, 1000);
-  --ph-display: var(--v-font-display, var(--ios-font));
+  --ph-display: var(--v-font-display, var(--fruitos-font));
 
   /* Optical origin. Individual materials can move the light without new rules. */
   --glass-x: 24%;
@@ -3027,8 +3036,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   --ph-spring: cubic-bezier(.22, .9, .18, 1);
 
   /* Resolve the old optional font variable without invalidating the stack. */
-  --ios-num: 'SF Pro Display', 'Segoe UI Variable Display',
-             var(--v-font-num, 'Segoe UI Variable'), var(--ios-font);
+  --fruitos-num: 'Segoe UI Variable Display',
+             var(--v-font-num, 'Segoe UI Variable'), var(--fruitos-font);
 }
 
 .glass,
@@ -3188,7 +3197,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   transform: scale(1.035);
 }
 
-/* Status, lock screen and Dynamic Island ------------------------------- */
+/* Status, lock screen and the Island ----------------------------------- */
 .status {
   padding-left: 22px;
   padding-right: 21px;
@@ -3494,7 +3503,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 
 /* **The dock keeps its dark tint on purpose, and takes the measured edge.**
 
-   The tint stays because the material derivation is explicit that Liquid Glass Regular
+   The tint stays because the material derivation is explicit that Glass Regular
    composites to `#858585` over black - it is a LIGHT material on a dark backdrop, not a
    dark one - and the dock sits over an arbitrary wallpaper with white icon labels under
    it. Swapping the fill would wash the icons out on any dark wallpaper. The kit contains
@@ -3549,7 +3558,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 
 /* App shell and semantic accents --------------------------------------- */
 .app {
-  --app-accent: var(--app-tint, var(--ios-blue));
+  --app-accent: var(--app-tint, var(--fruitos-blue));
   --app-accent-soft: rgba(10, 132, 255, .14);
   background:
     radial-gradient(110% 46% at 12% 0%, rgba(255, 255, 255, .34), transparent 55%),
@@ -3565,21 +3574,21 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .app[data-app="phone"],
 .app[data-app="messages"] {
   --app-tint: #248a3d;
-  --app-accent: var(--ios-green);
+  --app-accent: var(--fruitos-green);
   --app-accent-soft: rgba(52, 199, 89, .15);
 }
 
 .app[data-app="mail"],
 .app[data-app="maps"],
 .app[data-app="store"] {
-  --app-tint: var(--ios-blue);
-  --app-accent: var(--ios-blue);
+  --app-tint: var(--fruitos-blue);
+  --app-accent: var(--fruitos-blue);
   --app-accent-soft: rgba(10, 132, 255, .15);
 }
 
 .app[data-app="notes"] {
   --app-tint: #9a6700;
-  --app-accent: var(--ios-yellow);
+  --app-accent: var(--fruitos-yellow);
   --app-accent-soft: rgba(255, 204, 0, .18);
 }
 
@@ -3589,7 +3598,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* FruitCharge wears the same green as its icon - a charging light. */
 .app[data-app="charging"] {
   --app-tint: #168a61;
-  --app-accent: var(--ios-green);
+  --app-accent: var(--fruitos-green);
   --app-accent-soft: rgba(48, 209, 88, .14);
 }
 
@@ -3622,8 +3631,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* Bank Pro is the company account and wears the purple to say so - the personal Bank stays
    green, and a boss glancing at the two never mistakes one for the other. */
 .app[data-app="bankpro"] {
-  --app-tint: var(--ios-indigo);
-  --app-accent: var(--ios-indigo);
+  --app-tint: var(--fruitos-indigo);
+  --app-accent: var(--fruitos-indigo);
   --app-accent-soft: rgba(94, 92, 230, .15);
 }
 
@@ -3631,25 +3640,25 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .app[data-app="health"],
 .app[data-app="hush"] {
   --app-tint: #d60f4c;
-  --app-accent: var(--ios-pink);
+  --app-accent: var(--fruitos-pink);
   --app-accent-soft: rgba(255, 45, 85, .15);
 }
 
 .app[data-app="reminders"] {
   --app-tint: #c66a00;
-  --app-accent: var(--ios-orange);
+  --app-accent: var(--fruitos-orange);
   --app-accent-soft: rgba(255, 149, 0, .16);
 }
 
 .app[data-app="bleeter"] {
   --app-tint: #168bd2;
-  --app-accent: #1d9bf0;
+  --app-accent: #0fa3d8;
   --app-accent-soft: rgba(29, 155, 240, .15);
 }
 
 .app[data-app="snap"] {
   --app-tint: #8f7400;
-  --app-accent: var(--ios-yellow);
+  --app-accent: var(--fruitos-yellow);
   --app-accent-soft: rgba(255, 204, 0, .18);
 }
 
@@ -3659,11 +3668,11 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .app[data-app="settings"] {
   /* **Blue, not grey.** These four wear grey icons, and their tint was taken from the icon -
      so every control in Settings was grey, and a grey control reads as one you cannot press.
-     An app's icon colour and its interface tint are two different things: iOS Settings has a
+     An app's icon colour and its interface tint are two different things: FruitOS Settings has a
      grey icon and blue controls. The accent below keeps the identity; only what you tap
      changes. */
-  --app-tint: var(--ios-blue);
-  --app-accent: var(--ios-grey);
+  --app-tint: var(--fruitos-blue);
+  --app-accent: var(--fruitos-grey);
   --app-accent-soft: rgba(142, 142, 147, .17);
 }
 
@@ -3676,28 +3685,28 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
    It went unnoticed because the app surface used to be translucent glass, which sat pale
    enough over the wallpaper for a dark tint to read. The moment content became opaque, every
    one of these was on the wrong background. So dark mode gets the bright spelling - which is
-   the one iOS itself uses there, and which `--app-accent` was already holding.
+   the one FruitOS itself uses there, and which `--app-accent` was already holding.
    
    Taxi and Zuber already had this treatment and keep their own values. */
 .screen.dark .app[data-app="phone"],
-.screen.dark .app[data-app="messages"] { --app-tint: var(--ios-green); }
+.screen.dark .app[data-app="messages"] { --app-tint: var(--fruitos-green); }
 
-.screen.dark .app[data-app="notes"] { --app-tint: var(--ios-yellow); }
+.screen.dark .app[data-app="notes"] { --app-tint: var(--fruitos-yellow); }
 
 .screen.dark .app[data-app="bank"],
 .screen.dark .app[data-app="garage"],
 .screen.dark .app[data-app="property"],
-.screen.dark .app[data-app="charging"] { --app-tint: var(--ios-green); }
+.screen.dark .app[data-app="charging"] { --app-tint: var(--fruitos-green); }
 
 .screen.dark .app[data-app="music"],
 .screen.dark .app[data-app="health"],
-.screen.dark .app[data-app="hush"] { --app-tint: var(--ios-pink); }
+.screen.dark .app[data-app="hush"] { --app-tint: var(--fruitos-pink); }
 
-.screen.dark .app[data-app="reminders"] { --app-tint: var(--ios-orange); }
+.screen.dark .app[data-app="reminders"] { --app-tint: var(--fruitos-orange); }
 
 .screen.dark .app[data-app="bleeter"] { --app-tint: #4db4f5; }
 
-.screen.dark .app[data-app="snap"] { --app-tint: var(--ios-yellow); }
+.screen.dark .app[data-app="snap"] { --app-tint: var(--fruitos-yellow); }
 
 /* Indigo is the one system colour that is the same in both modes, so it had no override -
    and measured as text on black it comes out at 3.1:1, under the 4.5 a 10px tab label needs.
@@ -3938,7 +3947,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .appbody {
   padding-left: 15px;
   padding-right: 15px;
-  /* iOS leaves the large title room to breathe before the first card. Without it the
+  /* FruitOS leaves the large title room to breathe before the first card. Without it the
      card butts against the title and every app reads as cramped at the top. */
   --appbody-pt: 14px;
   padding-top: var(--appbody-pt);
@@ -4159,7 +4168,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .apphero .herovalue {
   margin-top: 15px;
   color: var(--app-label);
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 34px;
   font-weight: var(--fw-semibold);
   letter-spacing: -.035em;
@@ -4177,7 +4186,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* **The radius is the token, and the token is 26.** `rx="26"` is read literally off every
    grouped card in five component files, eighteen occurrences, and the kit does NOT reduce it
    for a short card: `rect x=40 y=149 w=370 h=52 rx=26` is a full capsule holding one row.
-   That is the iOS 26 shape language - 458 of the 679 rounded rects in the export are
+   That is the FruitOS shape language - 458 of the 679 rounded rects in the export are
    capsules - so a one-row group here is round-ended on purpose. */
 .group {
   border-radius: var(--ph-r-card);
@@ -4200,7 +4209,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 
 /* The seven declarations that used to sit here - padding-left 14, padding-bottom 6,
    12.5px, weight 560, +.015em, uppercase - restated the base `.grouphead` wrongly and in an
-   off-ladder weight. Deleting them IS the fix; the base rule was already the iOS footnote
+   off-ladder weight. Deleting them IS the fix; the base rule was already the FruitOS footnote
    header. */
 
 .groupfoot {
@@ -4515,12 +4524,12 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 /* The one variant that needs a heavier dim than the kit's modal .20, and it is a
-   measured need rather than a preference. The spotlight panel is 96.5% opaque, so an
+   measured need rather than a preference. The search panel is 96.5% opaque, so an
    icon at 200 behind it arrives as 7 units above a ground of 24 - and 7 on 24 is
    plainly visible where 7 on 244 is not. The panel also covers the screen, so the
    scrim's only visible job here is the 9px margin around it. .45 is what shipped
    before this pass; it is kept rather than rediscovered. */
-.scrim[data-variant="spotlight"] {
+.scrim[data-variant="search"] {
   background: rgba(0, 0, 0, .45);
 }
 
@@ -4585,7 +4594,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* MEASURED, and it is a literal rect in two files rather than a derivation:
    `<rect x="182" y="67" width="58" height="4" rx="2" fill="#3C3C43" fill-opacity="0.3"/>`
    The 5px offset from the sheet top is confirmed twice independently, in
-   `Examples/Sheets (Modals).svg` (432 -> 437) and `Activity View - iPhone.svg`
+   `Examples/Sheets (Modals).svg` (432 -> 437) and the share sheet
    (62 -> 67). `--app-label3` already resolves to exactly `rgba(60,60,67,.3)`, which is
    `#3C3C43` @ 0.3, so the colour is the token and not a literal.
 
@@ -4652,7 +4661,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
     0 -15px 45px rgba(0, 0, 0, .55);
 }
 
-/* Control Center -------------------------------------------------------- */
+/* Quick settings --------------------------------------------------------- */
 .cc {
   padding-top: 58px;
   background:
@@ -5014,7 +5023,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   box-shadow: inset 0 0 0 .5px var(--app-sep);
 }
 
-/* **A filled pill with tinted text, which is what the App Store actually draws.**
+/* **A filled pill with tinted text, which is what an app shop actually draws.**
    It was white on the accent - and white on system blue measures 3.65:1, under the 4.5 a
    15px label needs. The store's own answer to that is the same one: a grey pill and the blue
    as the LETTERS, which reads at about 7:1 and looks more like a store into the bargain. */
@@ -5193,7 +5202,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .ckey.op {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .16), transparent 42%),
-    var(--ios-orange);
+    var(--fruitos-orange);
   box-shadow: none;
 }
 
@@ -5371,10 +5380,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 /* ============================================================
-   iOS 27 interaction pass — system surfaces and tactile polish
+   FruitOS interaction pass — system surfaces and tactile polish
    ============================================================ */
 
-/* Home Spotlight ------------------------------------------------------- */
+/* Home search ---------------------------------------------------------- */
 .searchpill {
   width: 112px;
   min-height: 32px;
@@ -5427,7 +5436,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35));
 }
 
-.sheet[data-variant="spotlight"] {
+.sheet[data-variant="search"] {
   top: 74px;
   bottom: auto;
   left: 10px;
@@ -5446,11 +5455,11 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
     0 24px 70px rgba(0, 0, 0, .56);
 }
 
-.sheet[data-variant="spotlight"] .sh {
+.sheet[data-variant="search"] .sh {
   display: none;
 }
 
-.spotsearch {
+.appsearch {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -5467,13 +5476,13 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
     0 6px 16px rgba(0, 0, 0, .16);
 }
 
-.spotsearch > svg {
+.appsearch > svg {
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
 }
 
-.spotsearch input {
+.appsearch input {
   min-width: 0;
   flex: 1;
   border: 0;
@@ -5483,11 +5492,11 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   background: transparent;
 }
 
-.spotsearch input::placeholder {
+.appsearch input::placeholder {
   color: rgba(235, 235, 245, .48);
 }
 
-.spotsearch button {
+.appsearch button {
   display: flex;
   width: 23px;
   height: 23px;
@@ -5502,13 +5511,13 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   transition: opacity var(--ph-fast) ease, transform var(--ph-fast) var(--ph-spring);
 }
 
-.spotsearch button.visible {
+.appsearch button.visible {
   opacity: 1;
   pointer-events: auto;
   transform: none;
 }
 
-.spotsearch button svg {
+.appsearch button svg {
   width: 12px;
   height: 12px;
 }
@@ -5522,7 +5531,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   text-transform: uppercase;
 }
 
-.spotsuggest {
+.appsuggest {
   margin-bottom: 12px;
 }
 
@@ -5564,22 +5573,22 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   white-space: nowrap;
 }
 
-.sheet[data-variant="spotlight"] .group {
+.sheet[data-variant="search"] .group {
   overflow: hidden;
   color: #fff;
   background: rgba(255, 255, 255, .07);
   box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .09);
 }
 
-.sheet[data-variant="spotlight"] .row {
+.sheet[data-variant="search"] .row {
   color: #fff;
 }
 
-.sheet[data-variant="spotlight"] .row .rt {
+.sheet[data-variant="search"] .row .rt {
   color: #fff;
 }
 
-.sheet[data-variant="spotlight"] .row .rs {
+.sheet[data-variant="search"] .row .rs {
   color: rgba(235, 235, 245, .56);
 }
 
@@ -5781,7 +5790,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 .ccclock {
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 15px;
   font-weight: 670;
 }
@@ -6558,7 +6567,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 .stcipherprint > svg { width: 36px; height: 36px; color: #70ebca; }
 .stcipherprint b { margin-top: 12px; font-size: 11px; }
-.stcipherprint i { margin-top: 9px; color: #7ee9cd; font-family: var(--ios-num); font-size: 9px; font-style: normal; line-height: 1.55; letter-spacing: .14em; }
+.stcipherprint i { margin-top: 9px; color: #7ee9cd; font-family: var(--fruitos-num); font-size: 9px; font-style: normal; line-height: 1.55; letter-spacing: .14em; }
 .stcipherprint small { margin-top: 12px; padding: 5px 8px; color: #5de1bd; font-size: 7px; border-radius: 99px; background: rgba(89, 225, 189, .1); }
 
 .stsectioncard,
@@ -6624,7 +6633,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 .stprivacyicon {
-  background: var(--ios-indigo);
+  background: var(--fruitos-indigo);
 }
 
 .stcardicon svg,
@@ -6733,7 +6742,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   cursor: pointer;
 }
 
-.sheet[data-variant="spotlight"] {
+.sheet[data-variant="search"] {
   top: 62px;
   right: 9px;
   bottom: 18px;
@@ -6744,7 +6753,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   contain: layout paint;
 }
 
-.sheet[data-variant="spotlight"] > .grab {
+.sheet[data-variant="search"] > .grab {
   display: none;
 }
 
@@ -6784,12 +6793,12 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   height: 14px;
 }
 
-.sheet[data-variant="spotlight"] .spotsearch {
+.sheet[data-variant="search"] .appsearch {
   flex: 0 0 auto;
   margin-top: 5px;
 }
 
-.sheet[data-variant="spotlight"] #appres {
+.sheet[data-variant="search"] #appres {
   min-height: 0;
   padding-bottom: 8px;
   overscroll-behavior: contain;
@@ -6938,7 +6947,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   font-weight: var(--fw-semibold);
   background:
     radial-gradient(100% 130% at 20% -30%, rgba(255, 255, 255, .35), transparent 57%),
-    var(--ios-blue);
+    var(--fruitos-blue);
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .27),
     0 12px 30px rgba(0, 82, 180, .34);
@@ -7052,7 +7061,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 
 .setupform label:focus-within {
   box-shadow:
-    inset 0 0 0 1.5px var(--ios-blue),
+    inset 0 0 0 1.5px var(--fruitos-blue),
     0 0 0 3px rgba(10, 132, 255, .14);
 }
 
@@ -7104,7 +7113,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .setupthemes button.on {
   color: #fff;
   box-shadow:
-    inset 0 0 0 2px var(--ios-blue),
+    inset 0 0 0 2px var(--fruitos-blue),
     0 10px 28px rgba(10, 132, 255, .24);
 }
 
@@ -7147,7 +7156,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  background: var(--ios-blue);
+  background: var(--fruitos-blue);
 }
 
 .setupthemes button.on > i {
@@ -7189,7 +7198,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .setupwalls button.on {
   box-shadow:
     inset 0 0 0 2.5px #fff,
-    0 0 0 2px var(--ios-blue),
+    0 0 0 2px var(--fruitos-blue),
     0 10px 26px rgba(10, 132, 255, .30);
 }
 
@@ -7217,7 +7226,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  background: var(--ios-blue);
+  background: var(--fruitos-blue);
 }
 
 .setupwalls button.on i {
@@ -7273,7 +7282,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   color: #fff;
   background:
     radial-gradient(circle at 28% 18%, rgba(255, 255, 255, .58), transparent 45%),
-    var(--ios-green);
+    var(--fruitos-green);
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .46),
     0 18px 42px rgba(48, 209, 88, .27);
@@ -7311,7 +7320,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   flex: 0 0 auto;
   place-items: center;
   border-radius: 13px;
-  background: var(--ios-blue);
+  background: var(--fruitos-blue);
 }
 
 .setupsummary svg {
@@ -7334,7 +7343,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   font-size: var(--fs-caption1);
 }
 
-/* Passcode + Face ID --------------------------------------------------- */
+/* Passcode + Face Unlock --------------------------------------------------- */
 .pindots {
   display: flex;
   min-height: 18px;
@@ -7387,7 +7396,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 .pinpad strong {
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 28px;
   font-weight: var(--fw-regular);
 }
@@ -7505,14 +7514,14 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 .facescan.recognised {
-  border-color: var(--ios-green);
-  color: var(--ios-green);
+  border-color: var(--fruitos-green);
+  color: var(--fruitos-green);
   transform: scale(1.035);
   box-shadow: 0 0 35px rgba(48, 209, 88, .24);
 }
 
 .facescan.failed {
-  border-color: var(--ios-red);
+  border-color: var(--fruitos-red);
   color: #ff6961;
 }
 
@@ -7552,7 +7561,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 .setupsummary.security > span {
-  background: linear-gradient(145deg, var(--ios-green), #00a86b);
+  background: linear-gradient(145deg, var(--fruitos-green), #00a86b);
 }
 
 .auth {
@@ -8153,7 +8162,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 /* `min-width: 0` is what makes the ellipsis work: a flex item will not shrink below its own
    content without it, so a long handle pushed the timestamp beside it out of the row instead. */
 .cipherrowmain b { overflow: hidden; flex: 1; min-width: 0; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.cipherrowmain time { color: var(--app-label3); font-family: var(--ios-num); font-size: 10px; }
+.cipherrowmain time { color: var(--app-label3); font-family: var(--fruitos-num); font-size: 10px; }
 .cipherrowmain small {
   display: flex;
   align-items: center;
@@ -8275,7 +8284,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   box-shadow: inset 0 1px rgba(255, 255, 255, .045);
 }
 .cipherbubble > span { font-size: 14px; line-height: 1.35; word-break: break-word; }
-.cipherbubble small { display: flex; align-items: center; align-self: flex-end; gap: 3px; font-family: var(--ios-num); font-size: 9px; opacity: .58; }
+.cipherbubble small { display: flex; align-items: center; align-self: flex-end; gap: 3px; font-family: var(--fruitos-num); font-size: 9px; opacity: .58; }
 .cipherbubble small svg { width: 8px; height: 8px; }
 .ciphercompose {
   display: grid;
@@ -8373,7 +8382,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .cipherfingerprint {
   padding: 13px 14px;
   color: #81efd2;
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 11px;
   line-height: 1.55;
   letter-spacing: .07em;
@@ -8969,7 +8978,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .musicvolume input { width: 100%; height: 24px; margin: 0; accent-color: var(--music-red);
   background: transparent; cursor: pointer; outline: none; }
 /* Seven, not four. A four-pixel rail under a fourteen-pixel bead reads as a bead on a wire;
-   the slider iOS uses is a bar you can see the level of at a glance without the handle. */
+   the slider FruitOS uses is a bar you can see the level of at a glance without the handle. */
 .musicvolume input::-webkit-slider-runnable-track { height: 7px; border-radius: 4px;
   background: linear-gradient(90deg, var(--music-red) var(--volume, 50%),
     rgba(120, 120, 128, .22) var(--volume, 50%)); }
@@ -9091,8 +9100,8 @@ html.keyboard-nav .homebar:focus {
     0 1px 4px rgba(0, 0, 0, .30);
 }
 
-/* ══ iOS 27: glass is chrome, content is opaque ═══════════════════════════════
-   This section replaces the "Clear Glass" pass, which gave EVERY app surface a
+/* ══ Glass is chrome, content is opaque ══════════════════════════════════════
+   This section replaces the earlier glass pass, which gave EVERY app surface a
    backdrop-filter over the wallpaper: the app itself, its navigation bar, and then
    each `.group`, `.field`, `.seg`, `.post`, key and bubble inside it. Three things
    were wrong with that, and they are the three things this rewrite is for.
@@ -9107,8 +9116,8 @@ html.keyboard-nav .homebar:focus {
    backdrop-filter is the most expensive thing a page can ask for, and this asked
    for a dozen.
 
-   **It is not what iOS does.** Liquid Glass is a layer ABOVE content: bars,
-   sheets, the control centre, controls floating over something that scrolls. The
+   **It is not what the platform this takes after does.** Glass is a layer ABOVE
+   content: bars, sheets, quick settings, controls floating over something that scrolls. The
    content underneath is opaque - that is what the glass is for. Making the content
    glass too leaves nothing for it to be glass against.
 
@@ -9124,7 +9133,7 @@ html.keyboard-nav .homebar:focus {
    scrolling under it, because `.appbody`'s box begins and ends exactly where they do.
 
    The token stays declared because it is the rationing hook, and it now holds budget
-   instead of spending it. The control centre is the surface the audits want it on: it
+   instead of spending it. The quick settings is the surface the audits want it on: it
    is 88.5 percent opaque with no blur today, which reads as neither.
 
    `--chrome-light` and `--chrome-dark` are gone. They were the tinted strip the
@@ -9133,8 +9142,8 @@ html.keyboard-nav .homebar:focus {
   --chrome-blur: blur(20px) saturate(180%);
 }
 
-/* ══ Liquid Glass, solved rather than guessed ═════════════════════════════════
-   Every value in this block was derived from Apple's own iOS 26 kit by running the
+/* ══ Glass, solved rather than guessed ═══════════════════════════════════════
+   Every value in this block was derived from the reference kit by running the
    layer stack against 21 backdrop samples and least-squares fitting
    `out = (1-A)·B + A·c`. The kit draws each material as four flat fills with blend
    modes, plus `feMorphology` rings and `feGaussianBlur` inner shadows. It contains
@@ -9158,7 +9167,7 @@ html.keyboard-nav .homebar:focus {
      blurred; the composite is right, the *structure* behind it is not. Ported flat onto
      an unblurred backdrop it reproduces the average and loses the smear, and a sheet
      over a settings list then shows the list: at .73 the rows behind it were legible
-     through it, which is the exact failure the "iOS 27" post-mortem lower down this
+     through it, which is the exact failure the glass post-mortem lower down this
      file was written about. Screenshot, not arithmetic, is what caught it.
 
      .96 was chosen by arithmetic and then checked on a screenshot. A row of black text
@@ -9167,8 +9176,8 @@ html.keyboard-nav .homebar:focus {
      .73 that is 53 on 235, which is reading through a window. At .96 it is 7.9 on 244,
      3.2 percent, which is the hint of the content behind that a thick material has.
 
-     The faithful alternative is section 8.2's: pay for ONE blur on the scrim - Apple's
-     own Control Center file has 13 glass surfaces and 11 of them carry no blur at all,
+     The faithful alternative is section 8.2's: pay for ONE blur on the scrim - the kit's
+     own quick-settings screen has 13 glass surfaces and 11 of them carry no blur at all,
      stacking on an already-blurred scrim - and then .73 is correct again. That is a
      frame-budget decision for the owner, not for this pass; the hue and the material
      are unchanged either way, only the alpha moves.
@@ -9216,7 +9225,7 @@ html.keyboard-nav .homebar:focus {
     inset 0 10px 10px -10px var(--lg-hi),
     inset 0 -10px 10px -10px var(--lg-hi),
     inset 0 30px 30px -30px var(--lg-topshade);
-  /* `filter12_ii` + `filter11_dd`: Apple tightens both the rim and the highlight on
+  /* `filter12_ii` + `filter11_dd`: the kit tightens both the rim and the highlight on
      small controls, 3px of falloff instead of 10 and a 0.25pt sliver instead of 0.5. */
   --lg-specular-sm:
     inset 0 3px 3px -3px var(--lg-hi),
@@ -9240,8 +9249,8 @@ html.keyboard-nav .homebar:focus {
    value below is invented, and each says what from.
 
    Fill: keep the STRUCTURE (45% backdrop plus a 55% constant) and swap the constant
-   from near-white to #3A3A3C, which is iOS's own dark systemFill grey. Over the dark
-   grouped card #1C1C1E that composites to #2C2C2E, which is where iOS dark chrome sits.
+   from near-white to #3A3A3C, which is FruitOS's own dark systemFill grey. Over the dark
+   grouped card #1C1C1E that composites to #2C2C2E, which is where FruitOS dark chrome sits.
 
    Rim: section 4.4 records that a `plus-darker` ring clamps to solid black on any
    backdrop darker than `1-g`. A black hairline on black is not an edge, so the dark rim
@@ -9347,7 +9356,7 @@ body.inframe.dark {
    **The bar in the kit has no bar-shaped fill at all.** `Examples/Toolbars - Top.svg`
    draws the screen background, two 44pt circular glass buttons, the title, and a
    masked blurred band where content passes under. The glass is on the BUTTONS. A
-   full-width tinted strip is not what iOS 26 does, and the strip is what made the
+   full-width tinted strip is not what FruitOS does, and the strip is what made the
    header a slightly different grey from the body it belongs to.
 
    **The blur was measured out, not argued out.** `elementsFromPoint` at a point
@@ -9391,8 +9400,8 @@ body.inframe.dark {
   box-shadow: inset 0 -.5px 0 rgba(255, 255, 255, .14);
 }
 
-/* ── Grouped content: a plain card, as iOS draws it ────────────
-   No blur, no gradient, no drop shadow. An inset-grouped list on iOS is a solid
+/* ── Grouped content: a plain card, as FruitOS draws it ────────────
+   No blur, no gradient, no drop shadow. An inset-grouped list on FruitOS is a solid
    rounded rectangle and nothing else; every layer added to it is a layer between
    the reader and the words. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .group,
@@ -9439,7 +9448,7 @@ body.inframe.dark {
 }
 
 /* The selected segment is the one thing in a segmented control that lifts, and it
-   lifts by one soft shadow - the iOS control has exactly that and nothing else. */
+   lifts by one soft shadow - the FruitOS control has exactly that and nothing else. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .seg button.on {
   background: #ffffff;
   box-shadow: 0 2px 20px rgba(0, 0, 0, .06);
@@ -9451,9 +9460,9 @@ body.inframe.dark {
 }
 
 /* ── Tab bar and composer: the floating capsule ────────────────
-   MEASURED, `Tab Bar - iPhone.svg` and `Examples/Tab Bar.svg`: height 62, radius 31
+   MEASURED, both tab-bar files in the export: height 62, radius 31
    (always height/2 - Regular Small is a capsule in 39 of 39 rect instances in the
-   kit), Liquid Glass Regular Small, floating with a 21 inset. Both files agree on
+   kit), Glass Regular Small, floating with a 21 inset. Both files agree on
    height, radius, the 4px pill inset, the 54 pill height, the 27 pill radius and the
    `#EDEDED` pill fill; they disagree on the container width, which follows content.
 
@@ -9479,7 +9488,7 @@ body.inframe.dark {
      compositor readback every frame in all 17 apps that carry a footer.
 
      `--chrome-blur` stays declared. It is the rationing hook, and it now has budget
-     rather than a consumer: the control centre is the surface the audits want it spent
+     rather than a consumer: the quick settings is the surface the audits want it spent
      on, and it can have all of it. */
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -9506,7 +9515,7 @@ body.inframe.dark {
   box-shadow: none;
 }
 
-/* A row's leading icon keeps its rounded-square tile: that IS the iOS settings
+/* A row's leading icon keeps its rounded-square tile: that IS the FruitOS settings
    idiom, and it is a flat colour rather than a material. */
 .app:not([data-app="cipher"]):not([data-app="music"]) .row .ricon,
 .app:not([data-app="cipher"]):not([data-app="music"]) .strowitem .ic {
@@ -9514,7 +9523,7 @@ body.inframe.dark {
 }
 
 /* ── The Phone app ─────────────────────────────────────────────
-   Its own surface: a dialler is drawn on a dark field on iOS whatever the rest of
+   Its own surface: a dialler is drawn on a dark field on FruitOS whatever the rest of
    the phone is doing, and the keys are the light-grey circles of the real one. */
 .app[data-app="phone"] {
   background: var(--app-bg);
@@ -9581,7 +9590,7 @@ body.inframe.dark {
 
    **The text block is left aligned and the button labels are centred.** That is the one
    finding in the alert worth stating loudly, because it is the opposite of what a
-   remembered iOS alert looks like. The evidence: the card spans x 85..385 so its centre
+   remembered FruitOS alert looks like. The evidence: the card spans x 85..385 so its centre
    is 235; the title runs 107.59..262.93 with a centre of 185.26, and if it were centred
    it would start at 157.3. Message line 1 and the much shorter line 2 both start at
    107.5. Meanwhile the black button label's centre is 164.36 against a button centre of
@@ -9720,7 +9729,8 @@ body.inframe.dark {
    column on any row in either file), section titles inside the panel (no run exists between
    the surface top and the first row, or between a separator and the row after it), and a
    detached Cancel on the action sheet (all three action-sheet buttons are 56 pitch, 8 gap,
-   same fill, same weight - the separated heavier Cancel of iOS 18 is not represented). */
+   same fill, same weight - the separated heavier Cancel of an older generation is not
+   represented). */
 .sheet[data-shape="menu"] {
   left: 50%;
   right: auto;
@@ -9922,7 +9932,7 @@ body.inframe.dark {
 
 /* iFruit AppKit 2 ---------------------------------------------------------
    Public components used by dropped-in apps. They inherit the same tokens as
-   native screens, so a third-party page follows light/dark and Clear Glass. */
+   native screens, so a third-party page follows light/dark and Glass. */
 body.inframe {
   width: 100%;
   height: auto;
@@ -9932,7 +9942,7 @@ body.inframe {
   overflow-y: auto;
   color: var(--app-label);
   background: var(--app-bg) !important;
-  font-family: var(--ios-font);
+  font-family: var(--fruitos-font);
   color-scheme: light;
 }
 
@@ -9970,16 +9980,16 @@ body.inframe.dark {
   --sep-kit:       rgba(84, 84, 88, .65);
   --sep-kit-soft:  rgba(84, 84, 88, .45);
 
-  --app-blue:   var(--ios-blue);
-  --app-green:  var(--ios-green);
-  --app-red:    var(--ios-red);
-  --app-orange: var(--ios-orange);
-  --app-yellow: var(--ios-yellow);
-  --app-pink:   var(--ios-pink);
-  --app-purple: var(--ios-purple);
-  --app-indigo: var(--ios-indigo);
-  --app-teal:   var(--ios-teal);
-  --app-grey:   var(--ios-grey);
+  --app-blue:   var(--fruitos-blue);
+  --app-green:  var(--fruitos-green);
+  --app-red:    var(--fruitos-red);
+  --app-orange: var(--fruitos-orange);
+  --app-yellow: var(--fruitos-yellow);
+  --app-pink:   var(--fruitos-pink);
+  --app-purple: var(--fruitos-purple);
+  --app-indigo: var(--fruitos-indigo);
+  --app-teal:   var(--fruitos-teal);
+  --app-grey:   var(--fruitos-grey);
   --app-brown:  #AC8E68;
   --app-cyan:   #64D2FF;
 
@@ -10178,9 +10188,9 @@ body.inframe.dark .uisearch {
    not. Same shape as the `.screen.dark .uicard` block further up, which fixed the per-app
    tints and did not reach the chips. */
 .screen.dark .uichip.positive,
-body.inframe.dark .uichip.positive { color: var(--ios-green); }
+body.inframe.dark .uichip.positive { color: var(--fruitos-green); }
 .screen.dark .uichip.negative,
-body.inframe.dark .uichip.negative { color: var(--ios-red); }
+body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
 
 .uinotice {
   display: flex;
@@ -10204,9 +10214,9 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .uinotice b,
 .uinotice small { display: block; }
 .uinotice small { margin-top: 3px; color: var(--app-label2); line-height: 1.35; }
-.uinotice.error > span { background: var(--ios-red); }
-.uinotice.warning > span { background: var(--ios-orange); }
-.uinotice.success > span { background: var(--ios-green); }
+.uinotice.error > span { background: var(--fruitos-red); }
+.uinotice.warning > span { background: var(--fruitos-orange); }
+.uinotice.success > span { background: var(--fruitos-green); }
 
 .uispinner {
   display: grid;
@@ -10268,7 +10278,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   flex: 0 0 18px;
   width: 18px;
   height: 18px;
-  color: var(--ios-green);
+  color: var(--fruitos-green);
 }
 
 .stpermissions {
@@ -10293,7 +10303,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   border: 0;
 }
 
-/* `.sheet[data-variant="sdk-confirm"] .row:first-child .rt { color: var(--ios-red) }` was
+/* `.sheet[data-variant="sdk-confirm"] .row:first-child .rt { color: var(--fruitos-red) }` was
    here. It reddened whichever row happened to be FIRST regardless of which one was
    destructive, and it was (0,4,0), so anything written plainly against it lost. The SDK
    action sheet no longer emits `.row` at all - it emits `.menurow`, which takes its red
@@ -10415,7 +10425,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
    26px up from the bottom (.homebar::before, z-index 60). The social tab bar's buttons are
    38px tall, so its middle tabs landed inside that box and the home bar swallowed every tap
    on them; they looked fine and did nothing. `.tabbar` escaped only by having 22px of bottom
-   padding, which is the same strip iOS reserves under a tab bar.
+   padding, which is the same strip FruitOS reserves under a tab bar.
 
    pointer-events is the important half: the bar itself lets clicks through, so an empty
    stretch of footer still reaches the home indicator and the swipe-up gesture keeps working.
@@ -10460,7 +10470,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ios-red);
+  background: var(--fruitos-red);
 }
 
 /* ── Timeline switch ─────────────────────────────────────────── */
@@ -10510,7 +10520,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 .pverif svg { width: 10px; height: 10px; stroke-width: 3; }
 
-/* The OFFICIAL mark, in the system orange. #FF8D28 is the measured iOS 26 value and it is the
+/* The OFFICIAL mark, in the system orange. #FF8D28 is the measured FruitOS value and it is the
    top of the gradient rather than the whole disc, for the same reason the blue one is a
    gradient: a white glyph on flat #FF8D28 measures 2.31:1, which is under the 3:1 a non-text
    mark needs. Down to #C25200 it reads 3.25:1 across the middle of the disc and 4.67:1 at the
@@ -10568,10 +10578,10 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 .pact svg { width: 17px; height: 17px; }
 .pact:active { transform: scale(.88); }
-.pact.plike.on { color: var(--ios-pink); }
+.pact.plike.on { color: var(--fruitos-pink); }
 .pact.plike.on svg { fill: currentColor; }
-.pact.prepost.on { color: var(--ios-green); }
-.pact.pdel:active { color: var(--ios-red); }
+.pact.prepost.on { color: var(--fruitos-green); }
+.pact.pdel:active { color: var(--fruitos-red); }
 
 /* ── Several photographs on one post ──────────────────────────
    Four arrangements, not one at four sizes: two split the card down the middle, three put a
@@ -10806,7 +10816,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   font-size: 12px;
   font-weight: var(--fw-semibold);
   text-align: center;
-  background: var(--ios-red);
+  background: var(--fruitos-red);
 }
 
 /* ── A profile ───────────────────────────────────────────────── */
@@ -11065,8 +11075,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   transition: opacity .12s ease;
 }
 
-.hstamp.yes { left: 18px; color: var(--ios-green); border: 3px solid var(--ios-green); transform: rotate(-14deg); }
-.hstamp.no { right: 18px; color: var(--ios-red); border: 3px solid var(--ios-red); transform: rotate(14deg); }
+.hstamp.yes { left: 18px; color: var(--fruitos-green); border: 3px solid var(--fruitos-green); transform: rotate(-14deg); }
+.hstamp.no { right: 18px; color: var(--fruitos-red); border: 3px solid var(--fruitos-red); transform: rotate(14deg); }
 .hushcard.wantyes .hstamp.yes { opacity: 1; }
 .hushcard.wantno .hstamp.no { opacity: 1; }
 
@@ -11090,14 +11100,14 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 .hushbtn svg { width: 27px; height: 27px; }
 .hushbtn:active { transform: scale(.88); }
-.hushbtn.no { color: var(--ios-red); }
-.hushbtn.yes { color: var(--ios-green); }
+.hushbtn.no { color: var(--fruitos-red); }
+.hushbtn.yes { color: var(--fruitos-green); }
 
 .hushbtn.back, .hushbtn.super { width: 48px; height: 48px; align-self: center; }
 .hushbtn.back svg, .hushbtn.super svg { width: 21px; height: 21px; }
-.hushbtn.back { color: var(--ios-yellow); }
-.hushbtn.super { color: var(--ios-blue); }
-.hushbtn.super svg { fill: var(--ios-blue); stroke: var(--ios-blue); }
+.hushbtn.back { color: var(--fruitos-yellow); }
+.hushbtn.super { color: var(--fruitos-blue); }
+.hushbtn.super svg { fill: var(--fruitos-blue); stroke: var(--fruitos-blue); }
 
 /* Which photograph of the three is showing. Across the top of the card, above the
    gradient, the way every swipe app has done it since Tinder shipped it. */
@@ -11181,17 +11191,17 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   padding: 4px 11px;
   border-radius: 999px;
   background: rgba(10, 132, 255, .16);
-  color: var(--ios-blue);
+  color: var(--fruitos-blue);
   font-size: 12px;
   font-weight: 700;
 }
 
-.hushmatch .hmsuper svg { width: 13px; height: 13px; fill: var(--ios-blue); stroke: var(--ios-blue); }
+.hushmatch .hmsuper svg { width: 13px; height: 13px; fill: var(--fruitos-blue); stroke: var(--fruitos-blue); }
 
 .hushmatch .hmnum {
   margin-top: 10px;
   color: var(--app-label2);
-  font-family: var(--ios-num, monospace);
+  font-family: var(--fruitos-num, monospace);
   font-size: 15px;
 }
 
@@ -11249,17 +11259,17 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 }
 
 /* **Tinted, not filled.** White on system blue measures 3.65:1, and these are 13px - a size
-   that needs 4.5. A tinted chip is what iOS uses at this scale anyway: the colour as the
+   that needs 4.5. A tinted chip is what FruitOS uses at this scale anyway: the colour as the
    letters, on a wash of itself, which reads at better than 6. */
-.domlist button.on { background: var(--app-accent-soft); color: var(--app-tint, var(--ios-blue)); }
+.domlist button.on { background: var(--app-accent-soft); color: var(--app-tint, var(--fruitos-blue)); }
 .domlist button:active { transform: scale(.96); }
 
 /* Reserved for this player's job, and bought by this player: two different reasons for a
    domain to be in the list that nobody else would see, so they do not look the same. */
-.domlist button.gov { color: var(--ios-green); font-weight: 700; }
-.domlist button.gov.on { background: rgba(48, 209, 88, .18); color: var(--ios-green); }
-.domlist button.mine { color: var(--ios-purple); font-weight: 700; }
-.domlist button.mine.on { background: rgba(191, 90, 242, .20); color: var(--ios-purple); }
+.domlist button.gov { color: var(--fruitos-green); font-weight: 700; }
+.domlist button.gov.on { background: rgba(48, 209, 88, .18); color: var(--fruitos-green); }
+.domlist button.mine { color: var(--fruitos-purple); font-weight: 700; }
+.domlist button.mine.on { background: rgba(191, 90, 242, .20); color: var(--fruitos-purple); }
 
 /* A mail's attachment, under the text, the way a mail client shows one. Tapping it opens the
    photo viewer - a reading column is the wrong width to look at a photograph in. */
@@ -11350,7 +11360,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   align-items: center;
   justify-content: center;
   padding: 24px;
-  font-family: var(--ios-ui, system-ui, sans-serif);
+  font-family: var(--fruitos-ui, system-ui, sans-serif);
   background: radial-gradient(ellipse at 50% 35%, rgba(70, 42, 4, .62), rgba(6, 5, 3, .88));
 }
 .emergency.on { display: flex; }
@@ -11455,7 +11465,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--ios-ui, system-ui, sans-serif);
+  font-family: var(--fruitos-ui, system-ui, sans-serif);
   background:
     radial-gradient(ellipse at 50% 0%, rgba(18, 46, 52, .5), transparent 62%),
     rgba(4, 6, 8, .88);
@@ -11504,7 +11514,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   padding: 3px 8px;
   color: #7fd4cf;
   font-size: 10px;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   letter-spacing: .1em;
   border: 1px solid rgba(127, 212, 207, .3);
   border-radius: 5px;
@@ -11515,8 +11525,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--ios-green);
-  box-shadow: 0 0 10px var(--ios-green);
+  background: var(--fruitos-green);
+  box-shadow: 0 0 10px var(--fruitos-green);
   animation: ph-forensic-live 2.4s ease-in-out infinite;
 }
 @keyframes ph-forensic-live {
@@ -11574,7 +11584,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   padding: 13px 15px;
   color: #eaf6f7;
   font-size: 17px;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   letter-spacing: .08em;
   border: 1px solid rgba(120, 200, 205, .24);
   border-radius: 9px;
@@ -11636,14 +11646,14 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .ftargetid span {
   color: #86a0a4;
   font-size: 13px;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   letter-spacing: .06em;
 }
 .ftargetmeta {
   margin-top: 3px;
   color: #5f757a;
   font-size: 10px;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   letter-spacing: .1em;
   text-transform: uppercase;
 }
@@ -11709,7 +11719,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   gap: 8px;
   color: #86a0a4;
   font-size: 11px;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   letter-spacing: .05em;
 }
 /* The tag on a row: what kind of record this is. */
@@ -11724,7 +11734,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 }
 .ftag.warn { color: #ffcf8a; background: rgba(255, 179, 0, .14); }
 .ft { margin-left: auto; opacity: .74; }
-.fnum { color: #86a0a4; font-family: var(--ios-num, ui-monospace, monospace); }
+.fnum { color: #86a0a4; font-family: var(--fruitos-num, ui-monospace, monospace); }
 .fbody {
   margin-top: 6px;
   color: #dbe8ea;
@@ -11796,7 +11806,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   padding: 9px 11px;
   color: #eaf6f7;
   font-size: 13px;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   border-radius: 7px;
   background: rgba(127, 212, 207, .1);
   box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .22);
@@ -11817,7 +11827,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   border-radius: 10px;
 }
 .lotstate.open { color: #2FBF71; background: rgba(47, 191, 113, .12); }
-.lotstate.shut { color: var(--ios-orange); background: rgba(255, 159, 10, .12); }
+.lotstate.shut { color: var(--fruitos-orange); background: rgba(255, 159, 10, .12); }
 
 /* ── A ball ──────────────────────────────────────────────────
    One element, five states: chosen, drawn, matched, still to come. Sized in a fixed 26px rather
@@ -11828,7 +11838,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   height: 26px;
   place-items: center;
   color: var(--app-label);
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   border-radius: 50%;
@@ -11886,7 +11896,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .lotcell {
   padding: 9px 0;
   color: var(--app-label);
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   border-radius: 9px;
@@ -11925,7 +11935,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   flex: 0 0 auto;
   place-items: center;
   color: var(--app-label);
-  font-family: var(--ios-num);
+  font-family: var(--fruitos-num);
   font-size: 17px;
   border-radius: 9px;
   background: var(--app-fill, rgba(120, 120, 128, .16));
@@ -11965,7 +11975,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .lotlive.done { box-shadow: inset 0 0 0 1px rgba(79, 217, 139, .45); }
 .lotlivehead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .lotlivehead b { color: var(--app-label); font-size: 13px; }
-.lotlivehead span { color: #FFD84D; font-family: var(--ios-num); font-size: 14px; }
+.lotlivehead span { color: #FFD84D; font-family: var(--fruitos-num); font-size: 14px; }
 .lotliveballs { display: flex; flex-wrap: wrap; gap: 6px; }
 .lotlivemine {
   display: flex;
@@ -11977,7 +11987,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   border-top: 1px solid var(--app-sep);
 }
 .lotlivemine small { width: 100%; color: var(--app-label2); font-size: var(--fs-caption2); text-transform: uppercase; letter-spacing: .04em; }
-.lotlivemine b { margin-left: auto; color: var(--app-label); font-family: var(--ios-num); font-size: 12px; }
+.lotlivemine b { margin-left: auto; color: var(--app-label); font-family: var(--fruitos-num); font-size: 12px; }
 .lotlivedetail { margin-top: 8px; color: var(--app-label2); font-size: 12px; line-height: 1.4; white-space: pre-line; }
 
 /* ── Past draws ────────────────────────────────────────────── */
@@ -11989,7 +11999,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 }
 .lothisthead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
 .lothisthead span { min-width: 0; overflow: hidden; color: var(--app-label2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.lothisthead b { color: var(--app-label); font-family: var(--ios-num); font-size: 13px; }
+.lothisthead b { color: var(--app-label); font-family: var(--fruitos-num); font-size: 13px; }
 .lothistballs { display: flex; flex-wrap: wrap; gap: 6px; }
 .lothistwin { margin-top: 9px; color: var(--app-label2); font-size: var(--fs-caption1); }
 .lothistwin.has { color: #FFD84D; }
@@ -12003,7 +12013,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 }
 .lotticket.won { box-shadow: inset 0 0 0 1px rgba(79, 217, 139, .5); }
 .lotticketrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.lotticketno { margin-left: auto; color: var(--app-label3); font-family: var(--ios-num); font-size: 11px; }
+.lotticketno { margin-left: auto; color: var(--app-label3); font-family: var(--fruitos-num); font-size: 11px; }
 .lotticket small { display: block; margin-top: 7px; color: var(--app-label2); font-size: 11px; }
 .lotwon { margin-top: 8px; color: #4FD98B; font-size: var(--fs-footnote); font-weight: 600; }
 
@@ -12040,7 +12050,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .benchclock {
   margin-left: auto;
   color: #9ad9d4;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   font-size: 17px;
   font-variant-numeric: tabular-nums;
 }
@@ -12099,7 +12109,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   border-radius: 4px;
   background: rgba(127, 212, 207, .07);
 }
-.bcell b { color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 13px; }
+.bcell b { color: #e9f7f6; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 13px; }
 .bcell small { color: #6f8b90; font-size: 8px; }
 .bcell.filled { background: rgba(127, 212, 207, .18); }
 .bcell.locked { background: rgba(127, 212, 207, .28); }
@@ -12108,7 +12118,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 .benchfreq { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 12px; padding: 8px 0; border-top: 1px solid rgba(127, 212, 207, .1); border-bottom: 1px solid rgba(127, 212, 207, .1); }
 .bfreq { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.bfreq b { color: #9ad9d4; font-family: var(--ios-num, ui-monospace, monospace); font-size: 10px; }
+.bfreq b { color: #9ad9d4; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 10px; }
 .bfreq i { display: block; width: 7px; border-radius: 2px 2px 0 0; background: rgba(127, 212, 207, .45); }
 .bfreq small { color: #56737a; font-size: 8px; }
 
@@ -12117,7 +12127,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   width: 26px;
   padding: 5px 0;
   color: #cdeceb;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   font-size: 12px;
   border-radius: 5px;
   background: rgba(255, 255, 255, .05);
@@ -12128,11 +12138,11 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* Bench two: the header to reach, the bytes as seized, the live decode, and the dials. */
 .benchtarget { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .benchtarget small { color: #7f9ea1; font-size: 10px; text-transform: uppercase; }
-.benchtarget code { color: #9ad9d4; font-family: var(--ios-num, ui-monospace, monospace); font-size: 13px; letter-spacing: .08em; }
+.benchtarget code { color: #9ad9d4; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 13px; letter-spacing: .08em; }
 .benchbytes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
-.benchbytes span { padding: 3px 5px; color: #6f8b90; font-family: var(--ios-num, ui-monospace, monospace); font-size: 11px; border-radius: 3px; background: rgba(127, 212, 207, .06); }
+.benchbytes span { padding: 3px 5px; color: #6f8b90; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 11px; border-radius: 3px; background: rgba(127, 212, 207, .06); }
 .benchout { padding: 10px 12px; margin-bottom: 12px; border-radius: 7px; background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .16); }
-.benchout code { color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 14px; letter-spacing: .1em; }
+.benchout code { color: #e9f7f6; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 14px; letter-spacing: .1em; }
 /* The one unambiguous signal on this bench: the decode matches the header. */
 .benchout.good { background: rgba(90, 220, 160, .12); box-shadow: inset 0 0 0 1px rgba(90, 220, 160, .5); }
 .benchout.good code { color: #8ff0c2; }
@@ -12140,14 +12150,14 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .bdial small { display: block; margin-bottom: 3px; color: #7f9ea1; font-size: 9px; text-transform: uppercase; }
 .bdialrow { display: flex; align-items: center; gap: 2px; }
 .bdialrow button { width: 22px; padding: 4px 0; color: #9ad9d4; font-size: 11px; border-radius: 4px; background: rgba(255, 255, 255, .05); }
-.bdialrow b { min-width: 30px; color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 14px; text-align: center; }
+.bdialrow b { min-width: 30px; color: #e9f7f6; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 14px; text-align: center; }
 
 /* Bench three: the clues, each going green on its own, and the four rotors. */
 .benchclues { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .bclue {
   padding: 7px 10px;
   color: #cdeceb;
-  font-family: var(--ios-num, ui-monospace, monospace);
+  font-family: var(--fruitos-num, ui-monospace, monospace);
   font-size: 12px;
   border-radius: 6px;
   background: rgba(127, 212, 207, .06);
@@ -12158,7 +12168,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .brotor { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 11px; border-radius: 8px; background: rgba(0, 0, 0, .3); box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .14); }
 .brotor small { color: #7f9ea1; font-size: 9px; }
 .brotor button { width: 30px; padding: 3px 0; color: #9ad9d4; font-size: 13px; border-radius: 4px; background: rgba(255, 255, 255, .05); }
-.brotor b { color: #e9f7f6; font-family: var(--ios-num, ui-monospace, monospace); font-size: 18px; }
+.brotor b { color: #e9f7f6; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 18px; }
 .brotor i { color: #56737a; font-size: 10px; font-style: normal; }
 
 /* ── Seized media ─────────────────────────────────────────────
@@ -12178,7 +12188,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   box-shadow: inset 0 0 0 1px rgba(127, 212, 207, .22), 0 6px 16px rgba(0, 0, 0, .3);
 }
 .fcap { color: #b8cccf; font-size: 12px; font-style: italic; }
-.floc { color: #9ad9d4; font-family: var(--ios-num, ui-monospace, monospace); font-size: 12px; }
+.floc { color: #9ad9d4; font-family: var(--fruitos-num, ui-monospace, monospace); font-size: 12px; }
 
 /* ══ Media: camera video, selfie, clips, FaceTime ══════════════ */
 /* A video post plays inline, framed like a photo. */
@@ -12206,7 +12216,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   padding: 3px 10px;
   border-radius: 99px;
   background: rgba(255, 159, 10, .18);
-  color: var(--ios-orange);
+  color: var(--fruitos-orange);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
@@ -12269,7 +12279,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--ios-ui, system-ui, sans-serif);
+  font-family: var(--fruitos-ui, system-ui, sans-serif);
   background: radial-gradient(ellipse at 50% 40%, rgba(30, 26, 20, .55), rgba(4, 5, 7, .9));
 }
 .booth.hidden { display: none; }
@@ -12461,7 +12471,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .boothidleft strong {
   display: block;
   margin-top: 1px;
-  font-family: var(--ios-num, monospace);
+  font-family: var(--fruitos-num, monospace);
   font-size: 21px;
   letter-spacing: .05em;
   color: #241502;
@@ -12471,7 +12481,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .boothidright strong {
   display: block;
   margin-top: 1px;
-  font-family: var(--ios-num, monospace);
+  font-family: var(--fruitos-num, monospace);
   font-size: 19px;
   color: #241502;
   text-shadow: 0 1px 0 rgba(255, 215, 150, .42);
@@ -12534,7 +12544,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   padding: 11px 12px;
   border-radius: 3px;
   color: #ffb02c;
-  font-family: var(--ios-num, monospace);
+  font-family: var(--fruitos-num, monospace);
   font-size: 23px;
   letter-spacing: .13em;
   text-align: center;
@@ -12576,7 +12586,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   transition: transform .05s ease, box-shadow .05s ease, background .12s ease;
 }
 .boothkeys button b {
-  font-family: var(--ios-num, monospace);
+  font-family: var(--fruitos-num, monospace);
   font-size: 20px;
   font-weight: 700;
   line-height: 1;
@@ -12772,7 +12782,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
    Naming it also makes the real problem visible, which is left for the component pass
    rather than fixed here: `--fill` and `--l1` are the DARK CHROME pair, used on the lock
-   screen and the control centre, and this swatch grid draws them inside a LIGHT sheet. A
+   screen and the quick settings, and this swatch grid draws them inside a LIGHT sheet. A
    white 11px label on a light-grey fill is a swatch you can see and a name you cannot. */
 .neongrid button {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -12802,7 +12812,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   margin: -2px 0 8px 2px; padding: 5px 11px 5px 9px;
   border-radius: 14px;
   background: var(--app-fill, rgba(104, 104, 116, .12));
-  color: var(--app-tint, var(--ios-blue));
+  color: var(--app-tint, var(--fruitos-blue));
   font-size: 13px; font-weight: 600; letter-spacing: -.01em;
   align-self: flex-start;
 }
@@ -12861,7 +12871,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* ── Snapmatic ──────────────────────────────────────────────────
    Saving a post. It sits with the other card actions but reads as the reader's own: filled
    when kept, outlined when not, and never carrying a count. */
-.post .psave.on { color: var(--ph-accent, var(--ios-blue)); }
+.post .psave.on { color: var(--ph-accent, var(--fruitos-blue)); }
 .post .psave.on svg { fill: currentColor; }
 
 /* The heart a double tap throws over the photograph. It is feedback, not a control: no
@@ -12902,7 +12912,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   box-shadow: 0 0 0 4px var(--app-bg, #fff); }
 
 .soctag, .socmention { background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
-  font: inherit; color: var(--ph-accent, var(--ios-blue)); }
+  font: inherit; color: var(--ph-accent, var(--fruitos-blue)); }
 .soctag:active, .socmention:active { opacity: .6; }
 
 /* The trending row: a tag with its post count tucked under it. */
@@ -12980,7 +12990,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .zumeta svg { width: 11px; height: 11px; vertical-align: -1px; }
 .zumeta span { display: inline-flex; align-items: center; gap: 3px; }
 .zuopen { color: var(--app-accent); font-weight: 600; }
-.zushut { color: var(--ios-red); font-weight: 600; }
+.zushut { color: var(--fruitos-red); font-weight: 600; }
 .zupromo { padding: 1px 6px; border-radius: 99px; background: var(--app-accent-soft);
   color: var(--app-accent); font-weight: 600; }
 .zutags { margin-top: 3px; font-size: 12px; color: var(--app-label3);
@@ -13105,8 +13115,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* What is waiting on the service you are NOT looking at, which is the only reason to put a
    number here at all. On the active pill it has to sit on the tint rather than under it. */
 .e911tabs button i { display: inline-block; min-width: 17px; padding: 0 5px; margin-left: 3px;
-  border-radius: 99px; background: var(--ios-red); color: #fff;
-  font-family: var(--ios-num); font-size: 11px; font-style: normal; }
+  border-radius: 99px; background: var(--fruitos-red); color: #fff;
+  font-family: var(--fruitos-num); font-size: 11px; font-style: normal; }
 .e911tabs button.on i { background: rgba(255, 255, 255, .28); }
 
 .bankproacts { display: flex; gap: 8px; }
@@ -13134,13 +13144,13 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
    on something that is itself clickable. */
 .ncard .nx,
 .lnotif .lx,
-.spotsearch button,
+.appsearch button,
 .musicsearchbox button {
   position: relative;
 }
 .ncard .nx::after,
 .lnotif .lx::after,
-.spotsearch button::after,
+.appsearch button::after,
 .musicsearchbox button::after {
   content: '';
   position: absolute;
@@ -13430,8 +13440,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .rstars { display: inline-flex; align-items: center; gap: 2px; }
 .rstars i { display: block; width: 15px; height: 15px; color: var(--app-label3); }
 .rstars i svg { width: 15px; height: 15px; }
-.rstars i.on { color: var(--ios-orange); }
-.rstars i.on svg { fill: var(--ios-orange); }
+.rstars i.on { color: var(--fruitos-orange); }
+.rstars i.on svg { fill: var(--fruitos-orange); }
 .rstars b { margin-left: 6px; color: var(--app-sub); font-size: 12px; font-weight: 500; }
 .rrating { padding: 2px 16px 12px; }
 
@@ -13451,8 +13461,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 }
 .rstarpick button svg { width: 28px; height: 28px; }
 .rstarpick button:active { transform: scale(.9); }
-.rstarpick button.on { color: var(--ios-orange); }
-.rstarpick button.on svg { fill: var(--ios-orange); }
+.rstarpick button.on { color: var(--fruitos-orange); }
+.rstarpick button.on svg { fill: var(--fruitos-orange); }
 
 /* ── The tracker ───────────────────────────────────────────────
    What is happening, said in one line and given room. This is the screen somebody stares at
@@ -13489,9 +13499,9 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   border-left: 3px solid var(--app-label3);
 }
 /* The status is the border colour: a queue is scanned, not read. */
-.rcall.pending  { border-left-color: var(--ios-orange); }
-.rcall.accepted { border-left-color: var(--ios-blue); }
-.rcall.ongoing  { border-left-color: var(--ios-green); }
+.rcall.pending  { border-left-color: var(--fruitos-orange); }
+.rcall.accepted { border-left-color: var(--fruitos-blue); }
+.rcall.ongoing  { border-left-color: var(--fruitos-green); }
 .rcall.onhold   { border-left-color: var(--app-label3); }
 
 .rctop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -13516,8 +13526,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   transition: transform .1s ease, filter .1s ease;
 }
 .rcacts button:active { transform: scale(.94); filter: brightness(.9); }
-.rcacts button.good { border-color: transparent; background: rgba(48, 209, 88, .16); color: var(--ios-green); }
-.rcacts button.bad { border-color: transparent; background: rgba(255, 69, 58, .14); color: var(--ios-red); }
+.rcacts button.good { border-color: transparent; background: rgba(48, 209, 88, .16); color: var(--fruitos-green); }
+.rcacts button.bad { border-color: transparent; background: rgba(255, 69, 58, .14); color: var(--fruitos-red); }
 
 /* ══════════════════════════════════════════════════════════════
    EXPORT — the market board
@@ -13582,11 +13592,11 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.exmoverprice { font-family: var(--ios-num); font-size: 15px; font-weight: 600; }
+.exmoverprice { font-family: var(--fruitos-num); font-size: 15px; font-weight: 600; }
 .exmovermove { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; }
 .exmovermove svg { width: 11px; height: 11px; }
-.exmover.up .exmovermove { color: var(--ios-green); }
-.exmover.down .exmovermove { color: var(--ios-red); }
+.exmover.up .exmovermove { color: var(--fruitos-green); }
+.exmover.down .exmovermove { color: var(--fruitos-red); }
 
 /* ── Category chips ────────────────────────────────────────────
    Wrapping, not scrolling: six categories in a hidden sideways scroller is three categories
@@ -13631,13 +13641,13 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .exname { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .exsub { overflow: hidden; color: var(--app-sub); font-size: 11px;
   text-overflow: ellipsis; white-space: nowrap; }
-.exstar { flex: none; width: 14px; height: 14px; color: var(--ios-orange); }
-.exstar svg { width: 14px; height: 14px; fill: var(--ios-orange); }
+.exstar { flex: none; width: 14px; height: 14px; color: var(--fruitos-orange); }
+.exstar svg { width: 14px; height: 14px; fill: var(--fruitos-orange); }
 .expricebox { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 1px; }
-.exprice { font-family: var(--ios-num); font-size: 15px; font-weight: 600; }
+.exprice { font-family: var(--fruitos-num); font-size: 15px; font-weight: 600; }
 .exmove { font-size: 11px; font-weight: 600; color: var(--app-sub); }
-.exmove.up { color: var(--ios-green); }
-.exmove.down { color: var(--ios-red); }
+.exmove.up { color: var(--fruitos-green); }
+.exmove.down { color: var(--fruitos-red); }
 
 /* ── The line ──────────────────────────────────────────────────
    An inline SVG normalised to its OWN minimum and maximum rather than to the item's configured
@@ -13648,9 +13658,9 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .exchart polyline { fill: none; stroke: var(--app-label2); stroke-width: 1.6;
   vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 .exchart polygon { fill: var(--app-fill); stroke: none; }
-.exchart.up polyline { stroke: var(--ios-green); }
+.exchart.up polyline { stroke: var(--fruitos-green); }
 .exchart.up polygon { fill: rgba(48, 209, 88, .14); }
-.exchart.down polyline { stroke: var(--ios-red); }
+.exchart.down polyline { stroke: var(--fruitos-red); }
 .exchart.down polygon { fill: rgba(255, 69, 58, .12); }
 
 /* ── Where the price sits in its range ─────────────────────────
@@ -13661,7 +13671,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   position: relative;
   height: 6px;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--ios-red), var(--ios-orange), var(--ios-green));
+  background: linear-gradient(90deg, var(--fruitos-red), var(--fruitos-orange), var(--fruitos-green));
   opacity: .85;
 }
 .exbandbar i {
@@ -13739,10 +13749,10 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .exheromain { min-width: 0; }
 .exheroeyebrow { color: var(--app-sub); font-size: 11px; letter-spacing: .04em;
   text-transform: uppercase; }
-.exheroprice { font-family: var(--ios-num); font-size: 28px; font-weight: 700; line-height: 1.15; }
+.exheroprice { font-family: var(--fruitos-num); font-size: 28px; font-weight: 700; line-height: 1.15; }
 .exherosub { color: var(--app-sub); font-size: 12px; }
-.exherosub.up { color: var(--ios-green); }
-.exherosub.down { color: var(--ios-red); }
+.exherosub.up { color: var(--fruitos-green); }
+.exherosub.down { color: var(--fruitos-red); }
 
 /* ── When do prices move ───────────────────────────────────────
    Under doc-shops this is MEASURED - it publishes no clock at all - so the badge says
@@ -13771,7 +13781,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   letter-spacing: .03em;
   text-transform: uppercase;
 }
-.exdue.est b { color: var(--ios-orange); }
+.exdue.est b { color: var(--fruitos-orange); }
 
 /* The search box sits in the flow, with the same margins as everything else on the board. */
 .exsearchpad { padding: 0 16px 10px; }
@@ -13792,8 +13802,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
-.exchart.up .exdot { stroke: var(--ios-green); }
-.exchart.down .exdot { stroke: var(--ios-red); }
+.exchart.up .exdot { stroke: var(--fruitos-green); }
+.exchart.down .exdot { stroke: var(--fruitos-red); }
 .exchartends {
   display: flex;
   justify-content: space-between;
@@ -13838,7 +13848,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   height: 9px;
   flex: none;
   border-radius: 50%;
-  background: var(--ios-red);
+  background: var(--fruitos-red);
   animation: vb-pulse 1.4s ease-in-out infinite;
 }
 @keyframes vb-pulse {
@@ -13909,7 +13919,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 }
 /* A download in progress reads as a percentage, so it is numbers rather than a word — the
    tabular figures stop the button resizing as it counts up. */
-.stget.dling { font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+.stget.dling { font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 
 /* ── The remove badge ──────────────────────────────────────────
    The minus in the corner of an icon while the phone is in edit mode, the way a real handset
@@ -13987,7 +13997,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   text-align: center;
   background:
     radial-gradient(120% 130% at 22% -40%, rgba(255, 255, 255, .30), transparent 58%),
-    var(--ios-blue);
+    var(--fruitos-blue);
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .34),
     inset 0 1px 0 rgba(255, 255, 255, .22),
@@ -14038,7 +14048,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 /* On a conference the avatar is a count rather than an initial: there is no one initial to
    show, and picking the first person's would name the wrong call. */
-.callui.conference .callav { font-size: 30px; font-family: var(--ios-num); }
+.callui.conference .callav { font-size: 30px; font-family: var(--fruitos-num); }
 
 .callroster { width: 100%; max-width: 268px; margin-top: 18px;
   display: flex; flex-direction: column; gap: 2px;
@@ -14057,7 +14067,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .crow .cav { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 600; color: #fff;
-  background: linear-gradient(180deg, var(--ios-grey), #48484a); }
+  background: linear-gradient(180deg, var(--fruitos-grey), #48484a); }
 .crow .cname { flex: 1 1 auto; min-width: 0; font-size: var(--fs-subhead); color: #fff;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crow .chost { flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: .06em;
@@ -14086,7 +14096,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .compose { align-items: flex-end; }
 
 /* ── Putting a call away ───────────────────────────────────────
-   A chevron at the top-left of an active call, where iOS puts the control that sends a live
+   A chevron at the top-left of an active call, where FruitOS puts the control that sends a live
    activity back to the island. Hidden while the call is still ringing: there is nothing to go
    back to yet, and a button that hides an unanswered call is a button that loses it. */
 .callmin {
@@ -14229,7 +14239,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* ── A face ──────────────────────────────────────────────────── */
 .fanface { display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
   width: 34px; height: 34px; border-radius: 50%; font-size: 14px; font-weight: var(--fw-semibold); color: #fff;
-  background: linear-gradient(180deg, var(--ios-grey), #545458);
+  background: linear-gradient(180deg, var(--fruitos-grey), #545458);
   background-size: cover; background-position: 50% 50%; }
 /* `.fanface.img` used to sit here and hide the letter behind a photograph. It is gone, and so is
    the `img` class that switched it on: OnlyFruits draws its faces through `socAvatar` now, which
@@ -14295,8 +14305,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 /* "Available" / "Already taken", said while the handle is being typed. */
 .fanhint { min-height: 16px; margin: -2px 4px 8px; font-size: 12px; color: var(--app-label2); }
-.fanhint.ok { color: var(--ios-green); }
-.fanhint.bad { color: var(--ios-red); }
+.fanhint.ok { color: var(--fruitos-green); }
+.fanhint.bad { color: var(--fruitos-red); }
 
 /* The gallery button beside a picture field.
    Its own class rather than `.chip`: that one exists only as `.bankcard .chip`, so a bare
@@ -14475,7 +14485,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .stsection span { font-size: 21px; font-weight: 700; letter-spacing: -.02em;
   color: var(--app-label); }
 .stsection b { font-size: 13px; font-weight: 600; color: var(--app-label2);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .stgroup { padding: 0 14px; margin-bottom: 22px; }
 
 /* The rating on a row: stars, then the score, on the same line as the category. */
@@ -14484,7 +14494,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .strate::before { content: ''; width: 3px; height: 3px; border-radius: 99px;
   background: var(--app-label2); opacity: .7; margin-right: 3px; }
 .strate span { font-size: 12px; color: var(--app-label2);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .stars.mini i, .stars.mini i svg { width: 10px; height: 10px; }
 
 /* ── The hover on a store row ───────────────────────────────────────────────
@@ -14646,14 +14656,14 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   transition: width .5s var(--spring); }
 .fundnums { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; }
 .fundnums b { font-size: 17px; font-weight: 700; letter-spacing: -.02em;
-  color: var(--app-label); font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  color: var(--app-label); font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundnums span { font-size: var(--fs-footnote); color: var(--app-label2); }
 .fundnums em { margin-left: auto; font-style: normal; font-size: var(--fs-footnote); font-weight: 600;
-  color: #30D158; font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  color: #30D158; font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 /* A page with no target still says what it has taken - the number is the whole story then. */
 .fundraised { display: flex; align-items: baseline; gap: 7px; margin: 10px 0 8px; }
 .fundraised b { font-size: 20px; font-weight: 700; letter-spacing: -.025em;
-  color: var(--app-label); font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  color: var(--app-label); font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundraised span { font-size: var(--fs-footnote); color: var(--app-label2); }
 
 /* ── A page in the list ───────────────────────────────────────────────────── */
@@ -14697,7 +14707,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   background: var(--app-fill); color: var(--app-label);
   box-shadow: inset 0 0 0 .5px var(--app-sep); }
 .fundtier b { display: block; font-size: 15px; font-weight: 700;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundtier small { display: block; font-size: 11px; margin-top: 2px;
   color: var(--app-label2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fundtier.on { background: var(--app-tint); color: #fff;
@@ -14712,7 +14722,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .fundgift header b { font-size: 14px; font-weight: 600; color: var(--app-label);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fundgift header span { font-size: 14px; font-weight: 700; color: #30D158;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundgift header time { margin-left: auto; font-size: 11px; color: var(--app-label3);
   flex: 0 0 auto; }
 .fundgift p { font-size: var(--fs-subhead2); line-height: 1.4; color: var(--app-label2);
@@ -14728,14 +14738,14 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .fundtieredit { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .fundtieredit .field { margin: 0; }
 .fundtieredit .field[data-k="amount"] { flex: 0 0 92px;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundtieredit .field[data-k="label"] { flex: 1; min-width: 0; }
 .fundtierdel { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--app-fill); color: var(--ios-red); }
+  background: var(--app-fill); color: var(--fruitos-red); }
 .fundtierdel svg { width: 16px; height: 16px; }
 /* The address check, when it says no. */
-.groupfoot.bad { color: var(--ios-red); }
+.groupfoot.bad { color: var(--fruitos-red); }
 
 /* What is taken off a gift, itemised. Two cuts with a name each rather than one total nobody
    can account for, and the money beside the rate: five percent is an idea, "$5 of your $100"
@@ -14747,9 +14757,9 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .fundcut span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
 .fundcut i { font-style: normal; font-size: 12px; color: var(--app-label3);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundcut b { font-weight: 600; color: var(--app-label2);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .fundcut.total { margin-top: 6px; padding-top: 8px; font-size: 14px;
   color: var(--app-label); border-top: .5px solid var(--app-sep); }
 .fundcut.total b { font-size: 15px; font-weight: 700; color: #30D158; }
@@ -14765,7 +14775,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
    the game needs, and a thin number over a bright sky is unreadable. */
 .ahud { position: absolute; top: 14px; left: 0; right: 0; text-align: center;
   font-size: 44px; font-weight: 800; letter-spacing: -.03em; color: #fff;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums;
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 0 rgba(0, 0, 0, .35), 0 0 18px rgba(0, 0, 0, .25);
   pointer-events: none; }
 /* The card between runs. It covers the canvas, so it also has to take the tap that starts the
@@ -14784,7 +14794,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   color: rgba(255, 255, 255, .82); }
 .abest { margin-top: 12px; padding-top: 10px; font-size: 12px;
   color: rgba(255, 255, 255, .7); border-top: .5px solid rgba(255, 255, 255, .18); }
-.abest b { display: inline; font-size: 16px; font-family: var(--ios-num);
+.abest b { display: inline; font-size: 16px; font-family: var(--fruitos-num);
   font-variant-numeric: tabular-nums; }
 
 .afoot { display: flex; justify-content: center; padding: 12px 0 4px; }
@@ -14803,7 +14813,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* Your own row, so it can be found without reading every name. */
 .arow.mine { background: var(--app-fill); }
 .arank { flex: 0 0 26px; text-align: center; font-size: 13px; font-weight: 700;
-  color: var(--app-label2); font-family: var(--ios-num);
+  color: var(--app-label2); font-family: var(--fruitos-num);
   font-variant-numeric: tabular-nums; }
 /* Gold, silver and bronze. The only place in this phone where a rank is a colour, and it earns
    it: the top three are what anybody scrolls to first. */
@@ -14813,7 +14823,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .aname { flex: 1; min-width: 0; font-size: 15px; font-weight: 500; color: var(--app-label);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ascore { flex: 0 0 auto; font-size: 15px; font-weight: 700; color: var(--app-label);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 
 /* The medal. Four colours over one shape, set from the score - a disc per tier would be four
    files, and a file can go missing from a manifest. */
@@ -14860,7 +14870,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
    exactly when it matters most. */
 .bwhp span { position: absolute; inset: 0; display: flex; align-items: center;
   justify-content: center; font-size: 11px; font-weight: 700; color: #fff;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums;
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
 
 /* Stamina as pips rather than a bar: it is a small whole number and you count it, you do not
@@ -14874,8 +14884,8 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .bwround { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
   color: var(--app-label2); }
 .bwclock { font-size: 26px; font-weight: 800; letter-spacing: -.02em; color: var(--app-label);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
-.bwclock.urgent { color: var(--ios-red); animation: bw-pulse .5s ease-in-out infinite; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
+.bwclock.urgent { color: var(--fruitos-red); animation: bw-pulse .5s ease-in-out infinite; }
 @keyframes bw-pulse { 50% { opacity: .45; } }
 
 /* What just happened. */
@@ -14889,7 +14899,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   text-transform: uppercase; letter-spacing: .08em; }
 .bwsay { font-size: var(--fs-footnote); color: var(--app-label2); margin-top: 3px; }
 .bwdmg { display: flex; justify-content: center; gap: 12px; margin-top: 6px;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .bwdmg b { font-size: 17px; font-weight: 800; }
 .bwdmg .hit { color: #30D158; }
 .bwdmg .hurt { color: #FF453A; }
@@ -14906,7 +14916,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* The cost, in the corner. It is the number you are really choosing between. */
 .bwact i { position: absolute; top: 8px; right: 10px; font-style: normal; font-size: 11px;
   font-weight: 700; color: var(--app-label3);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .bwact:active { transform: scale(.96); }
 .bwact.on { background: var(--app-tint); color: #fff; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
 .bwact.on i, .bwact.on svg { color: rgba(255, 255, 255, .85); opacity: 1; }
@@ -14985,7 +14995,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .bwt-beats { font-size: var(--fs-footnote); color: var(--app-label2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bwt-row i { font-style: normal; font-size: 12px; font-weight: 700; color: var(--app-label3);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 
 /* ── Money on the fight ────────────────────────────────────────────────────
    Four choices rather than a field: a stake is a decision between a handful of amounts, and a
@@ -14994,16 +15004,16 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 .bwstakebtn { padding: 10px 4px; border-radius: 12px; font-size: 13px; font-weight: 700;
   background: var(--app-fill); color: var(--app-label);
   box-shadow: inset 0 0 0 .5px var(--app-sep);
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .bwstakebtn.on { background: #30D158; color: #fff; box-shadow: none; }
 .bwstakesay { text-align: center; margin-top: 5px; font-size: 13px; font-weight: 700;
   color: #30D158; }
 /* The pot, beside the round number: what is actually on the table this fight. */
 .bwpot { margin-left: 8px; padding: 2px 8px; border-radius: 99px; font-size: 11px;
   font-weight: 800; color: #fff; background: #30D158; letter-spacing: 0;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 .bwwon { margin-top: 8px; font-size: 15px; font-weight: 800; color: #30D158;
-  font-family: var(--ios-num); font-variant-numeric: tabular-nums; }
+  font-family: var(--fruitos-num); font-variant-numeric: tabular-nums; }
 
 /* ══ The contact card ═══════════════════════════════════════════════════════
    What a tap opens. It used to open a form - seven fields and a delete button - so looking
@@ -15105,7 +15115,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
   display: flex; align-items: center; justify-content: center; }
 .widget .wring::before { content: ''; position: absolute; inset: 6px; border-radius: 50%;
   background: rgba(0,0,0,.28); }
-.widget .wring span { position: relative; font-family: var(--ios-num); font-size: 15px;
+.widget .wring span { position: relative; font-family: var(--fruitos-num); font-size: 15px;
   font-weight: 600; }
 .widget .wring.sm { width: 42px; height: 42px; }
 .widget .wring.sm::before { inset: 5px; }
@@ -15194,7 +15204,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* The counter under the deck. It is also the only place the pass is sold, on purpose. */
 .hleft { display: flex; align-items: center; gap: 8px; justify-content: center;
   padding: 10px 16px 0; font-size: 13px; color: var(--app-label2); }
-.hleft.out .hleftn { color: var(--ios-red); font-weight: var(--fw-semibold); }
+.hleft.out .hleftn { color: var(--fruitos-red); font-weight: var(--fw-semibold); }
 .hlefts { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
 .hlefts svg { width: 12px; height: 12px; }
 .hpro { display: inline-flex; align-items: center; gap: 4px; font-weight: 700;
@@ -15206,7 +15216,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 
 .hprohero { text-align: center; padding: 8px 0 18px; color: var(--app-label); }
 .hprohero svg { width: 40px; height: 40px; color: #FF375F; }
-.hproprice { font-family: var(--ios-num); font-size: 40px; font-weight: 600;
+.hproprice { font-family: var(--fruitos-num); font-size: 40px; font-weight: 600;
   letter-spacing: -.03em; margin-top: 6px; }
 .hprofor { font-size: 13px; color: var(--app-label2); }
 .hprobadge { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
@@ -15217,7 +15227,7 @@ body.inframe.dark .uichip.negative { color: var(--ios-red); }
 /* Locked: a real count over six blank circles. There is nothing behind the blur - the
    server sent the number and no names at all - so this is honest rather than decorative. */
 .hlock { text-align: center; padding: 40px 24px; color: var(--app-label); }
-.hlockn { font-family: var(--ios-num); font-size: 56px; font-weight: 600; color: #FF375F; }
+.hlockn { font-family: var(--fruitos-num); font-size: 56px; font-weight: 600; color: #FF375F; }
 .hlockt { font-size: 15px; line-height: 1.35; color: var(--app-label2); margin-top: 4px; }
 .hlockrow { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
 .hlockav { width: 38px; height: 38px; border-radius: 50%; background: var(--app-fill);

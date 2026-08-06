@@ -14,7 +14,7 @@
 --  2. **Absent is not broken.** A provider that finds nothing to talk to returns nil,
 --     and the phone hides the app rather than showing an empty one.
 --  3. **Read-mostly, and where it is not, it fails closed.** The phone shows a balance and
---     a garage list; it does not spawn cars. It does move money - the app store charges,
+--     a garage list; it does not spawn cars. It does move money - the FruitStore charges,
 --     and the bank app transfers - and both directions report honestly whether the
 --     framework confirmed the movement, so a half-finished transfer can be undone.
 --
@@ -389,7 +389,7 @@ end
 --- Take money, and say what for.
 ---
 --- **`reason` used to not exist here.** Every withdrawal the phone made was logged as
---- `v-phone: app store` - a taxi fare, a lottery ticket, a plate of food, all of them - and four
+--- `v-phone: FruitStore` - a taxi fare, a lottery ticket, a plate of food, all of them - and four
 --- call sites were already passing a reason as a fourth argument that this function silently
 --- dropped. On qb-core the reason is what the bank statement prints, so a player's statement was
 --- a column of the same wrong sentence.
@@ -796,7 +796,7 @@ end
 --- A cut of something, into an account the operator named.
 ---
 --- Two features want this and they want it identically: a tax on what creators earn, and the
---- money spent in the app store going somewhere rather than leaving the economy. One function,
+--- money spent in the FruitStore going somewhere rather than leaving the economy. One function,
 --- so a server configures "where the money goes" once and both obey the same rules.
 ---
 --- `cfg` is `{ account = 'government', percent = 10 }`. No account, or no percentage, means no

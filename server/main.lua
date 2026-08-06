@@ -888,7 +888,7 @@ end
 -- this string is written into a class attribute, and a free one is a way to put arbitrary
 -- text into somebody's own markup.
 local LOCK_CLOCKS = {
-    classic = true,     -- the stacked iOS clock
+    classic = true,     -- the stacked FruitOS clock
     slim = true,        -- thin, wide, lower case
     stack = true,       -- hours over minutes, very large
     mono = true,        -- typewriter digits, boxed
@@ -898,7 +898,7 @@ local LOCK_CLOCKS = {
 prefsOf = function(p, includeSecrets)
     local m = p.GetMetadata('phone')
     if type(m) ~= 'table' then m = {} end
-    -- `glass` is iOS 27's transparency slider: 0 is ultra clear, 100 is fully tinted.
+    -- `glass` is FruitOS's transparency slider: 0 is ultra clear, 100 is fully tinted.
     -- It is a real stored preference driving a CSS variable, not a decorative control.
     local glass = tonumber(m.glass)
     local deviceName = tostring(m.deviceName or 'iFruit'):gsub('[%c]', ''):sub(1, 32)
@@ -907,6 +907,12 @@ prefsOf = function(p, includeSecrets)
     deviceName = deviceName:gsub('[iI][pP][hH][oO][nN][eE]', 'iFruit')
     local storedPasscode = tostring(m.passcodeHash or '')
     local securityEnabled = m.securityEnabled == true and storedPasscode ~= ''
+    -- Face Unlock was stored under an earlier field name. Read the old one when the new one
+    -- has never been written, so a character who enrolled before the rename is not silently
+    -- asked for their passcode again. The first save writes the new name and the record is
+    -- replaced wholesale, so the old field disappears on its own and this line stops mattering.
+    local faceUnlock = m.faceUnlock
+    if faceUnlock == nil then faceUnlock = m.faceId end
     local prefs = {
         -- Activation belongs to the character, not the browser cache. Reinstalling or
         -- reconnecting therefore does not make an already configured phone forget itself.
@@ -931,7 +937,7 @@ prefsOf = function(p, includeSecrets)
         cardNote     = m.cardNote and tostring(m.cardNote):sub(1, 120) or nil,
         deviceName = deviceName,
         securityEnabled = securityEnabled,
-        faceId = securityEnabled and m.faceId == true,
+        faceUnlock = securityEnabled and faceUnlock == true,
         wallpaper = wallpaperId(m.wallpaper) or Config.DefaultWallpaper,
         dnd       = m.dnd == true,
         -- ── The player's own privacy and notification choices ──
@@ -972,7 +978,7 @@ prefsOf = function(p, includeSecrets)
         -- time, and that is an operating-system setting a player inside FiveM cannot reach.
         -- This is the same request, asked from the phone.
         reduceMotion = m.reduceMotion == true,
-        -- Control centre toggles. Each one is real: airplane and cellular drive the
+        -- Quick settings toggles. Each one is real: airplane and cellular drive the
         -- signal the status bar draws, wifi and bluetooth their own glyphs, brightness a
         -- dimming layer. A control that changed nothing would be a lie about the phone.
         airplane  = m.airplane == true,
@@ -987,7 +993,7 @@ prefsOf = function(p, includeSecrets)
         -- lists is the shape everything around this already uses, and one of them existing
         -- without the other is what a half-applied setting looks like.
         notifSilent = stringIdList(m.notifSilent, 64),
-        -- Apps are light by default, as they are on iOS. This flips the six
+        -- Apps are light by default, as they are on FruitOS. This flips the six
         -- surface values and nothing else.
         dark      = m.dark == true,
         -- The first configured tone, not a name of its own: `default` was not one of
@@ -1055,7 +1061,7 @@ end
 ---
 --- **The digest survives.** `prefsOf` is a view and drops `passcodeHash` unless the caller asks
 --- for it, so any caller that read the view and wrote it back erased the passcode - and with it
---- the Face ID, which is computed from the digest being present. Re-read and merged here rather
+--- the Face Unlock, which is computed from the digest being present. Re-read and merged here rather
 --- than trusted from the caller: a rule that lives in every call site is a rule that holds until
 --- somebody adds the next one.
 ---
@@ -1649,7 +1655,7 @@ local function audienceOf(row, me)
 end
 
 -- ── Reactions ──────────────────────────────────────────────────
--- The six an iPhone offers, by key. A closed list rather than an open emoji field: the page
+-- The six a handset offers, by key. A closed list rather than an open emoji field: the page
 -- picks the glyph, the server only records which of six was chosen.
 local REACTIONS = {
     love = true, like = true, dislike = true, haha = true, wow = true, question = true,
@@ -1953,7 +1959,7 @@ end
 
 --- Where a player is, or nil if they have no ped yet.
 ---
---- Declared HERE rather than beside the AirDrop code that used to own it. `ringOut` below is the
+--- Declared HERE rather than beside the FruitDrop code that used to own it. `ringOut` below is the
 --- first caller in the file and it sat 1584 lines above the `local function coordsOf`, so the
 --- name resolved to a nil GLOBAL: every call, answer and hangup failed with "attempt to call a
 --- nil value (global 'coordsOf')" from the moment ring-out shipped. A `local` is only in scope
@@ -2253,7 +2259,7 @@ end
 --- Somebody hung up, dropped, or was dropped. The one place that decides whether that ends
 --- the call for everybody.
 ---
---- **The person who placed it leaving ends it.** That is what an iPhone conference does, and it
+--- **The person who placed it leaving ends it.** That is what a handset conference does, and it
 --- is what this record can support: `c.a` is who every log row and the voicemail offer are
 --- written against, so a call outliving its own caller would be a call with nobody to attribute.
 local function callPartOrEnd(id, src, reason)
@@ -2949,6 +2955,11 @@ exports('SetScreenOn', function(src, on) Open[src] = on and true or nil end)
 -- in the catalogue would look like the other one is broken. `Config.PhoneItem` leads, so a
 -- server that renamed the item is not quietly ignored, and the list is de-duplicated in
 -- case it was renamed to one of the two already here.
+--
+-- The second literal is a LEGACY CATALOGUE NAME, not a name this resource chose or shows
+-- anywhere. It is already sitting in the item tables and in players' inventories on a large
+-- share of existing installs, and dropping it would lock every one of those players out of
+-- their phone with nothing on screen to explain why. It is matched, never displayed.
 local PHONE_ITEMS = {}
 do
     local seen = {}
@@ -3969,8 +3980,8 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         if data.securityEnabled ~= nil and data.securityEnabled == true then
             prefs.securityEnabled = tostring(prefs.passcodeHash or '') ~= ''
         end
-        if data.faceId ~= nil then
-            prefs.faceId = prefs.securityEnabled and data.faceId == true
+        if data.faceUnlock ~= nil then
+            prefs.faceUnlock = prefs.securityEnabled and data.faceUnlock == true
         end
         if data.wallpaper then
             local selected = wallpaperId(data.wallpaper)
@@ -4100,7 +4111,7 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
     -- `SetMetadata` fires the query and returns. That is right for something the cache can
     -- answer for until the next tick, and wrong for anything a player would notice losing: an
     -- un-awaited write dies in the queue if the process tears down first. Setting a six-digit
-    -- code and a Face ID and finding them gone after a restart is that, and it was reported as
+    -- code and a Face Unlock and finding them gone after a restart is that, and it was reported as
     -- "it clears itself and I have to set it again every reboot" - which is exactly what a
     -- write that lands only if the server happens to stay up looks like from the outside.
     --
@@ -4133,11 +4144,11 @@ V.Callback('v-phone:unlock', function(src, resolve, data)
         return
     end
 
-    -- Face ID represents the character already authenticated by the FiveM session.
+    -- Face Unlock represents the character already authenticated by the FiveM session.
     -- The passcode remains the fallback and is compared only on the server.
-    if data and data.faceId == true and prefs.faceId == true then
+    if data and data.faceUnlock == true and prefs.faceUnlock == true then
         UnlockAttempts[src] = nil
-        resolve({ ok = true, method = 'faceId' })
+        resolve({ ok = true, method = 'faceUnlock' })
         return
     end
 
@@ -4596,7 +4607,7 @@ ownsPhoto = function(p, url)
 end
 
 -- ══════════════════════════════════════════════════════════════
--- AirDrop
+-- FruitDrop
 -- Send a contact, a number or a photo to a nearby phone. Both ends need Bluetooth on and
 -- to be within range - the two conditions the real feature needs to see a device at all.
 -- Every offer is a handshake: the sender proposes, the receiver accepts, and only then
@@ -4613,11 +4624,11 @@ local function btOn(pl)
 end
 
 local function airRange()
-    return (Config.Airdrop and Config.Airdrop.range) or 12.0
+    return (Config.FruitDrop and Config.FruitDrop.range) or 12.0
 end
 
 local function airOfferTtl()
-    return math.max(1, tonumber(Config.Airdrop and Config.Airdrop.offerTtl) or 30)
+    return math.max(1, tonumber(Config.FruitDrop and Config.FruitDrop.offerTtl) or 30)
 end
 
 --- What to CALL somebody else's phone.
@@ -4646,8 +4657,8 @@ local function deviceNameOf(p, forSrc)
     return (L(forSrc, 'ph.setup_device_pattern'):gsub('{name}', first))
 end
 
--- Who this player could AirDrop to right now: online, Bluetooth on, and close enough.
-V.Callback('v-phone:airdropScan', function(src, resolve)
+-- Who this player could FruitDrop to right now: online, Bluetooth on, and close enough.
+V.Callback('v-phone:fruitdropScan', function(src, resolve)
     local me = Core.GetPlayer(src)
     if not me then resolve(false) return end
     -- Usable, not reachable: FruitDrop is Bluetooth between two phones in the same room and
@@ -4678,14 +4689,14 @@ end)
 
 -- How many pins one character may hold. Declared up here rather than beside the rest of the
 -- pin code further down, because ACCEPTING a shared pin has to honour the same ceiling and
--- that branch is in the airdrop code below. A `local` is only in scope after the line that
+-- that branch is in the fruitdrop code below. A `local` is only in scope after the line that
 -- declares it - being in the same file is not enough, and the symptom is a nil global at a
 -- call site that loads perfectly and crashes the first time somebody uses it.
 local PIN_MAX = 40
 
 -- Propose a transfer. Validated at BOTH ends: the receiver has to still be discoverable
 -- and in range, so a stale device list cannot push anything onto a phone that walked off.
-V.Callback('v-phone:airdropSend', function(src, resolve, data)
+V.Callback('v-phone:fruitdropSend', function(src, resolve, data)
     local me = Core.GetPlayer(src)
     if not me then resolve(false) return end
     if not phoneUsable(src) then resolve({ error = 'gone' }) return end
@@ -4791,7 +4802,7 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
         -- else's is a way to claim it, while a music link is public by nature - the point of
         -- passing one on is that the other person can play the same thing. What IS checked is
         -- the operator's host list, because that governs what may be streamed on this server
-        -- at all, and an AirDrop must not be a way around it.
+        -- at all, and an FruitDrop must not be a way around it.
         payload = {
             url = tostring(pin.url or ''):sub(1, 400),
             title = tostring(pin.title or ''):gsub('[%c]', ''):sub(1, 80),
@@ -4848,7 +4859,7 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
 
     -- **Every branch here is a concatenation, and the fallback is reached by anything the
     -- list above does not name.** A map pin has no `name` and no `number`, so sending one
-    -- threw on `payload.name .. ' - '` and the AirDrop failed every single time - the one kind
+    -- threw on `payload.name .. ' - '` and the FruitDrop failed every single time - the one kind
     -- that was added last and never got a line of its own.
     --
     -- The fallback is nil-safe now as well, so the next kind added is a missing preview rather
@@ -4861,7 +4872,7 @@ V.Callback('v-phone:airdropSend', function(src, resolve, data)
         or (((payload.name or '') ~= '')
             and ((payload.name or '') .. ' - ' .. (payload.number or ''))
             or (payload.number or ''))
-    TriggerClientEvent('v-phone:client:airdrop', to,
+    TriggerClientEvent('v-phone:client:fruitdrop', to,
         {
             -- The same name the sender's own device shows in a scan, so the two sides agree:
             -- picking "Mara's iFruit" and then being told the offer is from "Jim Halpert" is
@@ -4874,7 +4885,7 @@ end)
 
 -- Accept or decline. On accept the payload is applied to the RECEIVER, never the sender's
 -- word for it: a contact/number becomes a row in their book, a photo enters their gallery.
-V.Callback('v-phone:airdropRespond', function(src, resolve, data)
+V.Callback('v-phone:fruitdropRespond', function(src, resolve, data)
     local id = tonumber(data and data.offerId)
     local o = id and AirOffers[id]
     if not o or o.to ~= src then resolve({ error = 'gone' }) return end
@@ -4887,7 +4898,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
 
     if not (data and data.accept) then
         if o.from and GetPlayerName(o.from) then
-            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = false })
+            TriggerClientEvent('v-phone:client:fruitdropResult', o.from, { ok = false })
         end
         resolve({ ok = true, declined = true }) return
     end
@@ -4919,7 +4930,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
                 { rp.citizenid, o.payload.name, '', o.payload.email })
         end
         if o.from and GetPlayerName(o.from) then
-            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+            TriggerClientEvent('v-phone:client:fruitdropResult', o.from, { ok = true, name = rp.name or '' })
         end
         resolve({ ok = true })
         return
@@ -4928,7 +4939,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
         -- else's into the reader's own would overwrite theirs. It is handed over to be READ,
         -- which is what a medic asking for it wants.
         if o.from and GetPlayerName(o.from) then
-            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+            TriggerClientEvent('v-phone:client:fruitdropResult', o.from, { ok = true, name = rp.name or '' })
         end
         resolve({ ok = true, health = o.payload })
         return
@@ -4938,7 +4949,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
         -- write would have to reimplement the library's chunked layout, and get it right
         -- twice, to save one round trip on a screen the player is already looking at.
         if o.from and GetPlayerName(o.from) then
-            TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+            TriggerClientEvent('v-phone:client:fruitdropResult', o.from, { ok = true, name = rp.name or '' })
         end
         resolve({ ok = true, track = o.payload })
         return
@@ -4954,7 +4965,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
             (citizenid, label, x, y, z, icon) VALUES (?,?,?,?,?,?)]],
             { rp.citizenid, pay.label, pay.x, pay.y, pay.z, pay.icon })
         if o.from and GetPlayerName(o.from) then
-            TriggerClientEvent('v-phone:client:airdropResult', o.from,
+            TriggerClientEvent('v-phone:client:fruitdropResult', o.from,
                 { ok = true, name = pay.label or '' })
         end
         resolve({ ok = true, place = { label = pay.label } })
@@ -5008,7 +5019,7 @@ V.Callback('v-phone:airdropRespond', function(src, resolve, data)
     end
 
     if o.from and GetPlayerName(o.from) then
-        TriggerClientEvent('v-phone:client:airdropResult', o.from, { ok = true, name = rp.name or '' })
+        TriggerClientEvent('v-phone:client:fruitdropResult', o.from, { ok = true, name = rp.name or '' })
     end
     resolve({ ok = true })
 end)
@@ -5122,7 +5133,7 @@ V.Callback('v-phone:install', function(src, resolve, data)
         -- `prefsOf` is a VIEW: it applies defaults, clamps, and drops the digest unless it is
         -- asked for. Writing that view back over the stored record therefore erased
         -- `passcodeHash` - and the next read computes `securityEnabled` from the digest being
-        -- non-empty, so the code AND the Face ID both vanished. It happened on every install
+        -- non-empty, so the code AND the Face Unlock both vanished. It happened on every install
         -- and every removal from the store, which is the "it clears itself often" half of the
         -- report; the restart half was the un-awaited write below.
         local fresh = prefsOf(p, true)
@@ -5480,7 +5491,7 @@ end
 --- the truth, and checking ownership per request is both simpler and stricter. An unnamed or
 --- unowned address falls back to the first one rather than failing, so an older page that knows
 --- nothing of this keeps working exactly as it did.
---- Global, not local, and the reason matters: AirDrop's `email` kind is defined ABOVE this
+--- Global, not local, and the reason matters: FruitDrop's `email` kind is defined ABOVE this
 --- point in the file, and a `local` declared later is not in scope there - the call would have
 --- read a nil global and failed at runtime with nothing to explain it. Same trap that once bound
 --- a nil `cover` into an UPDATE.
@@ -5684,7 +5695,7 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         -- is the one mistake here that cannot be undone quietly.
         local price = math.max(0, math.floor(num(custom.price, 0)))
         -- Registered against `p.citizenid` below, so the same character has to pay for it -
-        -- see the app store above for the same reasoning.
+        -- see the FruitStore above for the same reasoning.
         local buyer = PhoneActingSource and PhoneActingSource(src) or src
         if price > 0 then
             local paid = Bridge.RemoveMoney and Bridge.RemoveMoney(buyer, price,
@@ -6736,7 +6747,7 @@ end)
 -- registered whether or not requireItem is on: a server that hands everybody a phone still
 -- wants using the item to open it.
 --
--- Every name in PHONE_ITEMS is registered, so `phone`, `iphone` and a renamed
+-- Every name in PHONE_ITEMS is registered, so both legacy catalogue names and a renamed
 -- Config.PhoneItem all work. The item must be marked useable in the framework's own
 -- catalogue as well - on qb-core that is `useable = true` in qb-core/shared/items.lua.
 CreateThread(function()
@@ -6931,7 +6942,7 @@ CreateThread(function()
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
     -- One row per person per message. The primary key is the rule rather than a check in Lua:
-    -- a Tapback is a single choice, and reacting again replaces what you picked instead of
+    -- a reaction is a single choice, and reacting again replaces what you picked instead of
     -- stacking a second badge on the same bubble.
     --
     -- The column holds a KEY - `love`, `haha` - and never the glyph. A page that could write

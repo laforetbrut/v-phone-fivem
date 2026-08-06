@@ -10,7 +10,7 @@
  * and captures the handset, so the whole set can be retaken after any change in one command.
  *
  * The last nine of the hand-taken ones - the setup wizard, the lock screen, the island, the
- * control centre, Settings, Bank and the conversation list - are scripted here too now. They
+ * quick settings, Settings, Bank and the conversation list - are scripted here too now. They
  * were the ones the README opens with, and they had been photographed once and never again, so
  * a restyle left a third of the gallery showing a phone from July beside pictures taken the
  * same morning. Nothing in `docs/images` is taken by hand any more.
@@ -138,7 +138,7 @@ const SHOTS = [
       if (walls.length < 4) throw new Error('the picker offered ' + walls.length + ' wallpapers');`,
   },
   {
-    name: 'setup-faceid', file: '03-setup-faceid.png',
+    name: 'setup-faceunlock', file: '03-setup-faceunlock.png',
     script: `${SETUP}
       openSetup(6);
       await new Promise((r) => setTimeout(r, 900));
@@ -169,21 +169,21 @@ const SHOTS = [
       }`,
   },
   {
-    name: 'control-centre', file: '07-control-centre.png',
+    name: 'quick-settings', file: '07-quick-settings.png',
     script: `${SETUP}
       state._power = { battery: 68, charging: false, signal: 4 };
       musicNow = { title: 'Nightcall', artist: 'Kavinsky', kind: 'track', id: 'fx0' };
       openCC();
       await new Promise((r) => setTimeout(r, 800));
       if (!document.getElementById('cc').classList.contains('on')) {
-        throw new Error('the control centre did not open');
+        throw new Error('the quick settings did not open');
       }`,
   },
   {
     // The pill, mid-notification. It collapses after 4.2 seconds, so this one is a race the
     // shot has to win: the assertion below is what makes losing it a failure rather than a
     // photograph of an ordinary black pill.
-    name: 'island', file: '08-dynamic-island.png',
+    name: 'island', file: '08-island.png',
     script: `${SETUP}
       banner({ app: 'messages', icon: 'messages', title: 'Mara Ortiz',
                body: 'Je suis devant le garage.' });
@@ -1987,7 +1987,7 @@ const SHOTS = [
     //
     // Moving a tile rewrites the page's markup whenever the insertion point changes, so every
     // icon becomes a new element and its animation begins again at frame zero - together. What
-    // iOS has is a continuous independent wobble; what this was is a synchronised snap. A
+    // FruitOS has is a continuous independent wobble; what this was is a synchronised snap. A
     // negative animation-delay derived from each tile's own index starts it partway through, so
     // a rebuild puts each icon back where it was in the cycle.
     //

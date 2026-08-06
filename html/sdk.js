@@ -122,7 +122,7 @@
     snow: 'M7 15a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.6 1.5A3.5 3.5 0 0 1 17 15M8 19h.01M12 20h.01M16 19h.01',
     search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4',
     sparkles: 'M12 2l1.4 4.6L18 8l-4.6 1.4L12 14l-1.4-4.6L6 8l4.6-1.4L12 2ZM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14ZM5 13l.8 2.2L8 16l-2.2.8L5 19l-.8-2.2L2 16l2.2-.8L5 13Z',
-    bleet: 'M21 6.2c-.7.3-1.4.5-2.1.6.8-.5 1.3-1.2 1.6-2-.7.4-1.5.7-2.3.9A3.3 3.3 0 0 0 12.6 8.3c-2.6-.1-5-1.4-6.6-3.4-.9 1.5-.5 3.4 1 4.4-.6 0-1.1-.2-1.6-.4 0 1.6 1.1 3 2.7 3.3-.5.1-1 .2-1.5.1.4 1.3 1.7 2.3 3.1 2.3-1.4 1.1-3.2 1.6-5 1.4 1.5 1 3.3 1.5 5.2 1.5 6.3 0 9.8-5.3 9.6-10 .7-.5 1.2-1.1 1.6-1.8z',
+    bleet: 'M3.6 9h16.8v2H3.6zM3.6 14h16.8v2H3.6zM8.4 3.6h2l-1.6 16.8h-2zM14.2 3.6h2l-1.6 16.8h-2z',
     snap: 'M4 8h3l2-3h6l2 3h3v12H4zM12 10a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
     dot: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
     airplane: 'M12 3c.9 0 1.4 1 1.4 2.2v4.1l7.1 4.2v2l-7.1-2.1v4l2.1 1.6v1.6L12 19.6 8.5 20.8v-1.6l2.1-1.6v-4L3.5 15.5v-2l7.1-4.2V5.2C10.6 4 11.1 3 12 3Z',
@@ -161,7 +161,7 @@
     // A car from the side, for a road alert.
     car: 'M5 16v2M19 16v2M3 16v-3l2-5h14l2 5v3H3Zm3-3h.01M18 13h.01M6 8h12',
     images: 'M8 3h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM4 7v12a2 2 0 0 0 2 2h12M10 9a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8ZM20 15l-4-4-6 6',
-    airdrop: 'M12 20a1 1 0 0 0 .9-1.5l-.9-1.6-.9 1.6A1 1 0 0 0 12 20ZM7.5 13.5a6.4 6.4 0 0 1 9 0M4.7 10.7a10.3 10.3 0 0 1 14.6 0M12 8.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z',
+    fruitdrop: 'M12 20a1 1 0 0 0 .9-1.5l-.9-1.6-.9 1.6A1 1 0 0 0 12 20ZM7.5 13.5a6.4 6.4 0 0 1 9 0M4.7 10.7a10.3 10.3 0 0 1 14.6 0M12 8.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z',
     share: 'M12 3l4 4M12 3L8 7M12 3v13M6 12H5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1',
     landscape: 'M3 8a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM19 10l2.5 2-2.5 2M21.5 12H15',
     camrotate: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM5 8V6a1 1 0 0 1 1-1h2M19 16v2a1 1 0 0 1-1 1h-2M4 11a8 8 0 0 1 3-5M20 13a8 8 0 0 1-3 5',
@@ -174,7 +174,7 @@
     lockshut: 'M8 10V7a4 4 0 0 1 8 0v3M6.5 10h11A1.5 1.5 0 0 1 19 11.5v8A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-8A1.5 1.5 0 0 1 6.5 10ZM12 14v3',
     lockopen: 'M9 10V7a4 4 0 0 1 7.7-1.5M6.5 10h11A1.5 1.5 0 0 1 19 11.5v8A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-8A1.5 1.5 0 0 1 6.5 10ZM12 14v3',
     cipher: 'M12 2.5l7 3v5.8c0 4.6-2.8 7.8-7 10.2-4.2-2.4-7-5.6-7-10.2V5.5l7-3ZM9 11h6v5H9zM10 11V9a2 2 0 0 1 4 0v2',
-    faceid: 'M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3M9 9h.01M15 9h.01M12 9v4h-2M8.5 16c2 1.6 5 1.6 7 0',
+    faceunlock: 'M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3M9 9h.01M15 9h.01M12 9v4h-2M8.5 16c2 1.6 5 1.6 7 0',
     timer: 'M9 2h6M12 5v2M12 12l3-2M12 6a7 7 0 1 0 7 7 7 7 0 0 0-7-7Z',
     mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
     reply: 'M9 5L3 11l6 6M3 11h10a8 8 0 0 1 8 8',
@@ -182,7 +182,7 @@
     repost: 'M4 9V8a3 3 0 0 1 3-3h10l-3-3M20 15v1a3 3 0 0 1-3 3H7l3 3M17 5l3 3M7 19l-3-3',
     home: 'M4 11.2 12 4l8 7.2M6.5 10v9.2h4.2V15h2.6v4.2h4.2V10',
     star2: 'M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.3L12 17l-5.6 3.2 1.3-6.3L3 9.6l6.3-.7z',
-    // Nested arcs, for the forensics terminal. `faceid` was standing in for this and it
+    // Nested arcs, for the forensics terminal. `faceunlock` was standing in for this and it
     // reads as a viewfinder bracket, which is not what a fingerprint looks like.
     fingerprint: 'M12 3.4c-4.7 0-8.5 3.9-8.5 8.6v4M12 6.7c-2.9 0-5.2 2.4-5.2 5.3v5.6M12 10c-1.1 0-2 .9-2 2.1v7.1M12 3.4c4.7 0 8.5 3.9 8.5 8.6v4M12 6.7c2.9 0 5.2 2.4 5.2 5.3v5.6M12 10c1.1 0 2 .9 2 2.1v7.1',
   };
@@ -219,7 +219,7 @@
      *   subtitle        second line
      *   value           trailing text; `tone: 'pos' | 'neg'`, `mono: true`
      *   badge / time    trailing pill or timestamp
-     *   toggle          an iOS switch (true / false)
+     *   toggle          a FruitOS switch (true / false)
      *   chevron         the disclosure arrow
      *   data            { k: v } becomes data-k="v", for your click handler
      */
@@ -359,7 +359,7 @@
      * Two forms, and the first one is the reason the second exists rather than
      * replacing it: `empty(text, icon)` is what all 127 call sites in the phone use,
      * and it keeps working untouched. `empty({ title, body, icon, action })` adds the
-     * description line and the call to action that iOS puts under it.
+     * description line and the call to action that FruitOS puts under it.
      *
      * `action` is `{ label, id }`. It emits the SAME `.bigbtn` the rest of the phone
      * uses rather than a private button class, so there is one button in the resource
@@ -393,7 +393,7 @@
       });
     },
 
-    /** A free-form Clear Glass card. */
+    /** A free-form Glass card. */
     card: function (content, opts) {
       const o = opts || {};
       const title = o.title ? '<div class="uicard-title">' + esc(o.title) + '</div>' : '';
@@ -481,7 +481,7 @@
   };
 
   // ══ App icon tiles ═══════════════════════════════════════════
-  // An iOS app icon is a vivid gradient squircle with a FILLED white glyph. The
+  // A FruitOS app icon is a vivid gradient squircle with a FILLED white glyph. The
   // stroke set above is for rows and buttons; drawing it on a flat tint is what
   // made the home screen read as a web page rather than a phone. One table, so a
   // third-party app gets the same treatment just by naming an icon.
@@ -594,8 +594,8 @@
     store: { bg: 'linear-gradient(180deg,#31A5FF,#0A6CFF)', d: G.store },
     settings: { bg: GREY, d: G.settings },
     note: { bg: 'linear-gradient(180deg,#FFD44D 0%,#FFD44D 24%,#FFFFFF 24%)', d: G.note, fill: '#C2C3C8' },
-    bleet: { bg: 'linear-gradient(180deg,#5BC9F8,#1D9BF0)',
-      d: 'M21 6.2c-.7.3-1.4.5-2.1.6.8-.5 1.3-1.2 1.6-2-.7.4-1.5.7-2.3.9A3.3 3.3 0 0 0 12.6 8.3c-2.6-.1-5-1.4-6.6-3.4-.9 1.5-.5 3.4 1 4.4-.6 0-1.1-.2-1.6-.4 0 1.6 1.1 3 2.7 3.3-.5.1-1 .2-1.5.1.4 1.3 1.7 2.3 3.1 2.3-1.4 1.1-3.2 1.6-5 1.4 1.5 1 3.3 1.5 5.2 1.5 6.3 0 9.8-5.3 9.6-10 .7-.5 1.2-1.1 1.6-1.8z' },
+    bleet: { bg: 'linear-gradient(180deg,#6FD3E8,#0FA3D8)',
+      d: 'M3.6 9h16.8v2H3.6zM3.6 14h16.8v2H3.6zM8.4 3.6h2l-1.6 16.8h-2zM14.2 3.6h2l-1.6 16.8h-2z' },
     snap: { bg: 'linear-gradient(180deg,#63D2FF,#0A84D6)', d: G.camera },
     hush: { bg: 'linear-gradient(180deg,#FF5E9C,#FF2D55)', d: G.heart },
     // Fruitee. A hand holding a heart: giving, not liking. Teal into green rather than the

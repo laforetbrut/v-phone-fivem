@@ -1,26 +1,26 @@
 # v-phone
 
-An iOS 27 style phone for FiveM that runs on **your** framework. qb-core, qbx_core, ox_core, ESX or no framework at all: the phone detects what is running and adapts, and every one of those decisions is a line in the config file when you want it to be different.
+A FruitOS style phone for FiveM that runs on **your** framework. qb-core, qbx_core, ox_core, ESX or no framework at all: the phone detects what is running and adapts, and every one of those decisions is a line in the config file when you want it to be different.
 
-Thirty-seven apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face ID.
+Thirty-seven apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face Unlock.
 
 ## Screenshots
 
 ### First run
 
-A phone opened for the first time is activated, not just switched on: a name, an appearance, a wallpaper with the Clear Glass slider, a six digit passcode, and Face ID if the player wants it.
+A phone opened for the first time is activated, not just switched on: a name, an appearance, a wallpaper with the Glass slider, a six digit passcode, and Face Unlock if the player wants it.
 
-| Hello | Wallpaper and transparency | Face ID |
+| Hello | Wallpaper and transparency | Face Unlock |
 |---|---|---|
-| <img src="docs/images/01-setup-hello.png" alt="First run" width="240"> | <img src="docs/images/02-setup-wallpaper.png" alt="Wallpaper" width="240"> | <img src="docs/images/03-setup-faceid.png" alt="Face ID" width="240"> |
+| <img src="docs/images/01-setup-hello.png" alt="First run" width="240"> | <img src="docs/images/02-setup-wallpaper.png" alt="Wallpaper" width="240"> | <img src="docs/images/03-setup-faceunlock.png" alt="Face Unlock" width="240"> |
 
 ### Every day
 
-| Home screen | Lock screen | Dynamic Island |
+| Home screen | Lock screen | The Island |
 |---|---|---|
-| <img src="docs/images/04-home.png" alt="Home" width="240"> | <img src="docs/images/10-lock-screen.png" alt="Lock screen" width="240"> | <img src="docs/images/08-dynamic-island.png" alt="Dynamic Island" width="240"> |
+| <img src="docs/images/04-home.png" alt="Home" width="240"> | <img src="docs/images/10-lock-screen.png" alt="Lock screen" width="240"> | <img src="docs/images/08-island.png" alt="The Island" width="240"> |
 
-The Dynamic Island is not decoration: a message arrives out of it, a call lives in it, and locking pinches it around a padlock.
+The Island is not decoration: a message arrives out of it, a call lives in it, and locking pinches it around a padlock.
 
 ### Apps
 
@@ -28,11 +28,11 @@ The Dynamic Island is not decoration: a message arrives out of it, a call lives 
 |---|---|---|
 | <img src="docs/images/05-settings.png" alt="Settings" width="240"> | <img src="docs/images/06-bank.png" alt="Bank" width="240"> | <img src="docs/images/09-messages.png" alt="Messages" width="240"> |
 
-### Control centre
+### Quick settings
 
 Pull down from the top right for the toggles, the brightness and volume slabs, and what is playing.
 
-<img src="docs/images/07-control-centre.png" alt="Control centre" width="300">
+<img src="docs/images/07-quick-settings.png" alt="Quick settings" width="300">
 
 ### The home screen, arranged
 
@@ -50,8 +50,8 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 ## Features
 
 ### The phone
-- **iOS 27 interface, measured rather than remembered**: the palette, the type scale, the corner radii and the Liquid Glass material on the bars, sheets and bar buttons were read out of a 76 file export of Apple's own iOS 26 design kit rather than eyeballed, and the stylesheet records the file and the count each value came from. The kit is light theme only, so every dark value is an invention and says so beside itself. On top of that: the Clear Glass slider that sets how much wallpaper comes through, a Dynamic Island that reacts to calls, notifications, locking and Face ID, a control centre, a notification shade and a Spotlight search.
-- **First run setup**: name, appearance, wallpaper, transparency, a six digit passcode and optional Face ID. The passcode never reaches the page: the server keeps a character salted SHA-256 digest and blocks for thirty seconds after five failures.
+- **FruitOS interface, measured rather than remembered**: the palette, the type scale, the corner radii and the Glass material on the bars, sheets and bar buttons were measured against a 76 file reference export rather than eyeballed, and the stylesheet records the file and the count each value came from. Nothing is copied in: a measured length or a measured hex is a fact about a shape, and no glyph, font, wallpaper or sound comes from anywhere but this repository. The reference is light theme only, so every dark value is an invention and says so beside itself. On top of that: the Glass slider that sets how much wallpaper comes through, an Island that reacts to calls, notifications, locking and Face Unlock, a quick settings panel, a notification shade and a phone wide search.
+- **First run setup**: name, appearance, wallpaper, transparency, a six digit passcode and optional Face Unlock. The passcode never reaches the page: the server keeps a character salted SHA-256 digest and blocks for thirty seconds after five failures.
 - **Configurable home screen**: choose the dock, which apps ship installed, their order, which cannot be removed and which are hidden, all in one table.
 - **Home screen widgets**: twelve of them, arranged from the phone. Hold the home screen, then the minus removes one, the plus opens the gallery, and dragging reorders. Weather, Calendar, Messages, Music, Battery, iFruit Store, Bank, Health, Garage, Reminders, Market and Alerts. Six never touch the server at all and the other six share one request, made only when one of them is on the strip - a phone left as it ships costs nothing extra. `Config.Widgets` turns any of them off, and a widget only appears for a player who has its app. The Messages tile shows who texted and never what they said; the Bank tile is masked until its owner unmasks it, and the figure does not leave the server while it is off.
 - **An update check in the console**: the server asks GitHub once at start-up whether a newer release exists and prints one block if so. Nothing is downloaded, and nothing is told to a player - the version a server runs is not something to hand out. `Config.UpdateCheck`.
@@ -60,11 +60,11 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **In hand**: a prop, an animation, and a phone that keeps working while you walk and drive.
 - **Battery** with charging in a vehicle, at a public charger, and inside a property you have a key to (Quasar housing and the rest). Power banks and a low battery warning. Charging in a vehicle and in a property are each a switch.
 - **Paid charging points**: give a charger a price and the phone asks before it charges. One payment buys the whole stop - charge as long as you like, and pay again only after leaving the zone. The money goes to a job or society account you name, per charger. See [Paid charging points](#paid-charging-points).
-- **Security you can change**: the passcode and Face ID are set during first run and can be changed from Settings afterwards - both asking for the current code first.
+- **Security you can change**: the passcode and Face Unlock are set during first run and can be changed from Settings afterwards - both asking for the current code first.
 - **Police forensics**: a warrant terminal at a map point where police read a suspect's texts, contacts, calls and social from the number, on a lab-bench interface with a case reference and evidence rows. Opened by a key press, and by a target zone when a target script is running. Cipher stays end-to-end encrypted, with an optional, deliberately hard lawful-intercept crack.
 - **Payphones**: the call boxes already standing in Los Santos, made to work - no coordinate list, because the client finds the props themselves. A booth **places calls and can never receive them**, its number is derived from where it stands so it is the same every restart, and calls are paid for with a prepaid card item fed into the box. Emergency numbers are free, and walking away hangs up.
 - **Group calls**: put somebody else on a call that is already running, up to five. A voice channel has always been a conference - it wires every member to every other one, both ways - so the work is who may be added: the ceiling, whether only the person who placed the call may invite, and one invitation at a time so a tap-through cannot set a whole contact list ringing. Each line is degraded on its own bars, and somebody leaving gets their voice back at once rather than staying quiet for the rest of the call.
-- **A call does not own the phone**: put an active call away with the chevron and it carries on in the Dynamic Island, green handset and timer, while you use Messages, Maps or anything else. Tapping the island brings it back.
+- **A call does not own the phone**: put an active call away with the chevron and it carries on in the Island, green handset and timer, while you use Messages, Maps or anything else. Tapping the island brings it back.
 - **Notifications, three levels per app**: on, silent (the banner and the card arrive, the sound does not) or off. The middle one is the difference between an app you silence and an app you switch off and then miss something important from. Alerts is the one app that cannot be silenced, and it says so rather than ignoring the tap.
 - **Messages over more than one line**: Enter sends, Shift+Enter breaks the line, and the box grows with the text.
 - **An outbox**: a message written with no signal is held by the handset and sent when the bars come back, one at a time, in order.
@@ -150,7 +150,7 @@ Twenty-two are installed to begin with: Phone, Messages, Contacts, **911**, **Al
 
 ### For developers
 - **Drop-in apps**: an app is a folder in `apps/`. No edit to the phone, no build step, no JavaScript framework. See [DEVELOPERS.md](DEVELOPERS.md).
-- **App SDK**: the same Clear Glass components the native apps use.
+- **App SDK**: the same Glass components the native apps use.
 - **Integration hooks**: point any app at your own script in one function rather than forking the resource.
 - **A documented API**: over a hundred server exports, five client exports, three events and seven hooks. See [API.md](API.md).
 
@@ -253,7 +253,7 @@ an image from), `DefaultGlass`, `Clock`, `Theme` (the accent and the system pale
 
 **Talking**
 `Messages`, `Cipher`, `Calls` (including `badSignal`, which is what makes one bar sound like one
-bar), `RingOut`, `Booth` (payphones), `Airdrop` (sharing between two phones in the room),
+bar), `RingOut`, `Booth` (payphones), `FruitDrop` (sharing between two phones in the room),
 `Blocking` (what a blocked number can and cannot do), `FaceTime` (video calls, off by default),
 `RequiredContacts` (numbers in every phone - 911 is one, and calling it opens the app).
 
@@ -344,8 +344,9 @@ qb-core's own `qbadmin.menu` is accepted too, so existing staff usually work wit
 ## Creating the items
 
 Only needed when `Config.Settings.requireItem` is on (it is, by default). The item name the
-phone looks for is `Config.PhoneItem`, `phone` out of the box - and `phone` and `iphone` are
-both accepted whatever you set, so an item you already have usually just works.
+phone looks for is `Config.PhoneItem`, `phone` out of the box. Two legacy names that servers
+commonly already have in their catalogue, `phone` and `iphone`, are accepted whatever you set,
+so an item you already have usually just works.
 
 The phone does **not** need the item to be usable-on-click: it opens with the keybind either
 way. Making it usable is nicer, so both halves are below.
@@ -1098,7 +1099,7 @@ social feed.
 | `bank` | Bank statements, pending transfers, the Bank Pro log. |
 | `lottery`, `zuber`, `repair`, `export`, `arcade` | Tickets and draws, orders, call-outs and reviews, watchlists and price alerts, arcade scores and brawl stats. |
 | `cipher` | Cipher profiles and encrypted messages. |
-| `reviews` | App store reviews. |
+| `reviews` | FruitStore reviews. |
 | `appdata` | Storage belonging to dropped-in apps. |
 | `media` | Every uploaded photograph and clip, from the **host** as well as from the phone. |
 | `all` | Every name above at once. |
@@ -1161,9 +1162,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Licence
 
-[MIT with an attribution requirement](LICENSE). Use it, change it, sell your server with it.
+[Apache License 2.0](LICENSE). Use it, change it, sell your server with it.
 
-The one thing you may not do is remove the credit the phone shows the player in **Settings > About**. Restyle it, translate it, put your own credits next to it. Do not take it away.
+Attribution lives in [NOTICE](NOTICE). Section 4(d) of the licence asks a derivative work to carry that file and to show what it says wherever the work normally shows the notices of what it is built on. For this phone that place is **Settings > About**, where the author is already on screen. Restyle it, translate it, put your own credits next to it. Keep it reachable.
+
+No third-party asset ships in this repository. The tones are generated by a script in `tools/`, the icons are inline paths, the wallpapers are CSS gradients, and no font file is distributed. `NOTICE` shows the working.
 
 ## Credits
 
@@ -1175,27 +1178,27 @@ Bleeter, Snapmatic and Hush are brands from Grand Theft Auto V.
 
 # v-phone (Version Française)
 
-Un téléphone au style iOS 27 pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
+Un téléphone au style FruitOS pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
 
-Trente-sept applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face ID.
+Trente-sept applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face Unlock.
 
 ## Captures d'écran
 
 ### Premier démarrage
 
-Un téléphone ouvert pour la première fois est activé, pas seulement allumé : un nom, une apparence, un fond d'écran avec le curseur Clear Glass, un code à six chiffres, et Face ID si le joueur le souhaite.
+Un téléphone ouvert pour la première fois est activé, pas seulement allumé : un nom, une apparence, un fond d'écran avec le curseur Glass, un code à six chiffres, et Face Unlock si le joueur le souhaite.
 
-| Bonjour | Fond et transparence | Face ID |
+| Bonjour | Fond et transparence | Face Unlock |
 |---|---|---|
-| <img src="docs/images/01-setup-hello.png" alt="Premier démarrage" width="240"> | <img src="docs/images/02-setup-wallpaper.png" alt="Fond d'écran" width="240"> | <img src="docs/images/03-setup-faceid.png" alt="Face ID" width="240"> |
+| <img src="docs/images/01-setup-hello.png" alt="Premier démarrage" width="240"> | <img src="docs/images/02-setup-wallpaper.png" alt="Fond d'écran" width="240"> | <img src="docs/images/03-setup-faceunlock.png" alt="Face Unlock" width="240"> |
 
 ### Au quotidien
 
-| Écran d'accueil | Écran de verrouillage | Dynamic Island |
+| Écran d'accueil | Écran de verrouillage | L'Île |
 |---|---|---|
-| <img src="docs/images/04-home.png" alt="Accueil" width="240"> | <img src="docs/images/10-lock-screen.png" alt="Verrouillage" width="240"> | <img src="docs/images/08-dynamic-island.png" alt="Dynamic Island" width="240"> |
+| <img src="docs/images/04-home.png" alt="Accueil" width="240"> | <img src="docs/images/10-lock-screen.png" alt="Verrouillage" width="240"> | <img src="docs/images/08-island.png" alt="L'Île" width="240"> |
 
-La Dynamic Island n'est pas décorative : un message en sort, un appel y vit, et le verrouillage la pince autour d'un cadenas.
+L'île n'est pas décorative : un message en sort, un appel y vit, et le verrouillage la pince autour d'un cadenas.
 
 ### Applications
 
@@ -1203,11 +1206,11 @@ La Dynamic Island n'est pas décorative : un message en sort, un appel y vit, et
 |---|---|---|
 | <img src="docs/images/05-settings.png" alt="Réglages" width="240"> | <img src="docs/images/06-bank.png" alt="Banque" width="240"> | <img src="docs/images/09-messages.png" alt="Messages" width="240"> |
 
-### Centre de contrôle
+### Réglages rapides
 
 Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosité et de volume, et ce qui est en lecture.
 
-<img src="docs/images/07-control-centre.png" alt="Centre de contrôle" width="300">
+<img src="docs/images/07-quick-settings.png" alt="Réglages rapides" width="300">
 
 ### L'écran d'accueil, organisé
 
@@ -1224,8 +1227,8 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 ## Caractéristiques
 
 ### Le téléphone
-- **Interface iOS 27, mesurée et non pas retenue de mémoire** : la palette, l'échelle typographique, les rayons de coin et le matériau Liquid Glass des barres, des feuilles et des boutons de barre ont été relevés dans un export de 76 fichiers du kit de design iOS 26 d'Apple plutôt qu'estimés à l'œil, et la feuille de style note pour chaque valeur le fichier et le nombre d'occurrences d'où elle vient. Le kit ne couvre que le thème clair : chaque valeur sombre est donc une invention et le dit à côté d'elle-même. Par-dessus : le curseur Clear Glass qui règle la quantité de fond d'écran qui traverse, une Dynamic Island qui réagit aux appels, aux notifications, au verrouillage et au Face ID, un centre de contrôle, un volet de notifications et une recherche Spotlight.
-- **Configuration au premier démarrage** : nom, apparence, fond d'écran, transparence, code à six chiffres et Face ID optionnel. Le code n'atteint jamais la page : le serveur garde une empreinte SHA-256 salée par personnage et bloque trente secondes après cinq échecs.
+- **Interface FruitOS, mesurée et non pas retenue de mémoire** : la palette, l'échelle typographique, les rayons de coin et le matériau Glass des barres, des feuilles et des boutons de barre ont été relevés sur un export de référence de 76 fichiers plutôt qu'estimés à l'œil, et la feuille de style note pour chaque valeur le fichier et le nombre d'occurrences d'où elle vient. Rien n'est repris : une longueur ou un code hexadécimal mesuré est un constat sur une forme, et aucun glyphe, police, fond d'écran ou son ne vient d'ailleurs que de ce dépôt. La référence ne couvre que le thème clair : chaque valeur sombre est donc une invention et le dit à côté d'elle-même. Par-dessus : le curseur Glass qui règle la quantité de fond d'écran qui traverse, une île qui réagit aux appels, aux notifications, au verrouillage et au Face Unlock, un panneau de réglages rapides, un volet de notifications et une recherche globale.
+- **Configuration au premier démarrage** : nom, apparence, fond d'écran, transparence, code à six chiffres et Face Unlock optionnel. Le code n'atteint jamais la page : le serveur garde une empreinte SHA-256 salée par personnage et bloque trente secondes après cinq échecs.
 - **Écran d'accueil configurable** : le dock, les applications livrées, leur ordre, celles qu'on ne peut pas supprimer et celles qui sont masquées, le tout dans une seule table.
 - **Widgets sur l'écran d'accueil** : douze, organisés depuis le téléphone. Maintenez l'écran d'accueil : le moins en retire un, le plus ouvre la galerie, le glissement réordonne. Six ne touchent jamais au serveur et les six autres partagent une seule requête. `Config.Widgets` désactive ce que vous voulez. La tuile Messages affiche qui a écrit, jamais ce qui a été écrit ; la tuile Banque est masquée tant que son propriétaire ne l'affiche pas, et le montant ne quitte pas le serveur.
 - **Vérification de mise à jour en console** : le serveur demande une fois à GitHub au démarrage si une release plus récente existe. Rien n'est téléchargé et rien n'est dit à un joueur. `Config.UpdateCheck`.
@@ -1234,11 +1237,11 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **En main** : un prop, une animation, et un téléphone qui continue de fonctionner en marchant et en conduisant.
 - **Batterie** avec recharge dans un véhicule, à une borne publique, et à l'intérieur d'un logement dont vous avez la clé (Quasar housing et les autres). Batteries externes et alerte de batterie faible. La recharge en véhicule et en logement sont chacune une option.
 - **Bornes de recharge payantes** : donnez un prix à une borne et le téléphone demande avant de recharger. Un seul paiement couvre tout le passage - rechargez autant que vous voulez, et ne repayez qu'après avoir quitté la zone. L'argent va sur le compte de métier ou de société que vous désignez, borne par borne. Voir [Bornes de recharge payantes](#bornes-de-recharge-payantes).
-- **Une sécurité modifiable** : le code et le Face ID sont définis au premier démarrage et peuvent être changés ensuite depuis les Réglages - les deux demandant d'abord le code actuel.
+- **Une sécurité modifiable** : le code et le Face Unlock sont définis au premier démarrage et peuvent être changés ensuite depuis les Réglages - les deux demandant d'abord le code actuel.
 - **Enquête police** : un terminal d'analyse à un point de la carte où la police lit les SMS, contacts, appels et réseaux d'un suspect à partir du numéro, sur une interface de laboratoire avec référence de dossier et lignes de preuve. Ouvert par une touche, et par une zone de target quand un script de target tourne. Cipher reste chiffré de bout en bout, avec une interception légale optionnelle et volontairement difficile.
 - **Cabines téléphoniques** : les bornes déjà présentes à Los Santos, rendues fonctionnelles - aucune liste de coordonnées, car le client trouve les props lui-même. Une cabine **passe des appels et ne peut jamais en recevoir**, son numéro est dérivé de sa position et reste donc identique à chaque redémarrage, et les appels se paient avec un item carte prépayée inséré dans la borne. Les numéros d'urgence sont gratuits, et s'éloigner raccroche.
 - **Appels de groupe** : ajouter quelqu'un à un appel déjà en cours, jusqu'à cinq. Un canal vocal a toujours été une conférence - il relie chaque membre à tous les autres, dans les deux sens - donc le travail porte sur qui peut être ajouté : le plafond, l'option où seul celui qui a lancé l'appel peut inviter, et une invitation à la fois pour qu'un enchaînement de taps ne fasse pas sonner tout un répertoire. Chaque ligne est dégradée sur ses propres barres, et celui qui quitte récupère sa voix immédiatement au lieu de rester muet le reste de l'appel.
-- **Un appel ne confisque plus le téléphone** : rangez un appel actif avec le chevron et il continue dans la Dynamic Island, combiné vert et chrono, pendant que vous utilisez Messages, Plans ou autre chose. Toucher l'île le ramène.
+- **Un appel ne confisque plus le téléphone** : rangez un appel actif avec le chevron et il continue dans l'île, combiné vert et chrono, pendant que vous utilisez Messages, Plans ou autre chose. Toucher l'île le ramène.
 - **Notifications, trois niveaux par application** : activées, silencieuses (la bannière et la carte arrivent, le son non) ou coupées. Le niveau intermédiaire est la différence entre une application qu'on fait taire et une qu'on coupe avant de rater quelque chose d'important. Alertes est la seule qui ne peut pas être réduite au silence, et elle le dit au lieu d'ignorer le tap.
 - **Des messages sur plusieurs lignes** : Entrée envoie, Maj+Entrée saute la ligne, et la zone grandit avec le texte.
 - **Une boîte d'envoi** : un message écrit sans réseau est gardé par le combiné et part quand les barres reviennent, un par un, dans l'ordre.
@@ -1312,7 +1315,7 @@ Vingt-deux sont installées au départ : Téléphone, Messages, Contacts, **911*
 
 ### Pour les développeurs
 - **Applications déposables** : une application est un dossier dans `apps/`. Aucune modification du téléphone, aucune étape de build, aucun framework JavaScript. Voir [DEVELOPERS.md](DEVELOPERS.md).
-- **SDK** : les mêmes composants Clear Glass que les applications natives.
+- **SDK** : les mêmes composants Glass que les applications natives.
 - **Points d'accroche** : branchez n'importe quelle application sur votre propre script en une fonction plutôt qu'en forkant la ressource.
 - **Une API documentée** : plus de cent exports serveur, cinq exports client, trois événements et sept hooks. Voir [API.md](API.md).
 
@@ -1412,7 +1415,7 @@ joueur peut coller une image), `DefaultGlass`, `Clock`, `Theme` (l'accent et la 
 
 **Communication**
 `Messages`, `Cipher`, `Calls` (dont `badSignal`, ce qui fait qu'une barre s'entend comme une barre),
-`RingOut`, `Booth` (cabines), `Airdrop` (partage entre deux téléphones proches),
+`RingOut`, `Booth` (cabines), `FruitDrop` (partage entre deux téléphones proches),
 `Blocking` (ce qu'un numéro bloqué peut et ne peut pas faire), `FaceTime` (appels vidéo, désactivés
 par défaut), `RequiredContacts` (numéros présents dans tous les téléphones — le 911 en est un, et
 l'appeler ouvre l'application).
@@ -1505,9 +1508,9 @@ sans cette ligne. Voir [Commandes admin](#commandes-admin).
 ## Créer les items
 
 Nécessaire seulement si `Config.Settings.requireItem` est actif (c'est le cas par défaut). Le
-nom d'item que le téléphone cherche est `Config.PhoneItem`, soit `phone` d'origine — et `phone`
-et `iphone` sont acceptés dans tous les cas, donc un item que vous avez déjà fonctionne
-généralement tel quel.
+nom d'item que le téléphone cherche est `Config.PhoneItem`, soit `phone` d'origine. Deux noms
+historiques que les serveurs ont souvent déjà dans leur catalogue, `phone` et `iphone`, sont
+acceptés dans tous les cas, donc un item que vous avez déjà fonctionne généralement tel quel.
 
 Le téléphone n'a **pas** besoin que l'item soit utilisable au clic : il s'ouvre avec la touche
 dans tous les cas. Le rendre utilisable est plus agréable, donc les deux moitiés sont ci-dessous.
@@ -2352,9 +2355,11 @@ Lisez [CONTRIBUTING.md](CONTRIBUTING.md) avant d'ouvrir une pull request.
 
 ## Licence
 
-[MIT avec obligation d'attribution](LICENSE). Utilisez-le, modifiez-le, vendez votre serveur avec.
+[Licence Apache 2.0](LICENSE). Utilisez-le, modifiez-le, vendez votre serveur avec.
 
-La seule chose que vous ne pouvez pas faire, c'est retirer le crédit que le téléphone montre au joueur dans **Réglages > À propos**. Habillez-le, traduisez-le, mettez vos propres crédits à côté. Ne le supprimez pas.
+L'attribution vit dans [NOTICE](NOTICE). L'article 4(d) de la licence demande qu'un travail dérivé transporte ce fichier et en affiche le contenu partout où il montre normalement les mentions des logiciels dont il dépend. Pour ce téléphone, cet endroit est **Réglages > À propos**, où l'auteur est déjà à l'écran. Habillez-le, traduisez-le, mettez vos propres crédits à côté. Gardez-le accessible.
+
+Aucun élément appartenant à un tiers n'est distribué dans ce dépôt. Les tonalités sont générées par un script de `tools/`, les icônes sont des chemins en ligne, les fonds d'écran sont des dégradés CSS, et aucun fichier de police n'est livré. `NOTICE` montre le raisonnement.
 
 ## Credits
 

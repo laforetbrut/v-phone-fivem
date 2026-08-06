@@ -2,7 +2,7 @@
 
 iFruit AppKit permet d’ajouter une application complète sans modifier le téléphone, sans
 bundler et sans framework JavaScript. Une application peut tenir dans un dossier, être
-installable depuis le FruitStore et utiliser les mêmes composants Clear Glass que les
+installable depuis le FruitStore et utiliser les mêmes composants Glass que les
 applications natives.
 
 ## Démarrage en 60 secondes
@@ -164,7 +164,7 @@ L’objet donné au rendu contient :
 Le contrôleur retourné par `Phone.mount()` expose `getState()`, `setState()`, `render()`
 et `run()`.
 
-## Composants Clear Glass
+## Composants Glass
 
 Tous les composants échappent leurs textes et suivent automatiquement le mode clair,
 sombre, la couleur d’accent et le niveau de transparence du joueur.
@@ -174,7 +174,7 @@ const UI = PhoneUI;
 
 UI.hero({ appicon: 'heart', eyebrow: 'Aujourd’hui', value: '82', subtitle: 'Excellent' });
 UI.group([UI.row({ title: 'Profil', chevron: true })], { header: 'Compte' });
-UI.card('<p>Contenu libre</p>', { title: 'Carte', subtitle: 'Clear Glass' });
+UI.card('<p>Contenu libre</p>', { title: 'Carte', subtitle: 'Glass' });
 UI.grid([
   UI.tile({ icon: 'star', title: 'Favoris', value: '12', data: { action: 'favorites' } }),
   UI.tile({ icon: 'bell', title: 'Alertes', value: '3', data: { action: 'alerts' } })
@@ -284,7 +284,7 @@ await Phone.share({ title: 'Partager', text: 'Mon contenu' });
 await Phone.share({ kind: 'photo', url: photoUrl });
 ```
 
-Le partage propose Messages, copie et AirDrop lorsque le type le permet.
+Le partage propose Messages, copie et FruitDrop lorsque le type le permet.
 
 ### Feuilles d’actions et confirmation
 

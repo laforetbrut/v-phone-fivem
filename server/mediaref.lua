@@ -24,7 +24,7 @@
 --
 --  3. **Two columns exist only as `ALTER TABLE`.** `vphone_contacts.photo` and
 --     `vphone_messages.attachment` appear in no `CREATE TABLE` in this resource, so a reader
---     looking for schemas misses them. The contact photo is worse than missed: after an AirDrop
+--     looking for schemas misses them. The contact photo is worse than missed: after an FruitDrop
 --     it lives on somebody ELSE's row, so a per-owner cleanup would delete the face out of ten
 --     other people's phone books.
 

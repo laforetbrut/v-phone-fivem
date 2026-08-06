@@ -15,7 +15,7 @@ local isOpening = false
 local openingAssets = false
 local openRequest = 0
 local menuClaimed = false
-local phoneTorch = false   -- control-centre flashlight
+local phoneTorch = false   -- quick-settings flashlight
 local myNumber = nil
 local call    = nil          -- { id, state = 'out'|'in'|'active', number }
 local power   = { battery = 100, charging = false, signal = 4 }
@@ -1015,7 +1015,7 @@ RegisterNetEvent('v-phone:client:emergency', function(alert)
     if type(alert) ~= 'table' then return end
 
     -- The page always hears about it, open or shut: it owns the sound and the notification
-    -- centre, and it is loaded for as long as the resource is running.
+    -- shade, and it is loaded for as long as the resource is running.
     SendNUIMessage({ action = 'emergency', alert = alert, strings = strings() })
 
     -- Straight to the pad rather than through `buzz`, which stands down for Do Not Disturb.
@@ -1457,8 +1457,8 @@ local function sendWhenOpen(message)
     end
     -- A prompt storm must remain bounded even if the phone cannot currently open.
     while #pendingUiActions >= 6 do table.remove(pendingUiActions, 1) end
-    local seconds = message.action == 'airdrop'
-        and tonumber(Config.Airdrop and Config.Airdrop.offerTtl) or 30
+    local seconds = message.action == 'fruitdrop'
+        and tonumber(Config.FruitDrop and Config.FruitDrop.offerTtl) or 30
     pendingUiActions[#pendingUiActions + 1] = {
         message = message,
         expires = now + math.max(1, seconds) * 1000,
@@ -1663,9 +1663,9 @@ RegisterNUICallback('storeReviews',      relay('v-phone:store:reviews'))
 RegisterNUICallback('storeReview',       relay('v-phone:store:review'))
 RegisterNUICallback('storeReviewDelete', relay('v-phone:store:reviewDelete'))
 RegisterNUICallback('calls',         relay('v-phone:calls'))
-RegisterNUICallback('airdropScan',    relay('v-phone:airdropScan'))
-RegisterNUICallback('airdropSend',    relay('v-phone:airdropSend'))
-RegisterNUICallback('airdropRespond', relay('v-phone:airdropRespond'))
+RegisterNUICallback('fruitdropScan',    relay('v-phone:fruitdropScan'))
+RegisterNUICallback('fruitdropSend',    relay('v-phone:fruitdropSend'))
+RegisterNUICallback('fruitdropRespond', relay('v-phone:fruitdropRespond'))
 RegisterNUICallback('unlock',         relay('v-phone:unlock'))
 
 --- Share where you are. The coordinates come from the PED, not from the page: a page
@@ -1798,7 +1798,7 @@ RegisterNUICallback('card', relay('v-phone:card'))
 --- Setting a waypoint is the one thing a phone map is actually for. Purely local: it
 --- moves a marker on this player's own minimap and touches nothing else.
 -- The flashlight is the phone's own: a light drawn at the handset while it is out, so
--- the control centre torch does something you can see in the dark.
+-- the quick settings torch does something you can see in the dark.
 -- The NUI raises this when a text field takes or loses focus. While typing, the keyboard
 -- must go to the page only (or 'w' walks you off); the rest of the time it flows to the
 -- game so movement works.
@@ -3753,12 +3753,12 @@ end)
 -- ══════════════════════════════════════════════════════════════
 -- Notifications
 -- ══════════════════════════════════════════════════════════════
-RegisterNetEvent('v-phone:client:airdrop', function(offer)
-    sendWhenOpen({ action = 'airdrop', offer = offer })
+RegisterNetEvent('v-phone:client:fruitdrop', function(offer)
+    sendWhenOpen({ action = 'fruitdrop', offer = offer })
 end)
 
-RegisterNetEvent('v-phone:client:airdropResult', function(res)
-    SendNUIMessage({ action = 'airdropResult', result = res })
+RegisterNetEvent('v-phone:client:fruitdropResult', function(res)
+    SendNUIMessage({ action = 'fruitdropResult', result = res })
 end)
 
 RegisterNetEvent('v-phone:client:message', function(msg)
@@ -3915,8 +3915,8 @@ local function pushTheme()
 end
 
 AddEventHandler('v-ui:client:themeChanged', function() pushTheme() end)
--- The flashlight: a white light at the player while the phone is out and the control
--- centre torch is on. It costs a draw call only while lit.
+-- The flashlight: a white light at the player while the phone is out and the quick
+-- settings torch is on. It costs a draw call only while lit.
 --- Everyone else's torch, by server id.
 ---
 --- github.com/laforetbrut/v-phone-fivem/issues/3 - the light was only ever visible to the

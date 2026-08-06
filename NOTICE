@@ -1,0 +1,88 @@
+v-phone (iFruit)
+Copyright 2026 vyrriox
+
+This product includes software developed by vyrriox.
+
+Licensed under the Apache License, Version 2.0. You may obtain a copy of the
+License in the LICENSE file distributed with this software, or at
+https://www.apache.org/licenses/LICENSE-2.0
+
+
+ATTRIBUTION
+
+Section 4(d) of the License requires that the contents of this file be carried
+by any derivative work, and displayed wherever that work normally shows the
+notices of software it is built on.
+
+This software shows its authorship to the player, inside the phone, under
+Settings > About: a "Developed by" row reading "vyrriox", and the section
+footer "iFruit. Developed by vyrriox."
+
+That display is where this notice normally appears. A derivative work is
+expected to keep it. You may translate the wording, restyle it to match your
+own theme, and add your own credits beside it.
+
+
+THIRD-PARTY MATERIAL
+
+None. Every asset in this repository was made for it:
+
+  - The twenty-four sound files are generated, not sampled. Each melody is a
+    table in a Python script in tools/, so the source of every note is in the
+    repository and nothing was taken from a recording.
+  - The icons and interface artwork are drawn as SVG in this repository.
+  - No font file ships with this software. The stylesheet names a stack of
+    fonts already present on the host and falls through to a generic family.
+
+The interface takes visual cues from the design conventions of modern mobile
+operating systems: rounded rectangles, translucent bars, a grid of icons.
+Conventions and measurements are not owned by anyone. No third-party asset,
+glyph, font, sound or trademark is included or claimed.
+
+
+--------------------------------------------------------------------------
+Traduction de courtoisie. En cas de divergence, la version anglaise fait foi.
+
+
+v-phone (iFruit)
+Copyright 2026 vyrriox
+
+Ce produit comprend un logiciel developpe par vyrriox.
+
+Sous licence Apache, version 2.0. Vous pouvez obtenir une copie de la licence
+dans le fichier LICENSE distribue avec ce logiciel, ou a l'adresse
+https://www.apache.org/licenses/LICENSE-2.0
+
+
+ATTRIBUTION
+
+L'article 4(d) de la licence exige que le contenu de ce fichier accompagne
+tout travail derive, et soit affiche partout ou ce travail montre normalement
+les mentions des logiciels sur lesquels il repose.
+
+Ce logiciel montre son auteur au joueur, dans le telephone, sous Reglages >
+A propos : une ligne "Developpe par" indiquant "vyrriox", et le pied de
+section "iFruit. Developpe par vyrriox."
+
+C'est la que cette mention apparait normalement. Un travail derive est tenu de
+la conserver. Vous pouvez en traduire la formulation, l'habiller aux couleurs
+de votre propre theme, et ajouter vos propres credits a cote.
+
+
+MATERIEL TIERS
+
+Aucun. Chaque element de ce depot a ete fait pour lui :
+
+  - Les vingt-quatre fichiers sonores sont generes, pas echantillonnes. Chaque
+    melodie est une table dans un script Python de tools/, donc la source de
+    chaque note est dans le depot et rien n'a ete pris a un enregistrement.
+  - Les icones et les illustrations d'interface sont dessinees en SVG dans ce
+    depot.
+  - Aucun fichier de police n'est distribue avec ce logiciel. La feuille de
+    style nomme une pile de polices deja presentes sur la machine et retombe
+    sur une famille generique.
+
+L'interface reprend des conventions visuelles des systemes mobiles modernes :
+rectangles arrondis, barres translucides, grille d'icones. Une convention et
+une mesure n'appartiennent a personne. Aucun element, glyphe, police, son ou
+marque appartenant a un tiers n'est inclus ni revendique.

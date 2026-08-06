@@ -1011,7 +1011,7 @@ Config.Calls = {
         -- already past the point where anybody can follow it.
         max = 5,
 
-        -- Only the person who PLACED the call may add to it, the way an iPhone conference
+        -- Only the person who PLACED the call may add to it, the way a handset conference
         -- works. `false` lets anybody already on the call invite somebody else, which is
         -- friendlier and is also how a call turns into a crowd nobody chose to be in.
         hostOnly = true,
@@ -1404,8 +1404,8 @@ Config.AppMetadata = {
         keywords = { 'application', 'téléchargement', 'installation', 'catalogue' },
     },
     settings = {
-        features = { 'Apparence', 'Clear Glass', 'Sécurité', 'Sons', 'Accessibilité', 'Organisation des apps' },
-        keywords = { 'réglages', 'thème', 'face id', 'code', 'fond écran' },
+        features = { 'Apparence', 'Glass', 'Sécurité', 'Sons', 'Accessibilité', 'Organisation des apps' },
+        keywords = { 'réglages', 'thème', 'visage', 'code', 'fond écran' },
     },
 
     -- ── The five that had none ─────────────────────────────────
@@ -1756,7 +1756,7 @@ Config.SocialVerify = {
 Config.Wallpapers = { 'ifruit', 'aurora', 'lagoon', 'dune', 'grid', 'night', 'ember' }
 Config.DefaultWallpaper = 'ifruit'
 
--- iOS 27's transparency slider, as a starting value: 0 is ultra clear glass, 100 is
+-- FruitOS's transparency slider, as a starting value: 0 is ultra clear, 100 is
 -- fully tinted. Players move it themselves in Settings; this is only where they begin.
 Config.DefaultGlass = 42
 
@@ -1914,11 +1914,11 @@ Config.Sounds = {
     },
 }
 
--- ── AirDrop ────────────────────────────────────────────────────
+-- ── FruitDrop ────────────────────────────────────────────────────
 -- Send a contact, your number or a photo to a nearby phone. Both ends must have
--- Bluetooth on in the control centre, and be within range - the same two conditions the
+-- Bluetooth on in the quick settings, and be within range - the same two conditions the
 -- real thing needs to see a device at all.
-Config.Airdrop = { range = 12.0, offerTtl = 30 }
+Config.FruitDrop = { range = 12.0, offerTtl = 30 }
 
 -- ── Battery ────────────────────────────────────────────────────
 -- Eight real-world hours from full to flat, which is roughly what a phone does. The
@@ -3561,7 +3561,7 @@ Config.Lottery = {
 -- ══════════════════════════════════════════════════════════════
 --  THE CLOCK
 -- ══════════════════════════════════════════════════════════════
--- What the status bar, the lock screen and the control centre show.
+-- What the status bar, the lock screen and the quick settings show.
 --
 -- It reads the PLAYER'S OWN MACHINE by default, which means somebody connecting from another
 -- country sees their time and not the city's - two characters standing next to each other

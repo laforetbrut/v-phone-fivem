@@ -187,7 +187,7 @@ def build():
         'vehicleControls': remote.get('controls', {}) if remote.get('enabled') else {},
         'vehicleNeons': remote.get('neonColours', []),
         'prefs': {
-            'setupComplete': True, 'setupVersion': 2, 'securityEnabled': False, 'faceId': False,
+            'setupComplete': True, 'setupVersion': 2, 'securityEnabled': False, 'faceUnlock': False,
             'ownerName': 'Alex Mercer', 'deviceName': "Alex's iFruit",
             'wallpaper': cfg.get('DefaultWallpaper', 'ifruit'),
             'glass': cfg.get('DefaultGlass', 42), 'darkMode': 'dark', 'dark': True,
@@ -449,7 +449,7 @@ def build():
         'fundGive': {'ok': True, 'amount': 250},
         'lookup': {'ok': True},
         'places': {'ok': True, 'places': places(cfg, S)},
-        'airdropScan': {'ok': True, 'devices': []},
+        'fruitdropScan': {'ok': True, 'devices': []},
         'photo': {'ok': True, 'photos': []},
         # No `address` and no `error`: that is what a character with no mailbox looks like,
         # and it is what makes the app offer to create one. An `error` here short-circuits
@@ -824,13 +824,13 @@ window.PV = {
   },
   booth: PREVIEW.__booth,
 
-  // The first-run assistant: name, appearance, wallpaper, transparency, passcode, Face ID.
+  // The first-run assistant: name, appearance, wallpaper, transparency, passcode, Face Unlock.
   // A brand new character has never completed it, and that is the ONLY thing that decides
   // whether it runs - so the preview reproduces it by booting as a character who has not.
   setup: function () {
     const b = bootState();
     b.prefs = Object.assign({}, b.prefs, {
-      setupComplete: false, setupVersion: 0, securityEnabled: false, faceId: false,
+      setupComplete: false, setupVersion: 0, securityEnabled: false, faceUnlock: false,
       ownerName: '', deviceName: 'iFruit',
     });
     send(b);
@@ -919,7 +919,7 @@ window.PV = {
     position: fixed; left: 0; top: 0; bottom: 0; width: 250px;
     padding: 22px 18px; box-sizing: border-box; overflow-y: auto;
     background: #0e1116; border-right: 1px solid #1b2027;
-    font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; color: #cbd3dc;
+    font: 13px/1.5 "Segoe UI", system-ui, sans-serif; color: #cbd3dc;
   }
   #pvpanel::-webkit-scrollbar { width: 8px; }
   #pvpanel::-webkit-scrollbar-thumb { background: #232a33; border-radius: 4px; }

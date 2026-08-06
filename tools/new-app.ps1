@@ -33,7 +33,7 @@ PhoneApp {
     version   = '1.0.0',
     accent    = '#0A84FF',
     permissions = { 'storage', 'notifications' },
-    features  = { 'Interface Clear Glass', 'Donnees persistantes' },
+    features  = { 'Interface Glass', 'Donnees persistantes' },
     keywords  = { '$Id' },
     optional  = true,
 }

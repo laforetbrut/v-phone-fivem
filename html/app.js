@@ -1,4 +1,4 @@
-// v-phone — iFruit, Clear Glass 27 shell
+// v-phone — iFruit, FruitOS Glass shell
 //
 // Every built-in app below is a VIEW. It renders what the owning module answered and
 // sends actions back to that module; it never keeps a copy. The moment an app caches a
@@ -41,7 +41,7 @@ const RESOURCE_NAME = typeof GetParentResourceName === 'function'
 
 function isViewRead(name, payload) {
   const op = payload && payload.op;
-  if (['ambient', 'widgets', 'calls', 'conversation', 'app', 'card', 'places', 'airdropScan', 'hospitals'].includes(name)) return true;
+  if (['ambient', 'widgets', 'calls', 'conversation', 'app', 'card', 'places', 'fruitdropScan', 'hospitals'].includes(name)) return true;
   if (name === 'health') return op == null || op === 'get';
   if (name === 'notes') return op === 'list';
   if (name === 'mail') return op === 'me' || op === 'list' || op === 'saved';
@@ -274,7 +274,7 @@ function clockZone() {
 }
 
 // HH:MM on this phone's clock. Every surface that shows a time of day uses this one, so the
-// status bar, the lock screen, the control centre and the weather widget cannot disagree.
+// status bar, the lock screen, the quick settings and the weather widget cannot disagree.
 function phoneClock(at) {
   const zone = clockZone();
   // `en-GB` for the time, so it is 24-hour whatever the player's own locale prefers - the
@@ -338,7 +338,7 @@ let glanceTimer = null, shutterTimer = null;
 let shootBusy = false;
 const ISLAND_MODES = ['live', 'notif', 'glance'];
 
-// Dynamic Island modes are mutually exclusive. Calls always win: a notification or
+// Island modes are mutually exclusive. Calls always win: a notification or
 // lock glance may be queued elsewhere, but it never paints over an active call.
 function setIslandMode(mode) {
   const isl = byId('island');
@@ -430,7 +430,7 @@ function completeUnlock() {
 }
 
 function renderAuthCode(message) {
-  authTicket += 1; // invalidate an in-flight Face ID scan when fallback is chosen
+  authTicket += 1; // invalidate an in-flight Face Unlock scan when fallback is chosen
   authCode = '';
   authBusy = false;
   const host = byId('authstage');
@@ -442,9 +442,9 @@ function renderAuthCode(message) {
       '<p class="authmessage' + (message ? ' error' : '') + '" id="authmessage">' +
         esc(message || L('ph.passcode_unlock_hint')) + '</p>' +
       pinDotsHTML('authdots', authCode) + pinPadHTML() +
-      ((state.prefs || {}).faceId
+      ((state.prefs || {}).faceUnlock
         ? '<button class="authswitch" id="authface" type="button">' +
-          svg('faceid') + esc(L('ph.use_faceid')) + '</button>' : '') +
+          svg('faceunlock') + esc(L('ph.use_faceunlock')) + '</button>' : '') +
     '</div>';
   byId('authcancel').addEventListener('click', hideAuth);
   const face = byId('authface');
@@ -487,16 +487,16 @@ async function renderAuthFace() {
   host.innerHTML =
     '<div class="authface">' +
       '<button class="authcancel" id="authcancel" type="button">' + esc(L('ph.cancel')) + '</button>' +
-      '<div class="facescan scanning">' + svg('faceid') + '<i></i></div>' +
-      '<h2>' + esc(L('ph.faceid')) + '</h2>' +
-      '<p id="facestatus">' + esc(L('ph.faceid_recognising')) + '</p>' +
+      '<div class="facescan scanning">' + svg('faceunlock') + '<i></i></div>' +
+      '<h2>' + esc(L('ph.faceunlock')) + '</h2>' +
+      '<p id="facestatus">' + esc(L('ph.faceunlock_recognising')) + '</p>' +
       '<button class="authswitch" id="authpass" type="button">' +
         svg('keypad') + esc(L('ph.use_passcode')) + '</button>' +
     '</div>';
   byId('authcancel').addEventListener('click', hideAuth);
   byId('authpass').addEventListener('click', () => renderAuthCode());
   const [result] = await Promise.all([
-    post('unlock', { faceId: true }),
+    post('unlock', { faceUnlock: true }),
     new Promise((resolve) => setTimeout(resolve, 1150)),
   ]);
   if (ticket !== authTicket || !byId('auth').classList.contains('on')) return;
@@ -505,20 +505,20 @@ async function renderAuthFace() {
     const scan = host.querySelector('.facescan');
     scan.classList.remove('scanning');
     scan.classList.add('recognised');
-    byId('facestatus').textContent = L('ph.faceid_recognised');
+    byId('facestatus').textContent = L('ph.faceunlock_recognised');
     byId('auth').classList.add('success');
-    islandGlance('faceid', '#30D158');
-    ui('faceid');
+    islandGlance('faceunlock', '#30D158');
+    ui('faceunlock');
     setTimeout(completeUnlock, 430);
   } else {
     host.querySelector('.facescan').classList.remove('scanning');
     host.querySelector('.facescan').classList.add('failed');
-    byId('facestatus').textContent = L('ph.faceid_failed');
+    byId('facestatus').textContent = L('ph.faceunlock_failed');
     byId('authpass').innerHTML = svg('keypad') + esc(L('ph.use_passcode'));
   }
 }
 
-// ── Changing the passcode, and Face ID, after setup ─────────────
+// ── Changing the passcode, and Face Unlock, after setup ─────────────
 // Both were set once in the first-run assistant and then had no route back. The keypad here
 // is the same `pinPadHTML`/`wirePinPad` the lock screen uses, so a code entered in Settings
 // looks and behaves exactly like a code entered to unlock.
@@ -580,31 +580,31 @@ function passcodeSheet() {
   });
 }
 
-/// Re-enrol Face ID: the same scan the assistant runs, from Settings.
-function faceIdSheet() {
-  sheet(L('ph.faceid'),
+/// Re-enrol Face Unlock: the same scan the assistant runs, from Settings.
+function faceUnlockSheet() {
+  sheet(L('ph.faceunlock'),
     '<div class="authface insheet">' +
-      '<div class="facescan scanning" id="secface">' + svg('faceid') + '<i></i></div>' +
-      '<p id="secfacestatus">' + esc(L('ph.faceid_recognising')) + '</p>' +
+      '<div class="facescan scanning" id="secface">' + svg('faceunlock') + '<i></i></div>' +
+      '<p id="secfacestatus">' + esc(L('ph.faceunlock_recognising')) + '</p>' +
     '</div>',
     () => {
       const epoch = sheetEpoch;
       setTimeout(async () => {
         if (epoch !== sheetEpoch) return;
-        const res = await post('prefs', { faceId: true });
+        const res = await post('prefs', { faceUnlock: true });
         if (epoch !== sheetEpoch) return;
         const scan = byId('secface');
         if (!scan) return;
         scan.classList.remove('scanning');
         if (res && res.ok) {
           scan.classList.add('recognised');
-          byId('secfacestatus').textContent = L('ph.setup_faceid_ready');
+          byId('secfacestatus').textContent = L('ph.setup_faceunlock_ready');
           state.prefs = res.prefs;
-          ui('faceid');
+          ui('faceunlock');
           setTimeout(() => { if (closeSheet(false, epoch)) settingsRedraw(); }, 700);
         } else {
           scan.classList.add('failed');
-          byId('secfacestatus').textContent = L('ph.faceid_failed');
+          byId('secfacestatus').textContent = L('ph.faceunlock_failed');
         }
       }, 1150);
     });
@@ -621,7 +621,7 @@ function unlock(after) {
     completeUnlock();
     return;
   }
-  // Already asking. A second call restarts the Face ID scan, which is what a fast series of
+  // Already asking. A second call restarts the Face Unlock scan, which is what a fast series of
   // taps produced: each `unlock()` bumped `authTicket`, every scan but the last aborted at its
   // own guard, and the one that survived finished with no animation ever having been drawn -
   // the phone appeared to open by itself a second later. The action is still carried over, so
@@ -634,7 +634,7 @@ function unlock(after) {
   byId('lockquick').classList.add('hidden');
   byId('auth').classList.add('on');
   byId('auth').setAttribute('aria-hidden', 'false');
-  if ((state.prefs || {}).faceId) renderAuthFace();
+  if ((state.prefs || {}).faceUnlock) renderAuthFace();
   else renderAuthCode();
 }
 
@@ -776,17 +776,17 @@ function renderSetup() {
       '<button class="setupprimary setupbottom" id="setupnext" type="button" ' +
         (value.length === 6 ? '' : 'disabled') + '>' + esc(L('ph.continue')) + '</button>';
   } else if (setupStep === 6) {
-    host.innerHTML = setupHeader(L('ph.setup_faceid'), L('ph.setup_faceid_hint')) +
+    host.innerHTML = setupHeader(L('ph.setup_faceunlock'), L('ph.setup_faceunlock_hint')) +
       '<div class="setupface">' +
-        '<div class="facescan' + (setupDraft.faceId ? ' recognised' : '') + '" id="setupfacescan">' +
-          svg('faceid') + '<i></i></div>' +
+        '<div class="facescan' + (setupDraft.faceUnlock ? ' recognised' : '') + '" id="setupfacescan">' +
+          svg('faceunlock') + '<i></i></div>' +
         '<strong id="setupfacestatus">' +
-          esc(L(setupDraft.faceId ? 'ph.setup_faceid_ready' : 'ph.setup_faceid_private')) + '</strong>' +
+          esc(L(setupDraft.faceUnlock ? 'ph.setup_faceunlock_ready' : 'ph.setup_faceunlock_private')) + '</strong>' +
         '<button class="setupfacebutton" id="setupfacebutton" type="button">' +
-          esc(L(setupDraft.faceId ? 'ph.setup_faceid_redo' : 'ph.setup_faceid_enrol')) + '</button>' +
+          esc(L(setupDraft.faceUnlock ? 'ph.setup_faceunlock_redo' : 'ph.setup_faceunlock_enrol')) + '</button>' +
       '</div>' +
       '<button class="setupprimary setupbottom" id="setupnext" type="button">' +
-        esc(L(setupDraft.faceId ? 'ph.continue' : 'ph.setup_code_only')) + '</button>';
+        esc(L(setupDraft.faceUnlock ? 'ph.continue' : 'ph.setup_code_only')) + '</button>';
   } else {
     host.innerHTML =
       '<div class="setupready">' +
@@ -798,8 +798,8 @@ function renderSetup() {
           '<span>' + svg('phone') + '</span><div><strong>' + esc(setupDraft.deviceName) +
           '</strong><small>' + esc(setupDraft.ownerName) + '</small></div></div>' +
         '<div class="setupsummary security">' +
-          '<span>' + svg(setupDraft.faceId ? 'faceid' : 'lockshut') + '</span><div><strong>' +
-          esc(L(setupDraft.faceId ? 'ph.faceid_and_passcode' : 'ph.passcode_enabled')) +
+          '<span>' + svg(setupDraft.faceUnlock ? 'faceunlock' : 'lockshut') + '</span><div><strong>' +
+          esc(L(setupDraft.faceUnlock ? 'ph.faceunlock_and_passcode' : 'ph.passcode_enabled')) +
           '</strong><small>' + esc(L('ph.security_ready')) + '</small></div></div>' +
         '<button class="setupprimary" id="setupfinish" type="button">' +
           esc(L('ph.setup_finish')) + '</button>' +
@@ -852,22 +852,22 @@ function renderSetup() {
   if (faceButton) faceButton.addEventListener('click', () => {
     const ticket = ++setupFaceTicket;
     const scan = byId('setupfacescan');
-    setupDraft.faceId = false;
+    setupDraft.faceUnlock = false;
     scan.classList.remove('recognised', 'failed');
     scan.classList.add('scanning');
     faceButton.disabled = true;
-    faceButton.textContent = L('ph.setup_faceid_scanning');
-    byId('setupfacestatus').textContent = L('ph.faceid_recognising');
+    faceButton.textContent = L('ph.setup_faceunlock_scanning');
+    byId('setupfacestatus').textContent = L('ph.faceunlock_recognising');
     setTimeout(() => {
       if (ticket !== setupFaceTicket || setupStep !== 6) return;
-      setupDraft.faceId = true;
+      setupDraft.faceUnlock = true;
       scan.classList.remove('scanning');
       scan.classList.add('recognised');
       faceButton.disabled = false;
-      faceButton.textContent = L('ph.setup_faceid_redo');
-      byId('setupfacestatus').textContent = L('ph.setup_faceid_ready');
+      faceButton.textContent = L('ph.setup_faceunlock_redo');
+      byId('setupfacestatus').textContent = L('ph.setup_faceunlock_ready');
       byId('setupnext').textContent = L('ph.continue');
-      islandGlance('faceid', '#30D158');
+      islandGlance('faceunlock', '#30D158');
     }, 1650);
   });
 
@@ -931,7 +931,7 @@ function openSetup(startStep) {
     glass: Number.isFinite(Number(p.glass)) ? Number(p.glass) : 28,
     passcode: '',
     passcodeConfirm: '',
-    faceId: p.faceId == true,
+    faceUnlock: p.faceUnlock == true,
   };
   setupStep = Math.max(0, Math.min(7, Number(startStep) || 0));
   setupSaving = false;
@@ -966,7 +966,7 @@ async function finishSetup() {
     glass: setupDraft.glass,
     securityEnabled: true,
     passcode: setupDraft.passcode,
-    faceId: setupDraft.faceId,
+    faceUnlock: setupDraft.faceUnlock,
   });
   setupSaving = false;
   if (!res || !res.ok) {
@@ -1094,7 +1094,7 @@ function renderHome() {
   refitPending = false;
   byId('pages').classList.remove('jiggle');
   const apps = (state.apps || []).slice();
-  // The last four go in the dock, the way iOS ships: the apps you reach for without
+  // The last four go in the dock, the way FruitOS ships: the apps you reach for without
   // thinking stay put while the grid pages move.
   const dockApps = apps.filter((a) => a.dock).slice(0, 4);
 
@@ -2129,7 +2129,7 @@ function initArrange() {
   window.addEventListener('pointerup', (e) => {
     if (hold) { clearTimeout(hold); hold = null; }
     if (arr) { onDragEnd(e); downTile = null; return; }
-    // A tap on empty space in arrange mode leaves it, the way iOS does. **The widget strip is
+    // A tap on empty space in arrange mode leaves it, the way FruitOS does. **The widget strip is
     // not empty space.** It is a sibling of #pages, so `downTile` is null for every press on
     // it - and this used to drop out of arrange mode on the pointerup, repainting the strip
     // before the `click` on the minus or the plus could fire. Both controls did nothing, for
@@ -2836,7 +2836,7 @@ function widgetPicker() {
 
 // ══ App shell ══════════════════════════════════════════════════
 // The zoom origin is taken from the icon that launched it. That one detail is most of
-// what makes opening an app feel like iOS rather than a page swap.
+// what makes opening an app feel like FruitOS rather than a page swap.
 function clearActiveApp() {
   const epoch = ++activeAppEpoch;
   return post('activeApp', { app: '', epoch });
@@ -3139,7 +3139,7 @@ function navCollapsed(on) {
 /// at 107, so a perfectly ordinary contact name printed through the back button.
 ///
 /// Arithmetic is what got this wrong twice, so this measures instead. When the name genuinely
-/// cannot share the bar, the back LABEL goes and the chevron stays - which is what iOS does, and
+/// cannot share the bar, the back LABEL goes and the chevron stays - which is what FruitOS does, and
 /// it is the right thing to sacrifice: the chevron is the control, the word beside it is a
 /// courtesy. Only then does the title itself truncate.
 function fitNavTitle() {
@@ -3431,7 +3431,7 @@ function appTile(a, cls) {
   return UI.appIcon(UI.hasTile && UI.hasTile(a.id) ? a.id : (a.icon || 'dot'), cls);
 }
 
-// The iOS push: new content slides in from the right. A swap with no motion reads as a
+// The FruitOS push: new content slides in from the right. A swap with no motion reads as a
 // refresh rather than a step deeper.
 const pushAnim = () => {
   const b = byId('appbody');
@@ -3440,7 +3440,7 @@ const pushAnim = () => {
   b.classList.add('pushin');
 };
 
-// The large title collapses into the bar on scroll, as it does on iOS.
+// The large title collapses into the bar on scroll, as it does on FruitOS.
 byId('appbody').addEventListener('scroll', (e) => {
   navCollapsed(e.target.scrollTop > 22);
 });
@@ -3714,7 +3714,7 @@ function healthRecord() {
       UI.button(L('ph.health_share'), 'hshare', 'plain') +
       '<div class="groupfoot">' + esc(L('ph.health_hint')) + '</div>'
     );
-    if (byId('hshare')) byId('hshare').addEventListener('click', () => airdropShare('health', {}));
+    if (byId('hshare')) byId('hshare').addEventListener('click', () => fruitdropShare('health', {}));
     healthReader = d && d.reader === true;
     let donor = r.donor === true;
     rows('.row', (el) => el.addEventListener('click', () => {
@@ -4071,7 +4071,7 @@ async function mailList() {
   body('<button class="mailaddr' + (many ? ' pick' : '') + '" id="maddr" type="button">'
     + esc(mailAcc || '') + (many ? svg('chevron') : '') + '</button><div id="mlist"></div>');
   if (many) byId('maddr').addEventListener('click', () => mailAccountSheet());
-  else byId('maddr').addEventListener('click', () => airdropShare('email', { address: mailAcc }));
+  else byId('maddr').addEventListener('click', () => fruitdropShare('email', { address: mailAcc }));
 
   const r = mailFolder === 'saved'
     ? await mailPost('saved')
@@ -4175,7 +4175,7 @@ function mailAccountSheet() {
         if (!closeSheet(false, epoch)) return;
         // Which address is shared is this page's choice; WHAT it says is the server's, checked
         // against the addresses this character actually holds.
-        airdropShare('email', { address: mailAcc });
+        fruitdropShare('email', { address: mailAcc });
       });
       if (byId('macc_add')) byId('macc_add').addEventListener('click', () => {
         if (!closeSheet(false, epoch)) return;
@@ -4844,11 +4844,11 @@ function messageActions(m) {
   const value = String((m && (m.body || m.attachment)) || '');
   const mine = (m && m.reactions && m.reactions.mine) || '';
   sheet(L('ph.message_actions'),
-    // The Tapback row, above the preview and above everything else. It is the action taken on
+    // The reaction row, above the preview and above everything else. It is the action taken on
     // a message nine times out of ten, and burying it under three buttons would have made the
     // long press a worse gesture than it was before.
     (m && m.id
-      ? '<div class="tapback">' + REACTIONS.map((k) =>
+      ? '<div class="reactbar">' + REACTIONS.map((k) =>
           '<button class="tb' + (mine === k ? ' on' : '') + '" type="button" data-r="' + k + '" ' +
             'aria-label="' + esc(L('ph.react_' + k)) + '">' + REACT_GLYPH[k] + '</button>').join('') +
         '</div>'
@@ -4874,7 +4874,7 @@ function messageActions(m) {
     '<div class="sheethint">' + esc(L('ph.message_actions_hint')) + '</div>',
     () => {
       const epoch = sheetEpoch;
-      qrows('sheet', '.tapback .tb', (b) => b.addEventListener('click', async () => {
+      qrows('sheet', '.reactbar .tb', (b) => b.addEventListener('click', async () => {
         if (!closeSheet(false, epoch)) return;
         await react(m, b.dataset.r);
       }));
@@ -5033,9 +5033,9 @@ function applyTheme(theme) {
   const root = document.documentElement;
   if (!root || !theme) return;
   const MAP = {
-    accent: '--app-tint', green: '--ios-green', red: '--ios-red', orange: '--ios-orange',
-    yellow: '--ios-yellow', indigo: '--ios-indigo', pink: '--ios-pink', teal: '--ios-teal',
-    purple: '--ios-purple', grey: '--ios-grey',
+    accent: '--app-tint', green: '--fruitos-green', red: '--fruitos-red', orange: '--fruitos-orange',
+    yellow: '--fruitos-yellow', indigo: '--fruitos-indigo', pink: '--fruitos-pink', teal: '--fruitos-teal',
+    purple: '--fruitos-purple', grey: '--fruitos-grey',
   };
   Object.keys(MAP).forEach((key) => {
     const value = theme[key];
@@ -5282,7 +5282,7 @@ RENDER.messages = async () => {
     }), { footer: L('ph.thread_delete_hint') }) : '')
   );
   rows('.row[data-n]', (r) => r.addEventListener('click', () => openThread(r.dataset.n)));
-  // Press and hold a thread to delete it. A swipe would be more iOS, but a long press is
+  // Press and hold a thread to delete it. A swipe would be more FruitOS, but a long press is
   // the one gesture that cannot be confused with scrolling the list.
   rows('.row[data-n]', (r) => {
     let timer = null;
@@ -5569,7 +5569,7 @@ function looksAnimated(url) {
 
 /// One message. `prev` and `next` are its neighbours in the thread, and they decide its shape.
 ///
-/// A run of messages from the same person is drawn as iOS draws it: one tail on the last of
+/// A run of messages from the same person is drawn as FruitOS draws it: one tail on the last of
 /// the run and full corners on the rest, tight together, with the name shown once at the top
 /// in a group rather than above every line.
 function bubbleHtml(m, prev, next) {
@@ -5618,7 +5618,7 @@ function bubbleHtml(m, prev, next) {
     inner + badge + '</div>' + copy;
 }
 
-/// The date line iOS puts above the first message of a session.
+/// The date line FruitOS puts above the first message of a session.
 ///
 /// Drawn when the day changes, or after a gap long enough that the two messages are not one
 /// conversation. Forty minutes is the gap: short enough that coming back after dinner is
@@ -6489,9 +6489,9 @@ async function myCardSheet() {
     () => {
       byId('mcshare').addEventListener('click', () => {
         // No payload. The server builds every field from what it holds - that is the point.
-        airdropShare('card', {});
+        fruitdropShare('card', {});
       });
-      byId('mcnum').addEventListener('click', () => airdropShare('number', { number: state.number }));
+      byId('mcnum').addEventListener('click', () => fruitdropShare('number', { number: state.number }));
       byId('mcedit').addEventListener('click', () => myCardEdit());
     });
 }
@@ -6610,7 +6610,7 @@ function contactCard(c) {
           '<span>' + esc(L('ph.required_contact_hint')) + '</span></div>'
       : '') +
     cardRows(c) +
-    UI.button(L('ph.airdrop_share'), 'cshare', 'plain') +
+    UI.button(L('ph.fruitdrop_share'), 'cshare', 'plain') +
     // A protected contact is the server's, not the player's: nothing here may edit or remove
     // it, and offering buttons that would be refused is worse than not offering them.
     (system ? '' : UI.button(L('ph.c_edit'), 'cedit', 'plain')) +
@@ -6622,7 +6622,7 @@ function contactCard(c) {
       on('cmsg', () => { closeSheet(); messageTo(c.number); });
       on('cface', () => { closeSheet(); placeCall(c.number, { video: true }); });
       on('cmail', () => { closeSheet(); mailTo(c.email); });
-      on('cshare', () => airdropShare('contact', { name: c.name, number: c.number }));
+      on('cshare', () => fruitdropShare('contact', { name: c.name, number: c.number }));
       on('cedit', () => contactEdit(c));
       on('cdel', () => {
         confirmSheet(L('ph.c_delete_sure').replace('{n}', c.name), L('ph.delete'), async () => {
@@ -6749,7 +6749,7 @@ function contactSheet(c) {
     // Blocking somebody you saved. Above Delete because it is the reversible one of the two.
     (isNew ? '' : UI.button(L(numberBlocked(c.number) ? 'ph.unblock' : 'ph.block'),
                             'cblock', 'plain')) +
-    (isNew ? '' : UI.button(L('ph.airdrop_share'), 'cshare', 'plain')) +
+    (isNew ? '' : UI.button(L('ph.fruitdrop_share'), 'cshare', 'plain')) +
     (isNew ? '' : UI.button(L('ph.delete'), 'cdel', 'destructive')),
     () => {
       byId('cpick').addEventListener('click', () => pickPhoto((url) => { byId('cphoto').value = url; }));
@@ -6770,7 +6770,7 @@ function contactSheet(c) {
       });
       if (isNew) return;
       byId('ccall').addEventListener('click', () => { closeSheet(); placeCall(c.number); });
-      byId('cshare').addEventListener('click', () => airdropShare('contact', { name: c.name, number: c.number }));
+      byId('cshare').addEventListener('click', () => fruitdropShare('contact', { name: c.name, number: c.number }));
       byId('cmsg').addEventListener('click', () => { closeSheet(); messageTo(c.number); });
       // Relabelled in place rather than redrawn: the sheet holds seven fields somebody may
       // have typed into, and rebuilding it to move one word would empty them.
@@ -8143,7 +8143,7 @@ const SETTINGS_PAGES = [
   { id: 'sounds',   icon: 'speaker',  tint: '#FF9500', label: 'ph.set_sounds' },
   { id: 'notifs',   icon: 'bell',     tint: '#FF2D55', label: 'ph.notifications' },
   { id: 'privacy',  icon: 'lockshut', tint: '#8E8E93', label: 'ph.calls_privacy' },
-  { id: 'security', icon: 'faceid',   tint: '#FF3B30', label: 'ph.sec_header' },
+  { id: 'security', icon: 'faceunlock',   tint: '#FF3B30', label: 'ph.sec_header' },
   { id: 'action',   icon: 'focus',    tint: '#BF5AF2', label: 'ph.action_button' },
   { id: 'access',   icon: 'focus',    tint: '#0A84FF', label: 'ph.set_access' },
   { id: 'about',    icon: 'id',       tint: '#8E8E93', label: 'ph.about_title' },
@@ -8178,7 +8178,7 @@ function settingsSection(id) {
         data: { clock: '1' } }),
     ]) +
     // The widget strip. Arranging it is a gesture on the home screen rather than a screen in
-    // here - which is how iOS does it, and the hint below is what says so. The one thing that
+    // here - which is how FruitOS does it, and the hint below is what says so. The one thing that
     // cannot be a gesture is the masking switch, because it is a decision about what leaves the
     // server rather than about where a tile sits.
     '<div class="grouphead">' + esc(L('ph.set_widgets')) + '</div>' +
@@ -8201,7 +8201,7 @@ function settingsSection(id) {
         '<button class="' + (p.side === 'left' ? 'on' : '') + '" data-side="left">' + esc(L('ph.side_left')) + '</button>' +
       '</div>' +
     '</div>' +
-    // iOS 27's headline user-facing change. It is a stored preference every layer of
+    // FruitOS's headline user-facing change. It is a stored preference every layer of
     // the glass derives from, not a fade on one overlay.
     '<div class="grouphead">' + esc(L('ph.transparency')) + '</div>' +
     '<div class="sliderow">' +
@@ -8274,7 +8274,7 @@ function settingsSection(id) {
     ], { header: L('ph.calls_privacy'),
          footer: L(state.allowAnonymous ? 'ph.calls_privacy_hint' : 'ph.silence_unknown_hint') }));
   if (id === 'security') return (
-    // Security. The passcode and Face ID were set once during setup and then unreachable
+    // Security. The passcode and Face Unlock were set once during setup and then unreachable
     // for the life of the character - a phone whose code cannot be changed is a phone whose
     // code is shared the first time somebody looks over a shoulder.
     UI.group([
@@ -8282,9 +8282,9 @@ function settingsSection(id) {
         subtitle: p.securityEnabled ? L('ph.sec_passcode_on') : L('ph.sec_passcode_off'),
         chevron: true, data: { t: 'passcode' } }),
       ...(p.securityEnabled ? [UI.row({
-        icon: 'faceid', tint: '#30D158', title: L('ph.faceid'),
-        subtitle: L('ph.sec_faceid_hint'),
-        toggle: !!p.faceId, data: { t: 'faceid' },
+        icon: 'faceunlock', tint: '#30D158', title: L('ph.faceunlock'),
+        subtitle: L('ph.sec_faceunlock_hint'),
+        toggle: !!p.faceUnlock, data: { t: 'faceunlock' },
       })] : []),
       ...(p.securityEnabled ? [UI.row({
         icon: 'lockopen', tint: '#8E8E93', title: L('ph.sec_off'),
@@ -8464,7 +8464,7 @@ function wireSettings() {
       passcodeAsk(L('ph.sec_off'), L('ph.sec_off_ask'), async (current) => {
         const check = await post('unlock', { passcode: current });
         if (!check || !check.ok) { toast(L('ph.wrong_passcode')); return false; }
-        const res = await post('prefs', { securityEnabled: false, faceId: false });
+        const res = await post('prefs', { securityEnabled: false, faceUnlock: false });
         if (res && res.ok) { state.prefs = res.prefs; settingsRedraw(); toast(L('ph.sec_off_done')); }
         return true;
       });
@@ -8505,15 +8505,15 @@ function wireSettings() {
       const res2 = await post('prefs', { vibrate: !((state.prefs || {}).vibrate !== false) });
       if (res2 && res2.ok) { state.prefs = res2.prefs; settingsRedraw(); }
       return;
-    } else if (r.dataset.t === 'faceid') {
+    } else if (r.dataset.t === 'faceunlock') {
       // Turning it ON is an enrolment, not a boolean: the same scan the first-run assistant
       // runs, so the phone behaves the same way whichever screen it was set up from. Turning
       // it off is just the flag.
-      if ((state.prefs || {}).faceId) {
-        const res2 = await post('prefs', { faceId: false });
+      if ((state.prefs || {}).faceUnlock) {
+        const res2 = await post('prefs', { faceUnlock: false });
         if (res2 && res2.ok) { state.prefs = res2.prefs; settingsRedraw(); }
       } else {
-        faceIdSheet();
+        faceUnlockSheet();
       }
       return;
     } else if (SETTING_TOGGLES[r.dataset.t]) {
@@ -8695,8 +8695,8 @@ function applyWallpaper() {
 
 // The device's own shape. Both are per character, because a small screen and a
 // left-handed player are not the same person's problem.
-// An app is light by default, as it is on iOS. The chrome around it stays dark glass
-// over the wallpaper, which is also how iOS behaves: the two are different surfaces.
+// An app is light by default, as it is on FruitOS. The chrome around it stays dark glass
+// over the wallpaper, which is also how FruitOS behaves: the two are different surfaces.
 // The status bar tells the truth about both. Neither number is the client's to invent:
 // the server works them out from where the player actually is.
 function applyPower(p) {
@@ -8991,7 +8991,7 @@ function pinEdit(pn) {
         closeSheet();
         // Only the id travels. Everything else about the pin is read out of the row on the
         // server, which is the same rule that put it there.
-        requestAnimationFrame(() => airdropShare('place', { id: pn.id }));
+        requestAnimationFrame(() => fruitdropShare('place', { id: pn.id }));
       });
       if (byId('pindel')) byId('pindel').addEventListener('click', async () => {
         const r = await post('pins', { op: 'del', id: pn.id });
@@ -9462,7 +9462,7 @@ async function musicPlay(track, queue, output) {
   musicNow = Object.assign({}, musicNormalise(track), {
     kind, paused: false, volume: track.volume || .65,
   });
-  // The control centre's media tile reads this rather than asking the deck, because a deck
+  // The quick settings media tile reads this rather than asking the deck, because a deck
   // that plays a URL has no idea what a phone considers to be "now playing".
   ccNow = musicNow;
   await musicRemember(track);
@@ -9593,7 +9593,7 @@ function musicTrackSheet(track, index) {
         esc(track.favorite ? L('ph.favorited') : L('ph.favorite')) + '</span></button>' +
       '<button id="mquickqueue" type="button">' + svg('add') + '<span>' + esc(L('ph.add_queue')) + '</span></button></div>' +
     UI.button(L('ph.choose_output'), 'moutput', 'plain') +
-    UI.button(L('ph.airdrop_share'), 'mshare', 'plain') +
+    UI.button(L('ph.fruitdrop_share'), 'mshare', 'plain') +
     (saved ? UI.button(L('ph.track_edit'), 'medit', 'plain') : '') +
     (saved ? UI.button(L('ph.delete'), 'mdelt', 'destructive') : ''),
     () => {
@@ -9607,7 +9607,7 @@ function musicTrackSheet(track, index) {
       // Pass the track to somebody standing next to you. A link and two labels, which is
       // exactly what a track is on this phone - so the person receiving it gets a library
       // entry they can play, not a copy of a file.
-      byId('mshare').addEventListener('click', () => airdropShare('track', {
+      byId('mshare').addEventListener('click', () => fruitdropShare('track', {
         url: track.url, title: track.title, artist: track.artist,
       }));
       if (saved) byId('medit').addEventListener('click', () => { closeSheet(); musicAdd(track, index); });
@@ -9707,7 +9707,7 @@ function musicRenderPlayer(model) {
     '<div class="musicplayeractions">' +
       '<button id="mplayerfav" type="button" class="' + (current.favorite ? 'on' : '') + '">' +
         svg(current.favorite ? 'heart' : 'star') + '<span>' + esc(L('ph.favorite')) + '</span></button>' +
-      '<button id="mplayerout" type="button">' + svg('airdrop') + '<span>' + esc(L('ph.output')) + '</span></button>' +
+      '<button id="mplayerout" type="button">' + svg('fruitdrop') + '<span>' + esc(L('ph.output')) + '</span></button>' +
       '<button id="mplayerqueue" type="button">' + svg('note') + '<span>' + esc(L('ph.queue')) + '</span></button></div>' +
     // Not a button of the same weight as the three above it. Stopping is the rarest thing
     // anybody does here, and it is only present at all because a deck that cannot be stopped
@@ -10421,7 +10421,7 @@ RENDER.calc = async () => {
 // ══ Gestures ═══════════════════════════════════════════════════
 // The phone is driven by a mouse, so a "swipe" is a click-drag. Where the drag STARTS is
 // what decides its meaning, exactly as on the real thing: the bottom edge is the home
-// gesture, the top edge is the shade and the control centre, and everywhere else belongs
+// gesture, the top edge is the shade and the quick settings, and everywhere else belongs
 // to whatever is on screen.
 const EDGE = 34;          // how deep the bottom edge zone reaches
 const EDGE_TOP = 56;      // the top zone is the whole status bar, or a drag that
@@ -10730,8 +10730,8 @@ byId('screen').addEventListener('pointerup', (e) => {
     return;
   }
 
-  // Top edge, downwards: left half is the notification shade, right half the control
-  // centre. Same split iOS uses, and it means neither one needs a button.
+  // Top edge, downwards: left half is the notification shade, right half the quick
+  // settings. Same split FruitOS uses, and it means neither one needs a button.
   if (gg.fromTop && dy > SWIPE) {
     if (modalOverlayOpen()) return;
     if (gg.x0 < gg.w / 2) openShade(); else openCC();
@@ -11048,7 +11048,7 @@ let volume = 0.5;
 // It read `sources` from the Music app's payload - a list the phone has always answered as
 // empty - so it showed "nothing playing" while a track was audibly playing, and the post it
 // then never reached carried an `id` that nothing has ever sent. Same root cause as the
-// control centre's dead media tile: the phone knows what it started, so it reads that.
+// the dead media tile in quick settings: the phone knows what it started, so it reads that.
 /// Move the volume slider that is on screen, if one is.
 ///
 /// The side buttons used to re-render the whole Music app for this. Even without the blanking
@@ -12525,7 +12525,7 @@ async function cameraShoot() {
   }
 }
 
-// The Gallery: every photo, tap to view, and from there set it as wallpaper, AirDrop it,
+// The Gallery: every photo, tap to view, and from there set it as wallpaper, FruitDrop it,
 // or delete it. Same store as the camera - one shoots, one keeps.
 let galleryAlbum = '';
 // Which field `galleryAlbum` names: an album somebody typed, or a place the server filed
@@ -12637,20 +12637,20 @@ function paintViewer() {
   byId('pfull').addEventListener('click', () => openPhoto(v.url));
   // **Share is a choice now, not a single action.**
   //
-  // It went straight to AirDrop, which is one of two things somebody means by sharing a
+  // It went straight to FruitDrop, which is one of two things somebody means by sharing a
   // photograph. The other is taking its address out of the phone, which was the suggestion
-  // this was built for. AirDrop is one tap deeper and nothing else moves.
+  // this was built for. FruitDrop is one tap deeper and nothing else moves.
   byId('pshare').addEventListener('click', () => {
     const link = shareableLink(v.url);
     sheet(L('ph.share'),
-      UI.button(L('ph.airdrop_share'), 'psair', 'plain') +
+      UI.button(L('ph.fruitdrop_share'), 'psair', 'plain') +
       (link ? UI.button(L('ph.copy_link'), 'pslink', 'plain') : '') +
       (link ? '' : '<div class="groupfoot">' + esc(L('ph.link_none')) + '</div>'),
       () => {
         const epoch = sheetEpoch;
         byId('psair').addEventListener('click', () => {
           if (!closeSheet(false, epoch)) return;
-          airdropShare('photo', { url: photoEncode(v.url, v) });
+          fruitdropShare('photo', { url: photoEncode(v.url, v) });
         });
         if (byId('pslink')) byId('pslink').addEventListener('click', () => {
           if (!closeSheet(false, epoch)) return;
@@ -12939,7 +12939,7 @@ function photoSheet(shots, i, albums, own, slots) {
         '</div>' +
         UI.button(L('ph.album_set'), 'salbum', 'plain')
       : '') +
-    UI.button(L('ph.airdrop_share'), 'sshare', 'tinted') +
+    UI.button(L('ph.fruitdrop_share'), 'sshare', 'tinted') +
     UI.button(L('ph.set_wallpaper'), 'swall') +
     // Sharing and setting a wallpaper act on the URL in front of you and are right either way.
     // Deleting acts on a gallery slot, so it belongs with the editor.
@@ -13056,7 +13056,7 @@ function photoSheet(shots, i, albums, own, slots) {
             }));
           });
       });
-      byId('sshare').addEventListener('click', () => airdropShare('photo', { url: shareUrl }));
+      byId('sshare').addEventListener('click', () => fruitdropShare('photo', { url: shareUrl }));
       byId('swall').addEventListener('click', async () => {
         const epoch = sheetEpoch;
         // The framing goes with it: a portrait crop exists so the wallpaper shows the right
@@ -13077,29 +13077,29 @@ function photoSheet(shots, i, albums, own, slots) {
     });
 }
 
-// ══ AirDrop ════════════════════════════════════════════════════
+// ══ FruitDrop ════════════════════════════════════════════════════
 // Pick a nearby device and send. The scan and the send are both gated server-side on
 // Bluetooth and range, so this only ever draws what the server says is reachable.
-function airdropShare(kind, payload) {
-  sheet(L('ph.airdrop'),
-    '<div class="airhint">' + esc(L('ph.airdrop_hint')) + '</div><div id="airlist"></div>',
+function fruitdropShare(kind, payload) {
+  sheet(L('ph.fruitdrop'),
+    '<div class="airhint">' + esc(L('ph.fruitdrop_hint')) + '</div><div id="airlist"></div>',
     async () => {
       const host = byId('airlist');
-      host.innerHTML = '<div class="airscan">' + esc(L('ph.airdrop_scanning')) + '</div>';
-      const r = await post('airdropScan');
+      host.innerHTML = '<div class="airscan">' + esc(L('ph.fruitdrop_scanning')) + '</div>';
+      const r = await post('fruitdropScan');
       if (byId('airlist') !== host || !host.isConnected) return;
-      if (!r || r.error) { host.innerHTML = UI.empty(L('ph.airdrop_' + ((r && r.error) || 'x')), 'airdrop'); return; }
+      if (!r || r.error) { host.innerHTML = UI.empty(L('ph.fruitdrop_' + ((r && r.error) || 'x')), 'fruitdrop'); return; }
       const devs = r.devices || [];
-      if (!devs.length) { host.innerHTML = UI.empty(L('ph.airdrop_none'), 'airdrop'); return; }
+      if (!devs.length) { host.innerHTML = UI.empty(L('ph.fruitdrop_none'), 'fruitdrop'); return; }
       host.innerHTML = UI.group(devs.map((dv) => UI.row({
-        icon: 'airdrop', tint: '#0A84FF', title: dv.name, subtitle: L('ph.airdrop_nearby'),
+        icon: 'fruitdrop', tint: '#0A84FF', title: dv.name, subtitle: L('ph.fruitdrop_nearby'),
         chevron: true, data: { to: dv.id },
       })));
       [...host.querySelectorAll('.row')].forEach((el) => el.addEventListener('click', async () => {
         const to = Number(el.dataset.to);
         closeSheet();
-        const res = await post('airdropSend', { to, kind, payload });
-        toast(res && res.ok ? L('ph.airdrop_sent') : L('ph.airdrop_' + ((res && res.error) || 'x')));
+        const res = await post('fruitdropSend', { to, kind, payload });
+        toast(res && res.ok ? L('ph.fruitdrop_sent') : L('ph.fruitdrop_' + ((res && res.error) || 'x')));
       }));
     });
 }
@@ -16688,7 +16688,7 @@ RENDER.charging = async () => {
   });
 };
 
-function airdropOffer(o) {
+function fruitdropOffer(o) {
   o = o || {};
   const icon = o.kind === 'photo' ? 'images'
     : o.kind === 'track' ? 'play'
@@ -16699,16 +16699,16 @@ function airdropOffer(o) {
   const preview = o.kind === 'photo'
     ? '<img class="shotbig" src="' + esc(o.preview || '') + '" />'
     : '<div class="airbig">' + svg(icon) + '<span>' + esc(o.preview || '') + '</span></div>';
-  sheet(L('ph.airdrop_incoming'),
+  sheet(L('ph.fruitdrop_incoming'),
     preview +
-    '<div class="airfrom">' + esc(L('ph.airdrop_from')) + ' <b>' + esc(o.from || '') + '</b></div>' +
-    UI.button(L('ph.airdrop_accept'), 'airok', 'tinted') +
-    UI.button(L('ph.airdrop_decline'), 'airno', 'plain'),
+    '<div class="airfrom">' + esc(L('ph.fruitdrop_from')) + ' <b>' + esc(o.from || '') + '</b></div>' +
+    UI.button(L('ph.fruitdrop_accept'), 'airok', 'tinted') +
+    UI.button(L('ph.fruitdrop_decline'), 'airno', 'plain'),
     () => {
       byId('airok').addEventListener('click', async () => {
         closeSheet();
-        const r = await post('airdropRespond', { offerId: o.offerId, accept: true });
-        if (!r || !r.ok) { toast(L('ph.airdrop_' + ((r && r.error) || 'x'))); return; }
+        const r = await post('fruitdropRespond', { offerId: o.offerId, accept: true });
+        if (!r || !r.ok) { toast(L('ph.fruitdrop_' + ((r && r.error) || 'x'))); return; }
         // A record is not filed anywhere: it belongs to the person it describes, and writing
         // it into the reader's own would overwrite theirs. It is handed over to be READ.
         if (r.health) {
@@ -16730,16 +16730,16 @@ function airdropOffer(o) {
             library.unshift(musicNormalise(r.track));
             await musicSaveLibrary(library);
           }
-          toast(L('ph.airdrop_track_saved'));
+          toast(L('ph.fruitdrop_track_saved'));
           if (openApp && openApp.id === 'music') RENDER.music(true);
           return;
         }
         await refresh();
-        toast(L('ph.airdrop_saved'));
+        toast(L('ph.fruitdrop_saved'));
       });
       byId('airno').addEventListener('click', async () => {
         closeSheet();
-        await post('airdropRespond', { offerId: o.offerId, accept: false });
+        await post('fruitdropRespond', { offerId: o.offerId, accept: false });
       });
     });
 }
@@ -16747,7 +16747,7 @@ function airdropOffer(o) {
 
 // ══ Verification codes ═════════════════════════════════════════
 // A code you have to read off one screen and type into another is the small daily annoyance
-// iOS solved years ago, so the phone does the same two things: offers to copy it from the
+// FruitOS solved years ago, so the phone does the same two things: offers to copy it from the
 // message, and offers to fill it where it is asked for.
 //
 // The detector is deliberately narrow. It wants a run of 4 to 8 digits AND a word nearby
@@ -18189,7 +18189,7 @@ function wirePosts(appId, reload, root) {
 
 // A small yes/no, because deleting a post from a feed you are scrolling should take one
 // deliberate extra tap rather than none.
-/// An iOS alert.
+/// A FruitOS alert.
 ///
 /// MEASURED from `Alert.svg` and `Examples/Alert.svg`: a 300-wide card at radius 34, title
 /// 17 Bold and message 17 Regular both LEFT aligned in the same column, and a row of 48-tall
@@ -22172,7 +22172,7 @@ function playAlert(app) {
 
 // ── Interface sounds ───────────────────────────────────────────
 // The small ones: the lock, a key, a switch, a sent message. They are not
-// notifications, so Do Not Disturb leaves them alone - the same way iOS keeps the lock
+// notifications, so Do Not Disturb leaves them alone - the same way FruitOS keeps the lock
 // sound and the keyboard clicks under the ringer, not under the moon. Turning the
 // volume down to nothing is what silences them.
 //
@@ -22200,7 +22200,7 @@ const UI_TONES = {
   point:    [[1568, 0, .04], [2093, .035, .07]],
   success:  [[1318, 0, .08], [1760, .07, .1], [2637, .15, .18]],
   error:    [[311, 0, .11], [233, .1, .18]],
-  faceid:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
+  faceunlock:   [[1760, 0, .07], [2349, .06, .09], [2793, .13, .16]],
   // The WEA attention signal: 853 Hz and 960 Hz TOGETHER, twice. The two are close enough to
   // beat against each other instead of blending, and that roughness is the whole design - a
   // pleasant interval is one people learn to ignore. Deliberately the least pleasant sound the
@@ -22726,7 +22726,7 @@ function enqueuePrompt(show, ttlMs) {
 /// Raise the one sheet.
 ///
 /// `variant` is the existing eleven-string axis and is untouched: it says WHAT this sheet is
-/// (spotlight, comments, sdk-picker...). `opts.shape` is a second, orthogonal axis that says
+/// (search, comments, sdk-picker...). `opts.shape` is a second, orthogonal axis that says
 /// what SHAPE it takes - a bottom sheet, an alert, or a menu - and it is written to `#sheet`
 /// and `#scrim` as `data-shape` so the scrim can dim differently for each, which the kit does:
 /// a modal sheet is `black` @ .20, an alert is `#29293A` @ .23.
@@ -22747,7 +22747,7 @@ function sheet(title, html, after, variant, opts) {
   host.dataset.variant = variant || '';
   // The scrim carries the variant too, so a variant can dim differently without a
   // `:has()` (which CEF does not have) and without the scrim guessing from a sibling.
-  // The spotlight needs this: it covers the screen, so the measured .20 modal scrim
+  // The search sheet needs this: it covers the screen, so the measured .20 modal scrim
   // leaves the home grid bright enough to read through a 96.5% opaque panel.
   byId('scrim').dataset.variant = variant || '';
   if (o.shape) {
@@ -22814,7 +22814,7 @@ byId('sheet').addEventListener('pointerdown', (e) => {
   if (host.dataset.shape === 'alert' || host.dataset.shape === 'menu') return;
   const r = host.getBoundingClientRect();
   if (e.clientY > r.top + 58) return;
-  // A sheet that puts a control in its own header - the spotlight's close button, for
+  // A sheet that puts a control in its own header - the search sheet's close button, for
   // one - was capturing the pointer for a drag, and a captured pointer never delivers
   // its click to the control underneath. The grab area yields to anything tappable.
   if (e.target.closest('button, a, input, select, textarea, [data-app], [role="button"]')) return;
@@ -22856,7 +22856,7 @@ function toast(text) {
   toastTimer = setTimeout(() => t.classList.remove('on'), 2200);
 }
 
-// A notification now grows out of the black camera pill, iOS 27 style, and is filed in
+// A notification now grows out of the black camera pill, FruitOS style, and is filed in
 // the centre. A muted app is filed nowhere and shows nothing.
 let islandTimer = null;
 function banner(b) {
@@ -22881,9 +22881,9 @@ function banner(b) {
   paintNotifs();
   if (byId('shade').classList.contains('on')) renderShade();
   // First-run setup is intentionally distraction-free. Keep the notification in the
-  // centre so it is not lost, but do not cover the assistant or play its alert.
+  // shade so it is not lost, but do not cover the assistant or play its alert.
   if (byId('setup').classList.contains('on')) return;
-  // Focus keeps a quiet history in Notification Centre without lighting the island.
+  // Focus keeps a quiet history in the notification shade without lighting the island.
   if ((state.prefs || {}).dnd) return;
   playAlert(app);
   islandNotify(n);
@@ -23120,7 +23120,7 @@ function renderCall() {
     ? ((callRoster || {}).members || []).map(rosterRow).join('')
     : '';
 
-  // Live activity in the island, which is what a modern iPhone does with a call.
+  // Live activity in the island, which is what a modern handset does with a call.
   setIslandMode('live');
   byId('islandIcon').innerHTML = svg('phone');
   byId('islandT1').textContent = name;
@@ -23181,8 +23181,8 @@ function renderCall() {
   byId('chang').addEventListener('click', () => post('hangup'));
 }
 
-// ══ Control centre ═════════════════════════════════════════════
-// iOS 27 Liquid Glass. Every control is real: airplane and cellular drive the signal
+// ══ Quick settings ═════════════════════════════════════════════
+// FruitOS Glass. Every control is real: airplane and cellular drive the signal
 // the status bar draws, wifi and bluetooth their own glyphs, the sliders brightness and
 // volume, the toggles focus and the flashlight. A switch that changed nothing would be a
 // lie about what the phone can do.
@@ -23231,7 +23231,7 @@ function renderCC() {
     if (musicNow) musicNow.paused = m.paused;
     renderCC();
     // The same repaint the Music app's own pause button does. Rebuilding the whole app
-    // behind an open control centre is work nobody can even see happening.
+    // behind an open quick settings is work nobody can even see happening.
     if (openApp && openApp.id === 'music') musicPaintPlaying();
   });
 
@@ -23379,7 +23379,7 @@ function wireSlab(id, onChange, onCommit) {
   });
 }
 
-// The control centre's media tile.
+// The quick settings media tile.
 //
 // It used to ask the Music app's payload for `sources`, a list the phone has always answered
 // as empty - so the tile said "nothing playing" while a track was audibly playing. Nothing
@@ -23478,7 +23478,7 @@ function sdkPhotoPicker(settle) {
 /// row height, same icon size, same weight, no separate fill and no divider - and the cancel
 /// is separated from the group by a 1pt `#E6E6E6` line inset 24, with 10 of padding either
 /// side of it. That separator is the whole of the kit's "detached cancel"; the heavier,
-/// gapped Cancel button of iOS 18 does not appear anywhere in the export.
+/// gapped Cancel button of an older generation does not appear anywhere in the export.
 ///
 /// A settings list was the wrong idiom here: those rows carried a coloured 30px tile each,
 /// which is the Settings app's language, not a menu's.
@@ -23543,8 +23543,8 @@ function sdkShare(settle, payload) {
   ];
   if (kind !== 'text') {
     actions.unshift(UI.row({
-      icon: 'airdrop', tint: '#0A84FF', title: L('ph.airdrop'),
-      data: { 'sdk-share': 'airdrop' },
+      icon: 'fruitdrop', tint: '#0A84FF', title: L('ph.fruitdrop'),
+      data: { 'sdk-share': 'fruitdrop' },
     }));
   }
   sheet(payload.title || L('ph.share'), UI.group(actions), () => {
@@ -23560,11 +23560,11 @@ function sdkShare(settle, payload) {
           settle({ ok: copied, channel });
           return;
         }
-        if (channel === 'airdrop') {
+        if (channel === 'fruitdrop') {
           const airPayload = kind === 'photo'
             ? { url: String(payload.url || '') }
             : (payload.contact || { name: payload.name || '', number: payload.number || state.number });
-          airdropShare(kind, airPayload);
+          fruitdropShare(kind, airPayload);
           settle({ ok: true, channel });
           return;
         }
@@ -23765,7 +23765,7 @@ post('theme', {}).then((r) => {
 });
 
 byId('lock').addEventListener('click', unlock);
-// The home indicator answers to a tap AND a swipe up, the way an iPhone does. It used to
+// The home indicator answers to a tap AND a swipe up, the way a handset does. It used to
 // be a bare click, which missed when the bar is thin and a gesture started a few pixels
 // above it or moved as it landed. This tracks a pointer from anywhere in the bottom band,
 // fires on a quick upward flick or a clean tap, and never double-fires.
@@ -23831,24 +23831,24 @@ document.addEventListener('pointerdown', () => {
   document.documentElement.classList.remove('keyboard-nav');
 }, true);
 
-// Spotlight: the pill above the dock finds an app by name and launches it. It exists
+// Search: the pill above the dock finds an app by name and launches it. It exists
 // because a sixth page of icons is where apps go to be forgotten.
 byId('spill').addEventListener('click', () => {
   sheet(L('ph.search'),
     '<div class="spothead"><strong>' + esc(L('ph.search')) + '</strong>' +
       '<button id="spotclose" type="button" aria-label="' + esc(L('ph.close')) + '">' +
         svg('xmark') + '</button></div>' +
-    '<div class="spotsearch">' + svg('search') +
+    '<div class="appsearch">' + svg('search') +
       '<input id="appq" placeholder="' + esc(L('ph.search_apps')) +
         '" autocomplete="off" aria-label="' + esc(L('ph.search_apps')) + '" />' +
       '<button id="appqclear" type="button" aria-label="' + esc(L('ph.clear')) + '">' +
         svg('xmark') + '</button></div>' +
-    '<div class="spotsuggest" id="spotsuggest"></div><div id="appres"></div>',
+    '<div class="appsuggest" id="appsuggest"></div><div id="appres"></div>',
     () => {
       const draw = (q) => {
         const list = (state.apps || []).filter((a) => !q || L(a.label).toLowerCase().includes(q));
         const recentApps = recents.slice(0, 4).map((id) => (state.apps || []).find((a) => a.id === id)).filter(Boolean);
-        byId('spotsuggest').innerHTML = q || !recentApps.length ? '' :
+        byId('appsuggest').innerHTML = q || !recentApps.length ? '' :
           '<div class="spotlabel">' + esc(L('ph.recent')) + '</div><div class="spoticons">' +
             recentApps.map((a) => '<button data-app="' + esc(a.id) + '" type="button">' +
               appTile(a) + '<span>' + esc(L(a.label)) + '</span></button>').join('') + '</div>';
@@ -23876,7 +23876,7 @@ byId('spill').addEventListener('click', () => {
       });
       byId('spotclose').addEventListener('click', () => closeSheet());
       requestAnimationFrame(() => byId('appq').focus());
-    }, 'spotlight');
+    }, 'search');
 });
 byId('island').addEventListener('click', () => {
   if (!call) return;
@@ -23884,7 +23884,7 @@ byId('island').addEventListener('click', () => {
   renderCall();
 });
 // The status bar takes pointer events so a drag can START on it, but a tap does
-// nothing on purpose: the shade and the control centre are pull-downs, and a click
+// nothing on purpose: the shade and the quick settings are pull-downs, and a click
 // that also opened them made every stray tap up there flash a panel.
 byId('status').style.pointerEvents = 'auto';
 
@@ -24315,9 +24315,9 @@ window.addEventListener('message', (e) => {
     archivePeek(d.kind, d.data || {});
   } else if (d.action === 'voicemailOffer') {
     enqueuePrompt(() => voicemailOffer(d.number || ''), d.ttlMs);
-  } else if (d.action === 'airdrop') {
+  } else if (d.action === 'fruitdrop') {
     const offer = d.offer || {};
-    enqueuePrompt(() => airdropOffer(offer), offer.ttlMs);
+    enqueuePrompt(() => fruitdropOffer(offer), offer.ttlMs);
   } else if (d.action === 'verifyDesk') {
     // Somebody interacted with a verification desk. Queued rather than raised, like every
     // other prompt: the phone may still be opening, and a sheet drawn before `action=open`
@@ -24578,9 +24578,9 @@ window.addEventListener('message', (e) => {
     // Auto-accept paid for a stop. Nothing to ask, but FruitCharge is now showing a stale
     // "not charging" if it happens to be open.
     if (openApp && openApp.id === 'charging') RENDER.charging();
-  } else if (d.action === 'airdropResult') {
+  } else if (d.action === 'fruitdropResult') {
     const r = d.result || {};
-    toast(r.ok ? (L('ph.airdrop_took') + (r.name ? ' ' + r.name : '')) : L('ph.airdrop_declined'));
+    toast(r.ok ? (L('ph.fruitdrop_took') + (r.name ? ' ' + r.name : '')) : L('ph.fruitdrop_declined'));
   }
 });
 

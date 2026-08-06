@@ -226,7 +226,7 @@ def space(buffer, amount=0.16, delay=0.055, taps=4):
 
     Not a reverb in any serious sense - four feedback taps, each quieter and later than the
     last. That is enough to stop a note sounding like it was recorded pressed against a wall,
-    and it is what separates an iOS tone from a beep more than any amount of tuning does.
+    and it is what separates a FruitOS tone from a beep more than any amount of tuning does.
 
     In place would be wrong: a tap must read the DRY signal, or each one feeds the next and the
     tail turns to mush.

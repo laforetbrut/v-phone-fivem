@@ -343,7 +343,7 @@ end)
 -- with a framework notification and a sound of its own - which is a notification on the SCREEN
 -- and a noise in the game, not a phone doing anything. A mechanic who has the Repair app should
 -- get it the way they get everything else: a banner, a buzz, and a card in the notification
--- centre they can come back to.
+-- shade they can come back to.
 --
 -- Two events, and it broadcasts both to exactly the right people already - every employee of
 -- that garage who is clocked on - so there is nothing to gate here:

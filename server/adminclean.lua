@@ -93,7 +93,7 @@ local TARGETS = {
         tables = { 'vphone_arcade_scores', 'vphone_brawl_stats' } },
     cipher    = { label = 'Cipher (profiles and encrypted messages)',
         tables = { 'vphone_cipher_profiles', 'vphone_cipher_messages', 'vphone_cipher_clears' } },
-    reviews   = { label = 'app store reviews', tables = { 'vphone_app_reviews' } },
+    reviews   = { label = 'FruitStore reviews', tables = { 'vphone_app_reviews' } },
     appdata   = { label = 'storage belonging to dropped-in apps', tables = { 'vphone_app_data' } },
 }
 

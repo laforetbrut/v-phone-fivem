@@ -13,11 +13,11 @@
 --
 -- That is also why this file is small and why it sits on its own. One choke point is the only
 -- honest way to do this: sixty call sites patched by hand would have left the ones nobody
--- thought of - a bank transfer, an AirDrop - still acting as the admin, which is worse than
+-- thought of - a bank transfer, an FruitDrop - still acting as the admin, which is worse than
 -- not having the feature.
 --
 -- **What it deliberately does NOT do.** It does not follow the target's position: coordinates
--- still come from the staff member's own ped, so an AirDrop or a charging point works where the
+-- still come from the staff member's own ped, so an FruitDrop or a charging point works where the
 -- staff member is standing, not where the target is. Making position follow too would mean a
 -- second choke point and a much larger blast radius, and none of the support cases need it.
 --

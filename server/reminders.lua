@@ -45,7 +45,7 @@ CreateThread(function()
         `text`      VARCHAR(160) NOT NULL,
         `note`      VARCHAR(500) NOT NULL DEFAULT '',
         `list`      VARCHAR(16)  NOT NULL DEFAULT 'personal',
-        -- NULL means "some day": a reminder with no date is still a reminder, and iOS has
+        -- NULL means "some day": a reminder with no date is still a reminder, and FruitOS has
         -- always allowed one. Only rows with a date are ever swept.
         `due`       DATETIME     NULL DEFAULT NULL,
         `repeat_mins` INT UNSIGNED NOT NULL DEFAULT 0,

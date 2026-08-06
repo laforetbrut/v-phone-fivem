@@ -24,7 +24,7 @@
 </head>
 <body>
   <!-- The chrome is a phone's. The accent, panel and radius tokens come from v-ui,
-       so a server that themes the framework purple gets a purple iPhone. -->
+       so a server that themes the framework purple gets a purple handset. -->
   <!-- Whose phone this is, when it is not yours.
        OUTSIDE the bezel on purpose: a staff member holding somebody else's handset has to be
        able to see that at a glance, and anything drawn inside the screen is something the
@@ -54,15 +54,15 @@
           </span>
         </div>
 
-        <!-- Dynamic Island. It expands for a live activity, which is the single most
-             recognisable thing about a modern iPhone. -->
+        <!-- The Island. It expands for a live activity, which is the single most
+             recognisable thing about a modern handset. -->
         <div class="island" id="island" role="status" aria-live="polite" aria-atomic="true">
           <div class="icontent">
             <span class="idot" id="islandIcon"></span>
             <span class="itxt"><span class="it1" id="islandT1"></span><span class="it2" id="islandT2"></span></span>
             <span class="iwave"><i></i><i></i><i></i><i></i></span>
           </div>
-          <!-- The notification that grows out of the black pill, iOS 27 style. -->
+          <!-- The notification that grows out of the black pill, FruitOS style. -->
           <div class="inotif" id="inotif">
             <span class="inic" id="inicon"></span>
             <span class="intxt"><span class="int1" id="inTitle"></span><span class="int2" id="inBody"></span></span>
@@ -85,13 +85,13 @@
           </button>
         </div>
 
-        <!-- Secure unlock. Face ID is bound to the active character; the six-digit
+        <!-- Secure unlock. Face Unlock is bound to the active character; the six-digit
              fallback is verified by the server and is never kept in this page. -->
         <section class="auth" id="auth" role="dialog" aria-modal="true" aria-label="Secure unlock">
           <div class="authstage" id="authstage"></div>
         </section>
 
-        <!-- First-run setup. It lives below the real status bar and Dynamic Island,
+        <!-- First-run setup. It lives below the real status bar and Island,
              so the device keeps its physical identity throughout activation. -->
         <section class="setup" id="setup" role="dialog" aria-modal="true" aria-label="Phone setup" aria-hidden="true">
           <div class="setupstage" id="setupstage"></div>
@@ -136,7 +136,7 @@
         <!-- Call -->
         <section class="callui" id="callui">
           <!-- Put the call away without ending it. The call carries on in the island, which is
-               where a modern iPhone keeps one while you use something else. -->
+               where a modern handset keeps one while you use something else. -->
           <button class="callmin" id="callmin" type="button" aria-label="Hide call"></button>
           <div class="callav" id="callav"></div>
           <div class="callnum" id="callnum"></div>
@@ -189,12 +189,12 @@
           </div>
         </section>
 
-        <!-- Control centre -->
-        <section class="cc" id="cc" aria-label="Control centre">
+        <!-- Quick settings -->
+        <section class="cc" id="cc" aria-label="Quick settings">
           <div class="paneltop ccstatus">
             <span class="ccclock" id="ccclock">00:00</span>
             <span class="ccdevice" id="ccdevice"></span>
-            <button class="panelclose" id="ccclose" type="button" aria-label="Close control centre">
+            <button class="panelclose" id="ccclose" type="button" aria-label="Close quick settings">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>
             </button>
           </div>
