@@ -27,9 +27,12 @@ THIRD-PARTY MATERIAL
 
 None. Every asset in this repository was made for it:
 
-  - The twenty-four sound files are generated, not sampled. Each melody is a
+  - The phone's twenty-four tones are generated, not sampled. Each melody is a
     table in a Python script in tools/, so the source of every note is in the
-    repository and nothing was taken from a recording.
+    repository.
+  - The sixteen remaining sound files are voice recordings made by the author
+    for this project. They are original work, recorded for it and owned by it,
+    not sampled from anywhere.
   - The icons and interface artwork are drawn as SVG in this repository.
   - No font file ships with this software. The stylesheet names a stack of
     fonts already present on the host and falls through to a generic family.
@@ -73,9 +76,12 @@ MATERIEL TIERS
 
 Aucun. Chaque element de ce depot a ete fait pour lui :
 
-  - Les vingt-quatre fichiers sonores sont generes, pas echantillonnes. Chaque
-    melodie est une table dans un script Python de tools/, donc la source de
-    chaque note est dans le depot et rien n'a ete pris a un enregistrement.
+  - Les vingt-quatre tonalites du telephone sont generees, pas echantillonnees.
+    Chaque melodie est une table dans un script Python de tools/, donc la source
+    de chaque note est dans le depot.
+  - Les seize fichiers sonores restants sont des enregistrements vocaux realises
+    par l'auteur pour ce projet. Ce sont des oeuvres originales, enregistrees
+    pour lui et lui appartenant, echantillonnees de nulle part.
   - Les icones et les illustrations d'interface sont dessinees en SVG dans ce
     depot.
   - Aucun fichier de police n'est distribue avec ce logiciel. La feuille de
