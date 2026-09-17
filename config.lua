@@ -1804,11 +1804,23 @@ Config.WallpaperFit = 'cover'
 
 -- The device itself. Players with small screens want it smaller, and left-handers want it
 -- on the other side; neither is worth making them live without.
--- How big the handset is drawn, for everyone. 1.0 is the ONLY value that renders exactly:
--- the phone is laid out in pixels at 372x784, so any other size is a `transform: scale()`
--- over an already-drawn image and the text goes soft. There is no player-facing slider for
--- that reason. Change this if you want a different fixed size and accept the softness.
-Config.DeviceSize = 1.0        -- 0.75 .. 1.15, but only 1.0 is pixel-exact
+-- How big the handset is drawn, and which size a new character starts on.
+--
+-- **Four sizes, and all four are pixel-exact.** The phone is laid out in pixels at 372x784,
+-- and an earlier build offered a slider that stretched that finished image with a
+-- `transform: scale()` - which is why every glyph went soft and why the slider was removed.
+-- These four use `zoom` instead, which lays the page out again at the real size, so the text
+-- is drawn rather than stretched. A 4K screen makes the handset genuinely small, and this is
+-- the answer to it.
+--
+--   0.85  compact     1.0  normal     1.25  large     1.5  extra large
+--
+-- `transform: scale()` is still used for one thing only: shrinking the phone when the game
+-- window is too short to hold it.
+Config.DeviceSize = 1.0        -- 0.85 | 1.0 | 1.25 | 1.5
+-- Let the player pick their own size in Settings. Off, everybody gets `Config.DeviceSize`
+-- and the picker is not shown.
+Config.DeviceSizePlayer = true
 Config.DeviceSide = 'right'    -- right | left
 
 -- ── Mail ───────────────────────────────────────────────────────

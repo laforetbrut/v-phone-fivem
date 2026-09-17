@@ -8352,11 +8352,19 @@ function settingsSection(id) {
     ], { footer: L('ph.set_widget_money_hint') + ' ' + L('ph.set_widget_hint') }) +
     // The device itself: how big, and which side it sits on.
     '<div class="grouphead">' + esc(L('ph.device')) + '</div>' +
-    // No size slider, on purpose. The phone is laid out in pixels at 372x784, so any size
-    // other than 100% is a `transform: scale()` over an already-rasterised image and every
-    // glyph goes soft. Locking it to 100% is the only setting that renders exactly, and a
-    // crisp phone at one size beats a fuzzy one at five. `Config.DeviceSize` is still there
-    // for an operator who wants a different fixed size and will accept the softness.
+    // Four sizes rather than a slider. The slider was removed because it stretched a
+    // finished image and blurred every glyph; these lay the page out again at the chosen
+    // size, so all four are as sharp as 100% ever was. A 4K screen makes the handset small,
+    // and this is what answers it.
+    (p.sizePicker === false ? '' :
+      '<div class="sliderow">' +
+        '<div class="seg">' +
+          DEVICE_SIZES.map((s, i) =>
+            '<button class="' + (deviceSize(p.size) === s ? 'on' : '') + '" data-size="' + s +
+              '">' + esc(L(['ph.size_s', 'ph.size_m', 'ph.size_l', 'ph.size_xl'][i])) +
+            '</button>').join('') +
+        '</div>' +
+      '</div>') +
     '<div class="sliderow">' +
       '<div class="seg">' +
         '<button class="' + (p.side !== 'left' ? 'on' : '') + '" data-side="right">' + esc(L('ph.side_right')) + '</button>' +
@@ -8567,6 +8575,18 @@ function wireSettings() {
     b.addEventListener('click', async () => {
       const res = await post('prefs', { wallFit: b.dataset.fit });
       if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedrawKeepDraft(); }
+    }));
+  [...byId('appbody').querySelectorAll('[data-size]')].forEach((b) =>
+    b.addEventListener('click', async () => {
+      const res = await post('prefs', { size: Number(b.dataset.size) });
+      if (res && res.ok) {
+        state.prefs = res.prefs;
+        // The measured base box is still true - it is the phone at 100%, which has not
+        // moved - but everything measured THROUGH the old size has to go, and applyDevice
+        // clears those itself.
+        applyDevice();
+        settingsRedraw();
+      }
     }));
   [...byId('appbody').querySelectorAll('[data-side]')].forEach((b) =>
     b.addEventListener('click', async () => {
@@ -8951,6 +8971,38 @@ function applyMotion() {
   byId('device').classList.toggle('reducemotion', on);
 }
 
+/// The four sizes, and the only four the phone renders at. The same list as the server's, and
+/// the server has the last word: this one is so the picker can draw itself.
+const DEVICE_SIZES = [0.85, 1, 1.25, 1.5];
+
+function deviceSize(value) {
+  const want = Number(value) || 1;
+  return DEVICE_SIZES.reduce((best, step) =>
+    Math.abs(step - want) < Math.abs(best - want) ? step : best, 1);
+}
+
+let zoomOk = null;
+/// Does this browser have `zoom`? CEF does. A browser without it falls back to the transform,
+/// which is the soft-but-working behaviour the phone had before the sizes existed.
+function supportsZoom() {
+  if (zoomOk === null) {
+    zoomOk = !!(window.CSS && CSS.supports && CSS.supports('zoom', '1.25'));
+  }
+  return zoomOk;
+}
+
+let deviceBaseBox = null;
+/// The handset at 100%, measured once with any zoom taken off first.
+function deviceBase(d) {
+  if (!deviceBaseBox) {
+    const had = d.style.zoom;
+    d.style.zoom = '';
+    deviceBaseBox = { w: d.offsetWidth || 372, h: d.offsetHeight || 784 };
+    d.style.zoom = had;
+  }
+  return deviceBaseBox;
+}
+
 function applyDevice() {
   applyAdminView();
   applyMotion();
@@ -8960,25 +9012,38 @@ function applyDevice() {
   forgetScreenRect();
   const p = state.prefs || {};
   const d = byId('device');
-  const size = Math.max(0.75, Math.min(1.15, Number(p.size) || 1));
+  const size = deviceSize(p.size);
+
+  // **`zoom` rather than `transform: scale()`, and that is the whole point of the four
+  // sizes.** A transform stretches a phone that has already been drawn, so every glyph goes
+  // soft - which is exactly why the old slider was taken away. `zoom` lays the page out again
+  // at the real size, so the text is drawn at that size rather than magnified. Nothing in the
+  // page compensates for either one: every measurement here compares one box to another box,
+  // and both live in the same space whichever is used.
+  const zoom = supportsZoom() ? size : 1;
+  d.style.zoom = zoom === 1 ? '' : String(zoom);
   const viewport = window.visualViewport;
   const vw = (viewport && viewport.width) || window.innerWidth || 1280;
   const vh = (viewport && viewport.height) || window.innerHeight || 720;
-  const rawW = d.offsetWidth || 372;
-  const rawH = d.offsetHeight || 784;
-  const footprintW = landscape ? rawH : rawW;
-  const footprintH = landscape ? rawW : rawH;
+  // The handset's own size, measured once and never while a zoom is applied: with one set,
+  // an element reports its zoomed box, and multiplying that by the size again would shrink
+  // the phone a second time on every redraw.
+  const base = deviceBase(d);
+  const footprintW = (landscape ? base.h : base.w) * size;
+  const footprintH = (landscape ? base.w : base.h) * size;
   // Normally the phone never grows past the size the player chose - it only shrinks to fit a
   // small window. A photograph is the one thing worth breaking that for: turned sideways at
   // its usual size, a picture is a postage stamp in the corner of a 1080p screen, which is
   // what "on ne voit rien" meant. It goes back to the player's size the moment it closes.
   const cap = photoZoom ? 2.6 : 1;
   const fit = Math.max(0.10, Math.min(cap,
-    (vw - 24) / (footprintW * size),
-    (vh - 24) / (footprintH * size)));
-  const scale = size * fit;
+    (vw - 24) / footprintW,
+    (vh - 24) / footprintH));
+  // What the transform still has to carry: the fit, plus the size itself on a browser with
+  // no `zoom` at all. The phone on screen always ends up at `size * fit` either way.
+  const scale = (size / zoom) * fit;
   d.style.setProperty('--device-fit', String(fit));
-  d.style.setProperty('--device-scale', String(scale));
+  d.style.setProperty('--device-scale', String(size * fit));
   if (landscape) {
     // The phone lies on its side, centred so it cannot swing off-screen.
     d.style.left = '50%'; d.style.right = 'auto'; d.style.top = '50%'; d.style.bottom = 'auto';

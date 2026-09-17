@@ -841,6 +841,23 @@ function PhoneBlocksOf(citizenid) return blocksOf(citizenid) end
 
 function PhoneBlockable(number) return blockable(number) end
 
+--- The four handset sizes, and the only four values the phone ever renders at.
+---
+--- A size is snapped to the nearest step rather than clamped to a range: the page lays itself
+--- out again at one of these with `zoom`, and a number in between would be a size nobody chose
+--- and nobody can get back from. `nil` means "whatever the operator set".
+local DEVICE_SIZES = { 0.85, 1.0, 1.25, 1.5 }
+
+function deviceSize(value)
+    local want = tonumber(value) or tonumber(Config.DeviceSize) or 1.0
+    local best, gap = 1.0, math.huge
+    for _, step in ipairs(DEVICE_SIZES) do
+        local d = math.abs(step - want)
+        if d < gap then best, gap = step, d end
+    end
+    return best
+end
+
 local function cleanLayout(value)
     if type(value) ~= 'table' or type(value.items) ~= 'table' then return nil end
     local items = {}
@@ -1043,10 +1060,13 @@ prefsOf = function(p, includeSecrets)
                        and m.wallpaperUrl and tostring(m.wallpaperUrl) or nil,
         wallFit   = (m.wallFit == 'contain') and 'contain' or Config.WallpaperFit,
         wallFocus = tonumber(m.wallFocus) or nil,
-        -- The operator's size, not the player's, and the stored value is ignored rather
-        -- than clamped: a character who had set 80% before this was locked would otherwise
-        -- keep a permanently soft phone with no control left to fix it.
-        size      = math.max(0.75, math.min(1.15, tonumber(Config.DeviceSize) or 1.0)),
+        -- One of the four sizes, the player's own where the operator allows it. Anything
+        -- else - an old slider value, a number from a page that made one up - snaps to the
+        -- nearest step rather than being honoured.
+        size      = deviceSize(Config.DeviceSizePlayer ~= false and m.size or nil),
+        -- Whether Settings shows the four sizes at all. An operator who fixed the size gets
+        -- no picker rather than a picker that silently refuses.
+        sizePicker = Config.DeviceSizePlayer ~= false,
         side      = (m.side == 'left') and 'left' or 'right',
         -- The home screen: the player's own order, and any folders they made.
         layout    = cleanLayout(m.layout),
@@ -4134,9 +4154,12 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
             local n = tonumber(data.wallFocus)
             prefs.wallFocus = n and math.floor(math.max(0, math.min(100, n))) or nil
         end
-        -- `size` is deliberately not accepted from the page any more. The slider is gone
-        -- because anything but 100% scales a rasterised phone and blurs every glyph, so
-        -- there is nothing for a client to set and no reason to trust it if there were.
+        -- One of the four sizes, and only if the operator left the choice to the player.
+        -- Whatever arrives is snapped to a step, so a page that invents a number gets the
+        -- nearest real size rather than a phone drawn at a size that does not exist.
+        if data.size ~= nil and Config.DeviceSizePlayer ~= false then
+            prefs.size = deviceSize(data.size)
+        end
         if data.side ~= nil then prefs.side = (data.side == 'left') and 'left' or 'right' end
         if data.layout ~= nil then
             prefs.layout = cleanLayout(data.layout)

@@ -4,6 +4,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Four handset sizes.** Compact, normal, large and extra large, chosen in Settings. They use
+  `zoom`, so the page is laid out again at the chosen size and the text is drawn rather than
+  stretched: all four are as sharp as 100% was. This is the answer to a phone that looks tiny
+  on a 2K or 4K screen. `Config.DeviceSize` sets what a new character starts on, and
+  `Config.DeviceSizePlayer = false` keeps the choice with the operator.
+- `node tools/run-probe.js --size 1.5` runs the control probe at a chosen handset size, and
+  the test suite now runs it at the largest one.
+
 ## [1.7.4] - 2026-09-17
 
 ### Added

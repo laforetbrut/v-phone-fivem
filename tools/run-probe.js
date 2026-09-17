@@ -96,6 +96,19 @@ class CDP {
   await cdp.send('Runtime.enable');
   await sleep(2500);
 
+  // **The handset size the probe runs at.** The four sizes lay the page out again rather
+  // than stretching it, so every box the probe measures moves - which is exactly the thing
+  // worth checking at a size other than the default one.
+  //
+  //     node tools/run-probe.js --size 1.5
+  const wantedSize = Number((process.argv.find((a) => a.startsWith('--size=')) || '').slice(7))
+    || Number(process.argv[process.argv.indexOf('--size') + 1]) || 0;
+  if (wantedSize) {
+    await cdp.evalRaw(`state.prefs.size = ${wantedSize}; applyDevice(); 'ok'`);
+    await sleep(400);
+    console.log(`handset size ${wantedSize}`);
+  }
+
   await cdp.evalRaw(fs.readFileSync(path.join(ROOT, 'tools', 'probe.js'), 'utf8'));
   const out = await cdp.evalRaw('vphoneProbe()');
   child.kill();

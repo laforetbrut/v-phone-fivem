@@ -32,6 +32,7 @@ syntax error should not cost five minutes of screenshots to discover.
     preview          the page built for a browser
     run-probe        can a cursor reach every control in all 37 apps
     probe-input      real mouse input through the compositor
+    probe-size-xl    every control still reachable at the largest handset size
     make-shots       71 screenshots, some of which are assertions
 
 Exit code 1 if anything fails. Nothing here needs a database or a running server.
@@ -168,6 +169,10 @@ run('check-fr', [sys.executable, 'tools/check-fr.py'])
 run('preview', [sys.executable, 'tools/make-preview.py', '--lang', 'fr'])
 run('run-probe', ['node', 'tools/run-probe.js'], 'every control reachable, 37 apps')
 run('probe-input', ['node', 'tools/probe-input.js'], 'real mouse through the compositor')
+# The largest of the four handset sizes. It lays the page out again rather than stretching
+# it, so every box the probe measures is a different box - and a control that only falls off
+# the screen at 150% is a control nobody would have found at the default size.
+run('probe-size-xl', ['node', 'tools/run-probe.js', '--size', '1.5'], 'every control at 150%')
 if FAST:
     print('%-16s %-4s        skipped by --fast' % ('make-shots', '--'))
 else:
