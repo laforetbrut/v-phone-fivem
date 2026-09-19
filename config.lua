@@ -1806,18 +1806,20 @@ Config.WallpaperFit = 'cover'
 -- on the other side; neither is worth making them live without.
 -- How big the handset is drawn, and which size a new character starts on.
 --
--- **Four sizes, and all four are pixel-exact.** The phone is laid out in pixels at 372x784,
+-- **Every size is pixel-exact.** The phone is laid out in pixels at 372x784,
 -- and an earlier build offered a slider that stretched that finished image with a
 -- `transform: scale()` - which is why every glyph went soft and why the slider was removed.
--- These four use `zoom` instead, which lays the page out again at the real size, so the text
+-- These use `zoom` instead, which lays the page out again at the real size, so the text
 -- is drawn rather than stretched. A 4K screen makes the handset genuinely small, and this is
 -- the answer to it.
 --
---   0.85  compact     1.0  normal     1.25  large     1.5  extra large
+--   'auto'  picked from the height of the game window: 1080p gets 1.0, 1440p 1.25,
+--           4K 2.0. The right default, because the server cannot see anybody's screen.
+--   0.85  1.0  1.25  1.5  1.75  2.0  2.25  2.5
 --
 -- `transform: scale()` is still used for one thing only: shrinking the phone when the game
 -- window is too short to hold it.
-Config.DeviceSize = 1.0        -- 0.85 | 1.0 | 1.25 | 1.5
+Config.DeviceSize = 'auto'     -- 'auto' | 0.85 .. 2.5
 -- Let the player pick their own size in Settings. Off, everybody gets `Config.DeviceSize`
 -- and the picker is not shown.
 Config.DeviceSizePlayer = true

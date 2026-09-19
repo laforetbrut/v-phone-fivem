@@ -841,15 +841,19 @@ function PhoneBlocksOf(citizenid) return blocksOf(citizenid) end
 
 function PhoneBlockable(number) return blockable(number) end
 
---- The four handset sizes, and the only four values the phone ever renders at.
+--- The handset sizes, and the only values the phone ever renders at. `0` is Auto: the page
+--- picks a step from the height of the game window, which is the one thing it can see and the
+--- server cannot.
 ---
 --- A size is snapped to the nearest step rather than clamped to a range: the page lays itself
 --- out again at one of these with `zoom`, and a number in between would be a size nobody chose
 --- and nobody can get back from. `nil` means "whatever the operator set".
-local DEVICE_SIZES = { 0.85, 1.0, 1.25, 1.5 }
+local DEVICE_SIZES = { 0.85, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5 }
 
 function deviceSize(value)
-    local want = tonumber(value) or tonumber(Config.DeviceSize) or 1.0
+    if value == nil then value = Config.DeviceSize end
+    if value == 'auto' or tonumber(value) == 0 then return 0 end
+    local want = tonumber(value) or 1.0
     local best, gap = 1.0, math.huge
     for _, step in ipairs(DEVICE_SIZES) do
         local d = math.abs(step - want)

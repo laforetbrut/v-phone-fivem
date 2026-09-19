@@ -4,6 +4,21 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **More handset sizes, and Auto.** Eight sizes from 85% to 250%, and an Auto setting that
+  picks one from the height of the game window: 1080p gets 100%, 1440p 125%, 4K 200%. Auto is
+  now the default for a new character (`Config.DeviceSize = 'auto'`), because a 4K player
+  reported that even 150% was only just enough. Every size still uses `zoom`, so all of them
+  are as sharp as 100%. The picker moved to a single row in Display that opens the list,
+  because nine choices do not fit side by side.
+
+### Changed
+
+- The test suite runs the control probe at 250%, the largest size, instead of 150%.
+
 ## [1.7.5] - 2026-09-17
 
 ### Added

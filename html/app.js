@@ -8352,19 +8352,13 @@ function settingsSection(id) {
     ], { footer: L('ph.set_widget_money_hint') + ' ' + L('ph.set_widget_hint') }) +
     // The device itself: how big, and which side it sits on.
     '<div class="grouphead">' + esc(L('ph.device')) + '</div>' +
-    // Four sizes rather than a slider. The slider was removed because it stretched a
-    // finished image and blurred every glyph; these lay the page out again at the chosen
-    // size, so all four are as sharp as 100% ever was. A 4K screen makes the handset small,
-    // and this is what answers it.
+    // Steps rather than a slider. The slider was removed because it stretched a finished
+    // image and blurred every glyph; these lay the page out again at the chosen size, so every
+    // one is as sharp as 100% ever was. A row that opens a list, because eight sizes and Auto
+    // do not fit side by side on a phone 372 pixels wide.
     (p.sizePicker === false ? '' :
-      '<div class="sliderow">' +
-        '<div class="seg">' +
-          DEVICE_SIZES.map((s, i) =>
-            '<button class="' + (deviceSize(p.size) === s ? 'on' : '') + '" data-size="' + s +
-              '">' + esc(L(['ph.size_s', 'ph.size_m', 'ph.size_l', 'ph.size_xl'][i])) +
-            '</button>').join('') +
-        '</div>' +
-      '</div>') +
+      UI.group([UI.row({ icon: 'phone', tint: '#0A84FF', title: L('ph.size'),
+        value: deviceSizeLabel(p.size), chevron: true, data: { t: 'devsize' } })])) +
     '<div class="sliderow">' +
       '<div class="seg">' +
         '<button class="' + (p.side !== 'left' ? 'on' : '') + '" data-side="right">' + esc(L('ph.side_right')) + '</button>' +
@@ -8576,18 +8570,6 @@ function wireSettings() {
       const res = await post('prefs', { wallFit: b.dataset.fit });
       if (res && res.ok) { state.prefs = res.prefs; applyWallpaper(); settingsRedrawKeepDraft(); }
     }));
-  [...byId('appbody').querySelectorAll('[data-size]')].forEach((b) =>
-    b.addEventListener('click', async () => {
-      const res = await post('prefs', { size: Number(b.dataset.size) });
-      if (res && res.ok) {
-        state.prefs = res.prefs;
-        // The measured base box is still true - it is the phone at 100%, which has not
-        // moved - but everything measured THROUGH the old size has to go, and applyDevice
-        // clears those itself.
-        applyDevice();
-        settingsRedraw();
-      }
-    }));
   [...byId('appbody').querySelectorAll('[data-side]')].forEach((b) =>
     b.addEventListener('click', async () => {
       const res = await post('prefs', { side: b.dataset.side });
@@ -8772,6 +8754,30 @@ function wireSettings() {
             if (res && res.ok && closeSheet(false, epoch)) { state.prefs = res.prefs; settingsRedraw(); }
           });
         });
+      return;
+    } else if (r.dataset.t === 'devsize') {
+      const cur = (state.prefs || {}).size;
+      const isAuto = cur === 'auto' || Number(cur) === 0;
+      sheet(L('ph.size'),
+        UI.group([0].concat(DEVICE_SIZES).map((v) => UI.row({
+          title: v === 0 ? L('ph.size_auto') : Math.round(v * 100) + '%',
+          subtitle: v === 0 ? L('ph.size_auto_hint').replace('{n}', Math.round(autoSize() * 100) + '%')
+                  : (v === 1 ? L('ph.size_m') : ''),
+          value: (v === 0 ? isAuto : (!isAuto && deviceSize(cur) === v)) ? '✓' : '',
+          data: { v: String(v) },
+        }))),
+        () => [...byId('sheet').querySelectorAll('.row')].forEach((el) => el.addEventListener('click', async () => {
+          const epoch = sheetEpoch;
+          const res2 = await post('prefs', { size: Number(el.dataset.v) });
+          if (!closeSheet(false, epoch)) return;
+          if (res2 && res2.ok) {
+            state.prefs = res2.prefs;
+            // Everything measured through the old size has to go, and applyDevice clears
+            // those itself. The base box is the phone at 100%, which has not moved.
+            applyDevice();
+            settingsRedraw();
+          }
+        })));
       return;
     } else if (r.dataset.t === 'ringer') {
       sheet(L('ph.ringer'),
@@ -8971,14 +8977,36 @@ function applyMotion() {
   byId('device').classList.toggle('reducemotion', on);
 }
 
-/// The four sizes, and the only four the phone renders at. The same list as the server's, and
-/// the server has the last word: this one is so the picker can draw itself.
-const DEVICE_SIZES = [0.85, 1, 1.25, 1.5];
+/// The sizes the phone renders at. The same list as the server's, and the server has the last
+/// word: this one is so the picker can draw itself. `0` is Auto.
+const DEVICE_SIZES = [0.85, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5];
 
-function deviceSize(value) {
-  const want = Number(value) || 1;
+function snapSize(want) {
   return DEVICE_SIZES.reduce((best, step) =>
     Math.abs(step - want) < Math.abs(best - want) ? step : best, 1);
+}
+
+/// **Auto: a size from the height of the game window.** The handset was designed for a 1080p
+/// screen, where 784 pixels is about three quarters of the height. The same proportion on any
+/// other screen is the same phone to the eye: 1440p gets 1.25, 4K gets 2. The window is the
+/// only thing that knows its own height, which is why Auto is decided here and not on the
+/// server. Never below 1: a small window is handled by the shrink-to-fit, not by a smaller step.
+function autoSize() {
+  const viewport = window.visualViewport;
+  const vh = (viewport && viewport.height) || window.innerHeight || 1080;
+  return Math.max(1, snapSize(vh / 1080));
+}
+
+function deviceSize(value) {
+  const want = Number(value);
+  if (value === 'auto' || want === 0) return autoSize();
+  return snapSize(want || 1);
+}
+
+function deviceSizeLabel(value) {
+  const auto = value === 'auto' || Number(value) === 0;
+  const pct = Math.round(deviceSize(value) * 100) + '%';
+  return auto ? L('ph.size_auto') + ' (' + pct + ')' : pct;
 }
 
 let zoomOk = null;
