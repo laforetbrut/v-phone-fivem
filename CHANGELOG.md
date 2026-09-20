@@ -34,6 +34,18 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **The Delete button on an OnlyFruits post did nothing.** The card is drawn on three screens
+  and the button was only wired inside a creator's page, so on your own tab - where you would
+  actually use it - clicking it did nothing at all. There is one handler now and every screen
+  calls it. The confirmation also had its two arguments the wrong way round, which put the
+  whole warning sentence on the button; it reads "Delete" now, with the warning above it.
+
+---
+
 ## [1.7.6] - 2026-09-20
 
 ### Added

@@ -21162,6 +21162,9 @@ RENDER.onlyfruits = async () => {
   }));
   rows('[data-creator]', (b) => b.addEventListener('click', () => fanCreator(b.dataset.creator)));
   rows('[data-unlock]', (b) => b.addEventListener('click', () => fanUnlock(b.dataset.unlock, b)));
+  // Your own posts, on your own tab and in the feed. This is the screen the button was
+  // reported dead on: it was drawn by the card and wired only inside a creator's page.
+  rows('[data-del]', (b) => b.addEventListener('click', () => fanDeletePost(b.dataset.del)));
   if (byId('fannew')) byId('fannew').addEventListener('click', fanNewPost);
   if (byId('fanedit')) byId('fanedit').addEventListener('click', () => fanEdit(fanData.me));
   if (byId('fanout')) byId('fanout').addEventListener('click', fanPayout);
@@ -21370,6 +21373,23 @@ function fanNewPost() {
     });
 }
 
+/// **Taking a post down, from wherever the card is drawn.**
+///
+/// The card appears on three screens - your own tab, the feed and a creator's page - and the
+/// first version of this wired the button on one of them only. A button that is drawn and does
+/// nothing is worse than no button, so there is one handler and every screen calls it.
+function fanDeletePost(id, after) {
+  // The question carries the warning; the button carries the verb. Passed the other way
+  // round, the whole sentence became the label on the button.
+  confirmSheet(L('ph.fan_delete_ask'), L('ph.delete'), async () => {
+    const res = await post('fanDelete', { id: Number(id) });
+    if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+    toast(L('ph.fan_deleted'));
+    RENDER.onlyfruits();
+    if (after) after();
+  });
+}
+
 /// When a subscription runs out, as a date a player reads rather than a stamp.
 function fanUntil(ts) {
   const d = new Date(Number(ts) * 1000);
@@ -21406,19 +21426,11 @@ async function fanCreator(handle) {
       qrows('sheet', '[data-unlock]', (b) =>
         b.addEventListener('click', () => fanUnlock(b.dataset.unlock, b)));
       qrows('sheet', '[data-del]', (b) =>
-        b.addEventListener('click', () => {
-          confirmSheet(L('ph.fan_delete'), L('ph.fan_delete_ask'), async () => {
-            const res = await post('fanDelete', { id: Number(b.dataset.del) });
-            if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
-            toast(L('ph.fan_deleted'));
-            RENDER.onlyfruits();
-            fanCreator(c.handle);
-          });
-        }));
+        b.addEventListener('click', () => fanDeletePost(b.dataset.del, () => fanCreator(c.handle))));
       if (byId('fcunsub')) byId('fcunsub').addEventListener('click', () => {
         // What it costs is said before it is asked, because nothing is refunded: a
         // subscription is a month bought up front, and cancelling ends the access now.
-        confirmSheet(L('ph.fan_unsub'), L('ph.fan_unsub_ask'), async () => {
+        confirmSheet(L('ph.fan_unsub_ask'), L('ph.fan_unsub'), async () => {
           const res = await post('fanUnsub', { handle: c.handle });
           if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
           toast(L('ph.fan_unsubbed'));
