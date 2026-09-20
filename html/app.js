@@ -1710,9 +1710,20 @@ function flushRefit() {
   if (refitPending) refitPages();
 }
 
+/// **Where the pointer is, in the phone's own pixels.**
+///
+/// A pointer event is in the window's pixels and the handset is drawn at a size, so the two only
+/// agree at 100%. What this returns is read back as CSS lengths - the drag ghost is positioned
+/// with it, and the page-flip edge compares it against `screen.clientWidth`, which is the phone's
+/// own 372 whatever size it is drawn at. Handing those outer pixels straight over is why
+/// dragging an app at any size but 100% put the ghost nowhere near the finger and made the
+/// screen think the pointer was at its right edge from about the middle onwards.
+///
+/// The ratio is measured rather than taken from the size, so it is right whether the size came
+/// from `zoom`, from the shrink-to-fit transform, or from both at once.
 function ptOf(e) {
-  const r = byId('screen').getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+  const p = screenPoint(e);
+  return { x: p.x, y: p.y };
 }
 function moveGhost(e) {
   const p = ptOf(e), g = byId('dragghost');
@@ -2099,8 +2110,12 @@ function initArrange() {
         if (slot) {
           const now = slot.getBoundingClientRect();
           const p = ptOf(e), g = byId('dragghost');
-          g.style.left = (p.x + (now.left - downBox.left)) + 'px';
-          g.style.top = (p.y + (now.top - downBox.top)) + 'px';
+          // Both rects are in the window's pixels and `p` is in the phone's, so the correction
+          // is converted before it is added to it. Mixed, it overshot by exactly the size the
+          // handset is drawn at.
+          const k = screenScale();
+          g.style.left = (p.x + (now.left - downBox.left) * k) + 'px';
+          g.style.top = (p.y + (now.top - downBox.top) * k) + 'px';
         }
       }
       // A held FOLDER can now be MOVED, which it could not before: this branch used to open the
@@ -3491,14 +3506,16 @@ byId('appbody').addEventListener('pointerdown', (event) => {
 });
 byId('appbody').addEventListener('pointermove', (event) => {
   if (!appPull || appPull.pointerId !== event.pointerId) return;
-  const dy = event.clientY - appPull.y;
-  const dx = Math.abs(event.clientX - appPull.x);
+  const k = screenScale();
+  const dy = (event.clientY - appPull.y) * k;
+  const dx = Math.abs(event.clientX - appPull.x) * k;
   byId('appbody').classList.toggle('pull-ready', dy > 68 && dx < 45);
 });
 byId('appbody').addEventListener('pointerup', (event) => {
   if (!appPull || appPull.pointerId !== event.pointerId) return;
-  const dy = event.clientY - appPull.y;
-  const dx = Math.abs(event.clientX - appPull.x);
+  const k = screenScale();
+  const dy = (event.clientY - appPull.y) * k;
+  const dx = Math.abs(event.clientX - appPull.x) * k;
   appPull = null;
   byId('appbody').classList.remove('pull-ready');
   if (dy <= 68 || dx >= 45 || !openApp || openApp.page) return;
@@ -6005,8 +6022,9 @@ function wireBubble(b, m) {
     // A mouse that is merely passing over holds no button. Belt to the capture's braces: if a
     // release was missed for any reason at all, the next movement cancels rather than drags.
     if (e.pointerType === 'mouse' && e.buttons === 0) { stop(); return; }
-    const dx = e.clientX - sx;
-    const dy = e.clientY - sy;
+    const k = screenScale();
+    const dx = (e.clientX - sx) * k;
+    const dy = (e.clientY - sy) * k;
     if (Math.abs(dx) > 11 || Math.abs(dy) > 11) cancelHold();
     // Vertical wins. Dragging a thread up and down must not smear every bubble it passes.
     if (Math.abs(dy) > Math.abs(dx)) { b.style.removeProperty('--msg-drag'); return; }
@@ -6016,8 +6034,9 @@ function wireBubble(b, m) {
 
   b.addEventListener('pointerup', (e) => {
     if (!active) return;
-    const dx = e.clientX - sx;
-    const dy = e.clientY - sy;
+    const k = screenScale();
+    const dx = (e.clientX - sx) * k;
+    const dy = (e.clientY - sy) * k;
     stop();
     // A swipe to the right is REPLY, the gesture every messaging app uses for it. Forty pixels
     // rather than fifty-two: on a 372-wide screen the old distance was most of a short bubble,
@@ -10011,12 +10030,12 @@ function musicRenderPlayer(model) {
   });
   player.addEventListener('pointermove', (event) => {
     if (!swipe || event.pointerId !== swipe.id) return;
-    const dy = Math.max(0, event.clientY - swipe.y);
+    const dy = Math.max(0, (event.clientY - swipe.y) * screenScale());
     player.style.setProperty('--player-y', Math.min(120, dy) + 'px');
   });
   player.addEventListener('pointerup', (event) => {
     if (!swipe || event.pointerId !== swipe.id) return;
-    const dy = Math.max(0, event.clientY - swipe.y);
+    const dy = Math.max(0, (event.clientY - swipe.y) * screenScale());
     swipe = null;
     player.style.removeProperty('--player-y');
     if (dy > 74) { musicPlayerOpen = false; RENDER.music(); }
@@ -10708,17 +10727,35 @@ let g = null;
 /// `applyDevice` or `setLandscape`, so it is read there instead: once per change rather than
 /// once per pixel of mouse travel.
 let screenRect = null;
+let screenRatio = null;
 
-function forgetScreenRect() { screenRect = null; }
+function forgetScreenRect() { screenRect = null; screenRatio = null; }
 
 function screenBox() {
   if (!screenRect) screenRect = byId('screen').getBoundingClientRect();
   return screenRect;
 }
 
+/// **Window pixels to the phone's own pixels.** Measured, so it is right whether the handset is
+/// drawn by `zoom`, by the shrink-to-fit transform, or by both. Cached with the box it comes
+/// from, because a pointer move must not force a layout to ask.
+function screenScale() {
+  if (screenRatio === null) {
+    const r = screenBox();
+    const w = byId('screen').clientWidth;
+    screenRatio = (r.width && w) ? w / r.width : 1;
+  }
+  return screenRatio;
+}
+
+/// Where the pointer is on the screen, and how big that screen is - both in the phone's pixels,
+/// because that is the space every threshold here was written in and the space a CSS length set
+/// from one of these lands in.
 function screenPoint(e) {
   const r = screenBox();
-  return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height };
+  const k = screenScale();
+  return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k,
+           w: r.width * k, h: r.height * k };
 }
 
 function anyOverlayOpen() {
@@ -23226,13 +23263,15 @@ byId('sheet').addEventListener('pointerdown', (e) => {
 });
 byId('sheet').addEventListener('pointermove', (e) => {
   if (!sheetDrag || sheetDrag.pointerId !== e.pointerId) return;
-  const dy = Math.max(0, e.clientY - sheetDrag.y);
+  // The drag is measured in window pixels and written back as a CSS length inside the handset,
+  // so it is converted: unconverted, a sheet at 200% ran away from the finger at twice its speed.
+  const dy = Math.max(0, (e.clientY - sheetDrag.y) * screenScale());
   byId('sheet').style.transform = 'translateY(' + dy + 'px)';
   byId('sheet').style.opacity = String(Math.max(.35, 1 - dy / 360));
 });
 byId('sheet').addEventListener('pointerup', (e) => {
   if (!sheetDrag || sheetDrag.pointerId !== e.pointerId) return;
-  const dy = Math.max(0, e.clientY - sheetDrag.y);
+  const dy = Math.max(0, (e.clientY - sheetDrag.y) * screenScale());
   sheetDrag = null;
   const host = byId('sheet');
   host.classList.remove('dragging');

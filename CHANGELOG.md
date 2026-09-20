@@ -17,6 +17,18 @@ All notable changes to v-phone are documented here.
 
 ### Fixed
 
+- **Rearranging the home screen was broken at any size but 100%.** A pointer is in the window's
+  pixels and the handset is drawn at a size, and the two were mixed: the dragged icon was placed
+  at the raw window offset, so it sat far from the finger, and the page-flip edge compared that
+  offset against the screen's own 372, so the screen thought the pointer was at its right edge
+  from about the middle onwards and kept flipping or making pages. Pointer positions are now
+  converted once, wherever they are read. The same mix affected dragging a sheet down, pulling
+  the music player away, swiping a message to reply and pulling an app to refresh.
+- **The Delete button on an OnlyFruits post did nothing.** The card is drawn on three screens
+  and the button was only wired inside a creator's page, so on your own tab - where you would
+  actually use it - clicking it did nothing at all. There is one handler now and every screen
+  calls it. The confirmation also had its two arguments the wrong way round, which put the
+  whole warning sentence on the button; it reads "Delete" now, with the warning above it.
 - Refit home icons after an asynchronous widget response changes the strip layout, preventing labels from overlapping the next row. Ordinary widget data refreshes retain the cached grid. Removing every widget also invalidates pending replies.
 
 ### Modifications
@@ -30,19 +42,22 @@ All notable changes to v-phone are documented here.
 
 ### Correctifs
 
+- **Réorganiser l'accueil était cassé à toute taille autre que 100%.** La position de la souris
+  est en pixels de la fenêtre et le téléphone est dessiné à une taille : les deux étaient
+  mélangés. L'icône déplacée était posée à la position brute, donc loin du curseur, et le bord
+  qui change de page comparait cette position aux 372 pixels de l'écran du téléphone, si bien
+  qu'à partir du milieu l'écran croyait le curseur sur son bord droit et enchaînait les
+  changements et créations de pages. La conversion se fait désormais une fois, partout où la
+  position est lue. Le même mélange touchait le glissement d'une feuille vers le bas, le
+  lecteur de musique tiré vers le bas, le balayage d'un message pour répondre et le tirer vers
+  le bas pour actualiser une app.
+- **Le bouton Supprimer d'une publication OnlyFruits ne faisait rien.** La carte est dessinée sur
+  trois écrans et le clic n'était branché que dans la page d'un créateur, donc sur votre propre
+  onglet, là où on s'en sert, il ne se passait rien. Il n'y a plus qu'un seul gestionnaire,
+  appelé par chaque écran. La confirmation avait aussi ses deux arguments inversés, ce qui
+  mettait toute la phrase d'avertissement sur le bouton : il affiche « Supprimer », et
+  l'avertissement est au-dessus.
 - Recalcul de la taille des icônes après une réponse asynchrone modifiant la disposition des widgets, pour éviter le chevauchement des libellés avec la rangée suivante. Les simples actualisations de données conservent la grille en cache. Retirer tous les widgets invalide aussi les réponses en attente.
-
----
-
-## [Unreleased]
-
-### Fixed
-
-- **The Delete button on an OnlyFruits post did nothing.** The card is drawn on three screens
-  and the button was only wired inside a creator's page, so on your own tab - where you would
-  actually use it - clicking it did nothing at all. There is one handler now and every screen
-  calls it. The confirmation also had its two arguments the wrong way round, which put the
-  whole warning sentence on the button; it reads "Delete" now, with the warning above it.
 
 ---
 
