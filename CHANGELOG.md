@@ -4,16 +4,7 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## [1.7.7] - 2026-09-20
-
-### Changed
-
-- **Refined glass home screen.** Rounder app icons scale with the selected grid, the dock uses a cooler static glass finish, and widgets have softer shadows, a deeper weather palette and a quieter calendar heading. Existing layouts, wallpaper choices and glass preferences remain available.
-- App and home transitions use 220/320 ms timings. Icon presses use a smaller scale change; icon and widget hover feedback no longer animates filters or shadows. Reduced-motion settings still apply.
-
-### Performance
-
-- Simplified icon and dock paint layers without adding dependencies, backdrop filters or timers. No gameplay or server callback changes. Browser regression checks do not establish FiveM frame-time performance; an in-game check remains necessary.
+## [1.7.8] - 2026-09-20
 
 ### Fixed
 
@@ -29,16 +20,6 @@ All notable changes to v-phone are documented here.
   actually use it - clicking it did nothing at all. There is one handler now and every screen
   calls it. The confirmation also had its two arguments the wrong way round, which put the
   whole warning sentence on the button; it reads "Delete" now, with the warning above it.
-- Refit home icons after an asynchronous widget response changes the strip layout, preventing labels from overlapping the next row. Ordinary widget data refreshes retain the cached grid. Removing every widget also invalidates pending replies.
-
-### Modifications
-
-- **Accueil en verre affiné.** Les icônes plus arrondies suivent la grille choisie, le dock adopte un verre statique aux tons froids et les widgets présentent des ombres plus douces, une météo aux bleus plus profonds et un titre de calendrier plus discret. Les dispositions, fonds d'écran et préférences de transparence restent disponibles.
-- Les transitions des applications et de l'accueil utilisent des durées de 220/320 ms. La réduction des icônes au clic est plus discrète ; le survol des icônes et widgets n'anime plus les filtres ou les ombres. Les réglages de réduction des animations restent respectés.
-
-### Performance (français)
-
-- Simplification des couches graphiques des icônes et du dock sans ajout de dépendance, de filtre de flou ou de minuterie. Aucun changement du gameplay ou des callbacks serveur. Les contrôles dans le navigateur ne mesurent pas les temps de rendu FiveM ; une vérification en jeu reste nécessaire.
 
 ### Correctifs
 
@@ -57,6 +38,35 @@ All notable changes to v-phone are documented here.
   appelé par chaque écran. La confirmation avait aussi ses deux arguments inversés, ce qui
   mettait toute la phrase d'avertissement sur le bouton : il affiche « Supprimer », et
   l'avertissement est au-dessus.
+
+---
+
+## [1.7.7] - 2026-09-20
+
+### Changed
+
+- **Refined glass home screen.** Rounder app icons scale with the selected grid, the dock uses a cooler static glass finish, and widgets have softer shadows, a deeper weather palette and a quieter calendar heading. Existing layouts, wallpaper choices and glass preferences remain available.
+- App and home transitions use 220/320 ms timings. Icon presses use a smaller scale change; icon and widget hover feedback no longer animates filters or shadows. Reduced-motion settings still apply.
+
+### Performance
+
+- Simplified icon and dock paint layers without adding dependencies, backdrop filters or timers. No gameplay or server callback changes. Browser regression checks do not establish FiveM frame-time performance; an in-game check remains necessary.
+
+### Fixed
+
+- Refit home icons after an asynchronous widget response changes the strip layout, preventing labels from overlapping the next row. Ordinary widget data refreshes retain the cached grid. Removing every widget also invalidates pending replies.
+
+### Modifications
+
+- **Accueil en verre affiné.** Les icônes plus arrondies suivent la grille choisie, le dock adopte un verre statique aux tons froids et les widgets présentent des ombres plus douces, une météo aux bleus plus profonds et un titre de calendrier plus discret. Les dispositions, fonds d'écran et préférences de transparence restent disponibles.
+- Les transitions des applications et de l'accueil utilisent des durées de 220/320 ms. La réduction des icônes au clic est plus discrète ; le survol des icônes et widgets n'anime plus les filtres ou les ombres. Les réglages de réduction des animations restent respectés.
+
+### Performance (français)
+
+- Simplification des couches graphiques des icônes et du dock sans ajout de dépendance, de filtre de flou ou de minuterie. Aucun changement du gameplay ou des callbacks serveur. Les contrôles dans le navigateur ne mesurent pas les temps de rendu FiveM ; une vérification en jeu reste nécessaire.
+
+### Correctifs
+
 - Recalcul de la taille des icônes après une réponse asynchrone modifiant la disposition des widgets, pour éviter le chevauchement des libellés avec la rangée suivante. Les simples actualisations de données conservent la grille en cache. Retirer tous les widgets invalide aussi les réponses en attente.
 
 ---
