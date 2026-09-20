@@ -17,6 +17,12 @@ All notable changes to v-phone are documented here.
 
 ### Fixed
 
+- **A battery that goes back up after a restart.** The drain tick assumed 100% for a player
+  whose saved level had not been read yet, and it persists what it computes, so reaching
+  somebody before their row was loaded wrote a full battery over their real one. On a resource
+  restart no load event fires and the catch-up pass waits ten seconds, so the tick could get
+  there first - which is why it hit some players and not others. The tick now loads that player
+  instead, and writes nothing at all if it still has no level for them.
 - Four French strings were missing their accents.
 
 ### Added

@@ -946,6 +946,28 @@ def selection_drain(base):
     return first, second
 
 
+def unhydrated_drain(base):
+    """A player the phone never loaded a battery for, and one drain pass."""
+    w = World('qb', base)                    # no BatteryTable entry: nothing was ever read
+    w.ex('CLOCK = CLOCK + 20 resetC()')
+    w.run('drain')
+    return [x for x in w.ev(KV)().split(' ') if x.startswith('QB1.')]
+
+
+def test_bug_unhydrated_battery():
+    print('bug: a battery that was never loaded is written to the row anyway')
+    # `batteryRaw` answers 100 for a player whose row has not been read, which is right for
+    # drawing a phone and wrong for saving one. The tick persists what it computes, so a player
+    # it reached before their load wrote a full battery over whatever they really had - which is
+    # a battery that goes back up after a restart, for some players and not others.
+    before = unhydrated_drain(True)
+    check(before == ['QB1.battery=99'], 'baseline reproduces: a full battery is written over the saved one',
+          ' '.join(before) or 'no writes')
+    after = unhydrated_drain(False)
+    check(after == [], 'nothing is written for a player whose battery was never loaded',
+          ' '.join(after) or 'no writes')
+
+
 def test_bug_ox_selection():
     print('bug: ox_core players on the character selection screen')
     first, _ = selection_drain(True)
@@ -982,6 +1004,7 @@ def main():
     test_bug_reused_id()
     print('')
     test_bug_staff_battery()
+    test_bug_unhydrated_battery()
     print('')
     test_bug_ox_selection()
     print('')

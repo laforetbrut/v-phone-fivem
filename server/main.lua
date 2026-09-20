@@ -2969,6 +2969,23 @@ CreateThread(function()
                 -- rule as ensureNumber: a write keyed on the source must not take its identity
                 -- from the redirected player object. Not a use of the session either.
                 local p = (Core.GetPlayerReal or Core.GetPlayer)(src)
+                -- **A level that was never loaded is not a level, and must never be written.**
+                --
+                -- `batteryRaw` answers 100 for a player this file has not loaded yet, which is
+                -- the right answer for a phone to DRAW and the wrong one to SAVE. This loop
+                -- persists what it computes, so reaching a player before their row was read
+                -- wrote a full battery over whatever they really had. It is a race, so it hit
+                -- some players and not others, and the place it hit was a restart: on a
+                -- resource restart nobody fires a load event, the catch-up pass that hydrates
+                -- everyone already connected waits ten seconds, and this tick could get there
+                -- first. That is "sometimes our battery goes back up after a reboot".
+                --
+                -- Load them here rather than skipping for ever: a player whose load event was
+                -- missed would otherwise keep a battery that never moves.
+                if p and Battery[src] == nil then
+                    if HydrateBattery then HydrateBattery(src) end
+                    if Battery[src] == nil then p = nil end
+                end
                 if p then
                     -- Whatever the state tick last measured. Not re-measured here: two answers
                     -- to "is this player on a charger" would eventually disagree, and the way
@@ -7065,6 +7082,11 @@ local function hydrateReal(src)
     if Bridge.SetHere then Bridge.SetHere(src, true) end
     hydratePlayer(src, p)
 end
+--- Reachable from the battery tick, which is written above this file's locals and has to be
+--- able to load a player it finds unhydrated rather than assume they are full. Declared here,
+--- after the local it calls: a body written above it would find a nil global instead.
+function HydrateBattery(src) return hydrateReal(src) end
+
 AddEventHandler('v-phone:internal:playerLoaded', function(src) hydrateReal(tonumber(src)) end)
 
 -- And everybody already connected when the resource (re)starts, who will fire no load event.
