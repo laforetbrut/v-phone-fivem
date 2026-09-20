@@ -5,6 +5,18 @@ one coming back.
 
 ---
 
+## [2026-09-20 09:23] - widget replies left the home grid fitted to its previous height
+
+**Context:** visual review of the home-screen refresh, including the four-widget screenshot.
+**Error:** icon labels overlapped the next row after the widget area grew. The previous release's screenshot showed the same defect. The new widget-grid assertion reproduced it before the fix.
+**Root cause:** renderHome fitted the app grid before the asynchronous widget response painted a taller strip. The successful paint did not request another fit. Clearing the strip also returned without invalidating an older pending response.
+**Fix:** compare the rendered widget unit layout with the new layout and request the existing deferred-safe refit only when that layout changes. Clearing widgets invalidates pending replies and refits if the strip was populated. Ordinary clock and balance updates keep the grid cache.
+**Prevention:** test transitions between empty and full widget strips and measure label-to-next-row clearance after the asynchronous reply, not just control hit targets.
+
+**Validation follow-up:** the first post-fix capture still used the old embedded JavaScript in preview/index.html. Rebuild with tools/make-preview.py after each source change before running a standalone browser probe; the preview embeds both CSS and JavaScript rather than loading the source files live.
+
+---
+
 ## [2026-09-13 14:10] - text worded from an empty string table stayed wrong after the table arrived
 
 **Context:** the string table stopped riding on every NUI message (it is attached only when the

@@ -1,5 +1,6 @@
 /* ============================================================
    v-phone — iFruit · FruitOS "Glass"
+   Author: vyrriox
 
    Two rules govern everything below.
 
@@ -920,8 +921,8 @@ input { font: inherit; }
 .tile { display: flex; flex-direction: column; align-items: center; gap: 6px;
   animation: ph-in .2s var(--spring) backwards; }
 .tile .wrap { position: relative; }
-/* FruitOS icon geometry: 60px, corner radius 22.5% of the side. */
-.tile .ic { width: 60px; height: 60px; border-radius: 13.5px; overflow: hidden;
+/* FruitOS icon geometry: 60px, corner radius about 28% of the side. */
+.tile .ic { width: 60px; height: 60px; border-radius: 17px; overflow: hidden;
   display: flex; align-items: center; justify-content: center; color: #fff;
   box-shadow: 0 4px 12px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.35),
               inset 0 0 0 .5px rgba(255,255,255,.18);
@@ -2214,8 +2215,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
    centres the glyph itself rather than the line it sits on. */
 .widget .wicon { display: flex; align-items: center; opacity: .78; }
 .widget .wicon svg { width: 15px; height: 15px; }
-.widget.w-calendar .wday { font-size: 12px; font-weight: 700; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--fruitos-red); }
+.widget.w-calendar .wday { font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  text-transform: none; color: var(--fruitos-red); }
 .widget.w-calendar .wnum { font-family: var(--fruitos-num); font-size: 40px; font-weight: 500; line-height: 1; }
 
 /* ══ Search pill above the dock ═══════════════════════════════ */
@@ -2926,7 +2927,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 
 /* The icon size is computed from the cell a chosen grid actually gives it. */
 .pages .tile .ic { width: var(--isz, 60px); height: var(--isz, 60px);
-  border-radius: var(--iradius, 13.5px); }
+  border-radius: calc(var(--isz, 60px) * .2833); }
 .pages .tile .ic svg { width: 56%; height: 56%; }
 .pages .tile .nm { font-size: var(--ilabel, 11.5px); }
 /* **The inside of a folder has to shrink with the outside of it.** The box already tracked
@@ -2938,7 +2939,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
    above give. At isz=22 a cell is 8.1px instead of 3px. Those fixed values stay as the fallback
    for the drag ghost, which is drawn at a fixed 60px and never reads `--isz`. */
 .pages .tile .folder { width: var(--isz, 60px); height: var(--isz, 60px);
-  border-radius: var(--iradius, 13.5px);
+  border-radius: calc(var(--isz, 60px) * .2833);
   padding: calc(var(--isz, 60px) * .1); gap: calc(var(--isz, 60px) * .0667); }
 .pages .tile .folder > span,
 .pages .tile .folder > span > .ic { border-radius: calc(var(--isz, 60px) * .075); }
@@ -3030,8 +3031,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   --ph-r-xl: 30px;
   --ph-touch: 44px;
   --ph-fast: 140ms;
-  --ph-med: 280ms;
-  --ph-slow: 440ms;
+  --ph-med: 220ms;
+  --ph-slow: 320ms;
   --ph-ease: cubic-bezier(.2, .82, .2, 1);
   --ph-spring: cubic-bezier(.22, .9, .18, 1);
 
@@ -3378,30 +3379,25 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   --glass-x: 22%;
   --glass-y: -18%;
   min-height: 110px;
-  border-radius: 22px;
+  border-radius: 25px;
   padding: 15px;
   overflow: hidden;
   box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .25),
-    inset 0 1px 0 rgba(255, 255, 255, .24),
-    0 13px 30px rgba(0, 0, 0, .30);
-  transition: transform var(--ph-fast) var(--ph-spring), box-shadow var(--ph-fast) ease;
+    inset 0 0 0 1px rgba(255, 255, 255, .12),
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    0 6px 16px rgba(0, 0, 0, .18);
+  transition: transform var(--ph-fast) var(--ph-spring);
 }
 
 .widget:hover {
   transform: translateY(-1px);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .28),
-    inset 0 1px 0 rgba(255, 255, 255, .28),
-    0 16px 34px rgba(0, 0, 0, .34);
 }
 
 .widget.w-weather {
   background:
     radial-gradient(110% 95% at var(--glass-x) var(--glass-y),
       rgba(255, 255, 255, var(--sheen-a, .18)), transparent 56%),
-    radial-gradient(90% 100% at 100% 100%, rgba(52, 199, 89, .20), transparent 60%),
-    linear-gradient(155deg, #56b5ff, #1673dc 58%, #174fae);
+    linear-gradient(155deg, #327fd0, #175fa8 58%, #183e70);
 }
 
 .widget.w-calendar {
@@ -3428,13 +3424,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   position: relative;
   overflow: hidden;
   box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .24),
-    inset 0 1px 0 rgba(255, 255, 255, .34),
-    0 7px 17px rgba(0, 0, 0, .38);
-  transition:
-    transform var(--ph-fast) var(--ph-spring),
-    filter var(--ph-fast) ease,
-    box-shadow var(--ph-fast) ease;
+    inset 0 0 0 .5px rgba(255, 255, 255, .20),
+    inset 0 1px 0 rgba(255, 255, 255, .38),
+    0 4px 10px rgba(0, 0, 0, .22);
+  transition: transform var(--ph-fast) var(--ph-spring);
 }
 
 .tile .ic::after {
@@ -3444,9 +3437,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   pointer-events: none;
   border-radius: inherit;
   background:
-    radial-gradient(110% 80% at 20% -10%, rgba(255, 255, 255, .30), transparent 48%),
-    linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 42%, rgba(0, 0, 0, .08));
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .14);
+    linear-gradient(145deg, rgba(255, 255, 255, .24), transparent 44%, rgba(255, 255, 255, .06));
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .08);
 }
 
 .tile .ic > svg,
@@ -3456,25 +3448,18 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 }
 
 .tile:hover > .wrap > .ic {
-  filter: brightness(1.045) saturate(1.05);
-  transform: translateY(-1px) scale(1.018);
-  box-shadow:
-    inset 0 0 0 .5px rgba(255, 255, 255, .28),
-    inset 0 1px 0 rgba(255, 255, 255, .38),
-    0 10px 21px rgba(0, 0, 0, .42);
+  transform: translateY(-1px) scale(1.025);
 }
 
 .tile:active > .wrap > .ic {
-  transform: scale(.89);
-  filter: brightness(.94);
+  transform: scale(.94);
 }
 
 /* A folder gets the same press feedback as an app, on the folder box rather than on the four
    icons inside it. Scoping the rules above removed the feedback a folder used to get by
    accident, and the accident looked wrong: the box stayed put while its contents shrank. */
 .tile:active > .wrap > .folder {
-  transform: scale(.89);
-  filter: brightness(.94);
+  transform: scale(.94);
 }
 
 .tile .nm {
@@ -3501,20 +3486,9 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
     0 7px 17px rgba(0, 0, 0, .36);
 }
 
-/* **The dock keeps its dark tint on purpose, and takes the measured edge.**
-
-   The tint stays because the material derivation is explicit that Glass Regular
-   composites to `#858585` over black - it is a LIGHT material on a dark backdrop, not a
-   dark one - and the dock sits over an arbitrary wallpaper with white icon labels under
-   it. Swapping the fill would wash the icons out on any dark wallpaper. The kit contains
-   no dock, so there is nothing here to be unfaithful to.
-
-   What DOES change is the edge, and this one is measured. `filter1_iii`, the most reused
-   filter in the kit at 87 occurrences, is a tight bright line on the TOP edge sitting on
-   a wide soft shade, plus the same bright line on the BOTTOM edge. This surface had the
-   top line and then a dark line along the bottom, which is the opposite of the material:
-   a glass slab is lit at both edges and shaded at the top, never shaded at the foot.
-   Falloffs are the kit's own: 10px for the two bright lines, 30px for the shade. */
+/* A static lens: the player's glass preference controls the rim and tint.
+   Keep the lower fill dark enough to separate icons from a bright wallpaper.
+   No backdrop sampling or animated shadows on this always-visible surface. */
 .dock {
   --glass-x: 21%;
   --glass-y: -26%;
@@ -3522,19 +3496,13 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
   padding: 11px 10px;
   border-radius: 33px;
   background:
-    radial-gradient(150% 120% at var(--glass-x) var(--glass-y),
-      rgba(255, 255, 255, var(--sheen-a, .18)),
-      rgba(255, 255, 255, .035) 42%,
-      transparent 67%),
-    linear-gradient(145deg, rgba(255, 255, 255, .09), transparent 48%, rgba(0, 0, 0, .11)),
-    linear-gradient(180deg, rgba(42, 43, 50, var(--tint-a, .42)), rgba(20, 21, 26, .60));
+    linear-gradient(155deg, rgba(255, 255, 255, var(--sheen-a, .18)), transparent 48%),
+    linear-gradient(180deg, rgba(62, 72, 91, var(--tint-a, .42)), rgba(20, 27, 40, .64));
   box-shadow:
-    inset 0 10px 10px -10px rgba(255, 255, 255, .26),
-    inset 0 -10px 10px -10px rgba(255, 255, 255, .26),
-    inset 0 30px 30px -30px rgba(0, 0, 0, .18),
-    inset 0 0 0 .5px rgba(255, 255, 255, var(--rim-a, .31)),
-    0 0 0 .5px rgba(0, 0, 0, .32),
-    0 17px 38px rgba(0, 0, 0, .34);
+    inset 0 1px 0 rgba(255, 255, 255, var(--rim-a, .31)),
+    inset 0 -1px 0 rgba(255, 255, 255, .12),
+    inset 0 0 0 1px rgba(255, 255, 255, .10),
+    0 8px 20px rgba(0, 0, 0, .22);
 }
 
 .searchpill {

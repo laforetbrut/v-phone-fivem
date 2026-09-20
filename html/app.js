@@ -1,4 +1,5 @@
 // v-phone — iFruit, FruitOS Glass shell
+// Author: vyrriox
 //
 // Every built-in app below is a VIEW. It renders what the owning module answered and
 // sends actions back to that module; it never keeps a copy. The moment an app caches a
@@ -2559,11 +2560,17 @@ async function renderWidgets() {
   if (!host) return;
 
   const ids = widgetIds();
+  const mine = ++widgetEpoch;
   // The strip can be empty, and that is a valid arrangement rather than a failure. Nothing is
   // asked for and nothing is drawn - except the add button, which is the way back.
-  if (!ids.length && !editing) { host.innerHTML = ''; return; }
+  if (!ids.length && !editing) {
+    const hadWidgets = !!host.childElementCount;
+    host.innerHTML = '';
+    host.dataset.layout = '';
+    if (hadWidgets) refitPages();
+    return;
+  }
 
-  const mine = ++widgetEpoch;
   // The server is only troubled when something on the strip actually needs it.
   const server = ids.some((id) => WIDGETS[id] && WIDGETS[id].srv);
   const d = await post('widgets', server ? { server: true } : { server: false });
@@ -2607,7 +2614,12 @@ function paintWidgets(host, d) {
       '</button>';
   }).join('');
 
+  // Refit only when the strip's geometry changes, after the async reply paints it.
+  // A balance or clock refresh keeps the cached icon sizing and its listeners.
+  const layout = widgetIds().map((id) => WIDGETS[id].units).join(',');
+  const layoutChanged = host.dataset.layout !== layout;
   host.innerHTML = html;
+  host.dataset.layout = layout;
 
   // **The add control is in the arrange bar, under the pages, not in this grid.**
   //
@@ -2622,6 +2634,7 @@ function paintWidgets(host, d) {
   if (add) add.disabled = !(widgetUnits(widgetIds()) < WIDGET_MAX_UNITS && widgetChoices().length);
   host.classList.toggle('jiggle', !!editing);
   wireWidgets(host);
+  if (layoutChanged) refitPages();
 }
 
 // ── Tapping, removing, and dragging ────────────────────────────

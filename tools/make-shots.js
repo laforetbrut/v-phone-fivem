@@ -1,5 +1,6 @@
 /**
  * The README's screenshots, taken from the real page.
+ * Author: vyrriox
  *
  *   python tools/make-preview.py     # build the browser preview first
  *   node tools/make-shots.js         # then shoot it
@@ -2114,8 +2115,30 @@ const SHOTS = [
   // timeout above exists because of this shot: one screen that would not capture used to hang
   // the whole batch of twelve with no output at all.
   {
-    // The strip, full. For the README, and for looking at: twelve tiles that have to read as
-    // one family is a claim only a picture can settle.
+    // Async widget layout changes must leave room for every icon label.
+    name: 'widget-grid', file: null, scratch: true, assert: true,
+    script: `${SETUP}
+      ['messages', 'bank'].forEach((id) => need(id));
+      state.prefs.gridCols = 4; state.prefs.gridRows = 4;
+      for (const widgets of [[], ['weather', 'calendar', 'messages', 'bank'], []]) {
+        state.prefs.widgets = widgets;
+        renderHome();
+        await renderWidgets();
+        await new Promise((r) => setTimeout(r, 400));
+        const tiles = [...document.querySelectorAll('#pages .page:first-child .tile')];
+        for (let i = 0; i + 4 < tiles.length; i++) {
+          const label = tiles[i].querySelector('.nm').getBoundingClientRect();
+          const next = tiles[i + 4].querySelector('.wrap').getBoundingClientRect();
+          if (label.bottom > next.top - 1) throw new Error('widget update overlaps icon rows');
+        }
+        await renderWidgets();
+        if (tiles[0] !== document.querySelector('#pages .page:first-child .tile')) {
+          throw new Error('unchanged widget layout rebuilt the app grid');
+        }
+      }`,
+  },
+  {
+    // The full widget strip, captured from the same view the player uses.
     name: 'widgets', file: '40-widgets.png',
     script: `${SETUP}
       ['messages', 'music', 'bank', 'health', 'garage', 'reminders', 'export', 'alerts']
