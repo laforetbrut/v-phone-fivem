@@ -21033,6 +21033,13 @@ function fanCard(o, showBuy) {
       ? '<button class="bigbtn tinted fanbuy" type="button" data-unlock="' + esc(String(o.id)) + '">' +
           esc(L('ph.fan_unlock')) + ' ' + esc(money(o.price)) + '</button>'
       : '') +
+    // Your own picture, on your own page: the way to take it down. The server had always
+    // accepted the request and nothing on screen ever made it, so a posted picture was
+    // permanent by accident.
+    (o.mine
+      ? '<button class="bigbtn plain fandel" type="button" data-del="' + esc(String(o.id)) + '">' +
+          esc(L('ph.fan_delete')) + '</button>'
+      : '') +
     '</article>';
 }
 
@@ -21350,6 +21357,12 @@ function fanNewPost() {
     });
 }
 
+/// When a subscription runs out, as a date a player reads rather than a stamp.
+function fanUntil(ts) {
+  const d = new Date(Number(ts) * 1000);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+}
+
 async function fanCreator(handle) {
   const r = await post('fanCreator', { handle });
   if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
@@ -21364,7 +21377,12 @@ async function fanCreator(handle) {
         ? UI.button(L('ph.fan_subscribe') + ' ' + money(c.subPrice), 'fcsub', 'tinted') +
           '<div class="groupfoot">' +
             esc(L('ph.fan_sub_hint').replace('{n}', String(lim.subDays || 30))) + '</div>'
-        : (c.subscribed ? '<div class="groupfoot">' + esc(L('ph.fan_subscribed')) + '</div>' : '')) +
+        : (c.subscribed
+            ? UI.button(L('ph.fan_unsub'), 'fcunsub', 'plain') +
+              '<div class="groupfoot">' + esc(c.subUntil
+                ? L('ph.fan_sub_until').replace('{n}', fanUntil(c.subUntil))
+                : L('ph.fan_subscribed')) + '</div>'
+            : '')) +
       UI.button(L('ph.fan_tip'), 'fctip', 'plain')) +
     '<div class="fanbody">' +
       ((r.posts || []).length ? (r.posts || []).map((o) => fanCard(o, !c.me)).join('')
@@ -21374,6 +21392,27 @@ async function fanCreator(handle) {
       const epoch = sheetEpoch;
       qrows('sheet', '[data-unlock]', (b) =>
         b.addEventListener('click', () => fanUnlock(b.dataset.unlock, b)));
+      qrows('sheet', '[data-del]', (b) =>
+        b.addEventListener('click', () => {
+          confirmSheet(L('ph.fan_delete'), L('ph.fan_delete_ask'), async () => {
+            const res = await post('fanDelete', { id: Number(b.dataset.del) });
+            if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+            toast(L('ph.fan_deleted'));
+            RENDER.onlyfruits();
+            fanCreator(c.handle);
+          });
+        }));
+      if (byId('fcunsub')) byId('fcunsub').addEventListener('click', () => {
+        // What it costs is said before it is asked, because nothing is refunded: a
+        // subscription is a month bought up front, and cancelling ends the access now.
+        confirmSheet(L('ph.fan_unsub'), L('ph.fan_unsub_ask'), async () => {
+          const res = await post('fanUnsub', { handle: c.handle });
+          if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }
+          toast(L('ph.fan_unsubbed'));
+          RENDER.onlyfruits();
+          fanCreator(c.handle);
+        });
+      });
       if (byId('fcfollow')) byId('fcfollow').addEventListener('click', async () => {
         const res = await post('fanFollow', { handle: c.handle, on: !c.following });
         if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return; }

@@ -8,6 +8,19 @@ All notable changes to v-phone are documented here.
 
 ### Added
 
+- **OnlyFruits: take a post down.** A creator's own post now has a Delete button on their page.
+  The server had always accepted the request and nothing on screen ever made it, so a picture
+  posted by mistake was permanent. The unlocks of everybody who bought it go with it.
+- **OnlyFruits: cancel a subscription.** A subscriber can end it from the creator's page. There
+  is no recurring charge to stop, so what ends is the access, and the app says so before it
+  asks: nothing is refunded. The page also shows the date the subscription runs to.
+
+### Fixed
+
+- Four French strings were missing their accents.
+
+### Added
+
 - **More handset sizes, and Auto.** Eight sizes from 85% to 250%, and an Auto setting that
   picks one from the height of the game window: 1080p gets 100%, 1440p 125%, 4K 200%. Auto is
   now the default for a new character (`Config.DeviceSize = 'auto'`), because a 4K player
