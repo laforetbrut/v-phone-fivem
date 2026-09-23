@@ -4,6 +4,9 @@ A FruitOS style phone for FiveM that runs on **your** framework. qb-core, qbx_co
 
 Thirty-seven apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face Unlock.
 
+Release 1.7.9 fixes SMS conversations that could show a server timeout after they had loaded.
+Late replies from an older conversation view no longer replace the messages on screen.
+
 Release 1.7.7 refines the home screen with rounder icons, a cool glass dock, softer widget shadows and shorter transitions. These are CSS changes with no added dependency, blur layer or background task. In-game frame times still depend on the server and client setup.
 It also fixes icon rows overlapping after widgets load by fitting the grid when the widget layout changes.
 
@@ -1189,6 +1192,10 @@ Bleeter, Snapmatic and Hush are brands from Grand Theft Auto V.
 Un téléphone au style FruitOS pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
 
 Trente-sept applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face Unlock.
+
+La version 1.7.9 corrige les conversations SMS qui pouvaient afficher une erreur de délai après
+leur chargement. Les réponses tardives d'une ancienne conversation ne remplacent plus les
+messages à l'écran.
 
 La version 1.7.7 affine l'accueil avec des icônes plus arrondies, un dock en verre aux tons froids, des ombres de widgets plus douces et des transitions plus courtes. Ces changements CSS n'ajoutent aucune dépendance, couche de flou ou tâche en arrière-plan. Les temps de rendu en jeu restent à mesurer selon la configuration du serveur et du client.
 Elle corrige aussi le chevauchement des rangées d'icônes après le chargement des widgets en recalculant la grille quand leur disposition change.

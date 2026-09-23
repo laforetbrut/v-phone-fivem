@@ -430,6 +430,68 @@ const SHOTS = [
       await new Promise((r) => setTimeout(r, 500));`,
   },
   {
+    // A cancelled read may still answer after a newer SMS view has painted. Its late timeout
+    // must not replace either a direct thread or a group with the error screen.
+    name: 'message-race', file: null, scratch: true, assert: true,
+    script: `${SETUP}
+      await open('messages', 700);
+      const under = window.__VPHONE_PREVIEW_POST__;
+      const pending = [];
+      window.__VPHONE_PREVIEW_POST__ = (name, payload) => {
+        if (name === 'conversation') return new Promise((resolve) => pending.push({ payload, resolve }));
+        return under(name, payload);
+      };
+
+      const first = openThread('svc:Care');
+      await new Promise((r) => setTimeout(r, 0));
+      const second = openThread('svc:Care');
+      await new Promise((r) => setTimeout(r, 0));
+      if (pending.length !== 2) throw new Error('direct thread did not make two reads');
+      pending[1].resolve({ ok: true, service: true,
+        messages: [{ id: 2, body: 'Current message', mine: false, kind: 'text', at: Date.now() }] });
+      await second;
+      pending[0].resolve({ error: 'timeout' });
+      await first;
+      if (!document.querySelector('#thread')?.textContent.includes('Current message')) {
+        throw new Error('the cancelled direct read replaced the loaded SMS');
+      }
+
+      const oldGroup = openGroup(1, 'Old group');
+      await new Promise((r) => setTimeout(r, 0));
+      const currentGroup = openGroup(2, 'Current group');
+      await new Promise((r) => setTimeout(r, 0));
+      if (pending.length !== 4) throw new Error('group views did not make two reads');
+      pending[3].resolve({ ok: true,
+        messages: [{ id: 4, body: 'Current group message', mine: false,
+                     kind: 'text', at: Date.now() }] });
+      await currentGroup;
+      pending[2].resolve({ error: 'timeout' });
+      await oldGroup;
+      if (threadGroup?.id !== 2 ||
+          !document.querySelector('#thread')?.textContent.includes('Current group message')) {
+        throw new Error('the cancelled group read replaced the loaded conversation');
+      }
+
+      let answerOutbox;
+      window.__VPHONE_PREVIEW_POST__ = (name, payload) => {
+        if (name === 'conversation') return new Promise((resolve) => pending.push({ payload, resolve }));
+        if (name === 'outbox') return new Promise((resolve) => { answerOutbox = resolve; });
+        return under(name, payload);
+      };
+      await RENDER.messages();
+      const loadingThread = openThread('svc:Care');
+      await new Promise((r) => setTimeout(r, 0));
+      const reads = pending.length;
+      answerOutbox({ ok: true, items: [] });
+      await new Promise((r) => setTimeout(r, 0));
+      if (pending.length !== reads) {
+        throw new Error('the outbox answer restarted a thread that was still loading');
+      }
+      pending[reads - 1].resolve({ ok: true, service: true, messages: [] });
+      await loadingThread;
+      window.__VPHONE_PREVIEW_POST__ = under;`,
+  },
+  {
     // The conversation header on its own: the chevron, the face, the name and the call button.
     // Taken through `openThread` rather than `paintThread`, because the header is what is
     // being looked at and only that path builds it.

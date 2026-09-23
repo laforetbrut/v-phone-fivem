@@ -16,7 +16,7 @@ node_version '22'
 name 'v-phone'
 author 'vyrriox'
 description 'iFruit - a complete smartphone for FiveM. 37 apps, framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.7.8'
+version '1.7.9'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is

@@ -4,6 +4,27 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.9] - 2026-09-23
+
+### Fixed
+
+- **SMS conversations no longer turn into a server timeout after loading.** When an outbox
+  reply arrived while a conversation was still loading, the page started the same read again.
+  The cancelled read could then time out and replace the loaded messages with an error. The
+  outbox now waits for the existing read to paint its queue, and late replies from older direct
+  or group conversation views cannot repaint the current one.
+
+### Correctifs
+
+- **Les conversations SMS ne se changent plus en erreur de délai après le chargement.** Une
+  réponse de la boîte d'envoi reçue pendant le chargement relançait la lecture de la conversation.
+  La lecture annulée pouvait ensuite expirer et remplacer les messages affichés par une erreur.
+  La boîte d'envoi attend désormais la fin de la lecture en cours pour afficher sa file, et les
+  réponses tardives des anciennes conversations privées ou de groupe ne remplacent plus la vue
+  actuelle.
+
+---
+
 ## [1.7.8] - 2026-09-20
 
 ### Fixed

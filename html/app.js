@@ -5435,8 +5435,10 @@ RENDER.messages = async () => {
     // player had typed - and this answer arrives a moment after Messages opens, which is
     // precisely when `messageTo()` has just prefilled a draft for them. So tapping "message" on
     // a contact card and starting to type lost what you typed, once, unpredictably.
+    // If the thread is still loading, paintThread reads this updated queue when it lands.
+    // Starting a second request here cancels the first one, whose timeout can later replace
+    // the loaded conversation with an error.
     if (byId('threadtail')) paintTail();
-    else openThread(thread);
   });
 
   // Re-read before drawing. `state.conversations` is a snapshot taken when the phone was
@@ -5571,7 +5573,7 @@ async function groupMembersSheet(id, name) {
 
 async function openGroup(id, name) {
   if (!openApp || openApp.id !== 'messages') return;
-  beginView();
+  const epoch = beginView();
   thread = null;
   threadGroup = { id, name };
   // The title is the way in, which is where a phone puts it: tapping the name of a group
@@ -5598,6 +5600,8 @@ async function openGroup(id, name) {
   navFace(name, null, () => groupMembersSheet(id, name));
   loading();
   const res = await post('conversation', { group: id });
+  if (epoch !== viewEpoch || !openApp || openApp.id !== 'messages' ||
+      !threadGroup || threadGroup.id !== id) return;
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
   paintThread(res.messages || []);
   // No unread to clear: a group row carries an id and a name and nothing else, so group
@@ -5630,7 +5634,7 @@ function messageTo(number, draft) {
 
 async function openThread(number, draft) {
   if (!openApp || openApp.id !== 'messages') return;
-  beginView();
+  const epoch = beginView();
   thread = number;
   threadGroup = null;
   // A service thread is opened by its `svc:Label` key rather than by a number. Show the
@@ -5652,6 +5656,8 @@ async function openThread(number, draft) {
   navFace(withWhom, isService ? null : photoOfNumber(number));
   loading();
   const res = await post('conversation', { number });
+  if (epoch !== viewEpoch || !openApp || openApp.id !== 'messages' ||
+      thread !== number || threadGroup) return;
   if (!res || res.error) { body(UI.empty(L('ph.err_' + ((res && res.error) || 'x')))); return; }
   paintThread(res.messages || [], res.service === true || isService);
   if (draft && byId('msg')) byId('msg').value = String(draft).slice(0, 250);

@@ -5,6 +5,20 @@ one coming back.
 
 ---
 
+## [2026-09-23 06:49] - an older SMS read replaced a loaded conversation with a timeout
+
+**Context:** a conversation was opened while the Messages app's outbox read was still pending.
+**Error:** after the thread loaded, the page could replace it with the server timeout message.
+**Root cause:** the outbox answer reopened a thread that had no painted tail yet. This cancelled
+the first conversation request, but its page timeout still resolved later and `openThread` painted
+the error without checking whether its view was current. Group reads had the same stale reply risk.
+**Fix:** let the in-flight thread paint the updated outbox and reject late direct or group replies
+after a newer view starts.
+**Prevention:** simulate overlapping conversation reads, delayed outbox answers and late errors
+in the browser regression checks.
+
+---
+
 ## [2026-09-20 09:23] - widget replies left the home grid fitted to its previous height
 
 **Context:** visual review of the home-screen refresh, including the four-widget screenshot.
