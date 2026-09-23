@@ -5612,10 +5612,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .cc {
   color: #fff;
   background:
-    radial-gradient(90% 62% at 16% -5%, rgba(121, 161, 224, .30), transparent 62%),
-    radial-gradient(82% 64% at 100% 100%, rgba(162, 89, 177, .24), transparent 68%),
-    linear-gradient(155deg, rgba(255, 255, 255, .055), transparent 44%),
-    rgba(8, 9, 14, .885);
+    radial-gradient(90% 62% at 16% -5%, rgba(121, 161, 224, .22), transparent 62%),
+    radial-gradient(82% 64% at 100% 100%, rgba(162, 89, 177, .15), transparent 68%),
+    linear-gradient(155deg, rgba(255, 255, 255, .04), transparent 44%),
+    #11131b;
   box-shadow:
     inset 0 0 0 .5px rgba(255, 255, 255, .16),
     0 22px 60px rgba(0, 0, 0, .55);
@@ -10582,6 +10582,40 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
 .pact.plike.on svg { fill: currentColor; }
 .pact.prepost.on { color: var(--fruitos-green); }
 .pact.pdel:active { color: var(--fruitos-red); }
+
+.postlocation {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  gap: 11px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 17px;
+  color: var(--app-label);
+  background: var(--app-fill);
+  text-align: left;
+  box-shadow: inset 0 0 0 .5px var(--app-sep);
+}
+.postlocation > svg:first-child { width: 23px; height: 23px; color: var(--app-tint); }
+.postlocation > svg:last-child { width: 15px; height: 15px; margin-left: auto;
+  color: var(--app-label3); }
+.postlocation span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.postlocation b { font-size: 13px; font-weight: var(--fw-semibold); }
+.postlocation small { font-size: 11px; color: var(--app-label2); }
+.postlocation:active { opacity: .72; }
+.postlocation:focus-visible, .soclocpick:focus-visible {
+  outline: 2px solid var(--app-tint); outline-offset: 2px;
+}
+
+.soclocpick { display: flex; width: 100%; min-height: 46px; align-items: center;
+  gap: 9px; padding: 0 13px; margin: 8px 0 0; border-radius: 14px;
+  color: var(--app-tint); background: var(--app-fill);
+  font-size: 13px; font-weight: var(--fw-semibold); text-align: left; }
+.soclocpick svg { width: 18px; height: 18px; }
+.soclocpick.on { color: #fff; background: #0066cc; }
+.soclochint { margin: 5px 4px 12px; font-size: 11px; line-height: 1.35;
+  color: var(--app-label2); }
 
 /* ── Several photographs on one post ──────────────────────────
    Four arrangements, not one at four sizes: two split the card down the middle, three put a

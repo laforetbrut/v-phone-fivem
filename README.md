@@ -4,6 +4,12 @@ A FruitOS style phone for FiveM that runs on **your** framework. qb-core, qbx_co
 
 Thirty-seven apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face Unlock.
 
+Release 1.7.10 lets Bleeter authors explicitly attach their current position to a post. Readers
+can set a waypoint from the location card. The Control Center and Notification Center now use
+an opaque, static tinted material for clearer controls without adding blur or background work.
+The position is read by the server only when a location post is published. FiveM frame times
+still need an in-game check on the target server and client.
+
 Release 1.7.9 fixes SMS conversations that could show a server timeout after they had loaded.
 Late replies from an older conversation view no longer replace the messages on screen.
 
@@ -1192,6 +1198,13 @@ Bleeter, Snapmatic and Hush are brands from Grand Theft Auto V.
 Un téléphone au style FruitOS pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
 
 Trente-sept applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face Unlock.
+
+La version 1.7.10 permet aux auteurs Bleeter de joindre explicitement leur position actuelle
+à un post. Les lecteurs peuvent poser un repère depuis la carte de position. Le Centre de
+contrôle et le Centre de notifications utilisent une matière teintée, opaque et statique pour
+rendre les commandes plus lisibles sans ajouter de flou ni de tâche de fond. Le serveur ne lit
+la position que lors de la publication d'un post qui la partage. Les temps de rendu dans FiveM
+restent à vérifier en jeu sur le serveur et le client visés.
 
 La version 1.7.9 corrige les conversations SMS qui pouvaient afficher une erreur de délai après
 leur chargement. Les réponses tardives d'une ancienne conversation ne remplacent plus les

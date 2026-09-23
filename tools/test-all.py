@@ -2,7 +2,7 @@
 """Every check this resource has, in one command.
 
     python tools/test-all.py
-    python tools/test-all.py --fast     everything except the 71 screenshots
+    python tools/test-all.py --fast     everything except screenshots and UI assertions
 
 There were six ways to test this phone and no way to run them, so each one was run when
 somebody remembered it existed. This is the list, in the order that fails cheapest first: a
@@ -22,6 +22,7 @@ syntax error should not cost five minutes of screenshots to discover.
     check-fr         no French word spelled two ways in the same locale file
     test-alert-caller who a dispatch alert says called it in, which is not its subject
     test-multiphoto  four photographs on one post, and the host gate on every one
+    test-location    Bleeter shares only the server ped position, when explicitly selected
     test-nudge       when the social apps may say what is new, and when they must stay quiet
     test-retention   how long a social row lives, and that both sweeps ask the one function
     test-mediaref    who still shows a photograph, before the sweep deletes it
@@ -33,7 +34,7 @@ syntax error should not cost five minutes of screenshots to discover.
     run-probe        can a cursor reach every control in all 37 apps
     probe-input      real mouse input through the compositor
     probe-size-xl    every control still reachable at the largest handset size (250%)
-    make-shots       71 screenshots, some of which are assertions
+    make-shots       browser screenshots and UI assertions
 
 Exit code 1 if anything fails. Nothing here needs a database or a running server.
 """
@@ -154,6 +155,7 @@ run('test-oxjob', [sys.executable, 'tools/test-oxjob.py'])
 run('test-poll', [sys.executable, 'tools/test-poll.py'])
 run('test-alert-caller', [sys.executable, 'tools/test-alert-caller.py'])
 run('test-multiphoto', [sys.executable, 'tools/test-multiphoto.py'])
+run('test-location', [sys.executable, 'tools/test-social-location.py'])
 run('test-nudge', [sys.executable, 'tools/test-nudge.py'])
 run('test-retention', [sys.executable, 'tools/test-social-retention.py'])
 run('test-mediaref', [sys.executable, 'tools/test-mediaref.py'])
@@ -176,7 +178,7 @@ run('probe-size-xl', ['node', 'tools/run-probe.js', '--size', '2.5'], 'every con
 if FAST:
     print('%-16s %-4s        skipped by --fast' % ('make-shots', '--'))
 else:
-    run('make-shots', ['node', 'tools/make-shots.js'], '71 screenshots and assertions')
+    run('make-shots', ['node', 'tools/make-shots.js'], 'screenshots and UI assertions')
 
 print('')
 failed = [n for n, ok in results if not ok]

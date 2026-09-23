@@ -178,7 +178,89 @@ const SHOTS = [
       await new Promise((r) => setTimeout(r, 800));
       if (!document.getElementById('cc').classList.contains('on')) {
         throw new Error('the quick settings did not open');
+      }
+      for (const id of ['cc', 'shade']) {
+        const style = getComputedStyle(document.getElementById(id));
+        if (style.backgroundColor !== 'rgb(17, 19, 27)' || style.backdropFilter !== 'none') {
+          throw new Error(id + ' needs an opaque, blur-free system material');
+        }
       }`,
+  },
+  {
+    name: 'bleeter-location', file: null, scratch: true, assert: true,
+    script: `${SETUP}
+      try { unlock(); } catch (e) {}
+      socCompose('bleeter');
+      const choice = byId('bloc');
+      if (!choice || choice.getAttribute('aria-pressed') !== 'false') {
+        throw new Error('the location choice must start off');
+      }
+      choice.click();
+      if (choice.getAttribute('aria-pressed') !== 'true' || !choice.classList.contains('on')) {
+        throw new Error('the composer did not attach the selected location');
+      }
+      const under = window.__VPHONE_PREVIEW_POST__;
+      let submitted, waypoint, refuse = true;
+      window.__VPHONE_PREVIEW_POST__ = (name, payload) => {
+        if (name === 'social' && payload.op === 'post') {
+          submitted = payload;
+          return refuse ? { error: 'nowhere' } : { ok: true, id: 42 };
+        }
+        if (name === 'waypoint') { waypoint = payload; return { ok: true }; }
+        return under(name, payload);
+      };
+      byId('btext').value = 'Draft';
+      byId('bgo').click();
+      await new Promise((r) => setTimeout(r, 100));
+      if (byId('btext')?.value !== 'Draft' || byId('bgo')?.disabled ||
+          choice.getAttribute('aria-pressed') !== 'true') {
+        throw new Error('a rejected location post lost the draft or the selected location');
+      }
+      refuse = false;
+      byId('btext').value = '';
+      byId('bgo').click();
+      await new Promise((r) => setTimeout(r, 100));
+      if (!submitted || submitted.shareLocation !== true || submitted.body !== '') {
+        throw new Error('a location-only post did not submit the opt-in');
+      }
+      const fixture = { id: 42, handle: 'test', body: '', kind: 'text',
+                        loc_x: 123.4, loc_y: -67.9 };
+      const host = document.createElement('div');
+      host.id = 'locationtest';
+      host.innerHTML = postCard(fixture, 'bleeter');
+      document.body.appendChild(host);
+      const card = host.querySelector('.postlocation');
+      if (!card || postCard({ id: 43, handle: 'old', body: '' }, 'bleeter')
+          .includes('postlocation')) {
+        throw new Error('the location card is missing or appears on an older post');
+      }
+      wirePosts('bleeter', null, 'locationtest');
+      card.click();
+      await new Promise((r) => setTimeout(r, 50));
+      if (!waypoint || waypoint.x !== 123.4 || waypoint.y !== -67.9) {
+        throw new Error('the shared location did not set the reader waypoint');
+      }
+      host.remove();
+      window.__VPHONE_PREVIEW_POST__ = under;`,
+  },
+  {
+    name: 'bleeter-compose-location', file: 'zz-bleeter-compose-location.png', scratch: true,
+    script: `${SETUP}
+      try { unlock(); } catch (e) {}
+      socCompose('bleeter');
+      byId('btext').value = 'Retrouvez-moi ici';
+      byId('bloc').click();
+      await new Promise((r) => setTimeout(r, 600));`,
+  },
+  {
+    name: 'bleeter-post-location', file: 'zz-bleeter-post-location.png', scratch: true,
+    script: `${SETUP}
+      await open('bleeter', 500);
+      setNav('Bleeter', '', null);
+      body(postCard({ id: 42, handle: 'route', displayname: 'Route', kind: 'text',
+                      body: 'Retrouvez-moi ici', loc_x: 123.4, loc_y: -67.9,
+                      at: Date.now(), likes: 2, comments: 1 }, 'bleeter'));
+      await new Promise((r) => setTimeout(r, 500));`,
   },
   {
     // The pill, mid-notification. It collapses after 4.2 seconds, so this one is a race the

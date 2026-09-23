@@ -5,6 +5,16 @@ one coming back.
 
 ---
 
+## [2026-09-23 07:46] - GitHub release query used an unsupported JSON field
+
+**Context:** Checking whether the 1.7.10 release already existed before publication.
+**Error:** `gh release view --json title` rejected `title` as an unknown field.
+**Root cause:** The CLI exposes the release title as `name` in this command.
+**Fix:** Queried `--json name,tagName,url,isDraft,isPrerelease`; the release was absent as expected.
+**Prevention:** Use the fields listed by `gh release view --json` rather than assuming the API's field names.
+
+---
+
 ## [2026-09-23 07:05] - release creation rejected an abbreviated target SHA
 
 **Context:** creating the GitHub release for the SMS fix from its commit.

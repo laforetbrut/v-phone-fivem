@@ -18331,6 +18331,14 @@ function postCard(pst, appId) {
   // Linkified AFTER escaping, never before: the tags and mentions are built out of text that
   // is already safe, so a post containing markup stays a post containing markup.
   const text = pst.body ? '<div class="pbody">' + socLinkify(esc(pst.body)) + '</div>' : '';
+  const x = Number(pst.loc_x), y = Number(pst.loc_y);
+  const location = appId === 'bleeter' && pst.loc_x != null && pst.loc_y != null &&
+    Number.isFinite(x) && Number.isFinite(y)
+    ? '<button class="postlocation" type="button" data-x="' + x + '" data-y="' + y +
+        '" aria-label="' + esc(L('ph.soc_location_route')) + '">' + svg('location') +
+        '<span><b>' + esc(L('ph.soc_location_shared')) + '</b><small>' +
+        esc(L('ph.soc_location_route')) + '</small></span>' + svg('chevron') + '</button>'
+    : '';
 
   const actions =
     '<div class="pfoot">' +
@@ -18359,7 +18367,7 @@ function postCard(pst, appId) {
     '</div>';
 
   return '<article class="post' + (photoFirst ? ' snapstyle' : '') + '" data-id="' + pst.id + '">' +
-    head + (photoFirst ? image + actions + text : text + image + actions) + '</article>';
+    head + (photoFirst ? image + actions + text : text + image + location + actions) + '</article>';
 }
 
 // Every card in a list answers the same way, so the wiring is written once. `reload` is
@@ -18390,6 +18398,11 @@ function wirePosts(appId, reload, root, reopen) {
   // selectors below matched and every control on that card was dead. `qrows` already exists
   // for exactly this and was simply not used here.
   const rows = (sel, fn) => qrows(root || 'appbody', sel, fn);
+  rows('.post .postlocation', (b) => b.addEventListener('click', async () => {
+    const r = await post('waypoint', { x: Number(b.dataset.x), y: Number(b.dataset.y) });
+    if (r && r.ok) { ui('waypoint'); toast(L('ph.waypoint_set')); }
+    else toast(L('ph.err_x'));
+  }));
   rows('.post .plike', (b) => b.addEventListener('click', async () => {
     const id = Number(b.closest('.post').dataset.id);
     const r = await post('social', { op: 'like', id, app: appId });
@@ -19285,7 +19298,8 @@ function socGrid(appId, list, emptyKey, reload) {
     return pic
       ? '<div class="shot" data-gi="' + i + '" style="' + inlineBackground(pic) + '"></div>'
       : '<div class="shot socgridtext" data-gi="' + i + '"><span>' +
-          esc(String(pst.body || '').slice(0, 160)) + '</span></div>';
+          esc(String(pst.body || (pst.loc_x != null && pst.loc_y != null
+            ? L('ph.soc_location_shared') : '')).slice(0, 160)) + '</span></div>';
   }).join('') + '</div>');
   // A tile opens the post on its own, where the caption, the likes and the comments are.
   rows('.shot[data-gi]', (el) => el.addEventListener('click', () =>
@@ -19455,6 +19469,7 @@ function socCompose(appId) {
   // fifth photograph and have it silently dropped on the way out.
   const cap = Math.max(1, Number(SOC.maxImages) || 4);
   let images = [];
+  let shareLocation = false;
 
   // The attachments, drawn under the field. Repainted in place rather than by rebuilding the
   // sheet, so the caption already typed survives picking - and re-picking - a photograph.
@@ -19496,6 +19511,9 @@ function socCompose(appId) {
              'maxlength="' + (isSnap ? 140 : 280) + '"') +
     UI.button('😊 ' + L('ph.emoji'), 'bemoji', 'plain') +
     UI.button(L('ph.pick_photo'), 'bpick', 'plain') +
+    (isSnap ? '' : '<button class="soclocpick" id="bloc" type="button" aria-pressed="false">' +
+      svg('location') + '<span>' + esc(L('ph.soc_attach_location')) + '</span></button>' +
+      '<div class="soclochint">' + esc(L('ph.soc_location_hint')) + '</div>') +
     UI.button(L(isSnap ? 'ph.snap_share' : 'ph.bleet_send'), 'bgo'),
     () => {
       byId('bemoji').addEventListener('click', () => emojiOpen(textId));
@@ -19508,24 +19526,40 @@ function socCompose(appId) {
         paintAttach();
         ui('attach');
       }));
+      if (!isSnap) byId('bloc').addEventListener('click', () => {
+        shareLocation = !shareLocation;
+        const button = byId('bloc');
+        button.classList.toggle('on', shareLocation);
+        button.setAttribute('aria-pressed', String(shareLocation));
+        button.querySelector('span').textContent = L(shareLocation
+          ? 'ph.soc_location_attached' : 'ph.soc_attach_location');
+        ui(shareLocation ? 'attach' : 'detach');
+      });
       byId('bgo').addEventListener('click', async () => {
         const bodyText = byId(textId).value;
         // Nothing at all to send: say so here rather than making the server answer 'empty'.
-        if (!images.length && bodyText.replace(/\s/g, '') === '') {
+        if (!images.length && bodyText.replace(/\s/g, '') === '' && !shareLocation) {
           toast(L(isSnap ? 'ph.snap_needphoto' : 'ph.err_empty'));
           return;
         }
         const epoch = sheetEpoch;
+        byId('bgo').disabled = true;
         const r = await post('social', {
           op: 'post', app: appId,
           kind: images.length ? 'photo' : 'text',
           // `image` as well as `images`: it is the cover, and a server that has not been
           // restarted since this page loaded still reads that field alone.
-          body: bodyText, image: images[0] || '', images,
+          body: bodyText, image: images[0] || '', images, shareLocation,
         });
+        if (epoch !== sheetEpoch) return;
+        if (!r || !r.ok) {
+          byId('bgo').disabled = false;
+          toast(L('ph.err_' + ((r && r.error) || 'x')));
+          return;
+        }
         if (!closeSheet(false, epoch)) return;
-        if (r && r.ok) { ui('sent'); socialRender(appId); }
-        else toast(L('ph.err_' + ((r && r.error) || 'x')));
+        ui('sent');
+        socialRender(appId);
       });
       paintAttach();
     });

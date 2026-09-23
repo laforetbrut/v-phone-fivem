@@ -4,6 +4,38 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.10] - 2026-09-23
+
+### Added
+
+- **Bleeter posts can share the author's current position.** Location sharing is an explicit
+  composer choice, available with text, photos, or by itself. The server reads coordinates from
+  the author's ped when the post is published; submitted coordinates are ignored. Readers can
+  tap the location card to set a waypoint. Older posts and Snapmatic remain unchanged.
+
+### Changed
+
+- **Clearer iOS 27 inspired system panels.** Control Center and Notification Center now use an
+  opaque, static tinted material, so home screen icons no longer show through the controls.
+  No blur layer, animation loop, or background request was added.
+
+### Ajouts
+
+- **Les posts Bleeter peuvent partager la position actuelle de leur auteur.** Le partage est
+  un choix explicite dans l'éditeur, avec du texte, des photos ou seul. Le serveur lit les
+  coordonnées sur le personnage au moment de publier ; les coordonnées envoyées par la page
+  sont ignorées. Les lecteurs peuvent toucher la carte de position pour poser un repère. Les
+  anciens posts et Snapmatic restent inchangés.
+
+### Modifications
+
+- **Panneaux système plus lisibles, inspirés d'iOS 27.** Le Centre de contrôle et le Centre de
+  notifications utilisent maintenant une matière teintée, opaque et statique : les icônes de
+  l'accueil ne transparaissent plus derrière les commandes. Aucune couche de flou, boucle
+  d'animation ou requête en arrière-plan n'a été ajoutée.
+
+---
+
 ## [1.7.9] - 2026-09-23
 
 ### Fixed

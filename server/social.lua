@@ -581,7 +581,7 @@ end
 --- are subselects, so a feed stays a single round trip however long it is. The four
 --- placeholders are the caller's own citizen id, in order.
 local POST_COLUMNS = [[
-    s.id, s.kind, s.body, s.image, s.images, s.at,
+    s.id, s.kind, s.body, s.image, s.images, s.loc_x, s.loc_y, s.at,
     a.handle, a.displayname, a.avatar, a.verified, a.official,
     (SELECT COUNT(*) FROM vphone_social_likes l WHERE l.post_id = s.id) AS likes,
     (SELECT COUNT(*) FROM vphone_social_comments c WHERE c.post_id = s.id) AS comments,
@@ -1179,20 +1179,42 @@ V.Callback('v-phone:soc:post', function(src, resolve, data)
     end
     local image = list[1] or ''
 
+    local shareLocation = mediaApp == 'bleeter' and data and data.shareLocation == true
     if kind == 'photo' or kind == 'video' then
         -- The media is the post; a caption is optional.
         if image == '' then resolve({ error = 'noimage' }) return end
     else
-        if body:gsub('%s', '') == '' and image == '' then resolve({ error = 'empty' }) return end
+        if body:gsub('%s', '') == '' and image == '' and not shareLocation then
+            resolve({ error = 'empty' }) return
+        end
     end
 
     -- A clip is one file. Four videos in a card is a frame-rate problem rather than a feature,
     -- and nothing in the page draws a grid of them.
     if kind == 'video' then list = { image } end
 
-    local id = MySQL.insert.await(
-        'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image, images) VALUES (?,?,?,?,?,?)',
-        { p.citizenid, mediaApp, kind, body, image, #list > 1 and json.encode(list) or nil })
+    local locX, locY
+    if shareLocation then
+        local ped = GetPlayerPed(src)
+        if not ped or ped == 0 then resolve({ error = 'nowhere' }) return end
+        local coords = GetEntityCoords(ped)
+        if not coords or not coords.x or not coords.y then
+            resolve({ error = 'nowhere' }) return
+        end
+        locX, locY = coords.x, coords.y
+    end
+
+    local id
+    if shareLocation then
+        id = MySQL.insert.await(
+            'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image, images, loc_x, loc_y) VALUES (?,?,?,?,?,?,?,?)',
+            { p.citizenid, mediaApp, kind, body, image, #list > 1 and json.encode(list) or '',
+              locX, locY })
+    else
+        id = MySQL.insert.await(
+            'INSERT INTO vphone_social_posts (citizenid, app, kind, body, image, images) VALUES (?,?,?,?,?,?)',
+            { p.citizenid, mediaApp, kind, body, image, #list > 1 and json.encode(list) or nil })
+    end
     Core.Log('social', ('%s posted %s #%d'):format(p.citizenid, kind, id), nil, p.citizenid)
     -- Hashtags into their own table, and anybody the post named gets told. Both read the
     -- body that was actually stored, not the one that arrived, so a truncated post cannot
@@ -3404,6 +3426,8 @@ function SocialBoot(core)
         -- before this column existed, which decodes to "just the cover" - a faithful reading,
         -- because one is all those posts ever had.
         `images`    TEXT NULL DEFAULT NULL,
+        `loc_x`     DECIMAL(9,1) NULL DEFAULT NULL,
+        `loc_y`     DECIMAL(9,1) NULL DEFAULT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (`id`), KEY `app_idx` (`app`, `id`), KEY `kind_idx` (`kind`, `id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
@@ -3431,6 +3455,16 @@ function SocialBoot(core)
     if not hasImages then
         MySQL.query.await('ALTER TABLE `vphone_social_posts` ADD COLUMN `images` TEXT NULL DEFAULT NULL')
         print('[v-phone] social: added posts.images for multi-photo posts')
+    end
+
+    local hasLocation = MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_social_posts'
+          AND COLUMN_NAME = 'loc_x' LIMIT 1]])
+    if not hasLocation then
+        MySQL.query.await([[ALTER TABLE `vphone_social_posts`
+            ADD COLUMN `loc_x` DECIMAL(9,1) NULL DEFAULT NULL,
+            ADD COLUMN `loc_y` DECIMAL(9,1) NULL DEFAULT NULL]])
+        print('[v-phone] social: added optional location to posts')
     end
 
     -- What somebody did to your post, or to you. The one thing a social app cannot be
