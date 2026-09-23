@@ -4,6 +4,12 @@ A FruitOS style phone for FiveM that runs on **your** framework. qb-core, qbx_co
 
 Thirty-eight apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face Unlock.
 
+Release 1.7.12 adds optional VineMarket posting fees. Server owners choose the fee and its
+recipient society account in `Config.Marketplace`; the posting form displays the amount before
+submission. Free posting remains the default. Browser and Lua tests cover successful payments,
+failed credits, refunds and repeated submissions. The banking flow still needs an in-game check
+with the server's actual banking resource.
+
 Release 1.7.11 adds **VineMarket**, a free classifieds download for selling or renting items,
 vehicles, furniture, apartments, houses and services. Buyers and sellers can discuss each
 listing in a private in-app thread. Seller numbers are hidden by default; an optional private
@@ -1221,6 +1227,12 @@ Bleeter, Snapmatic and Hush are brands from Grand Theft Auto V.
 Un téléphone au style FruitOS pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
 
 Trente-huit applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face Unlock.
+
+La version 1.7.12 ajoute des frais facultatifs pour publier sur VineMarket. Le serveur choisit
+le montant et le compte d'entreprise bénéficiaire dans `Config.Marketplace` ; le formulaire
+affiche le tarif avant l'envoi. La gratuité reste le réglage par défaut. Les tests navigateur
+et Lua couvrent le paiement, les crédits refusés, les remboursements et les envois répétés.
+Le parcours bancaire reste à vérifier en jeu avec la ressource bancaire du serveur.
 
 La version 1.7.11 ajoute **VineMarket**, une application gratuite d'annonces pour vendre ou louer
 des objets, véhicules, meubles, appartements, maisons et services. Acheteur et vendeur échangent

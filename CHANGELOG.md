@@ -4,22 +4,23 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## Unreleased
+## [1.7.12] - 2026-09-23
 
 ### Added
 
 - **Optional VineMarket posting fees.** The server sets the publication fee and the recipient
   society account; the form shows the fee before posting. A failed recipient credit refunds
   the seller, and listings stay hidden until payment and publication succeed. Retrying the
-  same submission cannot charge twice. Free posting remains the default.
+  same form within ten minutes returns the original listing without another charge. Free
+  posting remains the default.
 
 ### Ajouts
 
 - **Frais de publication facultatifs sur VineMarket.** Le serveur définit le montant et le
   compte d'entreprise bénéficiaire ; le formulaire affiche le tarif avant publication. Si
   le crédit échoue, le vendeur est remboursé et l'annonce reste invisible jusqu'à la réussite
-  du paiement et de la publication. Un nouvel essai du même envoi ne facture pas deux fois.
-  La gratuité reste le réglage par défaut.
+  du paiement et de la publication. Un nouvel essai depuis le même formulaire dans les dix
+  minutes retrouve l'annonce sans nouveau débit. La gratuité reste le réglage par défaut.
 
 ---
 
