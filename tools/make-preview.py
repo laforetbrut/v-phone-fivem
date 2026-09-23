@@ -548,6 +548,21 @@ const DB = {
   boothCredit: 437,
   cards: 2,
   seq: 100,
+  marketListings: [
+    { id: 4, seller: 'Local seller', kind: 'vehicles', deal: 'sale', title: 'Sultan RS',
+      description: 'Clean engine, available in the city.', price: 48000, period: 'once',
+      area: 'Vinewood', image: '', status: 'active', mine: false, showPhone: false },
+    { id: 3, seller: 'Local seller', kind: 'apartments', deal: 'rent', title: 'Downtown apartment',
+      description: 'Bright place near the station.', price: 1600, period: 'week',
+      area: 'Downtown', image: '', status: 'active', mine: false, showPhone: false },
+    { id: 2, seller: 'Local seller', kind: 'furniture', deal: 'sale', title: 'Leather sofa',
+      description: 'Pickup by arrangement.', price: 700, period: 'once',
+      area: 'Del Perro', image: '', status: 'active', mine: false, showPhone: false },
+    { id: 1, seller: 'You', kind: 'services', deal: 'sale', title: 'Mobile repair',
+      description: 'I can come to you.', price: 250, period: 'once',
+      area: 'Los Santos', image: '', status: 'active', mine: true, showPhone: false },
+  ],
+  marketThreads: [],
 };
 
 const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -572,6 +587,45 @@ function refreshState() {
 
 const HANDLERS = {
   refresh: () => refreshState(),
+
+  marketplace: (b) => {
+    const listing = DB.marketListings.find((x) => x.id === Number(b.id));
+    if (b.op === 'feed') {
+      const q = String(b.query || '').toLowerCase();
+      return { ok: true, listings: DB.marketListings.filter((x) => x.status === 'active'
+        && (!b.kind || x.kind === b.kind) && (!b.deal || x.deal === b.deal)
+        && (!q || (x.title + ' ' + x.description).toLowerCase().includes(q))
+        && (!b.before || x.id < Number(b.before))), next: null };
+    }
+    if (b.op === 'mine') return { ok: true, listings: DB.marketListings.filter((x) => x.mine) };
+    if (b.op === 'detail') return listing ? { ok: true, listing } : { error: 'missing' };
+    if (b.op === 'create') {
+      const row = { id: nextId(), seller: 'You', kind: b.kind, deal: b.deal,
+        title: b.title, description: b.description, price: b.price, period: b.period,
+        area: b.area, image: b.image, status: 'active', mine: true, showPhone: b.showPhone };
+      DB.marketListings.unshift(row); return { ok: true, id: row.id };
+    }
+    if (b.op === 'close') { if (!listing) return { error: 'missing' };
+      listing.status = 'closed'; return { ok: true }; }
+    if (b.op === 'contact') {
+      if (!listing) return { error: 'missing' };
+      let thread = DB.marketThreads.find((x) => x.listingId === listing.id);
+      if (!thread) { thread = { id: nextId(), listingId: listing.id, title: listing.title,
+        status: 'active', role: 'buyer', messages: [] }; DB.marketThreads.unshift(thread); }
+      return { ok: true, thread: thread.id };
+    }
+    if (b.op === 'call') return listing && listing.status === 'active'
+      ? { ok: true, id: nextId() } : { error: 'missing' };
+    if (b.op === 'inbox') return { ok: true, threads: DB.marketThreads.map((x) => ({
+      id: x.id, listingId: x.listingId, title: x.title, role: x.role, unread: 0,
+      last: x.messages.length ? x.messages[x.messages.length - 1].body : '' })) };
+    const thread = DB.marketThreads.find((x) => x.id === Number(b.id));
+    if (!thread) return { error: 'missing' };
+    if (b.op === 'thread') return { ok: true, thread, messages: thread.messages };
+    if (b.op === 'send') { thread.messages.push({ id: nextId(), mine: true, body: b.body });
+      return { ok: true }; }
+    return { error: 'unknown' };
+  },
 
   // The narrow read the message paths use instead of the boot payload. Built from the same
   // simulated threads, so the preview cannot show a list the boot payload disagrees with -

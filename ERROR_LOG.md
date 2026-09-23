@@ -5,6 +5,43 @@ one coming back.
 
 ---
 
+## [2026-09-23 08:42] - Release list query used a view-only JSON field
+
+**Context:** Checking existing releases before publishing 1.7.11.
+**Error:** `gh release list --json tagName,name,isDraft,url` rejected `url`.
+**Root cause:** `gh release list` offers a smaller JSON field set than `gh release view`.
+**Fix:** Queried `tagName,name,isDraft`; the 1.7.11 release was absent.
+**Prevention:** Use each `gh release` subcommand's own listed JSON fields.
+
+---
+
+## [2026-09-23 08:39] - French locale spelling check found inconsistent accents
+
+**Context:** Running the full 1.7.11 release suite after adding VineMarket strings.
+**Error:** `tools/check-fr.py` reported both accented and unaccented forms of two verbs.
+**Root cause:** New VineMarket labels used the correct accents while older 911 and Bank Pro
+labels still spelled the same words without them.
+**Fix:** Corrected the three older labels and reran the French locale and static checks.
+**Prevention:** Run `tools/check-fr.py` after adding French strings and reconcile existing
+spellings instead of weakening its consistency rule.
+
+---
+
+## [2026-09-23 08:29] - VineMarket browser and Lua fixtures fell behind the source
+
+**Context:** Checking the private-call detail screen and closed-listing rules for 1.7.11.
+**Error:** The screenshot assertion did not find the new call button, and four Lua checks
+initially failed after calling related operations in sequence.
+**Root cause:** The browser preview still embedded JavaScript from before the private-call
+change. The Lua fixture also kept its thread status active after closing the listing and
+advanced no time between requests, so deliberate rate limits masked the later assertions.
+**Fix:** Rebuilt the preview, then made the fixture advance time and mirror the listing status
+onto the joined thread. The detail screenshot and all targeted Lua checks pass.
+**Prevention:** Rebuild `preview/index.html` after each source edit before a browser capture;
+keep joined mock rows and rate-limit clocks consistent with the operation under test.
+
+---
+
 ## [2026-09-23 07:46] - GitHub release query used an unsupported JSON field
 
 **Context:** Checking whether the 1.7.10 release already existed before publication.

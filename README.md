@@ -2,7 +2,15 @@
 
 A FruitOS style phone for FiveM that runs on **your** framework. qb-core, qbx_core, ox_core, ESX or no framework at all: the phone detects what is running and adapts, and every one of those decisions is a line in the config file when you want it to be different.
 
-Thirty-seven apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face Unlock.
+Thirty-eight apps, a real FruitStore, three social networks, an app SDK so other resources can ship their own apps, and a first run setup with a passcode and Face Unlock.
+
+Release 1.7.11 adds **VineMarket**, a free classifieds download for selling or renting items,
+vehicles, furniture, apartments, houses and services. Buyers and sellers can discuss each
+listing in a private in-app thread. Seller numbers are hidden by default; an optional private
+call keeps both numbers out of the call screen and history. Listings arrange deals between
+players; payment and ownership transfer remain in game. The feed is paginated, messages are
+bounded per read, and the app does no background polling. Browser and Lua checks cover the
+interface and authorization; gameplay and frame times still need an in-game check.
 
 Release 1.7.10 lets Bleeter authors explicitly attach their current position to a post. Readers
 can set a waypoint from the location card. The Control Center and Notification Center now use
@@ -58,6 +66,12 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 | --- | --- | --- | --- |
 | ![Hush](docs/images/43-hush.png) | ![Hush Premium](docs/images/44-hush-premium.png) | ![Liked you](docs/images/45-hush-liked.png) | ![Profile](docs/images/46-hush-profile.png) |
 
+### VineMarket
+
+| Browse | Listing | Post |
+| --- | --- | --- |
+| ![Browse listings](docs/images/47-vinemarket-feed.png) | ![Private listing contact](docs/images/48-vinemarket-detail.png) | ![Post a listing](docs/images/49-vinemarket-compose.png) |
+
 
 ## Features
 
@@ -104,7 +118,12 @@ Pull down from the top right for the toggles, the brightness and volume slabs, a
 - **FaceTime**: a real video call. With `Config.FaceTime.videoFeed` on, the front camera goes up and a shrunk, cropped frame of each player is relayed to the other a few times a second, over the normal voice call. Needs [screenshot-basic](https://github.com/citizenfx/screenshot-basic); off by default.
 
 ### The apps
-Twenty-two are installed to begin with: Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore and Settings. Fifteen more are downloads from the store: **Bank Pro**, Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, **Export**, FruitCharge, the Lottery, OnlyFruits, FruitBrawl, FlappyFruit and Fruitee. Four of those are paid.
+Twenty-two are installed to begin with: Phone, Messages, Contacts, **911**, **Alerts**, Mail, Maps, Camera, Gallery, Music, Bank, Garage, Property, Wallet, Jobs, Health, Notes, Reminders, Calculator, MDT, FruitStore and Settings. Sixteen more are downloads from the store: **Bank Pro**, Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Repair**, **Export**, **VineMarket**, FruitCharge, the Lottery, OnlyFruits, FruitBrawl, FlappyFruit and Fruitee. Four of those are paid.
+
+- **VineMarket** (free download): local classifieds with sale and rental categories, optional
+  gallery photo, neighborhood, bounded search and private buyer-seller messages. The seller
+  can expose their number explicitly or leave it hidden. Private calls mask both numbers.
+  `Config.Marketplace` controls listing limits, price ceiling, page size and expiry.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players, and group calls of up to five. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -1090,7 +1109,7 @@ phoneclean bleeter             what WOULD go, counted table by table. Nothing is
 phoneclean bleeter confirm     it goes
 ```
 
-The bare call is a help line: it prints the twenty-four names in alphabetical order plus `media`
+The bare call is a help line: it prints the twenty-five names in alphabetical order plus `media`
 and `all`, and runs no count at all. Naming a target is what counts the rows.
 
 **Nothing deletes on the first call, ever.** These commands destroy content players made and
@@ -1115,6 +1134,7 @@ social feed.
 | `alerts` | Civil alerts. |
 | `bank` | Bank statements, pending transfers, the Bank Pro log. |
 | `lottery`, `zuber`, `repair`, `export`, `arcade` | Tickets and draws, orders, call-outs and reviews, watchlists and price alerts, arcade scores and brawl stats. |
+| `marketplace` | VineMarket listings, conversations and messages. |
 | `cipher` | Cipher profiles and encrypted messages. |
 | `reviews` | FruitStore reviews. |
 | `appdata` | Storage belonging to dropped-in apps. |
@@ -1197,7 +1217,16 @@ Bleeter, Snapmatic and Hush are brands from Grand Theft Auto V.
 
 Un téléphone au style FruitOS pour FiveM qui tourne sur **votre** framework. qb-core, qbx_core, ox_core, ESX ou aucun framework : le téléphone détecte ce qui tourne et s'y adapte, et chacune de ces décisions est une ligne du fichier de configuration quand vous voulez en changer.
 
-Trente-sept applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face Unlock.
+Trente-huit applications, un vrai FruitStore, trois réseaux sociaux, un SDK pour que d'autres ressources livrent leurs propres applications, et une configuration au premier démarrage avec code et Face Unlock.
+
+La version 1.7.11 ajoute **VineMarket**, une application gratuite d'annonces pour vendre ou louer
+des objets, véhicules, meubles, appartements, maisons et services. Acheteur et vendeur échangent
+dans une conversation privée propre à l'annonce. Le numéro du vendeur est masqué par défaut ;
+un appel privé facultatif masque les deux numéros dans l'écran et l'historique des appels.
+L'annonce sert à organiser l'échange entre joueurs : paiement et transfert de propriété se font
+en jeu. Le fil est paginé, les lectures de messages sont limitées et l'application ne sonde
+pas le serveur en arrière-plan. Les contrôles navigateur et Lua couvrent l'interface et les
+autorisations ; le gameplay et les temps de frame restent à vérifier en jeu.
 
 La version 1.7.10 permet aux auteurs Bleeter de joindre explicitement leur position actuelle
 à un post. Les lecteurs peuvent poser un repère depuis la carte de position. Le Centre de
@@ -1255,6 +1284,12 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 | --- | --- | --- | --- |
 | ![Hush](docs/images/43-hush.png) | ![Hush Premium](docs/images/44-hush-premium.png) | ![Vous a aimé](docs/images/45-hush-liked.png) | ![Profil](docs/images/46-hush-profile.png) |
 
+### VineMarket
+
+| Découvrir | Annonce | Publier |
+| --- | --- | --- |
+| ![Parcourir les annonces](docs/images/47-vinemarket-feed.png) | ![Contacter en privé](docs/images/48-vinemarket-detail.png) | ![Déposer une annonce](docs/images/49-vinemarket-compose.png) |
+
 ## Caractéristiques
 
 ### Le téléphone
@@ -1285,7 +1320,13 @@ Tirez depuis le coin haut droit pour les interrupteurs, les curseurs de luminosi
 - **FaceTime** : un vrai appel vidéo. Avec `Config.FaceTime.videoFeed` activé, la caméra frontale se lève et une image réduite et recadrée de chaque joueur est relayée à l'autre plusieurs fois par seconde, par-dessus l'appel vocal normal. Nécessite [screenshot-basic](https://github.com/citizenfx/screenshot-basic) ; désactivé par défaut.
 
 ### Les applications
-Vingt-deux sont installées au départ : Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore et Réglages. Quinze autres se téléchargent depuis la boutique : **Bank Pro**, Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, **Export**, FruitCharge, la Loterie, OnlyFruits, FruitBrawl, FlappyFruit et Fruitee. Quatre d'entre elles sont payantes.
+Vingt-deux sont installées au départ : Téléphone, Messages, Contacts, **911**, **Alertes**, Mail, Plans, Appareil photo, Galerie, Musique, Banque, Garage, Logement, Portefeuille, Emplois, Santé, Notes, Rappels, Calculatrice, MDT, FruitStore et Réglages. Seize autres se téléchargent depuis la boutique : **Bank Pro**, Bleeter, Snapmatic, Hush, Cipher, Zuber, Taxi, **Dépannage**, **Export**, **VineMarket**, FruitCharge, la Loterie, OnlyFruits, FruitBrawl, FlappyFruit et Fruitee. Quatre d'entre elles sont payantes.
+
+- **VineMarket** (téléchargement gratuit) : annonces locales de vente et de location, photo
+  facultative depuis la galerie, quartier, recherche limitée et messagerie privée entre
+  acheteur et vendeur. Le vendeur peut afficher son numéro explicitement ou le garder masqué.
+  Les appels privés masquent les deux numéros. `Config.Marketplace` règle les limites
+  d'annonces, le prix maximal, la taille du fil et l'expiration.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour, et appels de groupe jusqu'à cinq. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.
@@ -2298,7 +2339,7 @@ phoneclean bleeter             ce qui PARTIRAIT, compté table par table. Rien n
 phoneclean bleeter confirm     ça part
 ```
 
-L'appel nu est une ligne d'aide : il affiche les vingt-quatre noms par ordre alphabétique plus
+L'appel nu est une ligne d'aide : il affiche les vingt-cinq noms par ordre alphabétique plus
 `media` et `all`, et ne compte rien du tout. C'est le fait de nommer une cible qui compte les
 lignes.
 
@@ -2324,6 +2365,7 @@ console ne doit pas coûter six mois de fil social à un serveur.
 | `alerts` | Alertes civiles. |
 | `bank` | Relevés bancaires, virements en attente, journal Bank Pro. |
 | `lottery`, `zuber`, `repair`, `export`, `arcade` | Tickets et tirages, commandes, demandes et avis, listes de suivi et alertes de prix, scores d'arcade et statistiques de brawl. |
+| `marketplace` | Annonces, conversations et messages VineMarket. |
 | `cipher` | Profils Cipher et messages chiffrés. |
 | `reviews` | Avis du store d'applications. |
 | `appdata` | Le stockage des applications déposées. |

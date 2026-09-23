@@ -514,6 +514,8 @@
   const GREEN = 'linear-gradient(180deg,#67E585,#0CBE3C)';
   const GREY = 'linear-gradient(180deg,#9DA0A6,#606268)';
   const TILES = {
+    marketplace: { bg: 'linear-gradient(160deg,#3268BD,#19386F)', fill: '#FFFFFF',
+      d: 'M4 8.5h16l-1.1 11H5.1L4 8.5Zm1-5h14l2 4H3l2-4Zm3 8.2v5.7h2.1v-5.7H8Zm5.9 0v2.1h3.6v-2.1h-3.6Z' },
     phone: { bg: GREEN, d: G.phone },
     messages: { bg: GREEN, d: G.messages },
     contacts: { bg: GREY, d: G.contacts },

@@ -4,6 +4,49 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.11] - 2026-09-23
+
+### Added
+
+- **VineMarket classifieds for local sales and rentals.** The free FruitStore download supports
+  items, vehicles, furniture, apartments, houses and services. Listings can include a gallery
+  photo, neighborhood, price and rental period. Search and filters use bounded pages; authors
+  can close their own listings. Payment and ownership transfer are arranged in game.
+- **Private buyer-seller conversations and calls.** Each listing has separate conversations
+  with interested buyers, with unread counts and phone notifications. Seller numbers are hidden
+  by default and appear only after explicit opt-in. A server-routed private call hides both
+  numbers on the call screen, in history, on reconnect and in the call roster; it cannot be
+  turned into a conference or voicemail that exposes the contact.
+
+### Performance
+
+- **Bounded marketplace reads with no background polling.** The feed loads at most 18 listings
+  per page by default, a conversation loads its 60 most recent messages, and listing images
+  are decoded lazily. Limits and authorization are enforced on every server request.
+
+### Ajouts
+
+- **Annonces VineMarket pour les ventes et locations locales.** Cette application gratuite du
+  FruitStore accepte objets, véhicules, meubles, appartements, maisons et services. Une annonce
+  peut contenir une photo de la galerie, un quartier, un prix et une durée de location. La
+  recherche et les filtres utilisent des pages limitées ; l'auteur peut clôturer ses annonces.
+  Paiement et transfert de propriété s'organisent en jeu.
+- **Conversations et appels privés entre acheteur et vendeur.** Chaque annonce possède une
+  conversation distincte par acheteur, avec compteur de messages non lus et notification sur
+  le téléphone. Le numéro du vendeur est masqué par défaut et n'apparaît qu'après un choix
+  explicite. Un appel privé routé par le serveur masque les deux numéros sur l'écran, dans
+  l'historique, après reconnexion et dans la liste des participants ; il ne peut pas devenir
+  une conférence ni un message vocal qui dévoile le contact.
+
+### Performance
+
+- **Lectures VineMarket limitées, sans interrogation en arrière-plan.** Le fil charge au plus
+  18 annonces par page par défaut, une conversation charge ses 60 derniers messages et les
+  images sont décodées à la demande. Limites et autorisations sont revérifiées côté serveur
+  pour chaque requête.
+
+---
+
 ## [1.7.10] - 2026-09-23
 
 ### Added

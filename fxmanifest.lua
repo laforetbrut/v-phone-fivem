@@ -15,8 +15,8 @@ node_version '22'
 
 name 'v-phone'
 author 'vyrriox'
-description 'iFruit - a complete smartphone for FiveM. 37 apps, framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
-version '1.7.10'
+description 'iFruit - a complete smartphone for FiveM. 38 apps, framework agnostic: qb-core, qbx_core, ox_core, ESX or standalone.'
+version '1.7.11'
 repository 'https://github.com/laforetbrut/v-phone-fivem'
 
 -- The only hard requirement. Every framework, inventory, banking and voice script is
@@ -150,6 +150,7 @@ server_scripts {
     -- Emptying an app from the console. Nothing here deletes without `confirm`.
     'server/adminclean.lua',
     'server/main.lua',
+    'server/marketplace.lua',
     -- Home screen widgets. Straight after main.lua, whose `prefsOf` and `PhoneHasApp` decide
     -- who is entitled to what, and BEFORE every file that registers a builder with it.
     'server/widgets.lua',

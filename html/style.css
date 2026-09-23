@@ -15363,3 +15363,106 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
   background-image: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, 0) 62%);
   color: var(--av-label);
 }
+
+/* VineMarket: photo-led classifieds with one static blue brand panel and light list work. */
+.market-home, .market-compose, .market-detail, .market-thread { padding: 12px 15px 24px; color: var(--app-label); }
+.market-hero { display: flex; align-items: center; gap: 11px; padding: 17px; margin-bottom: 13px;
+  border-radius: 22px; background: linear-gradient(135deg, #3268BD, #19386F); color: #fff; }
+.market-hero-icon { width: 43px; height: 43px; display: grid; place-items: center; flex: none;
+  border-radius: 15px; background: rgba(255,255,255,.16); }
+.market-hero-icon svg { width: 24px; height: 24px; }
+.market-hero strong { font-size: 18px; letter-spacing: -.03em; }
+.market-hero > span:last-child { margin-left: auto; max-width: 100px; text-align: right;
+  font-size: 11px; line-height: 1.3; opacity: .82; }
+.market-search { margin-bottom: 11px; }
+.market-filters, .market-form-pair { display: flex; gap: 8px; }
+.market-filters { margin-bottom: 15px; }
+.market-filters select, .market-compose select, .market-compose input:not([type=checkbox]),
+.market-compose textarea { min-width: 0; width: 100%; border: 0; border-radius: 12px;
+  background: var(--app-card); color: var(--app-label); font: inherit; outline: none; }
+.market-filters select { padding: 10px; flex: 1; font-size: 12px; }
+.market-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.market-card { position: relative; overflow: hidden; padding: 0; min-width: 0; text-align: left;
+  border: 0; border-radius: 17px; background: var(--app-card); color: var(--app-label); }
+.market-thumb { display: block; height: 124px; overflow: hidden; background: #DCE8F5; }
+.market-thumb-photo, .market-detail-image, .market-form-preview { display: block; width: 100%; height: 100%; object-fit: cover; }
+.market-thumb-empty { display: grid; place-items: center; height: 100%; color: #3268BD; }
+.market-thumb-empty svg { width: 38px; height: 38px; }
+.market-card-copy { display: block; padding: 9px 10px 12px; }
+.market-card-copy strong, .market-card-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.market-card-copy strong { font-size: 13px; margin: 3px 0; }
+.market-card-copy small { color: var(--app-label2); font-size: 10px; }
+.market-card-price { color: #2357A3; font-size: 15px; font-weight: 750; letter-spacing: -.03em; }
+.screen.dark .market-card-price { color: #86B8FF; }
+.market-closed { position: absolute; top: 8px; right: 8px; padding: 4px 7px; border-radius: 8px;
+  background: rgba(0,0,0,.75); color: #fff; font-size: 10px; }
+.market-more, .market-refresh { display: block; margin: 14px auto 0; padding: 9px 15px;
+  border: 0; border-radius: 12px; background: var(--app-card); color: var(--app-label2); font: inherit; font-size: 12px; }
+.market-inbox { display: grid; gap: 7px; }
+.market-chat-row { display: flex; align-items: center; gap: 10px; padding: 11px;
+  min-width: 0; border: 0; border-radius: 15px; background: var(--app-card); color: var(--app-label); text-align: left; }
+.market-chat-icon, .market-seller > span { display: grid; place-items: center; width: 39px; height: 39px;
+  flex: none; border-radius: 13px; color: #3268BD; background: #DCE8F5; }
+.market-chat-row > span:nth-child(2) { min-width: 0; flex: 1; }
+.market-chat-row strong, .market-chat-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.market-chat-row strong { font-size: 13px; }
+.market-chat-row small { margin-top: 3px; color: var(--app-label2); font-size: 11px; }
+.market-chat-row i { display: grid; place-items: center; min-width: 20px; height: 20px;
+  border-radius: 10px; background: #3268BD; color: #fff; font: 11px inherit; }
+.market-compose { display: grid; gap: 13px; }
+.market-compose label { display: grid; gap: 6px; min-width: 0; font-size: 11px; font-weight: 650; }
+.market-compose input:not([type=checkbox]), .market-compose select, .market-compose textarea { padding: 11px; font-size: 13px; font-weight: 400; }
+.market-compose textarea { resize: vertical; min-height: 90px; }
+.market-form-pair > label { flex: 1; }
+.market-form-photo { display: grid; place-items: center; gap: 5px; height: 138px; overflow: hidden;
+  border-radius: 17px; background: #DCE8F5; color: #3268BD; font-size: 12px; }
+.market-form-photo svg { width: 28px; height: 28px; }
+.market-photo-pick, .market-secondary { border: 0; border-radius: 12px; padding: 11px;
+  background: var(--app-card); color: #2357A3; font: inherit; font-size: 12px; font-weight: 650; }
+.market-privacy { display: flex !important; align-items: flex-start; gap: 10px !important;
+  padding: 13px; border-radius: 15px; background: var(--app-card); }
+.market-privacy input { margin: 3px 0 0; accent-color: #3268BD; }
+.market-privacy strong, .market-privacy small { display: block; }
+.market-privacy small { margin-top: 4px; color: var(--app-label2); font-weight: 400; line-height: 1.35; }
+.market-submit { width: 100%; padding: 13px; border: 0; border-radius: 13px;
+  background: #3268BD; color: #fff; font: inherit; font-size: 13px; font-weight: 700; }
+.market-submit:disabled { opacity: .5; }
+.market-detail { padding: 0 0 26px; }
+.market-detail-photo { height: 215px; overflow: hidden; display: grid; place-items: center;
+  background: #DCE8F5; color: #3268BD; }
+.market-detail-photo > span svg { width: 54px; height: 54px; }
+.market-detail-body { padding: 18px 18px 0; }
+.market-kicker { color: var(--app-label2); font-size: 11px; }
+.market-detail h2 { margin: 7px 0; font-size: 22px; line-height: 1.15; letter-spacing: -.04em; }
+.market-detail-price { color: #2357A3; font-size: 24px; font-weight: 750; letter-spacing: -.04em; }
+.market-detail-area { display: flex; align-items: center; gap: 5px; margin-top: 10px;
+  color: var(--app-label2); font-size: 11px; }
+.market-detail-area svg { width: 14px; height: 14px; }
+.market-detail p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 17px 0; font-size: 13px; line-height: 1.5; }
+.market-seller { display: flex; align-items: center; gap: 10px; margin-bottom: 17px; }
+.market-seller small, .market-seller strong { display: block; }
+.market-seller small { color: var(--app-label2); font-size: 10px; }
+.market-seller strong { font-size: 12px; }
+.market-secondary { width: 100%; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.market-secondary svg { width: 16px; height: 16px; }
+.market-hidden { display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: 10px; color: var(--app-label2); font-size: 11px; line-height: 1.4; }
+.market-hidden svg { width: 13px; height: 13px; }
+.market-thread-listing { display: flex; align-items: center; gap: 9px; width: 100%; padding: 12px;
+  border: 0; border-radius: 14px; background: var(--app-card); color: var(--app-label); font: inherit; text-align: left; }
+.market-thread-listing svg { width: 18px; height: 18px; color: #3268BD; }
+.market-thread-listing span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.market-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+  padding: 18px 0; }
+.market-message { max-width: 85%; padding: 10px 12px; border-radius: 16px 16px 16px 5px;
+  background: var(--app-card); overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+.market-message.mine { align-self: flex-end; border-radius: 16px 16px 5px 16px;
+  background: #3268BD; color: #fff; }
+.market-chat-form { display: flex; gap: 8px; }
+.market-chat-form input { flex: 1; min-width: 0; padding: 11px; border: 0; border-radius: 17px;
+  background: var(--app-card); color: var(--app-label); font: inherit; font-size: 12px; }
+.market-chat-form button { display: grid; place-items: center; width: 39px; height: 39px;
+  border: 0; border-radius: 50%; background: #3268BD; color: #fff; }
+.market-chat-form button svg { width: 18px; height: 18px; }
+.market-home button:focus-visible, .market-compose button:focus-visible,
+.market-detail button:focus-visible, .market-thread button:focus-visible { outline: 2px solid #86B8FF; outline-offset: 2px; }

@@ -117,6 +117,55 @@ const MUSIC_FIXTURE = `
 
 const SHOTS = [
   {
+    name: 'marketplace-feed', file: '47-vinemarket-feed.png',
+    script: `${SETUP}
+      await open('marketplace', 800);
+      if (document.querySelectorAll('.market-card').length < 4)
+        throw new Error('VineMarket feed is empty');`,
+  },
+  {
+    name: 'marketplace-detail', file: '48-vinemarket-detail.png',
+    script: `${SETUP}
+      await open('marketplace', 400);
+      await marketDetail(4);
+      if (!document.getElementById('market-contact') || !document.getElementById('market-call'))
+        throw new Error('private contact controls are missing: ' +
+          document.getElementById('appbody').innerText.slice(0, 160));`,
+  },
+  {
+    name: 'marketplace-compose', file: '49-vinemarket-compose.png',
+    script: `${SETUP}
+      await open('marketplace', 400);
+      marketCompose();
+      if (!document.getElementById('market-form-phone'))
+        throw new Error('number privacy choice is missing');`,
+  },
+  {
+    name: 'marketplace-flow', assert: true,
+    script: `${SETUP}
+      await open('marketplace', 300);
+      marketCompose();
+      if (byId('market-form-phone').checked) throw new Error('number was public by default');
+      byId('market-form-title').value = 'Local listing';
+      byId('market-form-description').value = 'Available today';
+      byId('market-form-price').value = '150';
+      byId('market-form').requestSubmit();
+      await new Promise((r) => setTimeout(r, 200));
+      if (marketTab !== 'mine' || !document.querySelector('.market-card'))
+        throw new Error('published listing did not appear');
+      await marketDetail(4);
+      if (!byId('market-contact') || !byId('market-call'))
+        throw new Error('private contact controls are missing');
+      byId('market-contact').click();
+      await new Promise((r) => setTimeout(r, 200));
+      if (!byId('market-chat-form')) throw new Error('conversation did not open');
+      byId('market-chat-input').value = 'Need details';
+      byId('market-chat-form').requestSubmit();
+      await new Promise((r) => setTimeout(r, 200));
+      if (!document.querySelector('.market-message.mine'))
+        throw new Error('sent message did not appear');`,
+  },
+  {
     // **The nine below were the last hand-taken pictures in the README.**
     //
     // They were shot in a browser in July and never again, so they showed a phone two

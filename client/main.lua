@@ -1671,6 +1671,8 @@ local function relay(callback)
     end
 end
 
+RegisterNUICallback('marketplace', relay('v-phone:marketplace'))
+
 -- The bank's two writes. Relays on purpose: the amount, the recipient, the limits and the
 -- fee are all decided on the server, so there is nothing for this side to check and
 -- nothing it could usefully lie about.

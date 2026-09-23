@@ -1973,8 +1973,8 @@ end
 -- that were never answered - the app colours them, the table does not need to.
 local function logCall(c, answered)
     local rows = {
-        { cid = cidOfNumber(c.aNum), other = c.bNum, dir = 'out' },
-        { cid = cidOfNumber(c.bNum), other = c.anonymous and '' or c.aNum, dir = 'in' },
+        { cid = cidOfNumber(c.aNum), other = c.private and '' or c.bNum, dir = 'out' },
+        { cid = cidOfNumber(c.bNum), other = (c.private or c.anonymous) and '' or c.aNum, dir = 'in' },
     }
     for _, r in ipairs(rows) do
         if r.cid then
@@ -2169,7 +2169,7 @@ local function rosterFor(c, src)
     local list = {}
     for _, s in ipairs(callMembers(c)) do
         local m = c.live[s]
-        local hide = c.anonymous and s == c.a and src ~= c.a
+        local hide = (c.private and s ~= src) or (c.anonymous and s == c.a and src ~= c.a)
         list[#list + 1] = {
             src = s,
             number = hide and '' or m.num,
@@ -2195,7 +2195,7 @@ end
 local function canAddFrom(c, src)
     local cfg = groupCfg()
     if cfg.enabled == false then return false end
-    if c.booth then return false end
+    if c.booth or c.private then return false end
     if c.state ~= 'active' then return false end
     if not (c.live and c.live[src] and c.live[src].state == 'active') then return false end
     if cfg.hostOnly ~= false and c.a ~= src then return false end
@@ -2248,7 +2248,7 @@ local function endCall(id, reason)
     -- Nobody picked up: offer the caller the voicemail, which is the whole point of one.
     -- Not from a booth, though: leaving a voicemail needs the phone's own recorder, and the
     -- caller at a payphone has no phone open to record into.
-    if c.state ~= 'active' and reason == 'noanswer' and c.a and not c.booth
+    if c.state ~= 'active' and reason == 'noanswer' and c.a and not c.booth and not c.private
         and V.SettingBool('voicemail', true) then
         TriggerClientEvent('v-phone:client:voicemailOffer', c.a, { number = c.bNum })
     end
@@ -2312,7 +2312,7 @@ local function allocateCallId()
     return nil
 end
 
-local function startCall(src, p, toNumber, anonymous, video)
+local function startCall(src, p, toNumber, anonymous, video, private)
     if CallOf[src] then return nil, 'busy' end
     -- **A booth cannot be rung.** The number resolves to no character, so the check below
     -- would refuse it regardless; this one exists to refuse it for the RIGHT reason, and
@@ -2345,7 +2345,8 @@ local function startCall(src, p, toNumber, anonymous, video)
     local callRecord = {
         a = src, b = target, state = 'ringing', at = os.time(),
         aNum = numberOfCid(p.citizenid), bNum = toNumber,
-        anonymous = anonymous and V.SettingBool('anonymous', false) or false,
+        anonymous = private or (anonymous and V.SettingBool('anonymous', false) or false),
+        private = private == true,
         -- FaceTime: a normal voice call, presented as a video call on both phones. The
         -- game cannot stream a live face, so there is no video stream - the flag only
         -- changes how the call is drawn. Both ends see it, so it reads as a real call.
@@ -2371,7 +2372,8 @@ local function startCall(src, p, toNumber, anonymous, video)
         silent = not known
     end
 
-    TriggerClientEvent('v-phone:client:callOut', src, { id = id, number = toNumber, video = callRecord.video })
+    TriggerClientEvent('v-phone:client:callOut', src, {
+        id = id, number = private and '' or toNumber, video = callRecord.video })
     -- Heard in the room, unless the recipient silenced their phone.
     if not silent then ringOut(target, true) end
 
@@ -2476,6 +2478,17 @@ function PhoneStartCall(src, toNumber, opts)
     opts = type(opts) == 'table' and opts or {}
     local id, err = startCall(src, p, tostring(toNumber or ''),
         opts.anonymous == true, opts.video == true)
+    if not id then return false, err or 'x' end
+    return true, id
+end
+
+-- For a listing's server-verified contact only. Both numbers stay out of events, the roster,
+-- call history and voicemail; ordinary anonymous calls continue to hide one side only.
+function PhoneStartPrivateCall(src, toNumber)
+    src = tonumber(src)
+    local p = src and Core.GetPlayer(src)
+    if not p then return false, 'noplayer' end
+    local id, err = startCall(src, p, tostring(toNumber or ''), true, false, true)
     if not id then return false, err or 'x' end
     return true, id
 end
@@ -2627,7 +2640,8 @@ local function currentCallFor(src)
     return {
         id = id,
         state = c.state == 'active' and 'active' or (mineIsCaller and 'out' or 'in'),
-        number = mineIsCaller and c.bNum or (c.anonymous and '' or c.aNum),
+        number = c.private and '' or
+            (mineIsCaller and c.bNum or (c.anonymous and '' or c.aNum)),
         -- Carried so a client resyncing after a restart knows not to draw a booth call on
         -- the handset. Only the caller is at the box; the person he rang is on a normal phone.
         booth = (c.booth == true) and mineIsCaller or false,
@@ -6462,6 +6476,7 @@ V.Callback('v-phone:callAdd', function(src, resolve, data)
     -- A payphone is one handset bolted to a wall. There is no screen on it to run a
     -- conference from, and the person at the box is the one who cannot be added to.
     if c.booth then resolve({ error = 'booth' }) return end
+    if c.private then resolve({ error = 'private' }) return end
     if cfg.hostOnly ~= false and c.a ~= src then resolve({ error = 'nothost' }) return end
     if #callMembers(c) >= groupMax() then resolve({ error = 'callfull' }) return end
 

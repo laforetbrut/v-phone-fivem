@@ -289,6 +289,7 @@ Config.Compat = {
         taxi     = true,   -- hail a ride, or drive one
         repair   = true,   -- reach a mechanic, and the callout queue on the other side
         export   = true,   -- the market board: prices, favourites and price alerts
+        marketplace = true, -- classified ads and private buyer-seller conversations
 
         -- ── Work and paperwork ────────────────────────────────
         jobs     = true,   -- open positions, and your own contract
@@ -1276,12 +1277,18 @@ Config.Apps = {
     -- See Config.Lottery.
     { id = 'lottery',  label = 'app.lottery',  icon = 'lottery',  owner = 'v-phone',    slot = 28,
       optional = true, category = 'entertainment', price = 250, account = 'bank', version = '1.0' },
+    { id = 'marketplace', label = 'app.marketplace', icon = 'marketplace', owner = 'v-phone', slot = 30,
+      optional = true, category = 'utilities', version = '1.0' },
 }
 
 -- Rich FruitStore catalogue. These are presentation/search hints, not duplicated game
 -- logic: every feature below is already backed by the app or the module that owns it.
 -- A server may change any wording without touching the renderers.
 Config.AppMetadata = {
+    marketplace = {
+        features = { 'Annonces locales', 'Vente et location', 'Photos', 'Messagerie privée', 'Numéro masqué' },
+        keywords = { 'annonces', 'vente', 'location', 'véhicule', 'meuble', 'maison', 'appartement', 'service' },
+    },
     phone = {
         features = { 'Clavier et appels', 'Favoris', 'Historique', 'Messagerie vocale', 'Contacts intégrés' },
         keywords = { 'appel', 'numéro', 'favoris', 'répondeur' },
@@ -1552,6 +1559,16 @@ end
 -- What the store groups by. The order here is the order of the sections.
 Config.Categories = { 'social', 'finance', 'utilities', 'travel', 'work', 'duty',
                       'entertainment', 'health', 'essentials' }
+
+-- VineMarket is a classifieds board. Payment, delivery and ownership transfer happen in game.
+-- All limits are enforced server-side; the page only presents them.
+Config.Marketplace = {
+    enabled = true,
+    pageSize = 18,
+    maxActive = 8,
+    maxPrice = 100000000,
+    daysLive = 30,
+}
 
 -- ── Social ─────────────────────────────────────────────────────
 -- Bleeter, Snapmatic and Hush. They used to live in a separate resource because they need

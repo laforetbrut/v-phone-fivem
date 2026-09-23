@@ -15148,6 +15148,287 @@ function exportArrived(a) {
   if (openApp && openApp.id === 'export' && !exportOpenItem) RENDER.export(true);
 }
 
+// VineMarket keeps the browse result in one bounded page and never polls in the background.
+let marketTab = 'all';
+let marketKind = '';
+let marketDeal = '';
+let marketQuery = '';
+let marketNext = null;
+let marketRows = [];
+let marketSearchTimer = null;
+let marketFeedRequest = 0;
+let marketInboxRequest = 0;
+
+function marketKindIcon(kind) {
+  return { vehicles: 'garage', apartments: 'house', houses: 'house',
+    furniture: 'house', services: 'jobs' }[kind] || 'store';
+}
+
+function marketThumbPhoto(value) {
+  // A card tap opens its listing, including when it lands on the image.
+  // The gallery helper otherwise installs a full-screen photo tap on every image it draws.
+  return photoImg(value, 'market-thumb-photo').replace(/\sdata-full="[^"]*"/, '');
+}
+
+function marketError(res) {
+  toast(L('ph.market_e_' + ((res && res.error) || 'off')));
+}
+
+function marketPrice(row) {
+  const period = row.deal === 'rent' && row.period !== 'once'
+    ? ' ' + L('ph.market_period_' + row.period) : '';
+  return money(row.price) + period;
+}
+
+function marketCard(row) {
+  const kind = L('ph.market_' + row.kind);
+  return '<button type="button" class="market-card" data-id="' + Number(row.id) + '">' +
+    '<span class="market-thumb">' + (row.image
+      ? marketThumbPhoto(row.image)
+      : '<span class="market-thumb-empty">' + svg(marketKindIcon(row.kind)) + '</span>') + '</span>' +
+    '<span class="market-card-copy"><span class="market-card-price">' +
+      esc(marketPrice(row)) + '</span><strong>' + esc(row.title) + '</strong>' +
+      '<small>' + esc(kind) + ' · ' + esc(L('ph.market_' + row.deal)) +
+        (row.area ? ' · ' + esc(row.area) : '') + '</small></span>' +
+    (row.status !== 'active' ? '<span class="market-closed">' +
+      esc(L('ph.market_closed')) + '</span>' : '') + '</button>';
+}
+
+function marketWireCards() {
+  rows('.market-card[data-id]', (el) => el.addEventListener('click', () =>
+    marketDetail(Number(el.dataset.id))));
+}
+
+async function marketLoadFeed(append) {
+  const host = byId('market-results');
+  if (!host) return;
+  const request = ++marketFeedRequest;
+  if (!append) { marketRows = []; marketNext = null; host.innerHTML = UI.spinner(L('ph.loading')); }
+  const current = marketTab;
+  const res = await post('marketplace', { op: current === 'mine' ? 'mine' : 'feed',
+    kind: marketKind, deal: marketDeal, query: marketQuery,
+    before: append ? marketNext : null });
+  if (!host.isConnected || marketTab !== current || request !== marketFeedRequest) return;
+  if (!res || !res.ok) { host.innerHTML = UI.empty(L('ph.market_e_off')); return; }
+  marketRows = append ? marketRows.concat(res.listings || []) : (res.listings || []);
+  marketNext = current === 'all' ? res.next : null;
+  host.innerHTML = marketRows.length ? '<div class="market-grid">' +
+    marketRows.map(marketCard).join('') + '</div>' +
+    (marketNext ? '<button class="market-more" id="market-more" type="button">' +
+      esc(L('ph.market_more')) + '</button>' : '')
+    : UI.empty(L(current === 'mine' ? 'ph.market_empty_mine' : 'ph.market_empty'), 'store');
+  marketWireCards();
+  const more = byId('market-more');
+  if (more) more.addEventListener('click', () => marketLoadFeed(true));
+}
+
+async function marketLoadInbox() {
+  const host = byId('market-results');
+  if (!host) return;
+  const request = ++marketInboxRequest;
+  host.innerHTML = UI.spinner(L('ph.loading'));
+  const res = await post('marketplace', { op: 'inbox' });
+  if (!host.isConnected || marketTab !== 'inbox' || request !== marketInboxRequest) return;
+  if (!res || !res.ok) { host.innerHTML = UI.empty(L('ph.market_e_off')); return; }
+  const threads = res.threads || [];
+  host.innerHTML = threads.length ? '<div class="market-inbox">' + threads.map((t) =>
+    '<button class="market-chat-row" type="button" data-thread="' + Number(t.id) + '">' +
+    '<span class="market-chat-icon">' + svg('messages') + '</span>' +
+    '<span><strong>' + esc(t.title) + '</strong><small>' + esc(t.last ||
+      L(t.role === 'seller' ? 'ph.market_seller' : 'ph.market_you')) + '</small></span>' +
+    (Number(t.unread) > 0 ? '<i>' + Math.min(99, Number(t.unread)) + '</i>' : '') +
+    '</button>').join('') + '</div>' : UI.empty(L('ph.market_empty_inbox'), 'messages');
+  rows('.market-chat-row[data-thread]', (el) => el.addEventListener('click', () =>
+    marketThread(Number(el.dataset.thread))));
+}
+
+RENDER.marketplace = () => {
+  setNav(L('app.marketplace'), null,
+    { icon: 'add', label: L('ph.market_new'), onClick: marketCompose });
+  tabbar([
+    { id: 'all', icon: 'store', label: 'ph.market_all' },
+    { id: 'mine', icon: 'note', label: 'ph.market_mine' },
+    { id: 'inbox', icon: 'messages', label: 'ph.market_inbox' },
+  ], marketTab, (tab) => { marketTab = tab; RENDER.marketplace(); });
+  body('<div class="market-home">' + (marketTab === 'all'
+    ? '<div class="market-hero"><span class="market-hero-icon">' + svg('store') +
+        '</span><strong>VineMarket</strong><span>' + esc(L('ph.market_new')) + '</span></div>' +
+      '<div class="market-search">' + UI.search('market-search', L('ph.market_search'), marketQuery) + '</div>' +
+      '<div class="market-filters"><select id="market-kind" aria-label="' + esc(L('ph.market_items')) + '">' +
+        '<option value="">' + esc(L('ph.market_all')) + '</option>' +
+        ['items', 'vehicles', 'furniture', 'apartments', 'houses', 'services'].map((k) =>
+          '<option value="' + k + '"' + (marketKind === k ? ' selected' : '') + '>' +
+            esc(L('ph.market_' + k)) + '</option>').join('') + '</select>' +
+        '<select id="market-deal" aria-label="' + esc(L('ph.market_sale')) + '">' +
+          '<option value="">' + esc(L('ph.market_all')) + '</option>' +
+          ['sale', 'rent'].map((k) => '<option value="' + k + '"' +
+            (marketDeal === k ? ' selected' : '') + '>' + esc(L('ph.market_' + k)) +
+            '</option>').join('') + '</select></div>'
+    : '') + '<div id="market-results"></div>' +
+    '<button class="market-refresh" id="market-refresh" type="button">' +
+      esc(L('ph.refresh')) + '</button></div>');
+  if (marketTab === 'inbox') marketLoadInbox();
+  else marketLoadFeed(false);
+  const search = byId('market-search');
+  if (search) search.addEventListener('input', () => {
+    marketQuery = search.value;
+    clearTimeout(marketSearchTimer);
+    marketSearchTimer = setTimeout(() => marketLoadFeed(false), 280);
+  });
+  const kind = byId('market-kind');
+  if (kind) kind.addEventListener('change', () => { marketKind = kind.value; marketLoadFeed(false); });
+  const deal = byId('market-deal');
+  if (deal) deal.addEventListener('change', () => { marketDeal = deal.value; marketLoadFeed(false); });
+  byId('market-refresh').addEventListener('click', () =>
+    marketTab === 'inbox' ? marketLoadInbox() : marketLoadFeed(false));
+};
+
+function marketCompose() {
+  beginView();
+  foot('');
+  setNav(L('ph.market_new'), L('app.marketplace'), null, () => RENDER.marketplace());
+  body('<form class="market-compose" id="market-form">' +
+    '<div class="market-form-photo" id="market-photo">' + svg('camera') +
+      '<span>' + esc(L('ph.market_photo')) + '</span></div>' +
+    '<button class="market-photo-pick" id="market-pick" type="button">' +
+      esc(L('ph.market_photo_hint')) + '</button>' +
+    '<div class="market-form-pair"><label>' + esc(L('ph.market_items')) + '<select id="market-form-kind">' +
+      ['items', 'vehicles', 'furniture', 'apartments', 'houses', 'services'].map((k) =>
+        '<option value="' + k + '">' + esc(L('ph.market_' + k)) + '</option>').join('') +
+      '</select></label><label>' + esc(L('ph.market_sale')) + '<select id="market-form-deal">' +
+      '<option value="sale">' + esc(L('ph.market_sale')) + '</option>' +
+      '<option value="rent">' + esc(L('ph.market_rent')) + '</option></select></label></div>' +
+    '<label>' + esc(L('ph.market_title')) + '<input id="market-form-title" maxlength="80" required></label>' +
+    '<label>' + esc(L('ph.market_description')) + '<textarea id="market-form-description" maxlength="1000" required></textarea></label>' +
+    '<div class="market-form-pair"><label>' + esc(L('ph.market_price')) +
+      '<input id="market-form-price" type="number" min="0" max="100000000" step="1" required></label>' +
+      '<label id="market-period-wrap" class="hidden">' + esc(L('ph.market_rent')) +
+      '<select id="market-form-period">' + ['day', 'week', 'month'].map((k) =>
+        '<option value="' + k + '">' + esc(L('ph.market_period_' + k)) + '</option>').join('') +
+      '</select></label></div>' +
+    '<label>' + esc(L('ph.market_area')) + '<input id="market-form-area" maxlength="64"></label>' +
+    '<label class="market-privacy"><input type="checkbox" id="market-form-phone"><span><strong>' +
+      esc(L('ph.market_show_phone')) + '</strong><small>' + esc(L('ph.market_private_hint')) +
+      '</small></span></label>' +
+    '<button class="market-submit" type="submit">' + esc(L('ph.market_publish')) + '</button>' +
+    '</form>');
+  let photo = '';
+  byId('market-pick').addEventListener('click', () => pickPhoto((url) => {
+    photo = url;
+    byId('market-photo').innerHTML = photoImg(url, 'market-form-preview');
+  }));
+  byId('market-form-deal').addEventListener('change', (e) =>
+    byId('market-period-wrap').classList.toggle('hidden', e.target.value !== 'rent'));
+  byId('market-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = byId('market-form');
+    const submit = form.querySelector('.market-submit');
+    submit.disabled = true;
+    const deal = byId('market-form-deal').value;
+    const res = await post('marketplace', { op: 'create',
+      kind: byId('market-form-kind').value, deal,
+      title: byId('market-form-title').value, description: byId('market-form-description').value,
+      price: Number(byId('market-form-price').value), period: deal === 'rent'
+        ? byId('market-form-period').value : 'once',
+      area: byId('market-form-area').value, image: photo,
+      showPhone: byId('market-form-phone').checked });
+    if (!form.isConnected) return;
+    submit.disabled = false;
+    if (!res || !res.ok) { marketError(res); return; }
+    toast(L('ph.market_published'));
+    marketTab = 'mine';
+    RENDER.marketplace();
+  });
+}
+
+async function marketDetail(id) {
+  foot('');
+  setNav(L('app.marketplace'), L('app.marketplace'), null, () => RENDER.marketplace());
+  loading();
+  const epoch = beginView();
+  const res = await post('marketplace', { op: 'detail', id });
+  if (epoch !== viewEpoch || !openApp || openApp.id !== 'marketplace') return;
+  if (!res || !res.ok) { body(UI.empty(L('ph.market_e_missing'))); return; }
+  const row = res.listing;
+  setNav(row.title, L('app.marketplace'), null, () => RENDER.marketplace());
+  body('<div class="market-detail">' +
+    '<div class="market-detail-photo">' + (row.image ? photoImg(row.image, 'market-detail-image')
+      : '<span>' + svg(marketKindIcon(row.kind)) + '</span>') + '</div>' +
+    '<div class="market-detail-body"><div class="market-kicker">' +
+      esc(L('ph.market_' + row.kind)) + ' · ' + esc(L('ph.market_' + row.deal)) + '</div>' +
+    '<h2>' + esc(row.title) + '</h2><div class="market-detail-price">' +
+      esc(marketPrice(row)) + '</div>' +
+    (row.area ? '<div class="market-detail-area">' + svg('map') + esc(row.area) + '</div>' : '') +
+    '<p>' + esc(row.description) + '</p><div class="market-seller">' +
+      '<span>' + svg('contacts') + '</span><div><small>' + esc(L('ph.market_seller')) +
+      '</small><strong>' + esc(row.seller) + '</strong></div></div>' +
+    (row.mine ? (row.status === 'active' ? '<button id="market-close" class="market-submit" type="button">' +
+      esc(L('ph.market_close')) + '</button>' : '')
+      : '<button id="market-contact" class="market-submit" type="button">' +
+        esc(L('ph.market_contact')) + '</button>' +
+        '<button id="market-call" class="market-secondary" type="button">' +
+          svg('phone') + esc(L('ph.market_private_call')) + '</button>' +
+        '<div class="market-hidden">' + (row.phone ? esc(row.phone) :
+          svg('lockshut') + esc(L('ph.market_number_hidden'))) + '</div>') + '</div></div>');
+  const contact = byId('market-contact');
+  if (contact) contact.addEventListener('click', async () => {
+    const reply = await post('marketplace', { op: 'contact', id });
+    if (!reply || !reply.ok) { marketError(reply); return; }
+    marketThread(Number(reply.thread));
+  });
+  const call = byId('market-call');
+  if (call) call.addEventListener('click', async () => {
+    const reply = await post('marketplace', { op: 'call', id });
+    if (!reply || !reply.ok) marketError(reply);
+  });
+  const close = byId('market-close');
+  if (close) close.addEventListener('click', () => confirmSheet(
+    L('ph.market_close_ask'), L('ph.market_close'), async () => {
+      const reply = await post('marketplace', { op: 'close', id });
+      if (!reply || !reply.ok) { marketError(reply); return; }
+      toast(L('ph.market_done')); marketTab = 'mine'; RENDER.marketplace();
+    }));
+}
+
+async function marketThread(id) {
+  foot('');
+  setNav(L('ph.market_inbox'), L('app.marketplace'), null, () => {
+    marketTab = 'inbox'; RENDER.marketplace();
+  });
+  loading();
+  const epoch = beginView();
+  const res = await post('marketplace', { op: 'thread', id });
+  if (epoch !== viewEpoch || !openApp || openApp.id !== 'marketplace') return;
+  if (!res || !res.ok) { body(UI.empty(L('ph.market_e_missing'))); return; }
+  const thread = res.thread;
+  setNav(thread.title, L('ph.market_inbox'), { icon: 'more', label: L('ph.refresh'),
+    onClick: () => marketThread(id) }, () => { marketTab = 'inbox'; RENDER.marketplace(); });
+  body('<div class="market-thread"><button class="market-thread-listing" id="market-thread-listing" ' +
+    'type="button">' + svg('store') + '<span>' + esc(thread.title) + '</span></button>' +
+    '<div class="market-messages">' + (res.messages || []).map((m) =>
+      '<div class="market-message ' + (m.mine ? 'mine' : '') + '">' +
+        esc(m.body) + '</div>').join('') + '</div>' +
+    (thread.status === 'active'
+      ? '<form id="market-chat-form" class="market-chat-form"><input id="market-chat-input" ' +
+        'maxlength="400" placeholder="' + esc(L('ph.market_write')) + '" required>' +
+        '<button type="submit" aria-label="' + esc(L('ph.market_send')) + '">' +
+          svg('send') + '</button></form>'
+      : '<div class="market-hidden">' + esc(L('ph.market_thread_closed')) + '</div>') +
+    '</div>');
+  byId('market-thread-listing').addEventListener('click', () => marketDetail(thread.listingId));
+  const form = byId('market-chat-form');
+  if (form) form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = byId('market-chat-input');
+    const value = input.value.trim();
+    if (!value) return;
+    const res = await post('marketplace', { op: 'send', id, body: value });
+    if (!form.isConnected) return;
+    if (!res || !res.ok) { marketError(res); return; }
+    marketThread(id);
+  });
+}
+
 RENDER.repair = async (cached) => {
   if (!cached || !repairData) {
     loading();

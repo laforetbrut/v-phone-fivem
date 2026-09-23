@@ -31,7 +31,7 @@ syntax error should not cost five minutes of screenshots to discover.
     test-mail-delete a deleted mail address is retired, never handed to somebody else
     test-catchup     what the phone says about the time a character was offline
     preview          the page built for a browser
-    run-probe        can a cursor reach every control in all 37 apps
+    run-probe        can a cursor reach every control in all 38 apps
     probe-input      real mouse input through the compositor
     probe-size-xl    every control still reachable at the largest handset size (250%)
     make-shots       browser screenshots and UI assertions
@@ -156,6 +156,7 @@ run('test-poll', [sys.executable, 'tools/test-poll.py'])
 run('test-alert-caller', [sys.executable, 'tools/test-alert-caller.py'])
 run('test-multiphoto', [sys.executable, 'tools/test-multiphoto.py'])
 run('test-location', [sys.executable, 'tools/test-social-location.py'])
+run('test-marketplace', [sys.executable, 'tools/test-marketplace.py'])
 run('test-nudge', [sys.executable, 'tools/test-nudge.py'])
 run('test-retention', [sys.executable, 'tools/test-social-retention.py'])
 run('test-mediaref', [sys.executable, 'tools/test-mediaref.py'])
@@ -169,7 +170,7 @@ run('check-fr', [sys.executable, 'tools/check-fr.py'])
 
 # ── The ones that need a browser ──────────────────────────────────────────
 run('preview', [sys.executable, 'tools/make-preview.py', '--lang', 'fr'])
-run('run-probe', ['node', 'tools/run-probe.js'], 'every control reachable, 37 apps')
+run('run-probe', ['node', 'tools/run-probe.js'], 'every control reachable, 38 apps')
 run('probe-input', ['node', 'tools/probe-input.js'], 'real mouse through the compositor')
 # The largest of the four handset sizes. It lays the page out again rather than stretching
 # it, so every box the probe measures is a different box - and a control that only falls off
