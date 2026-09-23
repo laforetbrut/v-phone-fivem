@@ -590,6 +590,7 @@ const HANDLERS = {
 
   marketplace: (b) => {
     const listing = DB.marketListings.find((x) => x.id === Number(b.id));
+    if (b.op === 'pricing') return { ok: true, fee: 120, label: 'Weazel News' };
     if (b.op === 'feed') {
       const q = String(b.query || '').toLowerCase();
       return { ok: true, listings: DB.marketListings.filter((x) => x.status === 'active'

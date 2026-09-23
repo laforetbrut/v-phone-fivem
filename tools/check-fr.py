@@ -57,6 +57,7 @@ HOMOGRAPHS = {
     'masque', 'active', 'affiche', 'autorise', 'autorises', 'expire', 'quitte', 'annule',
     'paye', 'publie', 'demandes', 'ajoute', 'efface', 'bloque', 'modifie', 'verses',
     'propose', 'dure', 'abonne', 'indique', 'certifie', 'like', 'likes', 'matche',
+    'conserve',
     # 'Aucune note' is the noun and is correct; 'noté' is the participle. Both are real.
     'note', 'notes',
     # 'Le tirage commence' is the present tense; 'a commencé' is the participle.

@@ -1451,6 +1451,8 @@ local T = {
     ['ph.market_show_phone'] = 'Show my number to buyers',
     ['ph.market_private_hint'] = 'Keep this off for private in-app messages only.',
     ['ph.market_publish'] = 'Publish listing',
+    ['ph.market_posting_fee'] = 'Posting fee: {amount} from your bank account',
+    ['ph.market_posting_free'] = 'Posting is free',
     ['ph.market_contact'] = 'Message seller',
     ['ph.market_call'] = 'Call seller',
     ['ph.market_private_call'] = 'Call privately',
@@ -1478,6 +1480,10 @@ local T = {
     ['ph.market_e_closed'] = 'This listing is closed.',
     ['ph.market_e_self'] = 'This is your own listing.',
     ['ph.market_e_off'] = 'VineMarket is unavailable.',
+    ['ph.market_e_nomoney'] = 'Not enough money in your bank account.',
+    ['ph.market_e_noaccount'] = 'The publication account is unavailable. No fee was kept.',
+    ['ph.market_e_payment'] = 'Posting payments are unavailable. Please contact staff.',
+    ['ph.market_e_refund'] = 'Payment could not be refunded. Please contact staff.',
 
     -- ── Export: the market board ──────────────────────────────
     ['ph.export_m_export'] = 'Export',

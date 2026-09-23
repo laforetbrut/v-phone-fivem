@@ -2887,3 +2887,31 @@ The brackets truncate the return to one value, which is what "am I at a desk" ac
 it is compared against `None` from Python. Checking the falsy case as well as the truthy one is
 what exposed it: the wrong answer was truthy, so a suite that only asserted the success path
 would have been green.
+
+---
+
+## [2026-09-23 20:07] — marketplace flow asserted before pricing loaded
+
+**Context:** browser preview for posting a VineMarket listing after adding the publication fee quote.
+
+**Error:** the flow assertion reported that the published listing did not appear.
+
+**Root cause:** the form now waits for a server pricing response before enabling submission. The preview script submitted immediately after opening the form.
+
+**Fix:** the preview checks wait for the pricing response before submitting or capturing the form.
+
+**Prevention:** when a form adds an asynchronous prerequisite, browser flows must wait for that state rather than assume a synchronous submit path.
+
+---
+
+## [2026-09-23 20:09] — French spelling check flagged a real verb pair
+
+**Context:** running the full fast suite after adding publication payment messages.
+
+**Error:** `check-fr` flagged `conserve` and `conservé` as inconsistent.
+
+**Root cause:** one string uses the present-tense verb, while the new payment message uses the past participle. Both spellings are correct in context.
+
+**Fix:** listed `conserve` with the other verb pairs in the spelling check's homograph set.
+
+**Prevention:** inspect each spelling conflict in context before changing user-facing French or extending the homograph set.

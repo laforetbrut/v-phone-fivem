@@ -137,14 +137,18 @@ const SHOTS = [
     script: `${SETUP}
       await open('marketplace', 400);
       marketCompose();
+      await new Promise((r) => setTimeout(r, 200));
       if (!document.getElementById('market-form-phone'))
-        throw new Error('number privacy choice is missing');`,
+        throw new Error('number privacy choice is missing');
+      document.getElementById('appbody').scrollTop =
+        document.getElementById('appbody').scrollHeight;`,
   },
   {
     name: 'marketplace-flow', assert: true,
     script: `${SETUP}
       await open('marketplace', 300);
       marketCompose();
+      await new Promise((r) => setTimeout(r, 200));
       if (byId('market-form-phone').checked) throw new Error('number was public by default');
       byId('market-form-title').value = 'Local listing';
       byId('market-form-description').value = 'Available today';

@@ -1568,6 +1568,12 @@ Config.Marketplace = {
     maxActive = 8,
     maxPrice = 100000000,
     daysLive = 30,
+    -- A zero fee keeps classifieds free. A positive fee requires a real society account:
+    -- a failed account credit is refunded to the seller's bank.
+    postingFee = 0,
+    revenueAccount = '',
+    -- Optional public name shown beside the fee in the posting form.
+    revenueLabel = '',
 }
 
 -- ── Social ─────────────────────────────────────────────────────

@@ -1,11 +1,13 @@
 -- v-phone | server/marketplace.lua
--- VineMarket classifieds and private conversations. No ownership or money changes hands here.
+-- VineMarket classifieds and private conversations. Item ownership stays in game.
 
 local CFG = Config.Marketplace or {}
 local kinds = { items = true, vehicles = true, furniture = true,
                 apartments = true, houses = true, services = true }
 local deals = { sale = true, rent = true }
 local lastWrite = {}
+local publishing = {}
+local recentPosts = {}
 local ready = false
 
 local function clean(value, limit)
@@ -34,6 +36,28 @@ local function throttle(src, op, seconds)
     if (lastWrite[key] or 0) + seconds > now then return false end
     lastWrite[key] = now
     return true
+end
+
+local function postingTerms()
+    local fee = CFG.postingFee == nil and 0 or tonumber(CFG.postingFee)
+    if not fee or fee < 0 or fee > 100000000 or fee ~= math.floor(fee) then return nil end
+    if fee == 0 then return { fee = 0, label = '' } end
+    local account = tostring(CFG.revenueAccount or ''):match('^%s*(.-)%s*$')
+    if account == '' or account:find('%s') then return nil end
+    return { fee = fee, account = account, label = clean(CFG.revenueLabel, 64) }
+end
+
+local function refund(src, amount, reason)
+    local ok, done = pcall(Bridge.AddMoney or function() return false end,
+        src, amount, 'bank', reason)
+    if ok and done == true then return true end
+    print('[v-phone] VineMarket posting refund failed; check the bank transaction log')
+    return false
+end
+
+local function dropPending(id)
+    pcall(MySQL.update.await,
+        "DELETE FROM vphone_market_listings WHERE id = ? AND status = 'pending'", { id })
 end
 
 CreateThread(function()
@@ -122,7 +146,11 @@ V.Callback('v-phone:marketplace', function(src, resolve, data)
     local op = tostring(data.op or '')
     local cid = p.citizenid
 
-    if op == 'feed' then
+    if op == 'pricing' then
+        local terms = postingTerms()
+        resolve(terms and { ok = true, fee = terms.fee, label = terms.label }
+            or { error = 'payment' })
+    elseif op == 'feed' then
         local kind = kinds[data.kind] and data.kind or nil
         local deal = deals[data.deal] and data.deal or nil
         local query = clean(data.query, 48)
@@ -144,7 +172,7 @@ V.Callback('v-phone:marketplace', function(src, resolve, data)
         resolve({ ok = true, listings = out, next = #rows == size and rows[#rows].id or nil })
     elseif op == 'mine' then
         local rows = MySQL.query.await([[SELECT * FROM vphone_market_listings
-            WHERE seller_cid = ? ORDER BY id DESC LIMIT 40]], { cid }) or {}
+            WHERE seller_cid = ? AND status <> 'pending' ORDER BY id DESC LIMIT 40]], { cid }) or {}
         local out = {}
         for _, row in ipairs(rows) do out[#out + 1] = card(row, cid, false) end
         resolve({ ok = true, listings = out })
@@ -156,7 +184,17 @@ V.Callback('v-phone:marketplace', function(src, resolve, data)
         end
         resolve({ ok = true, listing = card(row, cid, true) })
     elseif op == 'create' then
+        local token = tostring(data.requestId or '')
+        if #token > 64 or (token ~= '' and (#token < 8 or not token:match('^[%w%-]+$'))) then
+            resolve({ error = 'invalid' }) return
+        end
+        local previous = recentPosts[cid]
+        if token ~= '' and previous and previous.token == token
+            and previous.at + 600 > os.time() then
+            resolve({ ok = true, id = previous.id }) return
+        end
         if not throttle(src, op, 5) then resolve({ error = 'rate' }) return end
+        if publishing[cid] then resolve({ error = 'rate' }) return end
         local kind, deal = tostring(data.kind or ''), tostring(data.deal or '')
         local title, description = clean(data.title, 80), clean(data.description, 1000)
         local price = tonumber(data.price)
@@ -175,15 +213,72 @@ V.Callback('v-phone:marketplace', function(src, resolve, data)
         if image ~= '' and (#image > 400 or not PhoneLinkAllowed(image)) then
             resolve({ error = 'image' }) return
         end
+        local terms = postingTerms()
+        if not terms then resolve({ error = 'payment' }) return end
+        publishing[cid] = true
         local now = os.time()
-        local id = MySQL.insert.await([[INSERT INTO vphone_market_listings
+        local inserted, id = pcall(MySQL.insert.await, [[INSERT INTO vphone_market_listings
             (seller_cid, seller_name, kind, deal, title, description, price, period, area,
              image, show_phone, status, created_at, expires_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?)]],
+            VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending',?,?)]],
             { cid, clean(p.name, 64), kind, deal, title, description, price, period,
               clean(data.area, 64), image, data.showPhone == true and 1 or 0,
               now, now + math.max(1, math.min(60, tonumber(CFG.daysLive) or 30)) * 86400 })
-        resolve({ ok = id ~= nil, id = id })
+        id = inserted and idOf(id) or nil
+        if not id then
+            publishing[cid] = nil
+            resolve({ error = 'payment' }) return
+        end
+        local acting = PhoneActingSource and PhoneActingSource(src) or src
+        local reason = ('VineMarket posting fee #%d'):format(id)
+        if terms.fee > 0 then
+            local debited, paid = pcall(Bridge.RemoveMoney or function() return false end,
+                acting, terms.fee, 'bank', reason)
+            if not debited then
+                print(('[v-phone] VineMarket debit outcome unknown for listing #%d'):format(id))
+                publishing[cid] = nil
+                resolve({ error = 'payment' }) return
+            end
+            if paid ~= true then
+                dropPending(id)
+                publishing[cid] = nil
+                resolve({ error = 'nomoney' }) return
+            end
+            local credited, landed = pcall(Bridge.AddSociety or function() return false end,
+                terms.account, terms.fee, reason)
+            if not credited then
+                print(('[v-phone] VineMarket credit outcome unknown for listing #%d'):format(id))
+                publishing[cid] = nil
+                resolve({ error = 'payment' }) return
+            end
+            if landed ~= true then
+                local returned = refund(acting, terms.fee, reason .. ' reversed')
+                if returned then dropPending(id) end
+                publishing[cid] = nil
+                resolve({ error = returned and 'noaccount' or 'refund' }) return
+            end
+        end
+        local published, changed = pcall(MySQL.update.await,
+            [[UPDATE vphone_market_listings SET status = 'active'
+            WHERE id = ? AND status = 'pending']], { id })
+        if not published or changed ~= 1 then
+            if terms.fee > 0 then
+                local reversed, returned = pcall(Bridge.RemoveSociety or function() return false end,
+                    terms.account, terms.fee, reason .. ' reversed')
+                if reversed and returned == true then
+                    if refund(acting, terms.fee, reason .. ' reversed') then dropPending(id) end
+                else
+                    print('[v-phone] VineMarket posting reversal failed; check the society transaction log')
+                end
+            else
+                dropPending(id)
+            end
+            publishing[cid] = nil
+            resolve({ error = 'payment' }) return
+        end
+        publishing[cid] = nil
+        if token ~= '' then recentPosts[cid] = { token = token, id = id, at = os.time() } end
+        resolve({ ok = true, id = id })
     elseif op == 'close' then
         local id = idOf(data.id)
         if not id then resolve({ error = 'invalid' }) return end

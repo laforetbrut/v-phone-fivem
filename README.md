@@ -123,7 +123,10 @@ Twenty-two are installed to begin with: Phone, Messages, Contacts, **911**, **Al
 - **VineMarket** (free download): local classifieds with sale and rental categories, optional
   gallery photo, neighborhood, bounded search and private buyer-seller messages. The seller
   can expose their number explicitly or leave it hidden. Private calls mask both numbers.
-  `Config.Marketplace` controls listing limits, price ceiling, page size and expiry.
+  `Config.Marketplace` controls listing limits, price ceiling, page size and expiry. Set
+  `postingFee` above zero and `revenueAccount` to an existing society account to charge the
+  seller's bank when publishing. `revenueLabel` optionally names that recipient in the form.
+  The default fee is zero; purchases and ownership transfers remain in game.
 
 - **Phone**: keypad, favourites, history, voicemail, speaker mode heard by nearby players, and group calls of up to five. On one bar the line breaks up - the voice really cuts out, both ends - and a bad enough line can drop the call.
 - **911**: pick a service, pick a reason, and everybody working that service gets it on their own phone with a map pin they can drive to. Installed by default and not removable. The caller is told when somebody takes it, so silence never has to be guessed at. Anonymous reporting, per-service duty and grade rules, and an API so a shop till or a downed player can raise one.
@@ -1326,7 +1329,10 @@ Vingt-deux sont installées au départ : Téléphone, Messages, Contacts, **911*
   facultative depuis la galerie, quartier, recherche limitée et messagerie privée entre
   acheteur et vendeur. Le vendeur peut afficher son numéro explicitement ou le garder masqué.
   Les appels privés masquent les deux numéros. `Config.Marketplace` règle les limites
-  d'annonces, le prix maximal, la taille du fil et l'expiration.
+  d'annonces, le prix maximal, la taille du fil et l'expiration. Définissez `postingFee`
+  au-dessus de zéro et `revenueAccount` sur un compte d'entreprise existant pour débiter
+  la banque du vendeur à la publication. `revenueLabel` affiche facultativement le nom du
+  bénéficiaire. Le tarif vaut zéro par défaut ; achats et transferts restent en jeu.
 
 - **Téléphone** : clavier, favoris, historique, répondeur, haut-parleur entendu par les joueurs autour, et appels de groupe jusqu'à cinq. À une barre de réseau la ligne coupe — la voix se coupe vraiment, des deux côtés — et une ligne assez mauvaise peut faire raccrocher.
 - **911** : on choisit un service, un motif, et toutes les personnes en poste dans ce service reçoivent l'alerte sur leur téléphone avec un point sur la carte. Installée par défaut, impossible à supprimer. L'appelant est prévenu quand quelqu'un prend l'appel, pour ne jamais avoir à interpréter le silence. Signalement anonyme, règles de service et de grade par service, et une API pour qu'une caisse de magasin ou un joueur à terre puisse lancer une alerte.

@@ -15424,6 +15424,8 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
 .market-privacy input { margin: 3px 0 0; accent-color: #3268BD; }
 .market-privacy strong, .market-privacy small { display: block; }
 .market-privacy small { margin-top: 4px; color: var(--app-label2); font-weight: 400; line-height: 1.35; }
+.market-posting-fee { padding: 11px 13px; border-radius: 12px; background: var(--app-card);
+  color: var(--app-label2); font-size: 12px; line-height: 1.4; }
 .market-submit { width: 100%; padding: 13px; border: 0; border-radius: 13px;
   background: #3268BD; color: #fff; font: inherit; font-size: 13px; font-weight: 700; }
 .market-submit:disabled { opacity: .5; }

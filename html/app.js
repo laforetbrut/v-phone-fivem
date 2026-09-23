@@ -15310,9 +15310,26 @@ function marketCompose() {
     '<label class="market-privacy"><input type="checkbox" id="market-form-phone"><span><strong>' +
       esc(L('ph.market_show_phone')) + '</strong><small>' + esc(L('ph.market_private_hint')) +
       '</small></span></label>' +
+    '<div class="market-posting-fee" id="market-posting-fee">' +
+      esc(L('ph.loading')) + '</div>' +
     '<button class="market-submit" type="submit">' + esc(L('ph.market_publish')) + '</button>' +
     '</form>');
   let photo = '';
+  const requestId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  let pricingReady = false;
+  const submit = byId('market-form').querySelector('.market-submit');
+  const fee = byId('market-posting-fee');
+  submit.disabled = true;
+  post('marketplace', { op: 'pricing' }).then((pricing) => {
+    if (!fee.isConnected) return;
+    if (!pricing || !pricing.ok) { fee.textContent = L('ph.market_e_payment'); return; }
+    pricingReady = true;
+    submit.disabled = false;
+    fee.textContent = pricing.fee > 0
+      ? L('ph.market_posting_fee').replace('{amount}', money(pricing.fee)) +
+        (pricing.label ? ' · ' + pricing.label : '')
+      : L('ph.market_posting_free');
+  });
   byId('market-pick').addEventListener('click', () => pickPhoto((url) => {
     photo = url;
     byId('market-photo').innerHTML = photoImg(url, 'market-form-preview');
@@ -15321,11 +15338,12 @@ function marketCompose() {
     byId('market-period-wrap').classList.toggle('hidden', e.target.value !== 'rent'));
   byId('market-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!pricingReady) return;
     const form = byId('market-form');
-    const submit = form.querySelector('.market-submit');
     submit.disabled = true;
     const deal = byId('market-form-deal').value;
     const res = await post('marketplace', { op: 'create',
+      requestId,
       kind: byId('market-form-kind').value, deal,
       title: byId('market-form-title').value, description: byId('market-form-description').value,
       price: Number(byId('market-form-price').value), period: deal === 'rent'

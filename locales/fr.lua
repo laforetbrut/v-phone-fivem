@@ -1440,6 +1440,8 @@ local T = {
     ['ph.market_show_phone'] = 'Afficher mon numéro aux acheteurs',
     ['ph.market_private_hint'] = 'Laisse cette option désactivée pour échanger uniquement dans l’application.',
     ['ph.market_publish'] = 'Publier l’annonce',
+    ['ph.market_posting_fee'] = 'Frais de publication : {amount} débités de ton compte bancaire',
+    ['ph.market_posting_free'] = 'Publication gratuite',
     ['ph.market_contact'] = 'Écrire au vendeur',
     ['ph.market_call'] = 'Appeler le vendeur',
     ['ph.market_private_call'] = 'Appeler en numéro masqué',
@@ -1467,6 +1469,10 @@ local T = {
     ['ph.market_e_closed'] = 'Cette annonce est clôturée.',
     ['ph.market_e_self'] = 'C’est ta propre annonce.',
     ['ph.market_e_off'] = 'VineMarket est indisponible.',
+    ['ph.market_e_nomoney'] = 'Solde bancaire insuffisant.',
+    ['ph.market_e_noaccount'] = 'Le compte de publication est indisponible. Aucun frais conservé.',
+    ['ph.market_e_payment'] = 'Paiement des annonces indisponible. Contacte le staff.',
+    ['ph.market_e_refund'] = 'Le paiement n’a pas pu être remboursé. Contacte le staff.',
 
     -- ── Export : le cours du marche ───────────────────────────
     ['ph.export_m_export'] = 'Export',
