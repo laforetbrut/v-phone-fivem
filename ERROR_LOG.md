@@ -5,6 +5,17 @@ one coming back.
 
 ---
 
+## [2026-09-23 07:05] - release creation rejected an abbreviated target SHA
+
+**Context:** creating the GitHub release for the SMS fix from its commit.
+**Error:** GitHub returned HTTP 422 with `Release.target_commitish is invalid` and an invalid tag.
+**Root cause:** the release command received a short commit id where its target accepts a branch
+or a full commit SHA.
+**Fix:** retry with the full commit SHA; the release was published successfully.
+**Prevention:** use `git rev-parse HEAD` for a release target, or a verified branch name.
+
+---
+
 ## [2026-09-23 06:49] - an older SMS read replaced a loaded conversation with a timeout
 
 **Context:** a conversation was opened while the Messages app's outbox read was still pending.
