@@ -54,7 +54,7 @@ CreateThread(function()
     line('info', centred('\\/'))
     line('info', string.rep('-', WIDTH))
     line('info', ('V-PHONE  v%s  |  Copyright vyrriox')
-        :format(GetResourceMetadata(RES, 'version', 0) or 'unknown'))
+        :format((PhoneVersion and PhoneVersion()) or GetResourceMetadata(RES, 'version', 0) or 'unknown'))
     line('info', ('framework: %s%s'):format(fw, fwRes and (' (' .. fwRes .. ')') or ''))
     if GetResourceState('oxmysql') == 'started' then
         line('info', 'database: oxmysql, tables prefixed `vphone_`')

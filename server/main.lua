@@ -2618,6 +2618,23 @@ end
 -- Both are decided here, from the player's real position, for the same reason calls are:
 -- a client that reported its own signal would report five bars from inside a tunnel.
 
+--- **Is this player inside their property?** Reported by the client, which is the only side
+--- that can ask the housing script, and kept here rather than in a state bag the client writes:
+--- `sv_stateBagStrictMode` refuses those by default. Cleared when they drop.
+local AtHome = {}        -- [source] = true while the client says it is inside a property
+local AtHomeAt = {}      -- [source] = game time of the last report, to rate limit the event
+
+--- The client's report. Nothing here is trusted beyond what the state bag was trusted for
+--- before it - a client saying "I am home" charges its own battery and nothing else - but it is
+--- rate limited, because an event a client can send is an event a client can send in a loop.
+RegisterNetEvent('v-phone:server:atHome', function(inside)
+    local src = source
+    local now = os.clock()
+    if AtHomeAt[src] and (now - AtHomeAt[src]) < 0.5 then return end
+    AtHomeAt[src] = now
+    AtHome[src] = inside == true
+end)
+
 local Battery = {}       -- [source] = level 0..100
 Signal = {}             -- [source] = bars 0..4
 local Charging = {}      -- [source] = true while in reach of something that charges
@@ -2821,10 +2838,27 @@ local function chargeRateAt(src, ped, coords)
         return 1.0
     end
 
-    -- Inside a property is decided on the CLIENT, because only the housing script knows,
-    -- and reported up a replicated state bag. See bridge/client/charging.lua, which knows
-    -- how to ask qs-housing, ps-housing, qb-houses and the rest.
-    -- One proxy: every `Player(src)` builds a fresh one, and this runs per player every tick.
+    -- Inside a property is decided on the CLIENT, because only the housing script knows, and
+    -- reported up. See bridge/client/charging.lua, which knows how to ask qs-housing,
+    -- ps-housing, qb-houses and the rest.
+    --
+    -- **An event, not a state bag written by the client.** `sv_stateBagStrictMode` is on by
+    -- default and refuses those, so on a strict server the write never landed: charging at home
+    -- did not work at all, and every player's console took a warning every minute from the
+    -- re-assert. The state bag is still READ underneath, so a server running an older client
+    -- build, or one with strict mode off, keeps working while it updates.
+    if AtHome[src] == true then
+        ChargeSource[src] = 'property'
+        if not pluggedIn(src, 'property') then
+            ChargeReason[src] = 'unplugged:property'
+            return 0.0
+        end
+        ChargeReason[src] = 'property'
+        return 1.0
+    end
+
+    -- The old path, for a client that has not been updated yet. One proxy: every `Player(src)`
+    -- builds a fresh one, and this runs per player every tick.
     local player = Player(src)
     local state = player and player.state
     if state and state.phoneAtHome == true then
@@ -7130,6 +7164,7 @@ AddEventHandler('playerDropped', function()
     -- leaves, with or without a battery level to save.
     if p then Bridge.KvSetSync(p.citizenid, 'lastOut', os.time()) end
     CaughtUp[src] = nil
+    AtHome[src], AtHomeAt[src] = nil, nil
     BatterySaved[src] = nil
     if Bridge.SetHere then Bridge.SetHere(src, nil) end
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil

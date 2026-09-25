@@ -322,7 +322,9 @@ def main_chunk(base):
     stop_start = m.rindex("AddEventHandler('onResourceStop', function(resource)", 0, save)
     stop_end = m.index('\nend)\n', save) + len('\nend)\n')
     return '\n'.join([
-        'local Battery = {}\nSignal = {}\nlocal Charging = {}\nExternalCharge = {}\nExternalChargeUntil = {}\n',
+        # `AtHome` is a file local in main.lua and the lift starts past it: the client's "I am
+        # inside my property" report, which `chargeRateAt` reads on every state tick.
+        'local Battery = {}\nSignal = {}\nlocal Charging = {}\nExternalCharge = {}\nExternalChargeUntil = {}\nAtHome = {}\n',
         between(m, 'batteryOf = function(src)', '\nend\n'),
         between(m, 'function PhoneBattery(src)', '\nend\n'),
         between(m, 'local function hasBars(', '\nend\n'),

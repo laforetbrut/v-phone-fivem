@@ -8,8 +8,9 @@
 -- "inside my house" is a fact only the housing script knows, and every housing script
 -- says it differently.
 --
--- So the CLIENT works it out and reports one boolean up a replicated state bag. The
--- server reads `phoneAtHome` and adds it to what it already knows. This is the only
+-- So the CLIENT works it out and reports one boolean to the server, which adds it to what it
+-- already knows. It used to travel on a state bag written here, which `sv_stateBagStrictMode`
+-- refuses by default; it is a plain event now. This is the only
 -- honest way to be right on qs-housing, ps-housing, qb-houses and the rest at once: ask
 -- each one the way it wants to be asked, here, once.
 --
@@ -149,7 +150,12 @@ CreateThread(function()
         if atHome ~= last or (now - lastWrite) >= 60000 then
             last = atHome
             lastWrite = now
-            LocalPlayer.state:set('phoneAtHome', atHome, true)   -- replicated to the server
+            -- **An event, not a replicated state bag.** `sv_stateBagStrictMode` is on by
+            -- default and refuses a state bag written by a client, so this write never landed
+            -- on a strict server: charging at home did nothing, and this line printed a
+            -- warning in every player's console once a minute. The server keeps the answer
+            -- itself now. Nothing else ever read this value.
+            TriggerServerEvent('v-phone:server:atHome', atHome)
         end
     end
 end)
@@ -181,8 +187,7 @@ V.Sub('phonedebug', 'charge', 'why the phone believes it is or is not charging',
     print(('[v-phone] it answered: %s (%s)'):format(
         type(raw) == 'table' and json.encode(raw) or tostring(raw), type(raw)))
     print(('[v-phone] the phone reads that as: %s'):format(tostring(answer)))
-    print(('[v-phone] phoneAtHome on the state bag: %s')
-        :format(tostring(LocalPlayer.state and LocalPlayer.state.phoneAtHome)))
+    print(('[v-phone] last reported to the server: %s'):format(tostring(answer)))
     print(('[v-phone] in a vehicle: %s'):format(tostring(IsPedInAnyVehicle(PlayerPedId(), false))))
     TriggerServerEvent('v-phone:charge:why')
 end)

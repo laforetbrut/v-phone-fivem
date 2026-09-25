@@ -26,8 +26,25 @@ local CFG = Config.UpdateCheck or {}
 ---
 --- A number written down twice is a number that disagrees with itself eventually, and the
 --- manifest's is the one an operator sees in `ensure` output and in a bug report.
-local function currentVersion()
+--- **The manifest is read from disk, not only through the metadata.**
+---
+--- `GetResourceMetadata` answers from what the server parsed when it started, and a `refresh`
+--- plus `restart` does not always replace it: somebody who pulled a new build was told for the
+--- rest of the session that they were running the old one, and only a full reboot fixed it.
+--- The file on disk is the truth, and `LoadResourceFile` reads it now rather than at boot.
+--- The metadata is the fallback, for a manifest this cannot parse.
+function PhoneVersion()
+    local ok, raw = pcall(LoadResourceFile, RES, 'fxmanifest.lua')
+    if ok and type(raw) == 'string' then
+        local found = raw:match("\n%s*version%s*'([^']+)'")
+                   or raw:match('\n%s*version%s*"([^"]+)"')
+        if found and #found <= 20 then return found end
+    end
     return tostring(GetResourceMetadata(RES, 'version', 0) or '')
+end
+
+local function currentVersion()
+    return PhoneVersion()
 end
 
 --- `owner/repo`, taken from the manifest's `repository` line.

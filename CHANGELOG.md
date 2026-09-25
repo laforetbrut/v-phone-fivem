@@ -122,6 +122,17 @@ All notable changes to v-phone are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **No state bag is written from the client any more.** The one that was, `phoneAtHome`, is how
+  the phone knew you were inside your property. `sv_stateBagStrictMode` is on by default and
+  refuses those, so on a strict server charging at home did not work at all and every player's
+  console took a warning once a minute. The client reports it to the server now, rate limited,
+  and the server still reads the old state bag underneath so a mixed build keeps working.
+- **The version could stay a build behind until a full reboot.** `GetResourceMetadata` answers
+  from what the server parsed at start-up, and a refresh plus restart does not always replace
+  it. The manifest is read from disk instead, with the metadata as the fallback.
+
 ### Added
 
 - **A 12 or 24 hour setting, `Config.Clock.hour24`.** Every screen that printed a time asked the

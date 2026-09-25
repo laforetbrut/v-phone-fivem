@@ -578,7 +578,9 @@ end)
 --- diagnostics command, or for a script that wants to adapt to the server it is on.
 exports('GetPhoneInfo', function()
     return {
-        version = GetResourceMetadata(GetCurrentResourceName(), 'version', 0),
+        -- From the file rather than the parsed metadata, which can be a restart behind.
+        version = PhoneVersion and PhoneVersion()
+                  or GetResourceMetadata(GetCurrentResourceName(), 'version', 0),
         framework = Bridge.framework,
         frameworkResource = Bridge.frameworkResource,
         inventory = Bridge.InventoryResource and Bridge.InventoryResource() or nil,
