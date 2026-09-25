@@ -579,7 +579,7 @@ end
 -- `bank_accounts` / `bank_statements` tables. So every branch that already handled qb-banking
 -- handles it too, and the ones below say so by name rather than by accident.
 local BANKS = { 'doc-banking', 'Renewed-Banking', 'qb-banking', 'okokBanking', 'qs-banking',
-                'esx_banking' }
+                'esx_banking', 'ox_banking' }
 
 Bridge.Banking = {}
 
@@ -1055,10 +1055,59 @@ end
 --- Anything not in this list means the phone keeps its own lines. Add a script here only when
 --- `Transactions` genuinely returns its rows.
 local READABLE_HISTORY = { ['Renewed-Banking'] = true, ['qs-banking'] = true,
-                           ['qb-banking'] = true, ['doc-banking'] = true }
+                           ['qb-banking'] = true, ['doc-banking'] = true,
+                           ['ox_banking'] = true }
+
+--- **Which ox account a character's money is in.**
+---
+--- ox_banking is a face on ox_core's accounts rather than a bank of its own, so nothing is
+--- asked of ox_banking here: the balance, the history and the company accounts are all
+--- ox_core's, and the phone already spends and receives through them. What was missing was the
+--- history, which is why a player on an ox server saw a balance and no movements at all.
+---
+--- The account instance carries methods, and methods do not survive the export boundary - the
+--- same reason `oxGroupBalance` reads the table. Only the id is taken across.
+local function oxAccountId(src)
+    if Bridge.framework ~= 'ox' then return nil end
+    local ok, player = pcall(function() return exports.ox_core:GetPlayer(src) end)
+    if not ok or not player or not player.charId then return nil end
+    local gotAccount, account = pcall(function()
+        return exports.ox_core:GetCharacterAccount(player.charId)
+    end)
+    if gotAccount and type(account) == 'table' and tonumber(account.id) then
+        return math.floor(tonumber(account.id))
+    end
+    return nil
+end
+
+--- The movements of one ox account, newest first, signed the way the phone draws them:
+--- money arriving is positive, money leaving is negative.
+local function oxTransactions(accountId, limit)
+    if not accountId then return nil end
+    local ok, rows = pcall(function()
+        return MySQL.query.await([[
+            SELECT message AS label,
+                   CASE WHEN toId = ? THEN amount ELSE -amount END AS amount,
+                   date AS at
+            FROM accounts_transactions
+            WHERE fromId = ? OR toId = ?
+            ORDER BY id DESC LIMIT ?]],
+            { accountId, accountId, accountId, limit })
+    end)
+    if not ok or type(rows) ~= 'table' then return nil end
+    for _, r in ipairs(rows) do
+        -- ox leaves the message empty for a movement made by another resource. A line with no
+        -- label reads as a blank row in the app, so it is named for what it is instead.
+        if r.label == nil or tostring(r.label) == '' then r.label = 'Transaction' end
+    end
+    return rows
+end
 
 --- Can the running banking script's own statement be read?
 function Bridge.Banking.HistoryReadable()
+    -- ox keeps every movement in `accounts_transactions` whether or not ox_banking is
+    -- installed, so the history is readable on an ox server with no banking script at all.
+    if Bridge.framework == 'ox' then return true end
     local script = choose('banking', BANKS)
     return (script ~= nil) and (READABLE_HISTORY[script] == true)
 end
@@ -1074,6 +1123,13 @@ function Bridge.Banking.Transactions(src, citizenid, limit)
     end
 
     local bank = choose('banking', BANKS)
+    -- ox: the account rows are ox_core's whether or not ox_banking is installed, so this does
+    -- not wait for the bank to be detected. An ox server with no banking script at all still
+    -- has a history to show.
+    if Bridge.framework == 'ox' then
+        local rows = oxTransactions(oxAccountId(src), limit)
+        if rows then return rows end
+    end
     if bank == 'Renewed-Banking' then
         local rows = callExport(bank, 'getAccountTransactions', citizenid)
         if type(rows) == 'table' then return rows end
@@ -1145,6 +1201,18 @@ function Bridge.Banking.SocietyTransactions(account, limit)
     if custom then
         local ok, rows = pcall(custom, account, limit)
         if ok and type(rows) == 'table' then return rows end
+    end
+
+    -- ox: a group's account is a row in the same table a character's is, found by the group
+    -- name. Bank Pro signs a negative amount as money leaving, so these need no statement_type.
+    if Bridge.framework == 'ox' then
+        local ok, id = pcall(function()
+            return MySQL.scalar.await(
+                'SELECT id FROM accounts WHERE `group` = ? ORDER BY isDefault DESC, id ASC LIMIT 1',
+                { account })
+        end)
+        local rows = ok and tonumber(id) and oxTransactions(math.floor(tonumber(id)), limit)
+        if rows then return rows end
     end
 
     local bank = choose('banking', BANKS)

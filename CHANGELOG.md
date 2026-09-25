@@ -4,6 +4,42 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **ox_banking, and a bank history on ox in general.** ox_banking is a face on ox_core's
+  accounts rather than a bank of its own, so the balance and the transfers already worked; what
+  was missing was the history, and a player on an ox server saw a balance with no movements
+  under it. Both the personal statement and a company's in Bank Pro are read from ox_core's
+  `accounts_transactions` now, whether or not ox_banking is installed.
+
+### Fixed
+
+- **No state bag is written from the client any more.** The one that was, `phoneAtHome`, is how
+  the phone knew you were inside your property. `sv_stateBagStrictMode` is on by default and
+  refuses those, so on a strict server charging at home did not work at all and every player's
+  console took a warning once a minute. The client reports it to the server now, rate limited,
+  and the server still reads the old state bag underneath so a mixed build keeps working.
+- **The version could stay a build behind until a full reboot.** `GetResourceMetadata` answers
+  from what the server parsed at start-up, and a refresh plus restart does not always replace
+  it. The manifest is read from disk instead, with the metadata as the fallback.
+
+### Added
+
+- **A 12 or 24 hour setting, `Config.Clock.hour24`.** Every screen that printed a time asked the
+  browser with no locale, and CEF usually answers as American English, so a French server showed
+  "10:37 PM" in its own emergency alerts while the status bar two centimetres above showed
+  "22:37". One setting decides now: `true` for 24 hour, `false` for AM/PM, `'auto'` to follow the
+  phone's language.
+- **An emergency alert says who took it and who closed it.** `takenBy`, `takenByCid`, `takenAt`,
+  `closedBy`, `closedByCid` and `closedAt` are on the alert itself, so `GetAlerts` and
+  `GetEmergencyQueue` carry them. Two server events go with it, `v-phone:emergency:taken` and
+  `v-phone:emergency:closed`, each with the alert id, the service, the citizen id and the name,
+  so a bridge to another dispatch script hears about it instead of polling.
+
+---
+
 ## [1.7.12] - 2026-09-23
 
 ### Added
@@ -117,34 +153,6 @@ All notable changes to v-phone are documented here.
   La boîte d'envoi attend désormais la fin de la lecture en cours pour afficher sa file, et les
   réponses tardives des anciennes conversations privées ou de groupe ne remplacent plus la vue
   actuelle.
-
----
-
-## [Unreleased]
-
-### Fixed
-
-- **No state bag is written from the client any more.** The one that was, `phoneAtHome`, is how
-  the phone knew you were inside your property. `sv_stateBagStrictMode` is on by default and
-  refuses those, so on a strict server charging at home did not work at all and every player's
-  console took a warning once a minute. The client reports it to the server now, rate limited,
-  and the server still reads the old state bag underneath so a mixed build keeps working.
-- **The version could stay a build behind until a full reboot.** `GetResourceMetadata` answers
-  from what the server parsed at start-up, and a refresh plus restart does not always replace
-  it. The manifest is read from disk instead, with the metadata as the fallback.
-
-### Added
-
-- **A 12 or 24 hour setting, `Config.Clock.hour24`.** Every screen that printed a time asked the
-  browser with no locale, and CEF usually answers as American English, so a French server showed
-  "10:37 PM" in its own emergency alerts while the status bar two centimetres above showed
-  "22:37". One setting decides now: `true` for 24 hour, `false` for AM/PM, `'auto'` to follow the
-  phone's language.
-- **An emergency alert says who took it and who closed it.** `takenBy`, `takenByCid`, `takenAt`,
-  `closedBy`, `closedByCid` and `closedAt` are on the alert itself, so `GetAlerts` and
-  `GetEmergencyQueue` carry them. Two server events go with it, `v-phone:emergency:taken` and
-  `v-phone:emergency:closed`, each with the alert id, the service, the citizen id and the name,
-  so a bridge to another dispatch script hears about it instead of polling.
 
 ---
 

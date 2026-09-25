@@ -202,7 +202,7 @@ Everything below is detected automatically. Naming one explicitly in `Config.Com
 |---|---|
 | Framework | qb-core, qbx_core, ox_core, es_extended, standalone |
 | Inventory | ox_inventory, qs-inventory (Quasar), ps-inventory, qb-inventory, origen_inventory, codem-inventory |
-| Banking | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking |
+| Banking | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking, ox_banking |
 | Garage | qs-advancedgarages, jg-advancedgarages, qb-garages, cd_garage, okokGarage |
 | Housing | qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property |
 | Voice | pma-voice, saltychat, mumble-voip |

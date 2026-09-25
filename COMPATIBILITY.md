@@ -42,7 +42,7 @@ uninstalling the phone leaves your character rows untouched.
 | **Gallery** | nothing | Own tables |
 | **Settings** | nothing | Own tables |
 | **FruitStore** | nothing | `Config.Apps` and `Config.Home` |
-| **Bank** | a framework or a banking script | qs-banking `GetAccountBalance`, Renewed-Banking `getAccount`, qb `PlayerData.money`, ox accounts `GetCharacterAccount`, ESX accounts. Statements from qs-banking or Renewed-Banking |
+| **Bank** | a framework or a banking script | qs-banking `GetAccountBalance`, Renewed-Banking `getAccount`, qb `PlayerData.money`, ox accounts `GetCharacterAccount`, ESX accounts. Statements from qs-banking, Renewed-Banking, qb-banking, doc-banking, or ox_core's `accounts_transactions` on an ox server |
 | **Garage** | a garage script or its table | qs-advancedgarages `GetPlayerVehicles`, else `player_vehicles` (qb), `vehicles` (ox), `owned_vehicles` (ESX) |
 | **Property** | a housing script | qs-housing `GetPlayerHouses`, ps-housing `properties`, esx_property `owned_properties`, or your configured table |
 | **Wallet** | a framework | qb metadata `licences`/`licenses`, ox `character_licenses`, ESX `user_licenses` |
@@ -142,7 +142,7 @@ set phone_media_key "fm_xxxxxxxx"
 | Kind | Detected, in order |
 |---|---|
 | Inventory | ox_inventory, qs-inventory, ps-inventory, qb-inventory, origen_inventory, codem-inventory |
-| Banking | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking |
+| Banking | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking, ox_banking |
 | Garage | qs-advancedgarages, jg-advancedgarages, qb-garages, cd_garage, okokGarage |
 | Housing | qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property |
 | Voice | pma-voice, saltychat, mumble-voip |
@@ -338,7 +338,7 @@ lignes de personnage intactes.
 | **Galerie** | rien | Ses propres tables |
 | **Réglages** | rien | Ses propres tables |
 | **FruitStore** | rien | `Config.Apps` et `Config.Home` |
-| **Banque** | un framework ou un script bancaire | qs-banking `GetAccountBalance`, Renewed-Banking `getAccount`, qb `PlayerData.money`, comptes ox `GetCharacterAccount`, comptes ESX. Relevés depuis qs-banking ou Renewed-Banking |
+| **Banque** | un framework ou un script bancaire | qs-banking `GetAccountBalance`, Renewed-Banking `getAccount`, qb `PlayerData.money`, comptes ox `GetCharacterAccount`, comptes ESX. Relevés depuis qs-banking, Renewed-Banking, qb-banking, doc-banking, ou `accounts_transactions` d'ox_core sur un serveur ox |
 | **Garage** | un script de garage ou sa table | qs-advancedgarages `GetPlayerVehicles`, sinon `player_vehicles` (qb), `vehicles` (ox), `owned_vehicles` (ESX) |
 | **Logement** | un script de logement | qs-housing `GetPlayerHouses`, ps-housing `properties`, esx_property `owned_properties`, ou votre table configurée |
 | **Portefeuille** | un framework | metadata qb `licences`/`licenses`, ox `character_licenses`, ESX `user_licenses` |
@@ -353,7 +353,7 @@ lignes de personnage intactes.
 | Type | Détecté, dans cet ordre |
 |---|---|
 | Inventaire | ox_inventory, qs-inventory, ps-inventory, qb-inventory, origen_inventory, codem-inventory |
-| Banque | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking |
+| Banque | qs-banking, Renewed-Banking, qb-banking, okokBanking, esx_banking, ox_banking |
 | Garage | qs-advancedgarages, jg-advancedgarages, qb-garages, cd_garage, okokGarage |
 | Logement | qs-housing, ps-housing, qb-houses, ox_property, loaf_housing, esx_property |
 | Voix | pma-voice, saltychat, mumble-voip |
