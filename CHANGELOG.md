@@ -120,6 +120,23 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **A 12 or 24 hour setting, `Config.Clock.hour24`.** Every screen that printed a time asked the
+  browser with no locale, and CEF usually answers as American English, so a French server showed
+  "10:37 PM" in its own emergency alerts while the status bar two centimetres above showed
+  "22:37". One setting decides now: `true` for 24 hour, `false` for AM/PM, `'auto'` to follow the
+  phone's language.
+- **An emergency alert says who took it and who closed it.** `takenBy`, `takenByCid`, `takenAt`,
+  `closedBy`, `closedByCid` and `closedAt` are on the alert itself, so `GetAlerts` and
+  `GetEmergencyQueue` carry them. Two server events go with it, `v-phone:emergency:taken` and
+  `v-phone:emergency:closed`, each with the alert id, the service, the citizen id and the name,
+  so a bridge to another dispatch script hears about it instead of polling.
+
+---
+
 ## [1.7.8] - 2026-09-20
 
 ### Fixed

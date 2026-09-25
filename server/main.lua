@@ -3403,6 +3403,9 @@ V.Callback('v-phone:open', function(src, resolve)
         -- what it always did - and which shows a player in another country their time rather
         -- than the city's. See Config.Clock.
         clockZone = tostring((Config.Clock and Config.Clock.timezone) or ''),
+        -- Twelve hours or twenty-four, everywhere else a time is printed. 'auto' is decided on
+        -- the page, against the language it is running in. See Config.Clock.hour24.
+        clock24 = (Config.Clock and Config.Clock.hour24 ~= nil) and Config.Clock.hour24 or true,
         -- Whose phone this actually is, when it is not yours.
         --
         -- `src` and not the wrapped player: `Core.GetPlayer` has already answered with the

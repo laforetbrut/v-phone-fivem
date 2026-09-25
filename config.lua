@@ -3647,6 +3647,17 @@ Config.Lottery = {
 -- rather than stopping the clock.
 Config.Clock = {
     timezone = 'Europe/Paris',
+
+    -- **Twelve hours or twenty-four, everywhere a time is printed.**
+    --
+    -- The status bar has always been 24-hour. Everywhere else - a message, a call, an
+    -- emergency alert - asked the browser, and CEF usually answers as American English, so a
+    -- French server showed "10:37 PM" in its own alerts. Nobody could change it because there
+    -- was nothing to change.
+    --
+    -- `true` is 24-hour, `false` is AM/PM, and 'auto' follows the phone's own language:
+    -- English says AM/PM, every other language this phone speaks says 24-hour.
+    hour24 = true,
 }
 
 -- ══════════════════════════════════════════════════════════════

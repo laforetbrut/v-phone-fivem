@@ -183,6 +183,20 @@ local function openCount(cid)
     return n
 end
 
+--- **Tell the rest of the server that an alert moved.**
+---
+--- `v-phone:emergency:taken` and `v-phone:emergency:closed`, server side, so a bridge to another
+--- dispatch script hears about it instead of polling for a change it already missed. A handler
+--- that raises is caught: another resource's error is not this one's alert to lose.
+local function announce(what, a, cid, name)
+    pcall(function()
+        TriggerEvent('v-phone:emergency:' .. what, {
+            id = a.id, service = a.service, reason = a.reason, state = a.state,
+            citizenid = cid, name = name, at = os.time(),
+        })
+    end)
+end
+
 --- What a responder is shown. The caller's identity is stripped here rather than in the page,
 --- because a page that receives a name has the name whatever it chooses to draw.
 local function alertFor(a, forResponder)
@@ -195,7 +209,15 @@ local function alertFor(a, forResponder)
         state = a.state,
         anonymous = a.anonymous,
         street = a.street,
+        -- **Who acted on it, on the alert itself.** A bridge script asked for exactly this:
+        -- somebody presses Accept and somebody presses Close, so the record says who. The
+        -- names are what a human reads; the citizen ids are what a script matches on.
         takenBy = a.takenByName,
+        takenByCid = a.takenBy,
+        takenAt = a.takenAt,
+        closedBy = a.closedByName,
+        closedByCid = a.closedBy,
+        closedAt = a.closedAt,
         source = a.source,
     }
     if forResponder then
@@ -552,6 +574,7 @@ V.Callback('v-phone:911:take', function(src, resolve, data)
     a.takenBy = p.citizenid
     a.takenByName = p.name
     a.takenAt = os.time()
+    announce('taken', a, p.citizenid, p.name)
 
     if d.notifyService ~= false then
         for _, other in ipairs(respondersFor(service)) do
@@ -585,7 +608,10 @@ V.Callback('v-phone:911:close', function(src, resolve, data)
     end
 
     a.state = 'closed'
-    a.closedBy = p.name
+    a.closedBy = p.citizenid
+    a.closedByName = p.name
+    a.closedAt = os.time()
+    announce('closed', a, p.citizenid, p.name)
     if d.notifyService ~= false then
         for _, other in ipairs(respondersFor(service)) do
             TriggerClientEvent('v-phone:client:911update', other,
@@ -754,7 +780,11 @@ local function closeAlert(id, by)
     local a = Alerts[math.floor(num(id, 0))]
     if not a or a.state == 'closed' then return false end
     a.state = 'closed'
-    a.closedBy = by
+    -- A script closing one names nobody, and the auto-close pass names whoever had it. Only
+    -- the name is known on this path, so the citizen id is left absent rather than guessed.
+    a.closedByName = by
+    a.closedAt = os.time()
+    announce('closed', a, nil, by)
     local service = serviceById(a.service)
     for _, other in ipairs(respondersFor(service)) do
         TriggerClientEvent('v-phone:client:911update', other,

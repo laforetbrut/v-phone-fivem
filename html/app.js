@@ -305,6 +305,23 @@ function phoneClock(at) {
     zone ? { timeZone: zone } : {})).format(at || new Date());
 }
 
+/// **A time of day, in the format the server asked for.**
+///
+/// Every screen that prints an hour used to ask the browser with no locale at all, and CEF
+/// usually answers as American English - so a French server printed "10:37 PM" in its own
+/// emergency alerts while its status bar, which is forced to 24-hour, printed "22:37" two
+/// centimetres above. `Config.Clock.hour24` decides now, and 'auto' follows the phone's
+/// language: English keeps AM/PM, everything else this phone speaks is 24-hour.
+function hhmm(at) {
+  const d = (at instanceof Date) ? at : new Date(at);
+  const want = state.clock24;
+  const h24 = (want === 'auto' || want === undefined || want === null)
+    ? !String(state.locale || 'fr').toLowerCase().startsWith('en')
+    : want !== false;
+  return new Intl.DateTimeFormat(h24 ? 'en-GB' : 'en-US',
+    { hour: '2-digit', minute: '2-digit', hour12: !h24 }).format(d);
+}
+
 /// The lock clock, drawn in the same PARTS its own preview is drawn in.
 ///
 /// **The preview lied, and this is why.** `stack` puts the hours over the minutes, and the
@@ -3995,7 +4012,7 @@ function shortWhen(at) {
   if (!Number.isFinite(ms)) return '';
   const d = new Date(ms);
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-    + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    + ' ' + hhmm(d);
 }
 
 // ── Mail ───────────────────────────────────────────────────────
@@ -5840,7 +5857,7 @@ function dayLine(m, prev) {
   else if (d.toDateString() === yesterday.toDateString()) day = L('ph.yesterday');
   else day = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   return '<div class="mday"><b>' + esc(day) + '</b> ' +
-    esc(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) + '</div>';
+    esc(hhmm(d)) + '</div>';
 }
 
 /// Delivered, or read, under the last message you sent.
@@ -7072,7 +7089,7 @@ function fmtDate(ms) {
   if (!Number.isFinite(at) || at <= 0) return '';
   const d = new Date(at);
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
-    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    hhmm(d);
 }
 
 function txWhen(t) {
@@ -7087,14 +7104,14 @@ function txWhen(t) {
     if (!Number.isFinite(ms)) return String(t.at);
     const d = new Date(ms);
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      hhmm(d);
   }
   if (!t.ts) return '';
   const ms2 = txEpochMs(t.ts);
   if (!Number.isFinite(ms2)) return '';
   const d = new Date(ms2);
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
-    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    hhmm(d);
 }
 
 // What a statement line is called. The server stores the sender's note and who it was
@@ -12488,7 +12505,7 @@ function remWhen(r) {
   const now = Date.now();
   const today = new Date();
   const tomorrow = new Date(today.getTime() + 86400000);
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = hhmm(d);
   let day;
   if (d.toDateString() === today.toDateString()) day = L('ph.today');
   else if (d.toDateString() === tomorrow.toDateString()) day = L('ph.tomorrow');
@@ -17715,7 +17732,7 @@ function cipherError(result) {
 function cipherTime(value) {
   const ms = whenMs(value);
   if (!Number.isFinite(ms)) return '';
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return hhmm(ms);
 }
 
 function cipherInitial(peer) {
