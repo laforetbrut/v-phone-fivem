@@ -4,45 +4,15 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## [Unreleased]
+## [1.7.13] - 2026-09-25
 
 ### Added
-
-- **`config.lua` folds by section.** Every one of its 47 sections is wrapped in a
-  `--#region`, so the whole file collapses to a list of its own titles in an editor and a
-  section opens on its own. They are comments, so nothing about how the file is read changes.
-  The index at the top was regenerated with the line numbers this moved.
 
 - **ox_banking, and a bank history on ox in general.** ox_banking is a face on ox_core's
   accounts rather than a bank of its own, so the balance and the transfers already worked; what
   was missing was the history, and a player on an ox server saw a balance with no movements
   under it. Both the personal statement and a company's in Bank Pro are read from ox_core's
   `accounts_transactions` now, whether or not ox_banking is installed.
-
-### Fixed
-
-- **Shift and the wheel pans a shelf sideways.** The store's Discover shelf answered the wheel
-  with nothing: a tall shelf deliberately leaves the wheel to the page it sits in, so the only
-  way across was to drag it. Shift is the browser's own convention for sideways, it cannot be
-  pressed by accident, and the plain wheel still scrolls the page exactly as before.
-
-- **The mouse wheel no longer flicks through the car radio.** The phone keeps game input
-  alive on purpose, which is what lets a player walk while reading a message, so the wheel
-  reached both the page and the game: scrolling a list in the phone also changed the station.
-  The wheel and the radio controls are blocked while the phone is up. Blocked by the phone
-  rather than through `Config.Hold.block`, so a server that keeps its own config.lua gets it.
-
-- **No state bag is written from the client any more.** The one that was, `phoneAtHome`, is how
-  the phone knew you were inside your property. `sv_stateBagStrictMode` is on by default and
-  refuses those, so on a strict server charging at home did not work at all and every player's
-  console took a warning once a minute. The client reports it to the server now, rate limited,
-  and the server still reads the old state bag underneath so a mixed build keeps working.
-- **The version could stay a build behind until a full reboot.** `GetResourceMetadata` answers
-  from what the server parsed at start-up, and a refresh plus restart does not always replace
-  it. The manifest is read from disk instead, with the metadata as the fallback.
-
-### Added
-
 - **A 12 or 24 hour setting, `Config.Clock.hour24`.** Every screen that printed a time asked the
   browser with no locale, and CEF usually answers as American English, so a French server showed
   "10:37 PM" in its own emergency alerts while the status bar two centimetres above showed
@@ -53,6 +23,76 @@ All notable changes to v-phone are documented here.
   `GetEmergencyQueue` carry them. Two server events go with it, `v-phone:emergency:taken` and
   `v-phone:emergency:closed`, each with the alert id, the service, the citizen id and the name,
   so a bridge to another dispatch script hears about it instead of polling.
+- **`config.lua` folds by section.** Every one of its 47 sections is wrapped in a `--#region`,
+  so the whole file collapses to a list of its own titles in an editor and a section opens on
+  its own. They are comments, so nothing about how the file is read changes. The index at the
+  top was regenerated with the line numbers this moved.
+
+### Fixed
+
+- **No state bag is written from the client any more.** The one that was, `phoneAtHome`, is how
+  the phone knew you were inside your property. `sv_stateBagStrictMode` is on by default and
+  refuses those, so on a strict server charging at home did not work at all and every player's
+  console took a warning once a minute. The client reports it to the server now, rate limited,
+  and the server still reads the old state bag underneath so a mixed build keeps working.
+- **The mouse wheel no longer flicks through the car radio.** The phone keeps game input alive
+  on purpose, which is what lets a player walk while reading a message, so the wheel reached
+  both the page and the game: scrolling a list in the phone also changed the station. The wheel
+  and the radio controls are blocked while the phone is up, by the phone rather than through
+  `Config.Hold.block`, so a server that keeps its own config.lua gets it.
+- **Shift and the wheel pans a shelf sideways.** The store's Discover shelf answered the wheel
+  with nothing: a tall shelf deliberately leaves the wheel to the page it sits in, so the only
+  way across was to drag it. Shift is the browser's own convention for sideways, it cannot be
+  pressed by accident, and the plain wheel still scrolls the page exactly as before.
+- **The version could stay a build behind until a full reboot.** `GetResourceMetadata` answers
+  from what the server parsed at start-up, and a refresh plus restart does not always replace
+  it. The manifest is read from disk instead, with the metadata as the fallback.
+
+### Ajouts
+
+- **ox_banking, et l'historique bancaire sur ox en général.** ox_banking est une interface sur
+  les comptes d'ox_core plutôt qu'une banque à part, donc le solde et les virements
+  fonctionnaient déjà ; il manquait l'historique, et un joueur sur un serveur ox voyait un solde
+  sans aucun mouvement en dessous. Le relevé personnel et celui d'une entreprise dans Bank Pro
+  sont lus dans `accounts_transactions` d'ox_core, qu'ox_banking soit installé ou non.
+- **Un réglage 12 ou 24 heures, `Config.Clock.hour24`.** Chaque écran affichant une heure
+  interrogeait le navigateur sans langue, et CEF répond le plus souvent en anglais américain :
+  un serveur français affichait « 10:37 PM » dans ses propres alertes pendant que la barre
+  d'état, deux centimètres plus haut, affichait « 22:37 ». Un seul réglage décide désormais :
+  `true` pour 24 heures, `false` pour AM/PM, `'auto'` pour suivre la langue du téléphone.
+- **Une alerte 911 dit qui l'a prise et qui l'a clôturée.** `takenBy`, `takenByCid`, `takenAt`,
+  `closedBy`, `closedByCid` et `closedAt` sont portés par l'alerte, donc `GetAlerts` et
+  `GetEmergencyQueue` les transmettent. Deux events serveur les accompagnent,
+  `v-phone:emergency:taken` et `v-phone:emergency:closed`, avec l'id de l'alerte, le service, le
+  citizenid et le nom, pour qu'un pont vers un autre script de dispatch soit prévenu au lieu
+  d'interroger en boucle.
+- **`config.lua` se replie par section.** Chacune de ses 47 sections est encadrée par un
+  `--#region`, donc le fichier entier se replie en une liste de ses propres titres et une
+  section s'ouvre seule. Ce sont des commentaires : la façon dont le fichier est lu ne change
+  pas. L'index en tête a été régénéré avec les lignes que cela a décalées.
+
+### Correctifs
+
+- **Plus aucun state bag n'est écrit depuis le client.** Le seul qui l'était, `phoneAtHome`,
+  servait à savoir si vous étiez chez vous. `sv_stateBagStrictMode` est actif par défaut et
+  refuse ces écritures : sur un serveur strict, la recharge à la maison ne fonctionnait pas du
+  tout et la console de chaque joueur recevait un avertissement par minute. Le client le
+  signale au serveur, à fréquence limitée, et le serveur lit toujours l'ancien state bag en
+  second recours pour qu'une mise à jour en deux temps ne casse rien.
+- **La molette ne fait plus défiler la radio de la voiture.** Le téléphone garde volontairement
+  les commandes du jeu actives, ce qui permet de marcher en lisant un message, donc la molette
+  partait des deux côtés : faire défiler une liste changeait aussi de station. La molette et les
+  commandes de radio sont bloquées tant que le téléphone est ouvert, par le téléphone lui-même
+  et non via `Config.Hold.block`, pour que les serveurs gardant leur config.lua en profitent.
+- **Maj et la molette font défiler une étagère latéralement.** L'étagère « Découvrir » du store
+  ne répondait pas à la molette : une étagère haute laisse volontairement la molette à la page
+  qui la contient, et il ne restait que le glisser. Maj est la convention du navigateur pour le
+  défilement horizontal, ne peut pas être pressé par accident, et la molette seule fait défiler
+  la page exactement comme avant.
+- **La version affichée pouvait rester en retard jusqu'à un redémarrage complet.**
+  `GetResourceMetadata` répond avec ce que le serveur a lu au démarrage, et un refresh suivi
+  d'un restart ne le remplace pas toujours. Le manifeste est lu sur le disque, l'ancienne
+  méthode servant de secours.
 
 ---
 
