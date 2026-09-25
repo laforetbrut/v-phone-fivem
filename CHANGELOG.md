@@ -21,6 +21,11 @@ All notable changes to v-phone are documented here.
 
 ### Fixed
 
+- **Shift and the wheel pans a shelf sideways.** The store's Discover shelf answered the wheel
+  with nothing: a tall shelf deliberately leaves the wheel to the page it sits in, so the only
+  way across was to drag it. Shift is the browser's own convention for sideways, it cannot be
+  pressed by accident, and the plain wheel still scrolls the page exactly as before.
+
 - **The mouse wheel no longer flicks through the car radio.** The phone keeps game input
   alive on purpose, which is what lets a player walk while reading a message, so the wheel
   reached both the page and the game: scrolling a list in the phone also changed the station.

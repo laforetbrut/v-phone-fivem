@@ -23439,12 +23439,23 @@ byId('emojipanel').addEventListener('pointercancel', () => {
     // because the sideways strips it exists for are a handful of elements out of thousands.
     // One `closest()` decides that without touching layout at all.
     if (!e.target.closest || !e.target.closest('.seg.scroll, [data-hscroll], .exmovers, '
-        + '.excats, .musiccarousel, .cards, .lotgrid, .proll, .exmarkets')) return;
+        + '.excats, .musiccarousel, .cards, .lotgrid, .proll, .exmarkets, .stshelf')) return;
     const s = stripOf(e.target);
-    // A strip that also scrolls vertically keeps the wheel for that: turning it sideways there
-    // would take away the gesture that already worked.
-    if (!s || s.scrollHeight > s.clientHeight + 1) return;
-    if (s.clientHeight > WHEEL_MAX_STRIP_HEIGHT) return;
+    if (!s) return;
+    // **Shift and the wheel pans anything sideways.**
+    //
+    // The two rules below are what keeps a tall shelf from stealing the page's own scrolling,
+    // and they are right: a shelf sits in the middle of a page you scroll THROUGH. But they
+    // also mean the wheel does nothing at all over the store's shelf, and the only way across
+    // was to drag - which somebody reported as the wheel being broken there. Shift is the
+    // convention for sideways in a browser, it cannot be pressed by accident, and the plain
+    // wheel keeps scrolling the page exactly as it does now.
+    if (!e.shiftKey) {
+        // A strip that also scrolls vertically keeps the wheel for that: turning it sideways
+        // there would take away the gesture that already worked.
+        if (s.scrollHeight > s.clientHeight + 1) return;
+        if (s.clientHeight > WHEEL_MAX_STRIP_HEIGHT) return;
+    }
     const before = s.scrollLeft;
     s.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     if (s.scrollLeft !== before) e.preventDefault();
