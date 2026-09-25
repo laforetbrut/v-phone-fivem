@@ -21,6 +21,12 @@ All notable changes to v-phone are documented here.
 
 ### Fixed
 
+- **The mouse wheel no longer flicks through the car radio.** The phone keeps game input
+  alive on purpose, which is what lets a player walk while reading a message, so the wheel
+  reached both the page and the game: scrolling a list in the phone also changed the station.
+  The wheel and the radio controls are blocked while the phone is up. Blocked by the phone
+  rather than through `Config.Hold.block`, so a server that keeps its own config.lua gets it.
+
 - **No state bag is written from the client any more.** The one that was, `phoneAtHome`, is how
   the phone knew you were inside your property. `sv_stateBagStrictMode` is on by default and
   refuses those, so on a strict server charging at home did not work at all and every player's

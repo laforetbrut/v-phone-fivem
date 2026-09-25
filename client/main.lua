@@ -528,6 +528,10 @@ local function blockHas(control)
     return false
 end
 
+--- The wheel, and the radio controls it reaches from inside a vehicle. Always blocked while
+--- the phone is up; see the note in the guard loop below.
+local WHEEL_CONTROLS = { 14, 15, 81, 82, 85 }
+
 local function startGuard()
     freeLook = false
     -- The block loop below refuses its list in group 0 only. When that list already names both
@@ -547,6 +551,22 @@ local function startGuard()
             -- camera. This is why Alt appeared to do nothing even once focus was released:
             -- the cursor was gone, the game had the mouse, and this line threw the movement
             -- away every frame.
+            -- **The mouse wheel, and the radio it drives.**
+            --
+            -- The phone keeps game input alive on purpose - `SetNuiFocusKeepInput` is what
+            -- lets a player walk while reading a message - and the wheel goes to both sides at
+            -- once. So scrolling a list on the phone also flicked through the car radio, which
+            -- is what somebody reported. 14 and 15 are the wheel, 81, 82 and 85 the radio it
+            -- reaches when the player is in a vehicle.
+            --
+            -- Blocked here rather than in `Config.Hold.block`, deliberately: an operator's
+            -- config.lua is kept across updates, so anything added to that list would only
+            -- reach a server that took the new file. This is the phone's own list and it is
+            -- not something a server has a reason to switch off.
+            for _, c in ipairs(WHEEL_CONTROLS) do
+                DisableControlAction(0, c, true)
+            end
+
             for _, c in ipairs(Config.Hold.block) do
                 -- 1 and 2 are look left/right and up/down. Blocked while browsing, released
                 -- for free look AND for the camera: a viewfinder the mouse cannot aim is a
