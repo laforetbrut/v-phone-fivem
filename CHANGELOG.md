@@ -8,6 +8,11 @@ All notable changes to v-phone are documented here.
 
 ### Added
 
+- **`config.lua` folds by section.** Every one of its 47 sections is wrapped in a
+  `--#region`, so the whole file collapses to a list of its own titles in an editor and a
+  section opens on its own. They are comments, so nothing about how the file is read changes.
+  The index at the top was regenerated with the line numbers this moved.
+
 - **ox_banking, and a bank history on ox in general.** ox_banking is a face on ox_core's
   accounts rather than a bank of its own, so the balance and the transfers already worked; what
   was missing was the history, and a player on an ox server saw a balance with no movements

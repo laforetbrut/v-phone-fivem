@@ -49,29 +49,29 @@
 --  **Regenerate this rather than editing it**: every entry was once wrong by up to a
 --  thousand lines, which is what a hand-maintained index does. tools/check.py could own it.
 --
---    89    COMPATIBILITY                      3610  ONLYFRUITS
---    133   Two notifications for one payment  3622  FruitBrawl: the duel
---    436   SETTINGS                           3674  FlappyFruit: the arcade board
---    587   LICENCE NAMES                      3717  Fruitee: donation pages
---    647   HOW A NUMBER IS DISPLAYED          3867  HOW LONG THE PHONE KEEPS THINGS
---    1944  WRITING A POSITION                 3929  HOME SCREEN WIDGETS
---    2029  THE LOOK                           3970  THE UPDATE CHECK
---    2073  PLACES                             4002  A PHONE HEARD RINGING
---    2155  THE FRUITSTORE                     4058  COMMANDS
---    2236  EXPORT                             4080  THE SDK EXAMPLE APP
---    2379  REPAIR                             4252  EXTERNAL CHARGING
---    2488  PLUGGING IN                        4274  POLICE FORENSICS
---    2538  PAID CHARGING                      4276  THE HEALTH RECORD
---    2628  ADMIN                              4316  HOSPITALS
---    2634  LOGGING                            4344  PROPERTY
---    2644  911                                4375  GARAGES
---    2883  BANK PRO                           4394  BANK
---    2987  ALERTS                             4629  MEDIA
---    3130  ZUBER                              4816  FACETIME
---    3331  TAXI                               4846  PAYPHONES
---    3441  LOTTERY                            5025  MUSIC
---    3549  THE CLOCK                          5156  VEHICLE REMOTE
---    3565  THE NETS UNDER THE PHONE           5225  FRUITSTORE
+--    90    COMPATIBILITY                      3714  THE NETS UNDER THE PHONE
+--    136   Two notifications for one payment  3761  ONLYFRUITS
+--    442   SETTINGS                           3776  FruitBrawl: the duel
+--    608   LICENCE NAMES                      3830  FlappyFruit: the arcade board
+--    670   HOW A NUMBER IS DISPLAYED          3875  Fruitee: donation pages
+--    762   While you were away                4027  HOW LONG THE PHONE KEEPS THINGS
+--    2046  WRITING A POSITION                 4102  HOME SCREEN WIDGETS
+--    2133  THE LOOK  (one place that changes  4145  THE UPDATE CHECK
+--    2179  PLACES  (what the Maps app lists,  4179  A PHONE HEARD RINGING
+--    2263  THE FRUITSTORE  (downloading take  4237  COMMANDS
+--    2346  EXPORT  (what your haul is worth,  4262  THE SDK EXAMPLE APP
+--    2491  REPAIR  (reaching a mechanic, fro  4436  EXTERNAL CHARGING
+--    2602  PLUGGING IN  (charging on purpose  4465  THE HEALTH RECORD
+--    2654  PAID CHARGING                      4507  HOSPITALS
+--    2746  ADMIN                              4537  PROPERTY
+--    2755  LOGGING                            4570  GARAGES
+--    2768  911                                4591  BANK
+--    3009  BANK PRO                           4828  MEDIA  (photos and video hosting)
+--    3115  ALERTS  (what the government broa  5017  FACETIME  (experimental live vide
+--    3260  ZUBER  (food, ordered from the ph  5049  PAYPHONES  (call boxes and prepai
+--    3463  TAXI  (hail a ride, or drive one)  5230  MUSIC  (playback, playlists and t
+--    3575  LOTTERY  (the weekly draw)         5363  VEHICLE REMOTE  (lights, neons, d
+--    3685  THE CLOCK                          5434  FRUITSTORE  (apps you add, free o
 --
 --  IF SOMETHING DOES NOT BEHAVE
 --  ────────────────────────────
@@ -85,6 +85,7 @@
 --
 Config = {}
 
+--#region COMPATIBILITY
 -- ══════════════════════════════════════════════════════════════
 --  COMPATIBILITY
 -- ══════════════════════════════════════════════════════════════
@@ -128,7 +129,9 @@ Config.PhoneItem = 'phone'
 --- `powerbank` is registered as well whatever you set, so an existing item keeps working.
 --- How much charge it returns is `Config.Settings.powerbankCharge`.
 Config.PowerbankItem = 'powerbank'
+--#endregion
 
+--#region Two notifications for one payment
 -- ══════════════════════════════════════════════════════════════
 -- Two notifications for one payment
 -- ══════════════════════════════════════════════════════════════
@@ -432,7 +435,9 @@ Config.Compat = {
     -- once, noisy for ever after.
     log = false,
 }
+--#endregion
 
+--#region SETTINGS
 -- ══════════════════════════════════════════════════════════════
 --  SETTINGS
 -- ══════════════════════════════════════════════════════════════
@@ -596,7 +601,9 @@ Config.Hold = {
 -- Changing this affects new characters. To renumber the ones you already have, see
 -- `/phoneadmin renumber` and `Config.Compat.numbers` above.
 Config.NumberFormat = '555-####'
+--#endregion
 
+--#region LICENCE NAMES
 -- ══════════════════════════════════════════════════════════════
 --  LICENCE NAMES
 -- ══════════════════════════════════════════════════════════════
@@ -656,7 +663,9 @@ Config.Licences = {
     assurance2 = 'Health cover, tier 2',
     assurance3 = 'Health cover, tier 3',
 }
+--#endregion
 
+--#region HOW A NUMBER IS DISPLAYED
 -- ══════════════════════════════════════════════════════════════
 --  HOW A NUMBER IS DISPLAYED
 -- ══════════════════════════════════════════════════════════════
@@ -746,6 +755,9 @@ Config.Blocking = {
 }
 
 -- ── Messages ───────────────────────────────────────────────────
+--#endregion
+
+--#region While you were away
 -- ══════════════════════════════════════════════════════════════
 -- While you were away
 -- ══════════════════════════════════════════════════════════════
@@ -2027,7 +2039,9 @@ Config.Battery = {
     -- would be arithmetic nobody can see, plus a write per player per tick.
     drainSeconds = 20,
 }
+--#endregion
 
+--#region WRITING A POSITION
 -- ══════════════════════════════════════════════════════════════
 --  WRITING A POSITION
 -- ══════════════════════════════════════════════════════════════
@@ -2112,7 +2126,9 @@ normalisePlaces(Config.Chargers)
 -- `normalisePlaces` is declared further down this file than the social settings are, and a
 -- local is only in scope after its own line.
 normalisePlaces(Config.SocialVerify.points)
+--#endregion
 
+--#region THE LOOK  (one place that changes the colour of the phone)
 -- ══════════════════════════════════════════════════════════════
 --  THE LOOK  (one place that changes the colour of the phone)
 -- ══════════════════════════════════════════════════════════════
@@ -2156,7 +2172,9 @@ Config.Theme = {
     -- is where it belongs - this is only the default for somebody who has never chosen.
     dark = nil,
 }
+--#endregion
 
+--#region PLACES  (what the Maps app lists, and routes to)
 -- ══════════════════════════════════════════════════════════════
 --  PLACES  (what the Maps app lists, and routes to)
 -- ══════════════════════════════════════════════════════════════
@@ -2238,7 +2256,9 @@ Config.Places = {
     { label = 'Vespucci Beach',        kind = 'leisure', coords = vector3(-1223.0, -1493.0, 4.4) },
 }
 normalisePlaces(Config.Places)
+--#endregion
 
+--#region THE FRUITSTORE  (downloading takes time, and updates exist)
 -- ══════════════════════════════════════════════════════════════
 --  THE FRUITSTORE  (downloading takes time, and updates exist)
 -- ══════════════════════════════════════════════════════════════
@@ -2319,7 +2339,9 @@ Config.Store = {
     -- An update is never charged for. What was paid for was the app.
     updates = true,
 }
+--#endregion
 
+--#region EXPORT  (what your haul is worth, before you drive across the map)
 -- ══════════════════════════════════════════════════════════════
 --  EXPORT  (what your haul is worth, before you drive across the map)
 -- ══════════════════════════════════════════════════════════════
@@ -2462,7 +2484,9 @@ Config.Export = {
     -- does not also change how often the board moves under its players.
     fluctuateSeconds = 1200,
 }
+--#endregion
 
+--#region REPAIR  (reaching a mechanic, from the side of the road)
 -- ══════════════════════════════════════════════════════════════
 --  REPAIR  (reaching a mechanic, from the side of the road)
 -- ══════════════════════════════════════════════════════════════
@@ -2571,7 +2595,9 @@ Config.Repair = {
     -- this is only how many written ones are read.
     reviewsShown = 20,
 }
+--#endregion
 
+--#region PLUGGING IN  (charging on purpose, rather than by accident)
 -- ══════════════════════════════════════════════════════════════
 --  PLUGGING IN  (charging on purpose, rather than by accident)
 -- ══════════════════════════════════════════════════════════════
@@ -2621,7 +2647,9 @@ Config.PlugIn = {
     -- reason the player can point at, and they were not in the app when it happened.
     notifyOnUnplug = true,
 }
+--#endregion
 
+--#region PAID CHARGING
 -- ══════════════════════════════════════════════════════════════
 --  PAID CHARGING
 -- ══════════════════════════════════════════════════════════════
@@ -2711,13 +2739,18 @@ Config.DeadZones = {
     { id = 'dz_mine',      label = 'Davis Quartz',           x = 2900.0,  y = 2800.0,  z = 40.0,  radius = 350.0, bars = 1 },
 }
 normalisePlaces(Config.DeadZones)
+--#endregion
 
+--#region ADMIN
 -- ══════════════════════════════════════════════════════════════
 --  ADMIN
 -- ══════════════════════════════════════════════════════════════
 -- Staff actions on a player's phone, from the console, an ACE-gated command, or the
 -- qb-core admin menu. Every one of them is also an export (see API.md), so an admin menu
 -- of any framework can drive them.
+--#endregion
+
+--#region LOGGING
 -- ══════════════════════════════════════════════════════════════
 --  LOGGING
 -- ══════════════════════════════════════════════════════════════
@@ -2728,6 +2761,9 @@ normalisePlaces(Config.DeadZones)
 -- that mattered scrolls past too. Problems always print - a framework that was named but is
 -- not running, a table that could not be read, a callback with no handler. These switches
 -- only govern the lines that are merely true.
+--#endregion
+
+--#region 911
 -- ══════════════════════════════════════════════════════════════
 --  911
 -- ══════════════════════════════════════════════════════════════
@@ -2966,7 +3002,9 @@ if Config.Emergency.enabled == false then
         if Config.Apps[i].id == 'emergency' then table.remove(Config.Apps, i) end
     end
 end
+--#endregion
 
+--#region BANK PRO
 -- ══════════════════════════════════════════════════════════════
 --  BANK PRO
 -- ══════════════════════════════════════════════════════════════
@@ -3070,7 +3108,9 @@ Config.BankPro = {
     minAmount = 1,
     maxAmount = 0,          -- 0 for no ceiling
 }
+--#endregion
 
+--#region ALERTS  (what the government broadcasts, and everybody receives)
 -- ══════════════════════════════════════════════════════════════
 --  ALERTS  (what the government broadcasts, and everybody receives)
 -- ══════════════════════════════════════════════════════════════
@@ -3213,7 +3253,9 @@ Config.Alerts = {
     allowAuthorDelete = true,
     staffAce = 'vphone.admin',
 }
+--#endregion
 
+--#region ZUBER  (food, ordered from the phone)
 -- ══════════════════════════════════════════════════════════════
 --  ZUBER  (food, ordered from the phone)
 -- ══════════════════════════════════════════════════════════════
@@ -3414,7 +3456,9 @@ Config.Zuber = {
         },
     },
 }
+--#endregion
 
+--#region TAXI  (hail a ride, or drive one)
 -- ══════════════════════════════════════════════════════════════
 --  TAXI  (hail a ride, or drive one)
 -- ══════════════════════════════════════════════════════════════
@@ -3524,7 +3568,9 @@ Config.Taxi = {
         route = true,         -- "take me there", for a driver picking a fare
     },
 }
+--#endregion
 
+--#region LOTTERY  (the weekly draw)
 -- ══════════════════════════════════════════════════════════════
 --  LOTTERY  (the weekly draw)
 -- ══════════════════════════════════════════════════════════════
@@ -3632,7 +3678,9 @@ Config.Lottery = {
     -- How many past draws the app shows.
     history = 5,
 }
+--#endregion
 
+--#region THE CLOCK
 -- ══════════════════════════════════════════════════════════════
 --  THE CLOCK
 -- ══════════════════════════════════════════════════════════════
@@ -3659,7 +3707,9 @@ Config.Clock = {
     -- English says AM/PM, every other language this phone speaks says 24-hour.
     hour24 = true,
 }
+--#endregion
 
+--#region THE NETS UNDER THE PHONE
 -- ══════════════════════════════════════════════════════════════
 --  THE NETS UNDER THE PHONE
 -- ══════════════════════════════════════════════════════════════
@@ -3704,7 +3754,9 @@ Config.Log = {
     -- page reads it client-side and a plain `set` never reaches a client.
     debug = false,
 }
+--#endregion
 
+--#region ONLYFRUITS
 -- ══════════════════════════════════════════════════════════════
 --  ONLYFRUITS
 -- ══════════════════════════════════════════════════════════════
@@ -3717,6 +3769,9 @@ Config.Log = {
 -- Every price below is a CEILING, not a price. What something costs is the creator's decision;
 -- these are the bounds the server refuses to go outside, so a modified client cannot post a
 -- picture at nine million and wait for somebody to mis-tap.
+--#endregion
+
+--#region FruitBrawl: the duel
 -- ══════════════════════════════════════════════════════════════
 -- FruitBrawl: the duel
 -- ══════════════════════════════════════════════════════════════
@@ -3768,7 +3823,9 @@ Config.Brawl = {
     -- a machine the server controls is not a bet.
     maxStake = 100,
 }
+--#endregion
 
+--#region FlappyFruit: the arcade board
 -- ══════════════════════════════════════════════════════════════
 -- FlappyFruit: the arcade board
 -- ══════════════════════════════════════════════════════════════
@@ -3811,7 +3868,9 @@ Config.Arcade = {
     nickMin = 2,
     nickMax = 12,
 }
+--#endregion
 
+--#region Fruitee: donation pages
 -- ══════════════════════════════════════════════════════════════
 -- Fruitee: donation pages
 -- ══════════════════════════════════════════════════════════════
@@ -3961,7 +4020,9 @@ Config.OnlyFruits = {
     -- The least a creator may withdraw at once. Stops a payout of 3 being a database write.
     payoutMin = 1,
 }
+--#endregion
 
+--#region HOW LONG THE PHONE KEEPS THINGS
 -- ══════════════════════════════════════════════════════════════
 --  HOW LONG THE PHONE KEEPS THINGS
 -- ══════════════════════════════════════════════════════════════
@@ -4034,7 +4095,9 @@ Config.Retention = {
     -- gone they are not orphans, they are the reason it still works.
     orphans = true,
 }
+--#endregion
 
+--#region HOME SCREEN WIDGETS
 -- ══════════════════════════════════════════════════════════════
 --  HOME SCREEN WIDGETS
 -- ══════════════════════════════════════════════════════════════
@@ -4075,7 +4138,9 @@ Config.Widgets = {
     export    = true,    -- the biggest mover on the market
     alerts    = true,    -- the newest public alert standing over the city
 }
+--#endregion
 
+--#region THE UPDATE CHECK
 -- ══════════════════════════════════════════════════════════════
 --  THE UPDATE CHECK
 -- ══════════════════════════════════════════════════════════════
@@ -4107,7 +4172,9 @@ Config.UpdateCheck = {
     -- fxmanifest.lua. Only github.com is understood.
     repository = nil,
 }
+--#endregion
 
+--#region A PHONE HEARD RINGING
 -- ══════════════════════════════════════════════════════════════
 --  A PHONE HEARD RINGING
 -- ══════════════════════════════════════════════════════════════
@@ -4163,7 +4230,9 @@ Config.RingOut = {
         message = { 'Text_Arrive_Tone', 'Phone_SoundSet_Default' },
     },
 }
+--#endregion
 
+--#region COMMANDS
 -- ══════════════════════════════════════════════════════════════
 --  COMMANDS
 -- ══════════════════════════════════════════════════════════════
@@ -4186,6 +4255,9 @@ Config.RingOut = {
 --
 -- Typing a group name on its own lists what it can do, so nothing here has to be memorised.
 -- `phonedebug` needs `set phone_debug true` for `diag`; the rest are staff-gated on the server.
+--#endregion
+
+--#region THE SDK EXAMPLE APP
 -- ══════════════════════════════════════════════════════════════
 --  THE SDK EXAMPLE APP
 -- ══════════════════════════════════════════════════════════════
@@ -4357,7 +4429,9 @@ Config.Admin = {
     -- Wiping is destructive. Require a second confirmation in the command flow.
     confirmWipe = true,
 }
+--#endregion
 
+--#region EXTERNAL CHARGING
 -- ══════════════════════════════════════════════════════════════
 --  EXTERNAL CHARGING
 -- ══════════════════════════════════════════════════════════════
@@ -4379,9 +4453,14 @@ Config.ExternalCharging = {
     -- A ceiling, so a misbehaving script cannot charge a phone in one tick.
     maxRate = 4.0,
 }
+--#endregion
 
+--#region POLICE FORENSICS
 -- ══════════════════════════════════════════════════════════════
 --  POLICE FORENSICS
+--#endregion
+
+--#region THE HEALTH RECORD
 -- ══════════════════════════════════════════════════════════════
 --  THE HEALTH RECORD
 -- ══════════════════════════════════════════════════════════════
@@ -4421,7 +4500,9 @@ Config.HealthRecord = {
     -- reading records is routine enough not to mention.
     notifyOwner = true,
 }
+--#endregion
 
+--#region HOSPITALS
 -- ══════════════════════════════════════════════════════════════
 --  HOSPITALS
 -- ══════════════════════════════════════════════════════════════
@@ -4449,7 +4530,9 @@ Config.Hospitals = {
       x = -247.8, y = 6331.4 },
 }
 normalisePlaces(Config.Hospitals)
+--#endregion
 
+--#region PROPERTY
 -- ══════════════════════════════════════════════════════════════
 --  PROPERTY
 -- ══════════════════════════════════════════════════════════════
@@ -4480,7 +4563,9 @@ Config.Property = {
     --     houses = { ['1'] = { label = 'Mirror Park 12', x = 1234.5, y = -567.8 } },
     houses = {},
 }
+--#endregion
 
+--#region GARAGES
 -- ══════════════════════════════════════════════════════════════
 --  GARAGES
 -- ══════════════════════════════════════════════════════════════
@@ -4499,7 +4584,9 @@ Config.Property = {
 -- `x` and `y` are what the "Locate" button sets a waypoint to. Leave them out and the app
 -- still shows the name, it just cannot point at it.
 Config.Garages = {}
+--#endregion
 
+--#region BANK
 -- ══════════════════════════════════════════════════════════════
 --  BANK
 -- ══════════════════════════════════════════════════════════════
@@ -4734,7 +4821,9 @@ Config.Police = {
     },
 }
 normalisePlaces(Config.Police.points)
+--#endregion
 
+--#region MEDIA  (photos and video hosting)
 -- ══════════════════════════════════════════════════════════════
 --  MEDIA  (photos and video hosting)
 -- ══════════════════════════════════════════════════════════════
@@ -4921,7 +5010,9 @@ Config.Media = {
     -- added from the key automatically.
     headers = {},
 }
+--#endregion
 
+--#region FACETIME  (experimental live video feed)
 -- ══════════════════════════════════════════════════════════════
 --  FACETIME  (experimental live video feed)
 -- ══════════════════════════════════════════════════════════════
@@ -4951,7 +5042,9 @@ Config.FaceTime = {
     -- cannot turn the relay into a flood. A 220x300 q0.4 JPEG is well under this.
     maxFrameKb = 24,
 }
+--#endregion
 
+--#region PAYPHONES  (call boxes and prepaid cards)
 -- ══════════════════════════════════════════════════════════════
 --  PAYPHONES  (call boxes and prepaid cards)
 -- ══════════════════════════════════════════════════════════════
@@ -5130,7 +5223,9 @@ Config.Booth = {
         refresh = 2000,
     },
 }
+--#endregion
 
+--#region MUSIC  (playback, playlists and the deck the phone hands off to)
 -- ══════════════════════════════════════════════════════════════
 --  MUSIC  (playback, playlists and the deck the phone hands off to)
 -- ══════════════════════════════════════════════════════════════
@@ -5261,7 +5356,9 @@ Config.Music = {
         },
     },
 }
+--#endregion
 
+--#region VEHICLE REMOTE  (lights, neons, doors and locks from the phone)
 -- ══════════════════════════════════════════════════════════════
 --  VEHICLE REMOTE  (lights, neons, doors and locks from the phone)
 -- ══════════════════════════════════════════════════════════════
@@ -5330,7 +5427,9 @@ Config.VehicleRemote = {
     -- being able to explain.
     log = false,
 }
+--#endregion
 
+--#region FRUITSTORE  (apps you add, free or paid)
 -- ══════════════════════════════════════════════════════════════
 --  FRUITSTORE  (apps you add, free or paid)
 -- ══════════════════════════════════════════════════════════════
@@ -5382,3 +5481,4 @@ Config.StoreApps = {
     --     },
     -- },
 }
+--#endregion
