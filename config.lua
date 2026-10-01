@@ -486,6 +486,12 @@ Config.Settings = {
     voicemailMax    = 200,
     anonymous       = false,
     customWallpaper = true,
+    -- **The lock screen.** On, the phone opens on it and a swipe takes it away, which is what
+    -- a phone does and where the clock, the notifications, the torch and the camera live. Off,
+    -- a character who has set neither a passcode nor Face Unlock opens straight on the home
+    -- screen: there was nothing to unlock, so there was nothing to swipe for. A character who
+    -- HAS a passcode is always asked for it, whatever this says.
+    lockScreen      = true,
     -- The Camera app, on. It shipped off, which meant a phone with a camera icon that
     -- opened onto "the camera is disabled on this server" - a bad thing to hand somebody
     -- out of the box, and it hid a real bug for a long time: the flag was never sent to
@@ -5386,6 +5392,18 @@ Config.VehicleRemote = {
     -- Only vehicles the framework says belong to this character. Off lets a player control
     -- any vehicle in range, which is a very different game - keep it on unless you mean it.
     requireOwnership = true,
+
+    -- **May the phone FIT underglow, or only drive the underglow a car already has?**
+    --
+    -- The engine has no neon kit to install: a strip is on or it is off. So picking a colour
+    -- in the app on a car with no neons did not change them, it gave the car neons - free, on
+    -- a server where the mechanic sells them. Off, the app refuses a colour on a car that has
+    -- none and says so; switching them off is always allowed, and so is switching back on what
+    -- the phone itself switched off.
+    --
+    -- Turn it on for a server with no mechanic script, where the phone IS how a player gets
+    -- underglow.
+    neonFitting = false,
 
     -- Refuse while the engine is running and somebody is in the driver's seat, so this
     -- cannot be used to lock a thief in or pop a door on a moving car.

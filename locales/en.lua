@@ -2746,6 +2746,7 @@ local T = {
     ['ph.veh_engine_off'] = 'Stop the engine',
     ['ph.veh_err_off'] = 'The remote is disabled on this server.',
     ['ph.veh_err_novehicle'] = 'That vehicle is not nearby.',
+    ['ph.veh_err_noneon'] = "This vehicle has no underglow fitted.",
     ['ph.veh_err_toofar'] = 'You are too far from it.',
     ['ph.veh_err_notyours'] = 'That vehicle is not registered to you.',
     ['ph.veh_err_inuse'] = 'Somebody is at the wheel.',

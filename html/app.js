@@ -24921,9 +24921,18 @@ window.addEventListener('message', (e) => {
     tick();
     paintNotifs();
     hideAuth();
-    byId('lock').classList.remove('out');
-    byId('lockquick').classList.remove('hidden');
-    byId('home').classList.add('behind');
+    // **The lock screen, unless there is nothing to unlock.**
+    //
+    // A phone with no passcode and no Face Unlock still opened on the lock screen, and a swipe
+    // took it away without asking anything. It is a real screen - the clock, the notifications,
+    // the torch and the camera are on it - so that is the default and it stays. But a server
+    // that turned both off meant the swipe to be gone too, which is what somebody asked about.
+    // `Config.Settings.lockScreen = false` opens straight on the home screen for a character
+    // with no security set; a character who has a passcode always gets it.
+    const skipLock = state.lockScreen === false && !(state.prefs || {}).securityEnabled;
+    byId('lock').classList.toggle('out', skipLock);
+    byId('lockquick').classList.toggle('hidden', skipLock);
+    byId('home').classList.toggle('behind', !skipLock);
     closeApp(true);
     renderCall();
     if (!(state.prefs || {}).setupComplete) {

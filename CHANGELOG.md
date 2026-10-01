@@ -4,6 +4,28 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **The lock screen can be skipped, `Config.Settings.lockScreen`.** A phone with no passcode and
+  no Face Unlock still opened on the lock screen and a swipe took it away without asking
+  anything. Off, that character opens straight on the home screen. A character who set a
+  passcode is always asked for it, whatever this says.
+
+### Fixed
+
+- **The phone no longer fits underglow to a car that has none.** There is no neon kit in the
+  engine: a strip is on or it is off, so picking a colour in the Vehicle app did not change
+  underglow, it gave the car underglow - free, on a server where the mechanic sells it. The app
+  now drives only the neons a vehicle already has, and says so when there are none. Switching
+  them off is still allowed, and so is switching back on what the phone itself switched off.
+  `Config.VehicleRemote.neonFitting = true` restores the old behaviour for a server with no
+  mechanic script.
+- Four French strings were missing their accents.
+
+---
+
 ## [1.7.13] - 2026-09-25
 
 ### Added

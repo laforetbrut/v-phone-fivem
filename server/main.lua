@@ -145,6 +145,9 @@ V.Module({
         { key = 'customWallpaper', label = 'Allow linked wallpapers', type = 'bool', default = true,
           hint = 'Off leaves only the built-in gradients, which cost nothing to load.' },
 
+        { key = 'lockScreen', label = 'Show the lock screen', type = 'bool', default = true,
+          hint = 'Off, a phone with no passcode and no Face Unlock opens straight on the home screen. A character who set a passcode is always asked for it.' },
+
         { key = 'camera', label = 'Camera app enabled', type = 'bool', default = false,
           hint = 'The camera writes to a gallery. Uploading anywhere is an operator decision, so it has no default destination and stays off until one is set.' },
 
@@ -3440,6 +3443,9 @@ V.Callback('v-phone:open', function(src, resolve)
         -- Twelve hours or twenty-four, everywhere else a time is printed. 'auto' is decided on
         -- the page, against the language it is running in. See Config.Clock.hour24.
         clock24 = (Config.Clock and Config.Clock.hour24 ~= nil) and Config.Clock.hour24 or true,
+        -- Whether a phone with no security of its own still opens on the lock screen.
+        -- See Config.Settings.lockScreen.
+        lockScreen = V.SettingBool('lockScreen', true),
         -- Whose phone this actually is, when it is not yours.
         --
         -- `src` and not the wrapped player: `Core.GetPlayer` has already answered with the

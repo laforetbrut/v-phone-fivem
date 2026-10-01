@@ -51,12 +51,46 @@ RegisterNUICallback('vehicleFind', function(data, cb)
     cb({ ok = true, netId = netId, distance = distance })
 end)
 
+--- **Does this car already have underglow?**
+---
+--- There is no "neon kit" mod slot in the engine: a neon strip is on or it is off, so a car
+--- that has them is a car whose strips are enabled. That is why switching a colour on from the
+--- phone did not CHANGE underglow, it FITTED it - on a server where the mechanic sells neons,
+--- the phone was handing them out for nothing.
+---
+--- The phone remembers the cars whose neons it switched off itself, so turning them back on is
+--- still its job. The table is keyed on the net id and lives for the session, which is as long
+--- as the question is worth answering.
+local NeonOffByPhone = {}
+
+local function hasNeon(vehicle, netId)
+    if NeonOffByPhone[netId] then return true end
+    for i = 0, 3 do
+        if IsVehicleNeonLightEnabled(vehicle, i) then return true end
+    end
+    return false
+end
+
 RegisterNUICallback('vehicleControl', function(data, cb)
     if RC.enabled ~= true then cb({ error = 'off' }) return end
     -- The net id is resolved here rather than trusted from the page, so the page cannot name
     -- a vehicle the player is nowhere near. The server re-checks the distance regardless.
     local netId = findByPlate(data and data.plate)
     if not netId then cb({ error = 'novehicle' }) return end
+
+    -- A colour for a car with no underglow is refused here, before the server writes anything,
+    -- unless the operator asked for the phone to be able to fit them. Switching them OFF is
+    -- always allowed: that takes nothing away that was not already there.
+    if data and data.action == 'neon' and data.value ~= false and RC.neonFitting ~= true then
+        local vehicle = NetworkDoesEntityExistWithNetworkId(netId) and NetToVeh(netId) or nil
+        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) and not hasNeon(vehicle, netId) then
+            cb({ error = 'noneon' })
+            return
+        end
+        NeonOffByPhone[netId] = nil
+    elseif data and data.action == 'neon' and data.value == false then
+        NeonOffByPhone[netId] = true
+    end
 
     V.Request('v-phone:vehicle:control', function(res) cb(res or { error = 'x' }) end, {
         netId = netId,
