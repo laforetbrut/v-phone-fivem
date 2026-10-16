@@ -4,7 +4,7 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## [Unreleased]
+## [1.7.14] - 2026-10-16
 
 ### Added
 
@@ -32,6 +32,32 @@ All notable changes to v-phone are documented here.
   `Config.VehicleRemote.neonFitting = true` restores the old behaviour for a server with no
   mechanic script.
 - Four French strings were missing their accents.
+
+### Ajouts
+
+- **L'écran de verrouillage peut être sauté, `Config.Settings.lockScreen`.** Un téléphone sans
+  code et sans Face Unlock sortait quand même sur l'écran de verrouillage, et un swipe le
+  faisait disparaître sans rien demander. Désactivé, ce personnage ouvre directement sur
+  l'accueil. Un personnage qui a mis un code se le voit toujours demander, quel que soit ce
+  réglage.
+
+### Correctifs
+
+- **Les clics et les gestes de bord étaient faux au-dessus de 100%.** Chaque geste de la page
+  est mesuré dans les pixels du téléphone, et la conversion depuis les pixels de la fenêtre
+  était calculée avec `clientWidth / rect.width`, ce qui n'est juste que si le navigateur
+  renvoie un `clientWidth` non zoomé pour un élément avec `zoom`. Quand il renvoie le zoomé, la
+  conversion valait 1 : la bande du bord supérieur se réduisait à rien et un clic sur une
+  notification de l'écran verrouillé était pris pour un geste qui y commençait, donc avalé.
+  L'échelle est maintenant publiée par le code qui dessine le téléphone, qui la connaît
+  exactement, au lieu d'être mesurée.
+- **Le téléphone ne pose plus de néons sur une voiture qui n'en a pas.** Le moteur n'a pas de
+  kit de néons : un tube est allumé ou éteint, donc choisir une couleur dans l'app Véhicule ne
+  changeait pas les néons, elle en donnait à la voiture, gratuitement, là où le mécano les
+  vend. L'app ne pilote plus que les néons déjà présents et le dit quand il n'y en a pas.
+  Éteindre reste possible, rallumer ce que le téléphone a éteint aussi.
+  `Config.VehicleRemote.neonFitting = true` remet l'ancien comportement.
+- Quatre chaînes françaises avaient perdu leurs accents.
 
 ---
 
