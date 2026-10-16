@@ -9127,6 +9127,9 @@ function applyDevice() {
   const scale = (size / zoom) * fit;
   d.style.setProperty('--device-fit', String(fit));
   d.style.setProperty('--device-scale', String(size * fit));
+  // Every gesture threshold on this page is written in the phone's own pixels, and this is
+  // what the pointer is converted with. Published rather than measured: see `screenScale`.
+  setScreenScale(size * fit);
   if (landscape) {
     // The phone lies on its side, centred so it cannot swing off-screen.
     d.style.left = '50%'; d.style.right = 'auto'; d.style.top = '50%'; d.style.bottom = 'auto';
@@ -10752,23 +10755,41 @@ let g = null;
 let screenRect = null;
 let screenRatio = null;
 
-function forgetScreenRect() { screenRect = null; screenRatio = null; }
+/// Only the BOX is forgotten. The ratio belongs to the size the handset is drawn at, which is
+/// `applyDevice`'s to publish and does not change because a box was re-measured - and clearing
+/// it here would send the next gesture back through the fallback measurement this moved away
+/// from, one frame after every single resize.
+function forgetScreenRect() { screenRect = null; }
 
 function screenBox() {
   if (!screenRect) screenRect = byId('screen').getBoundingClientRect();
   return screenRect;
 }
 
-/// **Window pixels to the phone's own pixels.** Measured, so it is right whether the handset is
-/// drawn by `zoom`, by the shrink-to-fit transform, or by both. Cached with the box it comes
-/// from, because a pointer move must not force a layout to ask.
+/// **Window pixels to the phone's own pixels.**
+///
+/// `applyDevice` publishes this, because it is the one place that KNOWS it: the handset ends up
+/// at `size * fit` on screen, so one window pixel is `1 / (size * fit)` of a phone pixel.
+///
+/// It used to be measured instead, as `clientWidth / rect.width`, and that is where a reported
+/// bug came from: how a browser reports `clientWidth` on an element with `zoom` is not the same
+/// in every Chromium. Where it answers the zoomed width the ratio came back as 1, every
+/// threshold on this page was then compared against window pixels, and at any size above 100%
+/// the top edge band shrank to nothing and a press on a lock screen notification was read as
+/// starting inside it. The measurement is still here as a fallback for the first gesture before
+/// `applyDevice` has ever run.
 function screenScale() {
   if (screenRatio === null) {
     const r = screenBox();
-    const w = byId('screen').clientWidth;
+    const w = parseFloat(getComputedStyle(byId('screen')).width) || byId('screen').clientWidth;
     screenRatio = (r.width && w) ? w / r.width : 1;
   }
   return screenRatio;
+}
+
+/// Told by `applyDevice`, every time the handset is drawn at a new size.
+function setScreenScale(onScreen) {
+  screenRatio = (onScreen && onScreen > 0) ? 1 / onScreen : 1;
 }
 
 /// Where the pointer is on the screen, and how big that screen is - both in the phone's pixels,
@@ -10882,7 +10903,7 @@ byId('screen').addEventListener('pointerdown', (e) => {
   const p = screenPoint(e);
   const systemPanel = activeSystemPanel();
   const interactive = !!(e.target.closest && e.target.closest(
-    'button,input,textarea,select,[role="slider"],.ccslider,.ncard,.row'
+    'button,input,textarea,select,[role="slider"],.ccslider,.ncard,.lnotif,.row'
   ));
   g = { x0: p.x, y0: p.y, t0: Date.now(), w: p.w, h: p.h,
          // Whether this press began on the home indicator. Recorded here because the capture
@@ -10900,7 +10921,7 @@ byId('screen').addEventListener('pointerdown', (e) => {
          // The home bar is excluded deliberately: the swipe up from it IS a gesture that
          // starts on a button, and it is handled on its own terms below.
          tapTarget: (!(e.target.closest && e.target.closest('.homebar')) && interactive)
-           ? e.target.closest('button,input,textarea,select,[role="slider"],.ccslider,.ncard,.row')
+           ? e.target.closest('button,input,textarea,select,[role="slider"],.ccslider,.ncard,.lnotif,.row')
            : null,
          fromBottom: p.y > p.h - EDGE, fromTop: p.y < EDGE_TOP, fromLeft: p.x < 18,
          insideOverlay: !!(e.target.closest && e.target.closest(

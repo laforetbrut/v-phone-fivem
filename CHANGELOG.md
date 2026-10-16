@@ -15,6 +15,15 @@ All notable changes to v-phone are documented here.
 
 ### Fixed
 
+- **Taps and edge gestures went wrong above 100%.** Every gesture on the page is measured in
+  the phone's own pixels, and the conversion from window pixels was worked out as
+  `clientWidth / rect.width` - which is only right where a browser reports an unzoomed
+  `clientWidth` for an element with `zoom`. Where it reports the zoomed one the conversion came
+  back as 1, so the top edge band shrank to nothing and a press on a lock screen notification
+  was read as starting inside it and had its tap swallowed. The scale is published by the code
+  that draws the handset now, which knows it exactly, instead of being measured. A lock screen
+  notification is also treated as the control it is, so a captured press hands it its tap.
+
 - **The phone no longer fits underglow to a car that has none.** There is no neon kit in the
   engine: a strip is on or it is off, so picking a colour in the Vehicle app did not change
   underglow, it gave the car underglow - free, on a server where the mechanic sells it. The app
