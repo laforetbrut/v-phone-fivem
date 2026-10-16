@@ -11,7 +11,3 @@ contact_links:
   - name: Developer API / API développeur
     url: https://github.com/laforetbrut/v-phone-fivem/blob/main/API.md
     about: Every export, event and callback another resource can call. / Chaque export, event et callback appelable depuis une autre ressource.
-
-  - name: Ask a question / Poser une question
-    url: https://github.com/laforetbrut/v-phone-fivem/discussions
-    about: Support, setup help and ideas. Issues are for reproducible bugs and concrete requests. / Support, aide à l'installation et idées.
