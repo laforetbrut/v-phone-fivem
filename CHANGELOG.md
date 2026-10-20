@@ -4,7 +4,7 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## [Unreleased]
+## [1.7.15] - 2026-10-20
 
 ### Fixed
 
@@ -16,6 +16,18 @@ All notable changes to v-phone are documented here.
   scale is taken from the screen's live box against a size written down in the stylesheet
   (`--screen-w`), so it is re-measured whenever the handset is re-drawn and cannot drift. A
   hidden handset, whose box is all zeros, is never remembered as a measurement either.
+
+### Correctifs
+
+- **Les gestes de bord étaient encore faux au-dessus de 100% après avoir rangé puis ressorti le
+  téléphone.** La 1.7.14 remplaçait une échelle mesurée par une échelle annoncée par le code qui
+  dessine le téléphone : vraie à l'instant où il tourne, elle peut cesser de l'être ensuite.
+  Fermez le téléphone juste après avoir changé la taille, ressortez-le, et le chiffre laissé
+  derrière ne décrivait plus ce qui était à l'écran : le partage du bord supérieur et le panneau
+  des notifications suivaient. L'échelle est maintenant prise sur la boîte réelle de l'écran,
+  comparée à une taille écrite dans la feuille de style (`--screen-w`), donc elle est remesurée
+  à chaque fois que le téléphone est redessiné et ne peut plus dériver. Un téléphone rangé, dont
+  la boîte ne vaut que des zéros, n'est jamais retenu comme mesure non plus.
 
 ---
 
