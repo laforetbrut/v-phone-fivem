@@ -4,7 +4,7 @@ All notable changes to v-phone are documented here.
 
 ---
 
-## [Unreleased]
+## [1.7.16] - 2026-10-20
 
 ### Fixed
 
@@ -22,6 +22,24 @@ All notable changes to v-phone are documented here.
   A report said it was impossible to tell whether security was on, and it was right.
 - A Question form was added to the issue chooser, for setup help and "how is this meant to
   work" - the place Discussions used to be.
+
+### Correctifs
+
+- **Désactiver le verrouillage ne faisait rien.** Le serveur ne traitait que l'activation : une
+  demande de désactivation était lue puis jetée, l'empreinte du code restait en base et le
+  verrouillage était recalculé à partir d'elle à la lecture suivante. Le téléphone continuait
+  donc de réclamer un code dont on venait d'annoncer au joueur qu'il n'en avait plus besoin. La
+  désactivation supprime maintenant le code avec elle, et le serveur vérifie lui-même le code
+  actuel avant de le faire, au lieu de croire la page qui le demande.
+
+### Modifications
+
+- **L'écran Sécurité dit où on en est.** Sa première ligne est désormais le verrouillage, activé
+  ou désactivé, et la ligne qui le désactive décrit ce qu'elle va faire au lieu de ressembler à
+  un état. Un rapport disait qu'on ne pouvait pas savoir si la sécurité était active, et c'était
+  vrai.
+- Un formulaire Question a été ajouté au menu d'ouverture de ticket, pour l'aide à
+  l'installation et les « comment c'est censé marcher », à la place des Discussions.
 
 ---
 
