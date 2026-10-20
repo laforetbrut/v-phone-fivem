@@ -9127,9 +9127,6 @@ function applyDevice() {
   const scale = (size / zoom) * fit;
   d.style.setProperty('--device-fit', String(fit));
   d.style.setProperty('--device-scale', String(size * fit));
-  // Every gesture threshold on this page is written in the phone's own pixels, and this is
-  // what the pointer is converted with. Published rather than measured: see `screenScale`.
-  setScreenScale(size * fit);
   if (landscape) {
     // The phone lies on its side, centred so it cannot swing off-screen.
     d.style.left = '50%'; d.style.right = 'auto'; d.style.top = '50%'; d.style.bottom = 'auto';
@@ -10755,41 +10752,64 @@ let g = null;
 let screenRect = null;
 let screenRatio = null;
 
-/// Only the BOX is forgotten. The ratio belongs to the size the handset is drawn at, which is
-/// `applyDevice`'s to publish and does not change because a box was re-measured - and clearing
-/// it here would send the next gesture back through the fallback measurement this moved away
-/// from, one frame after every single resize.
-function forgetScreenRect() { screenRect = null; }
+/// The box and the ratio go together: the ratio is derived from the box, so a box that is no
+/// longer true is a ratio that is no longer true.
+function forgetScreenRect() { screenRect = null; screenRatio = null; }
 
 function screenBox() {
-  if (!screenRect) screenRect = byId('screen').getBoundingClientRect();
+  if (!screenRect) {
+    const r = byId('screen').getBoundingClientRect();
+    // **A hidden phone is not measured.** A closed handset is `display: none`, so its box is
+    // all zeros - and caching that gives every later gesture an origin of 0,0 and a scale of
+    // nothing. It is remembered only once it has a size; until then each call asks again,
+    // which costs one layout on a screen nobody is looking at.
+    if (r.width > 0 && r.height > 0) screenRect = r;
+    return r;
+  }
   return screenRect;
+}
+
+/// **The screen's own size, as the stylesheet writes it down.**
+///
+/// `--screen-w` and `--screen-h` on `.screen`, unitless, which is the whole point: a custom
+/// property comes back exactly as authored, while anything MEASURED on an element with `zoom`
+/// is reported differently from one Chromium to the next. That disagreement is what broke the
+/// gestures above 100%, and measuring it a different way only moved the problem.
+let screenNatural = null;
+
+function screenNaturalSize() {
+  if (screenNatural === null) {
+    const cs = getComputedStyle(byId('screen'));
+    screenNatural = {
+      w: parseFloat(cs.getPropertyValue('--screen-w')) || 352,
+      h: parseFloat(cs.getPropertyValue('--screen-h')) || 764,
+    };
+  }
+  return screenNatural;
 }
 
 /// **Window pixels to the phone's own pixels.**
 ///
-/// `applyDevice` publishes this, because it is the one place that KNOWS it: the handset ends up
-/// at `size * fit` on screen, so one window pixel is `1 / (size * fit)` of a phone pixel.
+/// The screen's real box against its natural width. Both sides are measured, one of them with
+/// the zoom cleared, so the answer is right whatever the handset is drawn by - `zoom`, the
+/// shrink-to-fit transform, or both - and whatever a given Chromium reports for a zoomed
+/// element.
 ///
-/// It used to be measured instead, as `clientWidth / rect.width`, and that is where a reported
-/// bug came from: how a browser reports `clientWidth` on an element with `zoom` is not the same
-/// in every Chromium. Where it answers the zoomed width the ratio came back as 1, every
-/// threshold on this page was then compared against window pixels, and at any size above 100%
-/// the top edge band shrank to nothing and a press on a lock screen notification was read as
-/// starting inside it. The measurement is still here as a fallback for the first gesture before
-/// `applyDevice` has ever run.
+/// **Measured rather than announced, and that is the point.** It was briefly published by
+/// `applyDevice`, which knows the size it draws at. That is true at the instant it runs and
+/// false afterwards: close the handset and take it out again and the window it is fitted to
+/// may have reported something different in between, so the figure it left behind no longer
+/// described what is on screen. Taking it from the box means it cannot drift: the box is
+/// re-measured whenever the handset is re-drawn, and the ratio with it.
 function screenScale() {
   if (screenRatio === null) {
     const r = screenBox();
-    const w = parseFloat(getComputedStyle(byId('screen')).width) || byId('screen').clientWidth;
-    screenRatio = (r.width && w) ? w / r.width : 1;
+    // Turned sideways, the box's WIDTH is the screen's height: a rotated element reports the
+    // box its corners fit in, not the box it was laid out as.
+    const nat = screenNaturalSize();
+    screenRatio = r.width ? ((landscape ? nat.h : nat.w) / r.width) : 1;
   }
   return screenRatio;
-}
-
-/// Told by `applyDevice`, every time the handset is drawn at a new size.
-function setScreenScale(onScreen) {
-  screenRatio = (onScreen && onScreen > 0) ? 1 / onScreen : 1;
 }
 
 /// Where the pointer is on the screen, and how big that screen is - both in the phone's pixels,

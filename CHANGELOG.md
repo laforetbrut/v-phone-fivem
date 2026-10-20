@@ -4,6 +4,21 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Edge gestures still went wrong above 100% after the phone was put away and taken out
+  again.** 1.7.14 replaced a measured scale with one announced by the code that draws the
+  handset, which is true at the instant it runs and can stop being true afterwards: close the
+  phone straight after changing the size and take it out again, and the figure left behind no
+  longer described what was on screen, so the top edge split and the shade went with it. The
+  scale is taken from the screen's live box against a size written down in the stylesheet
+  (`--screen-w`), so it is re-measured whenever the handset is re-drawn and cannot drift. A
+  hidden handset, whose box is all zeros, is never remembered as a measurement either.
+
+---
+
 ## [1.7.14] - 2026-10-16
 
 ### Added

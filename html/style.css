@@ -677,7 +677,15 @@ input { font: inherit; }
 }
 
 .screen { position: absolute; inset: 10px; overflow: hidden; border-radius: 47px;
-  background: var(--wall, #050914); background-position: center; background-size: cover; }
+  background: var(--wall, #050914); background-position: center; background-size: cover;
+  /* **The screen's own size, written down rather than measured.**
+     372x784 for the device, inset 10px on every side. The page converts the mouse into these
+     pixels, and asking the browser for the number instead is what made the gestures wrong
+     above 100%: a measured width on an element with `zoom` is reported differently from one
+     Chromium to the next. A unitless custom property comes back exactly as it is written,
+     whatever the handset is drawn at. Keep these two in step with the rule above. */
+  --screen-w: 352;
+  --screen-h: 764; }
 
 /* Wallpapers are gradients, not images: an image is a download every player pays
    for, and the phone should not be the module that adds one. */
