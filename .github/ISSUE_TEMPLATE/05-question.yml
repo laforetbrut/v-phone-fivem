@@ -1,0 +1,49 @@
+name: Question / Question
+description: Setup help, or asking how something is meant to work. / Aide à l'installation, ou comment quelque chose est censé fonctionner.
+title: "[question] "
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions live here rather than in Discussions, which are closed. Nothing wrong with asking: half of them turn out to be a bug or something the docs explain badly. / Les questions se posent ici plutôt que dans les Discussions, qui sont fermées. Posez-la sans hésiter : la moitié d'entre elles révèlent un bug ou une doc mal écrite.
+
+  - type: input
+    id: version
+    attributes:
+      label: v-phone version
+      placeholder: "1.7.15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Framework
+      options:
+        - qb-core
+        - qbx_core
+        - ox_core
+        - es_extended (ESX)
+        - Standalone / Aucun
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question / Votre question
+      description: What you are trying to do, and what the phone does instead. / Ce que vous cherchez à faire, et ce que le téléphone fait à la place.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you already tried / Ce que vous avez déjà essayé
+      description: Which part of the README or COMPATIBILITY you read, and which config options you changed. / Quelle partie du README ou de COMPATIBILITY vous avez lue, et quelles options de config vous avez changées.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else / Captures d'écran ou autre

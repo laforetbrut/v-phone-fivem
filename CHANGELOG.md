@@ -4,6 +4,27 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Turning the lock off did nothing.** The server only ever handled security being switched
+  ON: a phone asking for it to be switched off was read and dropped, the stored digest stayed,
+  and the lock was computed back from it on the next read - so the phone kept asking for a code
+  somebody had just been told they no longer needed. Switching it off now clears the passcode
+  with it, and the server proves the current code itself before it does, rather than trusting
+  the page that asked.
+
+### Changed
+
+- **The Security screen says where things stand.** Its first line is now the lock, on or off,
+  and the row that turns it off describes what it will do rather than reading like the state.
+  A report said it was impossible to tell whether security was on, and it was right.
+- A Question form was added to the issue chooser, for setup help and "how is this meant to
+  work" - the place Discussions used to be.
+
+---
+
 ## [1.7.15] - 2026-10-20
 
 ### Fixed

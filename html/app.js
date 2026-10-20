@@ -8497,6 +8497,16 @@ function settingsSection(id) {
     // for the life of the character - a phone whose code cannot be changed is a phone whose
     // code is shared the first time somebody looks over a shoulder.
     UI.group([
+      // **The state, said once and plainly, at the top.**
+      //
+      // The rows below describe what each one DOES, and somebody reading "the phone opens
+      // without a passcode" under a row that turns security off read it as where things
+      // stood. So the section now opens with a line that is only about where things stand,
+      // and the row that acts says what it will do.
+      UI.row({ icon: p.securityEnabled ? 'lockshut' : 'lockopen',
+        tint: p.securityEnabled ? '#30D158' : '#8E8E93',
+        title: L('ph.sec_state'),
+        value: L(p.securityEnabled ? 'ph.sec_state_on' : 'ph.sec_state_off') }),
       UI.row({ icon: 'lockshut', tint: '#FF3B30', title: L('ph.sec_passcode'),
         subtitle: p.securityEnabled ? L('ph.sec_passcode_on') : L('ph.sec_passcode_off'),
         chevron: true, data: { t: 'passcode' } }),
@@ -8684,7 +8694,10 @@ function wireSettings() {
         const check = await post('unlock', { passcode: current });
         if (!check || !check.ok) { toast(L('ph.wrong_passcode')); return false; }
         const res = await post('prefs', { securityEnabled: false, faceUnlock: false });
-        if (res && res.ok) { state.prefs = res.prefs; settingsRedraw(); toast(L('ph.sec_off_done')); }
+        // The server proves the code itself before it takes a lock off, so a refusal here is
+        // worth saying out loud rather than closing the sheet as though it had worked.
+        if (!res || !res.ok) { toast(L('ph.err_' + ((res && res.error) || 'x'))); return false; }
+        state.prefs = res.prefs; settingsRedraw(); toast(L('ph.sec_off_done'));
         return true;
       });
       return;

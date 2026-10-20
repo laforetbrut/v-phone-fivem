@@ -4091,6 +4091,11 @@ V.Callback('v-phone:contactDelete', function(src, resolve, data)
     resolve({ ok = true })
 end)
 
+--- **Who has just proved they know their own code.** `[source] = expiry`, two minutes, written
+--- by `v-phone:unlock` when a passcode checks out and spent by the one write that needs it:
+--- turning the lock off. Cleared when they drop, with everything else keyed on a source.
+local SecurityProven = {}
+
 V.Callback('v-phone:prefs', function(src, resolve, data)
     local p = Core.GetPlayer(src)
     if not p then resolve(false) return end
@@ -4119,6 +4124,29 @@ V.Callback('v-phone:prefs', function(src, resolve, data)
         end
         if data.securityEnabled ~= nil and data.securityEnabled == true then
             prefs.securityEnabled = tostring(prefs.passcodeHash or '') ~= ''
+        end
+        -- **Switching it OFF, which this never did.**
+        --
+        -- Only `== true` was ever handled, so a page saying "turn the lock off" was read and
+        -- dropped: the stored digest stayed, `securityEnabled` was recomputed from it on the
+        -- next read, and the phone kept asking for a code somebody had just been told they no
+        -- longer needed. The digest goes with it, because leaving a code behind that nothing
+        -- can reach is how it comes back on its own later.
+        --
+        -- The current code is proven first, on the server. The page asks for it before it gets
+        -- here, but a page is not a check: `v-phone:unlock` is the only thing that knows the
+        -- real digest, and it leaves `SecurityProven` behind for a couple of minutes when it
+        -- answers yes.
+        if data.securityEnabled == false then
+            local proven = SecurityProven[src]
+            if tostring(prefs.passcodeHash or '') ~= '' and not (proven and proven > os.time()) then
+                resolve({ error = 'passcode' })
+                return
+            end
+            SecurityProven[src] = nil
+            prefs.securityEnabled = false
+            prefs.passcodeHash = ''
+            prefs.faceUnlock = false
         end
         if data.faceUnlock ~= nil then
             prefs.faceUnlock = prefs.securityEnabled and data.faceUnlock == true
@@ -4300,6 +4328,7 @@ V.Callback('v-phone:unlock', function(src, resolve, data)
         and passcodeDigest(p, code) == tostring(prefs.passcodeHash or '')
     if valid then
         UnlockAttempts[src] = nil
+        SecurityProven[src] = os.time() + 120
         resolve({ ok = true, method = 'passcode' })
         return
     end
@@ -7192,6 +7221,7 @@ AddEventHandler('playerDropped', function()
     CipherUnlocked[src], CipherAttempts[src], CipherLastSend[src] = nil, nil, nil
     AirLastSend[src] = nil
     UnlockAttempts[src] = nil
+    SecurityProven[src] = nil
     LookupLast[src] = nil
     VoicemailLast[src] = nil
     for offerId, offer in pairs(AirOffers) do
