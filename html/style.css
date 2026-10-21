@@ -522,9 +522,18 @@ input { font: inherit; }
 
    Moving only the transform means the worst an animation that never runs can do is leave
    the phone 46px low and slightly small. Visible and usable beats pretty and absent. */
+/* **The entrance carries the handset's own scale, because an animation owns `transform`.**
+   A running or filled animation beats an inline style, so keyframes that said `scale(.94)` and
+   `none` threw away the size the player chose and left every handset drawn at 100% whatever
+   the setting said - and a phone drawn at one size while the page believed another is a phone
+   whose buttons are not where the cursor is. `--device-scale` is what applyDevice sets, and it
+   is 1 before it has ever run. `--device-rise` is the sideways case: a rotated handset is
+   centred with a translate of its own, and losing that threw it off the screen. Its fallback
+   is an identity translate rather than `none`: a keyword inside a transform LIST makes the
+   whole declaration invalid, and an invalid declaration takes the inline style down with it. */
 @keyframes ph-rise {
-  from { transform: translateY(46px) scale(.94); }
-  to   { transform: none; }
+  from { transform: var(--device-rise, translate(0)) translateY(46px) scale(calc(var(--device-scale, 1) * .94)); }
+  to   { transform: var(--device-rise, translate(0)) scale(var(--device-scale, 1)); }
 }
 
 /* Titanium band, then the black ceramic front, then the screen. */

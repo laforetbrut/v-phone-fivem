@@ -4,6 +4,59 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.17] - 2026-10-21
+
+### Fixed
+
+- **Handset sizes above 100% are usable again, and `zoom` is gone.** The sizes were built on
+  CSS `zoom`, which lays the page out again rather than magnifying it, and in a desktop browser
+  that is exactly right. In CEF it is not: what reads a position and what draws one disagreed,
+  and the symptoms came one at a time - a top edge that could not be grabbed, a lock screen
+  notification that swallowed its own tap, then nothing working at all above 100% on 2K and 4K.
+  Three fixes in a row moved the mismatch about instead of removing it, because the mismatch
+  was `zoom` itself. The size is a plain transform now, which the browser hit-tests correctly,
+  so a click lands where the pixel is.
+- **The entrance animation was throwing the size away.** `ph-rise` animates `transform`, and an
+  animation owns that property outright: its last keyframe said `transform: none`, so every
+  handset settled back to 100% however it was configured, and the page then believed a size the
+  screen did not have. The keyframes carry the handset's own scale now.
+- **Auto was picked and then lost** to the same two faults, so a 4K screen ended up with a
+  phone drawn at 100%.
+
+### Changed
+
+- Text above 100% is scaled rather than laid out again, so it is very slightly softer than it
+  was with `zoom`. On the screens these sizes exist for there are enough device pixels that it
+  is hard to see, and a phone whose buttons are where the cursor is beats a crisper one that
+  cannot be used.
+
+### Correctifs
+
+- **Les tailles au-dessus de 100% sont de nouveau utilisables, et le `zoom` a disparu.** Les
+  tailles reposaient sur le `zoom` CSS, qui refait la mise en page au lieu d'agrandir, et dans
+  un navigateur de bureau c'est exactement ce qu'il faut. Dans CEF, non : ce qui lit une
+  position et ce qui en dessine une n'étaient pas d'accord, et les symptômes sont arrivés un par
+  un, le bord supérieur impossible à attraper, la notification de l'écran verrouillé qui avalait
+  son propre clic, puis plus rien du tout au-dessus de 100% en 2K et 4K. Trois correctifs
+  successifs ont déplacé le désaccord au lieu de le supprimer, parce que le désaccord, c'était
+  le `zoom`. La taille est maintenant une simple transformation, que le navigateur sait
+  localiser, donc un clic tombe là où est le pixel.
+- **L'animation d'entrée jetait la taille.** `ph-rise` anime `transform`, et une animation
+  possède cette propriété entièrement : sa dernière image disait `transform: none`, donc chaque
+  téléphone revenait à 100% quelle que soit la configuration, et la page croyait alors à une
+  taille que l'écran n'avait pas. Les images clés portent maintenant l'échelle du téléphone.
+- **Le mode auto était choisi puis perdu** par les deux mêmes défauts : un écran 4K se
+  retrouvait avec un téléphone dessiné à 100%.
+
+### Modifications
+
+- Au-dessus de 100%, le texte est agrandi au lieu d'être remis en page, donc très légèrement
+  moins net qu'avec le `zoom`. Sur les écrans auxquels ces tailles s'adressent, il y a assez de
+  pixels pour que ça ne se voie quasiment pas, et un téléphone dont les boutons sont là où est
+  le curseur vaut mieux qu'un téléphone plus net mais inutilisable.
+
+---
+
 ## [1.7.16] - 2026-10-20
 
 ### Fixed

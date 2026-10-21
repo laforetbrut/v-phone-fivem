@@ -1737,7 +1737,7 @@ function flushRefit() {
 /// screen think the pointer was at its right edge from about the middle onwards.
 ///
 /// The ratio is measured rather than taken from the size, so it is right whether the size came
-/// from `zoom`, from the shrink-to-fit transform, or from both at once.
+/// from the size the player chose, from the shrink-to-fit, or from both at once.
 function ptOf(e) {
   const p = screenPoint(e);
   return { x: p.x, y: p.y };
@@ -9077,24 +9077,11 @@ function deviceSizeLabel(value) {
   return auto ? L('ph.size_auto') + ' (' + pct + ')' : pct;
 }
 
-let zoomOk = null;
-/// Does this browser have `zoom`? CEF does. A browser without it falls back to the transform,
-/// which is the soft-but-working behaviour the phone had before the sizes existed.
-function supportsZoom() {
-  if (zoomOk === null) {
-    zoomOk = !!(window.CSS && CSS.supports && CSS.supports('zoom', '1.25'));
-  }
-  return zoomOk;
-}
-
 let deviceBaseBox = null;
-/// The handset at 100%, measured once with any zoom taken off first.
+/// The handset at 100%. Nothing scales its layout any more, so this is simply its box.
 function deviceBase(d) {
   if (!deviceBaseBox) {
-    const had = d.style.zoom;
-    d.style.zoom = '';
     deviceBaseBox = { w: d.offsetWidth || 372, h: d.offsetHeight || 784 };
-    d.style.zoom = had;
   }
   return deviceBaseBox;
 }
@@ -9110,20 +9097,27 @@ function applyDevice() {
   const d = byId('device');
   const size = deviceSize(p.size);
 
-  // **`zoom` rather than `transform: scale()`, and that is the whole point of the four
-  // sizes.** A transform stretches a phone that has already been drawn, so every glyph goes
-  // soft - which is exactly why the old slider was taken away. `zoom` lays the page out again
-  // at the real size, so the text is drawn at that size rather than magnified. Nothing in the
-  // page compensates for either one: every measurement here compares one box to another box,
-  // and both live in the same space whichever is used.
-  const zoom = supportsZoom() ? size : 1;
-  d.style.zoom = zoom === 1 ? '' : String(zoom);
+  // **The size is a transform, and `zoom` is not used at all.**
+  //
+  // `zoom` was the whole idea behind the handset sizes: it lays the page out again at the real
+  // size, so text is drawn rather than magnified, and it looked right in a desktop browser. In
+  // CEF it is not right. Everything that reads a position disagreed with everything that draws
+  // one, and the symptoms arrived one at a time: a top edge that could not be grabbed, a lock
+  // screen notification that swallowed its own tap, and finally nothing working at all above
+  // 100% on a 2K or 4K screen. Three fixes in a row moved the mismatch around rather than
+  // removing it, because the mismatch was `zoom` itself.
+  //
+  // A transform is the boring answer and it has always worked: the phone is drawn at one scale
+  // and the browser knows it, so a click lands where the pixel is. It is slightly softer than a
+  // relayout above 100%, and on the screens these sizes exist for - 1440p and 4K - there are
+  // enough device pixels that it is hard to see. A phone you can use beats a phone you cannot.
+  //
+  // The property is cleared rather than left alone: a handset carrying a `zoom` from an earlier
+  // build keeps it otherwise, and that is the broken state this is removing.
+  d.style.zoom = '';
   const viewport = window.visualViewport;
   const vw = (viewport && viewport.width) || window.innerWidth || 1280;
   const vh = (viewport && viewport.height) || window.innerHeight || 720;
-  // The handset's own size, measured once and never while a zoom is applied: with one set,
-  // an element reports its zoomed box, and multiplying that by the size again would shrink
-  // the phone a second time on every redraw.
   const base = deviceBase(d);
   const footprintW = (landscape ? base.h : base.w) * size;
   const footprintH = (landscape ? base.w : base.h) * size;
@@ -9135,18 +9129,21 @@ function applyDevice() {
   const fit = Math.max(0.10, Math.min(cap,
     (vw - 24) / footprintW,
     (vh - 24) / footprintH));
-  // What the transform still has to carry: the fit, plus the size itself on a browser with
-  // no `zoom` at all. The phone on screen always ends up at `size * fit` either way.
-  const scale = (size / zoom) * fit;
+  // The size the player chose, and the shrink that keeps it inside the window.
+  const scale = size * fit;
   d.style.setProperty('--device-fit', String(fit));
   d.style.setProperty('--device-scale', String(size * fit));
   if (landscape) {
-    // The phone lies on its side, centred so it cannot swing off-screen.
+    // The phone lies on its side, centred so it cannot swing off-screen. The part before the
+    // scale is published too: the entrance animation rebuilds the whole transform from these
+    // two, because an animation owns `transform` outright and would otherwise drop them.
     d.style.left = '50%'; d.style.right = 'auto'; d.style.top = '50%'; d.style.bottom = 'auto';
     d.style.transformOrigin = 'center center';
+    d.style.setProperty('--device-rise', 'translate(-50%, -50%) rotate(-90deg)');
     d.style.transform = 'translate(-50%, -50%) rotate(-90deg) scale(' + scale + ')';
   } else {
     d.style.top = 'auto'; d.style.bottom = '2.5vh';
+    d.style.removeProperty('--device-rise');
     d.style.transformOrigin = (p.side === 'left') ? 'left bottom' : 'right bottom';
     d.style.transform = 'scale(' + scale + ')';
     d.style.right = (p.side === 'left') ? 'auto' : '3vw';
@@ -10785,9 +10782,9 @@ function screenBox() {
 /// **The screen's own size, as the stylesheet writes it down.**
 ///
 /// `--screen-w` and `--screen-h` on `.screen`, unitless, which is the whole point: a custom
-/// property comes back exactly as authored, while anything MEASURED on an element with `zoom`
-/// is reported differently from one Chromium to the next. That disagreement is what broke the
-/// gestures above 100%, and measuring it a different way only moved the problem.
+/// property comes back exactly as authored, while a measured width on a scaled element has to
+/// be read in the right space to mean anything. Written down, it means the same thing to every
+/// browser and at every handset size.
 let screenNatural = null;
 
 function screenNaturalSize() {
@@ -10803,10 +10800,8 @@ function screenNaturalSize() {
 
 /// **Window pixels to the phone's own pixels.**
 ///
-/// The screen's real box against its natural width. Both sides are measured, one of them with
-/// the zoom cleared, so the answer is right whatever the handset is drawn by - `zoom`, the
-/// shrink-to-fit transform, or both - and whatever a given Chromium reports for a zoomed
-/// element.
+/// The screen's real box against the size the stylesheet says it is. The handset is drawn by
+/// one transform, so the box carries the whole scale and this is the ratio back out of it.
 ///
 /// **Measured rather than announced, and that is the point.** It was briefly published by
 /// `applyDevice`, which knows the size it draws at. That is true at the instant it runs and
