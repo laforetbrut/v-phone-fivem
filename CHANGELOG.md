@@ -4,6 +4,33 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.19] - 2026-10-26
+
+### Fixed
+
+- **A social account could not be finished on ox_core: the sign-up code never arrived.** The
+  phone turns whatever identifier a script holds - a source, a phone number, a citizen id -
+  into the citizen id everything else is keyed on, and it recognised sources first because a
+  source is a small integer and a citizen id is not. On qb and ESX that holds. On ox_core a
+  character id IS a small integer, so a character id was read as a server slot and the text
+  went to whoever was connected on it, or nowhere. The phone's own tables are asked first now,
+  and the source is the last guess rather than the first. It affected every export that texts a
+  character by id on ox, not only the sign-up code. A test covers both framework shapes.
+
+### Correctifs
+
+- **Impossible de finaliser un compte social sur ox_core : le code d'inscription n'arrivait
+  jamais.** Le téléphone convertit l'identifiant qu'un script a sous la main - un id serveur, un
+  numéro, un citizenid - vers le citizenid dont tout dépend, et il reconnaissait les id serveur
+  en premier, au motif qu'un id serveur est un petit entier et pas un citizenid. Sur qb et ESX
+  c'est vrai. Sur ox_core un identifiant de personnage EST un petit entier : il était donc lu
+  comme un numéro de slot et le SMS partait vers le joueur connecté sur ce slot, ou nulle part.
+  Les tables du téléphone sont désormais interrogées d'abord, et l'id serveur n'est tenté qu'en
+  dernier. Cela touchait tous les exports qui écrivent à un personnage par son id sur ox, pas
+  seulement le code d'inscription. Un test couvre les deux familles de framework.
+
+---
+
 ## [1.7.18] - 2026-10-26
 
 ### Fixed

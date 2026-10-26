@@ -30,6 +30,7 @@ syntax error should not cost five minutes of screenshots to discover.
     test-camera      what a photograph does when the upload host is slow or dead
     test-mail-delete a deleted mail address is retired, never handed to somebody else
     test-catchup     what the phone says about the time a character was offline
+    test-whois       who a script means by "this player", a source, a number or a citizen id
     preview          the page built for a browser
     run-probe        can a cursor reach every control in all 38 apps
     probe-input      real mouse input through the compositor
@@ -164,6 +165,7 @@ run('test-verify', [sys.executable, 'tools/test-verify.py'])
 run('test-camera', [sys.executable, 'tools/test-camera.py'])
 run('test-mail-delete', [sys.executable, 'tools/test-mail-delete.py'])
 run('test-catchup', [sys.executable, 'tools/test-catchup.py'])
+run('test-whois', [sys.executable, 'tools/test-whois.py'])
 run('test-hotpath', [sys.executable, 'tools/test-hotpath.py'])
 run('test-strings', [sys.executable, 'tools/test-strings.py'])
 run('check-fr', [sys.executable, 'tools/check-fr.py'])

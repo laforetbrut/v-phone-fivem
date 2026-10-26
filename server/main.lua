@@ -1877,25 +1877,37 @@ end)
 --- twice - a job script has the source, a dispatch has the number, a database job has the id.
 --- Making the caller convert first is how an export ends up unused.
 ---
---- Order matters. A source is a small integer and a citizen id is not, so sources are recognised
---- first and only when the player is actually connected; a number is checked before a citizen id
---- because the number FORMAT is the narrower of the two.
+--- **Order matters, and it used to be wrong on ox_core.**
+---
+--- A source id was recognised first, on the grounds that it is a small integer and a citizen id
+--- is not. That is true of qb and ESX, where a citizen id looks like `ABC12345`. On ox_core a
+--- character id IS a small integer - 1, 2, 3 - so every one of them was read as a server id and
+--- answered with whoever happened to be connected on that slot, or with nothing at all. A
+--- script texting a character on ox texted a stranger or the void, and the sign-up code for the
+--- social apps is sent exactly that way: the code never arrived and the account could not be
+--- finished.
+---
+--- So what the phone's own tables CONFIRM comes first, and the guess comes last: a citizen id
+--- that owns a line, then a phone number, then - only if neither matched - a connected source.
 function PhoneWhoIs(target)
     if target == nil then return nil end
 
+    local text = tostring(target)
+
+    -- A citizen id, confirmed against the phone's own character table rather than taken on
+    -- trust, so a typo becomes "no such player" instead of a message written to a row nobody
+    -- owns. Checked first because on ox it is the one that collides.
+    if numberOfCid(text) then return text end
+
+    local cid = cidOfNumber(text)
+    if cid then return cid end
+
+    -- A source, last, and only while that player is actually connected.
     local asNumber = tonumber(target)
     if asNumber and asNumber > 0 and asNumber < 1024 and math.floor(asNumber) == asNumber then
         local p = Core.GetPlayer(math.floor(asNumber))
         if p then return p.citizenid end
     end
-
-    local text = tostring(target)
-    local cid = cidOfNumber(text)
-    if cid then return cid end
-
-    -- A citizen id, then: confirmed against the phone's own character table rather than taken on
-    -- trust, so a typo becomes "no such player" instead of a message written to a row nobody owns.
-    if numberOfCid(text) then return text end
     return nil
 end
 
