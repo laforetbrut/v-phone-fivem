@@ -857,8 +857,13 @@ input { font: inherit; }
      invisible hit area under it catches a swipe that starts a little off the pill or a
      tap that lands beside it - which is what made the bar miss "sometimes". */
   touch-action: none; }
+/* **It used to reach 26px above the pill, and that is an app's own bottom bar.** In Messages
+   the band sat over the composer: a tap meant for the text field landed on the home indicator
+   and closed the app. The swipe up does not depend on this halo - the screen reads the bottom
+   34px as an edge gesture whatever is under the finger - so the halo only has to catch a tap
+   that lands a little beside the pill, and 10px above it is plenty. */
 .homebar::before { content: ''; position: absolute; left: -40px; right: -40px;
-  top: -26px; bottom: -14px; }
+  top: -10px; bottom: -14px; }
 
 /* ══ Lock screen ══════════════════════════════════════════════ */
 .lock { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;

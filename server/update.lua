@@ -33,14 +33,32 @@ local CFG = Config.UpdateCheck or {}
 --- rest of the session that they were running the old one, and only a full reboot fixed it.
 --- The file on disk is the truth, and `LoadResourceFile` reads it now rather than at boot.
 --- The metadata is the fallback, for a manifest this cannot parse.
-function PhoneVersion()
+--- The manifest on disk, when it can be read and parsed.
+local function versionFromFile()
     local ok, raw = pcall(LoadResourceFile, RES, 'fxmanifest.lua')
-    if ok and type(raw) == 'string' then
-        local found = raw:match("\n%s*version%s*'([^']+)'")
-                   or raw:match('\n%s*version%s*"([^"]+)"')
-        if found and #found <= 20 then return found end
-    end
-    return tostring(GetResourceMetadata(RES, 'version', 0) or '')
+    if not ok or type(raw) ~= 'string' then return nil end
+    -- A newline in front, so the patterns below also match a `version` line that opens the
+    -- file. Anchored on one, they could never match the first line at all.
+    raw = '\n' .. raw
+    local found = raw:match("\n%s*version%s*'([^']+)'")
+               or raw:match('\n%s*version%s*"([^"]+)"')
+    if found and #found <= 20 then return found end
+    return nil
+end
+
+--- **Whichever of the two readings is further ahead.**
+---
+--- Both can be a build behind, in opposite situations: the metadata is what the server parsed
+--- when it started, which a refresh does not always replace, and the file goes through the
+--- resource's own loader, which can hand back what it cached at start. Somebody running 1.7.22
+--- was told 1.7.22 was available, because one of the two still said 1.7.20. Taking the newer of
+--- the pair makes a stale reading harmless: it can only ever be ignored.
+function PhoneVersion()
+    local fromFile = versionFromFile()
+    local fromMeta = tostring(GetResourceMetadata(RES, 'version', 0) or '')
+    if not fromFile or fromFile == '' then return fromMeta end
+    if fromMeta == '' then return fromFile end
+    return VersionIsNewer(fromFile, fromMeta) and fromMeta or fromFile
 end
 
 local function currentVersion()
@@ -89,7 +107,7 @@ local function parts(v)
 end
 
 --- Is `b` a later version than `a`?
-local function isNewer(a, b)
+function VersionIsNewer(a, b)
     local x, y = parts(a), parts(b)
     if #y == 0 then return false end
     for i = 1, math.max(#x, #y) do
@@ -187,7 +205,7 @@ local function check(loud)
                 if loud then print('^3[v-phone]^7 update check: the release has no tag') end
                 return
             end
-            if isNewer(here, tag) then
+            if VersionIsNewer(here, tag) then
                 announce(tag, 'https://github.com/' .. slug .. '/releases/latest',
                     tostring(data.name or ''))
             elseif loud then

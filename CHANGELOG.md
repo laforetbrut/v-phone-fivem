@@ -4,6 +4,35 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.23] - 2026-10-26
+
+### Fixed
+
+- **A tap just above the message box closed the app.** The home indicator's invisible hit area
+  reached 26 pixels above the pill, which inside Messages is the composer: a tap meant for the
+  text field went to the home indicator instead. It reaches 10 pixels now, and the swipe up is
+  untouched - that gesture is read from the bottom edge of the screen, not from this halo.
+- **The update check could announce the version already running.** Both ways of reading the
+  version can be a build behind, in opposite situations, and one stale reading was enough to
+  report an update to the version installed. The newer of the two is taken now, so a stale
+  reading can only be ignored. The manifest's `version` line is also found when it opens the
+  file, which the pattern could never match.
+
+### Correctifs
+
+- **Un clic juste au-dessus de la zone de saisie fermait l'app.** La zone cliquable invisible de
+  la barre d'accueil montait 26 pixels au-dessus du trait, ce qui, dans Messages, correspond à
+  la barre d'écriture : un clic destiné au champ de texte partait sur la barre d'accueil. Elle
+  monte maintenant de 10 pixels, et le geste de balayage ne change pas, puisqu'il est lu depuis
+  le bord bas de l'écran et non depuis cette zone.
+- **La vérification de version pouvait annoncer la version déjà installée.** Les deux façons de
+  lire la version peuvent être en retard d'une build, dans des situations opposées, et une seule
+  lecture périmée suffisait à annoncer une mise à jour vers la version en place. On prend
+  désormais la plus avancée des deux. La ligne `version` du manifeste est aussi trouvée quand
+  elle ouvre le fichier, ce que le motif ne savait pas faire.
+
+---
+
 ## [1.7.22] - 2026-10-26
 
 ### Added
