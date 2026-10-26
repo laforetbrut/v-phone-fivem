@@ -159,7 +159,7 @@ end)
 RegisterNUICallback('zuberRoute', function(data, cb)
     local x, y = tonumber(data and data.x), tonumber(data and data.y)
     if not x or not y then cb({ error = 'nowhere' }) return end
-    SetNewWaypoint(x + 0.0, y + 0.0)
+    PhoneSetWaypoint(x, y)
     cb({ ok = true })
 end)
 
@@ -180,7 +180,7 @@ end)
 RegisterNUICallback('zuberLocate', function(data, cb)
     V.Request('v-phone:zuber:locate', function(res)
         if type(res) == 'table' and res.ok and res.x and res.y then
-            SetNewWaypoint(res.x + 0.0, res.y + 0.0)
+            PhoneSetWaypoint(res.x, res.y)
         end
         cb(res or { error = 'x' })
     end, data or {})

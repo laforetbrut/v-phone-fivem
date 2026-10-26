@@ -149,7 +149,7 @@ end)
 RegisterNUICallback('repairRoute', function(data, cb)
     local x, y = tonumber(data and data.x), tonumber(data and data.y)
     if not x or not y or (x == 0.0 and y == 0.0) then cb({ error = 'nowhere' }) return end
-    SetNewWaypoint(x + 0.0, y + 0.0)
+    PhoneSetWaypoint(x, y)
     cb({ ok = true })
 end)
 

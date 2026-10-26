@@ -666,6 +666,9 @@ local function openPhone()
         -- The screen is what drains a phone, so the server has to know it is on.
         TriggerServerEvent('v-phone:server:screen', true)
         syncPrefsCache(state.prefs or {})
+        -- The colour the server resolved for this character's job. Kept for as long as the
+        -- phone is open, which is as long as it can set a waypoint. See Config.RouteColour.
+        RouteColour = tonumber(state.routeColour)
         syncSdkApps(state.apps)
         if state.call ~= nil and applyServerCall then applyServerCall(state.call, false) end
         power = {
@@ -1322,7 +1325,7 @@ RegisterNetEvent('v-phone:client:911locate', function(d)
 
     -- Always the exact spot, even for a service whose blip is a search area: a responder
     -- pressed a button that says "take me there".
-    if d.waypoint ~= false then SetNewWaypoint(x + 0.0, y + 0.0) end
+    if d.waypoint ~= false then PhoneSetWaypoint(x, y) end
 
     local b = d.blip
     if type(b) ~= 'table' then return end
@@ -1929,10 +1932,43 @@ RegisterNUICallback('torch', function(data, cb)
     cb({ ok = true })
 end)
 
+--- **Set a waypoint, and colour the line to it.**
+---
+--- Every part of the phone that sends somebody somewhere comes through here: the Maps app, a
+--- 911 alert, a repair call, a taxi, a delivery. The colour is the server's answer for this
+--- character's job, so a city with five services navigating at once can tell whose route is
+--- on screen. Without one configured, the game keeps its own yellow and this is just a
+--- waypoint like any other.
+---
+--- The route is re-coloured on every call because the game resets it with the waypoint, and
+--- the blip is found by its sprite - 8 is the waypoint - because setting one hands nothing
+--- back.
+function PhoneSetWaypoint(x, y)
+    x, y = tonumber(x), tonumber(y)
+    if not x or not y then return false end
+    SetNewWaypoint(x + 0.0, y + 0.0)
+
+    local colour = tonumber(RouteColour)
+    if not colour then return true end
+    local blip = GetFirstBlipInfoId(8)
+    if blip and blip ~= 0 and DoesBlipExist(blip) then
+        SetBlipRoute(blip, true)
+        SetBlipRouteColour(blip, math.floor(colour))
+    end
+    return true
+end
+
+V.Sub('phonedebug', 'route', 'what colour this character draws its route in', function()
+    local colour = tonumber(RouteColour)
+    print(('[v-phone] route colour: %s'):format(colour and tostring(math.floor(colour))
+        or "the game's own - nothing is configured for this job, or the phone has not been opened yet"))
+    print('[v-phone] these are GTA blip colours, not RGB. See Config.RouteColour.')
+end)
+
 RegisterNUICallback('waypoint', function(data, cb)
     local x, y = tonumber(data and data.x), tonumber(data and data.y)
     if not x or not y then cb({ error = 'x' }) return end
-    SetNewWaypoint(x + 0.0, y + 0.0)
+    PhoneSetWaypoint(x, y)
     cb({ ok = true })
 end)
 
@@ -2020,7 +2056,7 @@ end)
 
 RegisterNUICallback('chargingWaypoint', function(data, cb)
     local x, y = tonumber(data and data.x), tonumber(data and data.y)
-    if x and y then SetNewWaypoint(x + 0.0, y + 0.0) end
+    if x and y then PhoneSetWaypoint(x, y) end
     cb({ ok = x ~= nil and y ~= nil })
 end)
 

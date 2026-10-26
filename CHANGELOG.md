@@ -4,6 +4,36 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.22] - 2026-10-26
+
+### Added
+
+- **A route colour per job, `Config.RouteColour`.** The line the game draws to a waypoint the
+  phone set is yellow for everybody, which stops being useful the moment five services are
+  navigating at once. Each job can have its own GTA blip colour; a job with no entry takes the
+  default, and no default leaves the game's own colour alone, so nothing changes until it is
+  filled in. The colour is decided on the server from the job the framework reports, so it
+  follows a character who clocks on as something else. `/phonedebug route` prints what this
+  character resolves to.
+- Every part of the phone that sends somebody somewhere now goes through one function, so the
+  route is coloured whether it came from Maps, a 911 alert, a repair call, a taxi or a
+  delivery.
+
+### Ajouts
+
+- **Une couleur de tracé par métier, `Config.RouteColour`.** La ligne que le jeu dessine vers un
+  point posé par le téléphone est jaune pour tout le monde, ce qui ne sert plus à grand-chose
+  quand cinq services naviguent en même temps. Chaque métier peut avoir sa couleur de blip GTA ;
+  un métier sans entrée prend la valeur par défaut, et sans valeur par défaut la couleur du jeu
+  est laissée telle quelle : rien ne change tant que ce n'est pas rempli. La couleur est décidée
+  sur le serveur à partir du métier rapporté par le framework, donc elle suit un personnage qui
+  prend son service ailleurs. `/phonedebug route` affiche ce que ce personnage obtient.
+- Tout ce qui envoie quelqu'un quelque part passe désormais par une seule fonction, donc le
+  tracé est coloré qu'il vienne de Plans, d'une alerte 911, d'un appel mécano, d'un taxi ou
+  d'une livraison.
+
+---
+
 ## [1.7.21] - 2026-10-26
 
 ### Fixed

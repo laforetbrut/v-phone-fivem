@@ -49,53 +49,54 @@
 --  **Regenerate this rather than editing it**: every entry was once wrong by up to a
 --  thousand lines, which is what a hand-maintained index does. tools/check.py could own it.
 --
---    114   COMPATIBILITY
---    160   Two notifications for one payment
---    466   SETTINGS
---    638   LICENCE NAMES
---    700   HOW A NUMBER IS DISPLAYED
---    792   While you were away
---    2076  WRITING A POSITION
---    2163  THE LOOK  (one place that changes the colour of the phone)
---    2209  PLACES  (what the Maps app lists, and routes to)
---    2293  THE FRUITSTORE  (downloading takes time, and updates exist)
---    2376  EXPORT  (what your haul is worth, before you drive across the map)
---    2521  REPAIR  (reaching a mechanic, from the side of the road)
---    2632  PLUGGING IN  (charging on purpose, rather than by accident)
---    2684  PAID CHARGING
---    2776  ADMIN
---    2785  LOGGING
---    2798  911
---    3039  BANK PRO
---    3145  ALERTS  (what the government broadcasts, and everybody receives)
---    3290  ZUBER  (food, ordered from the phone)
---    3493  TAXI  (hail a ride, or drive one)
---    3605  LOTTERY  (the weekly draw)
---    3715  THE CLOCK
---    3744  THE NETS UNDER THE PHONE
---    3791  ONLYFRUITS
---    3806  FruitBrawl: the duel
---    3860  FlappyFruit: the arcade board
---    3905  Fruitee: donation pages
---    4057  HOW LONG THE PHONE KEEPS THINGS
---    4132  HOME SCREEN WIDGETS
---    4175  THE UPDATE CHECK
---    4209  A PHONE HEARD RINGING
---    4267  COMMANDS
---    4292  THE SDK EXAMPLE APP
---    4466  EXTERNAL CHARGING
---    4490  THE HEALTH RECORD
---    4532  HOSPITALS
---    4562  PROPERTY
---    4595  GARAGES
---    4616  BANK
---    4736  POLICE FORENSICS
---    4858  MEDIA  (photos and video hosting)
---    5047  FACETIME  (experimental live video feed)
---    5079  PAYPHONES  (call boxes and prepaid cards)
---    5260  MUSIC  (playback, playlists and the deck the phone hands off to)
---    5393  VEHICLE REMOTE  (lights, neons, doors and locks from the phone)
---    5476  FRUITSTORE  (apps you add, free or paid)
+--    115   COMPATIBILITY
+--    161   Two notifications for one payment
+--    467   SETTINGS
+--    639   LICENCE NAMES
+--    701   HOW A NUMBER IS DISPLAYED
+--    793   While you were away
+--    2077  WRITING A POSITION
+--    2164  THE LOOK  (one place that changes the colour of the phone)
+--    2210  PLACES  (what the Maps app lists, and routes to)
+--    2294  THE ROUTE LINE  (its colour, per job)
+--    2330  THE FRUITSTORE  (downloading takes time, and updates exist)
+--    2413  EXPORT  (what your haul is worth, before you drive across the map)
+--    2558  REPAIR  (reaching a mechanic, from the side of the road)
+--    2669  PLUGGING IN  (charging on purpose, rather than by accident)
+--    2721  PAID CHARGING
+--    2813  ADMIN
+--    2822  LOGGING
+--    2835  911
+--    3076  BANK PRO
+--    3182  ALERTS  (what the government broadcasts, and everybody receives)
+--    3327  ZUBER  (food, ordered from the phone)
+--    3530  TAXI  (hail a ride, or drive one)
+--    3642  LOTTERY  (the weekly draw)
+--    3752  THE CLOCK
+--    3781  THE NETS UNDER THE PHONE
+--    3828  ONLYFRUITS
+--    3843  FruitBrawl: the duel
+--    3897  FlappyFruit: the arcade board
+--    3942  Fruitee: donation pages
+--    4094  HOW LONG THE PHONE KEEPS THINGS
+--    4169  HOME SCREEN WIDGETS
+--    4212  THE UPDATE CHECK
+--    4246  A PHONE HEARD RINGING
+--    4304  COMMANDS
+--    4329  THE SDK EXAMPLE APP
+--    4503  EXTERNAL CHARGING
+--    4527  THE HEALTH RECORD
+--    4569  HOSPITALS
+--    4599  PROPERTY
+--    4632  GARAGES
+--    4653  BANK
+--    4773  POLICE FORENSICS
+--    4895  MEDIA  (photos and video hosting)
+--    5084  FACETIME  (experimental live video feed)
+--    5116  PAYPHONES  (call boxes and prepaid cards)
+--    5297  MUSIC  (playback, playlists and the deck the phone hands off to)
+--    5430  VEHICLE REMOTE  (lights, neons, doors and locks from the phone)
+--    5513  FRUITSTORE  (apps you add, free or paid)
 --
 --  IF SOMETHING DOES NOT BEHAVE
 --  ────────────────────────────
@@ -2286,6 +2287,42 @@ Config.Places = {
     { label = 'Vespucci Beach',        kind = 'leisure', coords = vector3(-1223.0, -1493.0, 4.4) },
 }
 normalisePlaces(Config.Places)
+--#endregion
+
+--#region THE ROUTE LINE  (its colour, per job)
+-- ══════════════════════════════════════════════════════════════
+--  THE ROUTE LINE  (its colour, per job)
+-- ══════════════════════════════════════════════════════════════
+-- The line the game draws to a waypoint the phone set. It is yellow for everybody by default,
+-- which is the game's own colour and a perfectly good answer - until a server has five services
+-- navigating at once and nobody can tell whose route is on screen.
+--
+-- Keyed on the job the framework reports, so it follows a character who clocks on as something
+-- else. A job with no entry keeps `default`, and `default` with no entry keeps the game's own
+-- colour: nothing here changes anything until you fill it in.
+--
+-- The numbers are GTA's own blip colours, not RGB. The useful ones:
+--
+--     1 red        2 green      3 blue       5 yellow     6 light red   7 violet
+--     8 pink       11 teal      17 orange    27 dark blue 38 dark blue  40 grey
+--     46 sand      48 light blue 50 light orange
+--
+-- `/phonedebug route` prints the colour this character resolves to, for when a job name is
+-- not what you thought it was.
+Config.RouteColour = {
+    enabled = false,
+
+    -- The game's colour for anybody whose job is not named below. nil leaves it alone.
+    default = nil,
+
+    byJob = {
+        -- police    = 3,
+        -- ambulance = 1,
+        -- mechanic  = 2,
+        -- taxi      = 5,
+        -- realestate = 48,
+    },
+}
 --#endregion
 
 --#region THE FRUITSTORE  (downloading takes time, and updates exist)

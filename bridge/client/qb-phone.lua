@@ -70,7 +70,7 @@ end)
 
 -- The waypoint half of a dispatch, set only after the server confirmed the job.
 RegisterNetEvent('v-phone:compat:qbWaypoint', function(x, y)
-    if x and y then SetNewWaypoint(x + 0.0, y + 0.0) end
+    if x and y then PhoneSetWaypoint(x, y) end
 end)
 
 -- ── Money and invoices ────────────────────────────────────────

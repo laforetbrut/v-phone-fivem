@@ -865,6 +865,21 @@ function deviceSize(value)
     return best
 end
 
+--- **The colour of the route line for this character's job.**
+---
+--- Decided here rather than on the page: the job is the framework's to answer, and the client
+--- is never told what anybody's job is until it needs to be. nil means "leave the game alone",
+--- which is also what an unconfigured server gets.
+function routeColourFor(player)
+    local cfg = Config.RouteColour
+    if type(cfg) ~= 'table' or cfg.enabled ~= true then return nil end
+    local job = player and player.job and tostring(player.job.name or '') or ''
+    local byJob = type(cfg.byJob) == 'table' and cfg.byJob or {}
+    local colour = tonumber(byJob[job]) or tonumber(cfg.default)
+    if not colour then return nil end
+    return math.max(0, math.min(85, math.floor(colour)))
+end
+
 local function cleanLayout(value)
     if type(value) ~= 'table' or type(value.items) ~= 'table' then return nil end
     local items = {}
@@ -3458,6 +3473,10 @@ V.Callback('v-phone:open', function(src, resolve)
         -- Whether a phone with no security of its own still opens on the lock screen.
         -- See Config.Settings.lockScreen.
         lockScreen = V.SettingBool('lockScreen', true),
+        -- The colour of the line the game draws to a waypoint this phone sets, decided from
+        -- the job the framework reports. nil leaves the game's own colour alone.
+        -- See Config.RouteColour.
+        routeColour = routeColourFor(p),
         -- Whose phone this actually is, when it is not yours.
         --
         -- `src` and not the wrapped player: `Core.GetPlayer` has already answered with the
