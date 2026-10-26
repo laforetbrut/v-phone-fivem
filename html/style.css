@@ -12286,13 +12286,17 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
   width: 128px; height: 128px; font-size: 52px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .12);
 }
-.callui.facetime::after {
-  content: '';
-  position: absolute; right: 16px; top: 74px;
-  width: 96px; height: 132px; border-radius: 14px;
+/* The corner used to be an empty rectangle drawn here, which reads as a picture that failed
+   rather than as a design. It is a real element now, carrying the photograph from your own
+   card or your initial - see `faceSelfCard`. The frame is kept, as its backdrop. */
+.callui.facetime .faceself.selfcard {
+  display: flex; align-items: center; justify-content: center;
   background: linear-gradient(180deg, #1a2534, #0d141d);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+  background-size: cover; background-position: center;
+  font-size: 40px; font-weight: 600; color: rgba(255, 255, 255, .82);
+  letter-spacing: .5px;
 }
+.callui.facetime .faceself.selfcard.hasphoto { color: transparent; }
 
 /* With the live picture on, the peer's frame fills the call screen and your own sits in
    the corner - the placeholder above is covered by them. Both are plain <img> elements
@@ -12308,8 +12312,18 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
   background: #0d141d;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(255, 255, 255, .12);
 }
-/* The name, timer and buttons stay above the picture. */
-.callui.facetime > *:not(.facepeer):not(.faceself) { position: relative; z-index: 4; }
+/* The name, timer and buttons stay above the picture.
+
+   **Only the stacking is changed, never the positioning.** This said `position: relative` on
+   every child, which put the three that are ABSOLUTE back into the flow: the speaker row, the
+   hang-up row and the corner button left their places and landed on top of the name and the
+   timer, piled in the middle of the screen. The ones that need a position to be raised are
+   named instead, and they are exactly the ones that had none. */
+.callui.facetime > *:not(.facepeer):not(.faceself) { z-index: 4; }
+.callui.facetime > .callav,
+.callui.facetime > .callnum,
+.callui.facetime > .callstate,
+.callui.facetime > .callroster { position: relative; }
 
 /* ══ The payphone ═══════════════════════════════════════════════
    Built from the anatomy of a real call box, because that is what the player is standing in

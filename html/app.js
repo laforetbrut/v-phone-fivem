@@ -23944,6 +23944,7 @@ function renderCall() {
   // FaceTime: a real voice call presented as a video call. FiveM cannot stream a live
   // face, so the layout is the difference, not a video feed - honest, and it reads right.
   ui.classList.toggle('facetime', !!call.video);
+  faceSelfCard(!!call.video);
   const conference = isConference();
   const others = rosterOthers();
   const one = call.number ? nameOfNumber(call.number) : L('ph.unknown');
@@ -26393,12 +26394,47 @@ function faceShrink(dataUri) {
   img.src = dataUri;
 }
 
+/// **Your own corner of a FaceTime call, when there is no live picture.**
+///
+/// The live feed is off by default - it is opt-in, and most servers leave it that way - and
+/// what was drawn in its place was an empty dark rectangle in the corner, which reads as
+/// something that failed to load rather than as a deliberate design. It carries what the phone
+/// actually knows about you now: the photograph on your own card, or your initial.
+///
+/// Removed the moment a real frame arrives, so the two never stack.
+function faceSelfCard(on) {
+  const ui = byId('callui');
+  if (!ui) return;
+  const had = byId('faceselfcard');
+  if (!on || byId('faceself')) { if (had) had.remove(); return; }
+
+  const p = state.prefs || {};
+  const photo = String(p.cardPhoto || '');
+  const name = String(p.ownerName || L('ph.me'));
+  const el = had || document.createElement('div');
+  if (!had) {
+    el.id = 'faceselfcard';
+    el.setAttribute('aria-hidden', 'true');
+    ui.appendChild(el);
+  }
+  el.className = 'faceself selfcard' + (photo ? ' hasphoto' : '');
+  el.style.backgroundImage = photo ? 'url("' + cssUrl(photo) + '")' : '';
+  el.textContent = photo ? '' : name.slice(0, 1).toUpperCase();
+}
+
 // Put a frame into one of the two panels, creating it the first time.
 function faceShow(id, dataUri) {
   const ui = byId('callui');
   if (!ui) return;
   let el = byId(id);
-  if (!dataUri) { if (el) el.remove(); return; }
+  if (!dataUri) {
+    if (el) el.remove();
+    // The live picture has stopped, so the card belongs back in the corner.
+    if (id === 'faceself' && call && call.video) faceSelfCard(true);
+    return;
+  }
+  // A real frame wins over the card standing in for it.
+  if (id === 'faceself') { const card = byId('faceselfcard'); if (card) card.remove(); }
   if (!el) {
     el = document.createElement('img');
     el.id = id;

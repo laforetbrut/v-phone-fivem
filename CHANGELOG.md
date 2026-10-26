@@ -4,6 +4,34 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.20] - 2026-10-26
+
+### Fixed
+
+- **The FaceTime screen was piling its own controls on top of each other.** One rule gave every
+  child of the call screen `position: relative` so it would sit above the video panes, which
+  also dropped the three that are positioned - the speaker row, the hang-up row and the corner
+  button - back into the flow, landing them on the name and the timer. Only the stacking is
+  changed now; nothing is moved.
+- **The corner of a FaceTime call is no longer an empty rectangle.** With the live picture off,
+  which is the default, it showed a blank dark frame that reads as something that failed to
+  load. It carries the photograph from your own card, or your initial, and a real frame still
+  replaces it the moment one arrives.
+
+### Correctifs
+
+- **L'écran FaceTime empilait ses propres commandes.** Une règle donnait `position: relative` à
+  tous les enfants de l'écran d'appel pour qu'ils passent au-dessus des images, ce qui remettait
+  aussi dans le flux les trois qui sont positionnés : la rangée du haut-parleur, celle de
+  raccrochage et le bouton de coin. Ils atterrissaient sur le nom et le chrono. Seul l'ordre
+  d'empilement change désormais, plus rien n'est déplacé.
+- **Le coin d'un appel FaceTime n'est plus un rectangle vide.** Sans image en direct, ce qui est
+  le réglage par défaut, il affichait un cadre sombre vide qui ressemble à un chargement raté.
+  Il porte maintenant la photo de votre carte, ou votre initiale, et une vraie image la remplace
+  dès qu'elle arrive.
+
+---
+
 ## [1.7.19] - 2026-10-26
 
 ### Fixed
