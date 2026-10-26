@@ -4,6 +4,33 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.18] - 2026-10-26
+
+### Fixed
+
+- **The index at the top of `config.lua` was cutting its own section titles.** It was rebuilt
+  as two columns when the fold markers moved every line, and a title cut at thirty-three
+  characters loses exactly the part in brackets that says what the section is for. One title
+  per line now, in full, and every line number was checked against the title it points at.
+- **A section header that had been broken for a long time.** `POLICE FORENSICS` and
+  `THE HEALTH RECORD` shared one frame, so the forensics title sat above the health record and
+  its own section, two hundred lines further down, had a bare rule and no name. The title is
+  back where its content is.
+
+### Correctifs
+
+- **L'index en tête de `config.lua` coupait ses propres titres de section.** Il avait été
+  reconstruit sur deux colonnes quand les marqueurs de pliage ont décalé toutes les lignes, et
+  un titre coupé à trente-trois caractères perd justement la partie entre parenthèses qui dit à
+  quoi sert la section. Un titre par ligne désormais, en entier, et chaque numéro de ligne a été
+  vérifié contre le titre qu'il désigne.
+- **Un en-tête de section cassé depuis longtemps.** `POLICE FORENSICS` et `THE HEALTH RECORD`
+  partageaient un même encadré : le titre des enquêtes se retrouvait au-dessus du dossier
+  médical, et sa propre section, deux cents lignes plus bas, n'avait qu'un trait sans nom. Le
+  titre est revenu là où est son contenu.
+
+---
+
 ## [1.7.17] - 2026-10-21
 
 ### Fixed

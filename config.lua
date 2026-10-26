@@ -49,29 +49,53 @@
 --  **Regenerate this rather than editing it**: every entry was once wrong by up to a
 --  thousand lines, which is what a hand-maintained index does. tools/check.py could own it.
 --
---    90    COMPATIBILITY                      3714  THE NETS UNDER THE PHONE
---    136   Two notifications for one payment  3761  ONLYFRUITS
---    442   SETTINGS                           3776  FruitBrawl: the duel
---    608   LICENCE NAMES                      3830  FlappyFruit: the arcade board
---    670   HOW A NUMBER IS DISPLAYED          3875  Fruitee: donation pages
---    762   While you were away                4027  HOW LONG THE PHONE KEEPS THINGS
---    2046  WRITING A POSITION                 4102  HOME SCREEN WIDGETS
---    2133  THE LOOK  (one place that changes  4145  THE UPDATE CHECK
---    2179  PLACES  (what the Maps app lists,  4179  A PHONE HEARD RINGING
---    2263  THE FRUITSTORE  (downloading take  4237  COMMANDS
---    2346  EXPORT  (what your haul is worth,  4262  THE SDK EXAMPLE APP
---    2491  REPAIR  (reaching a mechanic, fro  4436  EXTERNAL CHARGING
---    2602  PLUGGING IN  (charging on purpose  4465  THE HEALTH RECORD
---    2654  PAID CHARGING                      4507  HOSPITALS
---    2746  ADMIN                              4537  PROPERTY
---    2755  LOGGING                            4570  GARAGES
---    2768  911                                4591  BANK
---    3009  BANK PRO                           4828  MEDIA  (photos and video hosting)
---    3115  ALERTS  (what the government broa  5017  FACETIME  (experimental live vide
---    3260  ZUBER  (food, ordered from the ph  5049  PAYPHONES  (call boxes and prepai
---    3463  TAXI  (hail a ride, or drive one)  5230  MUSIC  (playback, playlists and t
---    3575  LOTTERY  (the weekly draw)         5363  VEHICLE REMOTE  (lights, neons, d
---    3685  THE CLOCK                          5434  FRUITSTORE  (apps you add, free o
+--    114   COMPATIBILITY
+--    160   Two notifications for one payment
+--    466   SETTINGS
+--    638   LICENCE NAMES
+--    700   HOW A NUMBER IS DISPLAYED
+--    792   While you were away
+--    2076  WRITING A POSITION
+--    2163  THE LOOK  (one place that changes the colour of the phone)
+--    2209  PLACES  (what the Maps app lists, and routes to)
+--    2293  THE FRUITSTORE  (downloading takes time, and updates exist)
+--    2376  EXPORT  (what your haul is worth, before you drive across the map)
+--    2521  REPAIR  (reaching a mechanic, from the side of the road)
+--    2632  PLUGGING IN  (charging on purpose, rather than by accident)
+--    2684  PAID CHARGING
+--    2776  ADMIN
+--    2785  LOGGING
+--    2798  911
+--    3039  BANK PRO
+--    3145  ALERTS  (what the government broadcasts, and everybody receives)
+--    3290  ZUBER  (food, ordered from the phone)
+--    3493  TAXI  (hail a ride, or drive one)
+--    3605  LOTTERY  (the weekly draw)
+--    3715  THE CLOCK
+--    3744  THE NETS UNDER THE PHONE
+--    3791  ONLYFRUITS
+--    3806  FruitBrawl: the duel
+--    3860  FlappyFruit: the arcade board
+--    3905  Fruitee: donation pages
+--    4057  HOW LONG THE PHONE KEEPS THINGS
+--    4132  HOME SCREEN WIDGETS
+--    4175  THE UPDATE CHECK
+--    4209  A PHONE HEARD RINGING
+--    4267  COMMANDS
+--    4292  THE SDK EXAMPLE APP
+--    4466  EXTERNAL CHARGING
+--    4490  THE HEALTH RECORD
+--    4532  HOSPITALS
+--    4562  PROPERTY
+--    4595  GARAGES
+--    4616  BANK
+--    4736  POLICE FORENSICS
+--    4858  MEDIA  (photos and video hosting)
+--    5047  FACETIME  (experimental live video feed)
+--    5079  PAYPHONES  (call boxes and prepaid cards)
+--    5260  MUSIC  (playback, playlists and the deck the phone hands off to)
+--    5393  VEHICLE REMOTE  (lights, neons, doors and locks from the phone)
+--    5476  FRUITSTORE  (apps you add, free or paid)
 --
 --  IF SOMETHING DOES NOT BEHAVE
 --  ────────────────────────────
@@ -4461,11 +4485,6 @@ Config.ExternalCharging = {
 }
 --#endregion
 
---#region POLICE FORENSICS
--- ══════════════════════════════════════════════════════════════
---  POLICE FORENSICS
---#endregion
-
 --#region THE HEALTH RECORD
 -- ══════════════════════════════════════════════════════════════
 --  THE HEALTH RECORD
@@ -4710,6 +4729,11 @@ Config.Bank = {
     reasonLabels = {},
 }
 
+--#endregion
+
+--#region POLICE FORENSICS
+-- ══════════════════════════════════════════════════════════════
+--  POLICE FORENSICS
 -- ══════════════════════════════════════════════════════════════
 -- A warrant terminal: police walk to a point on the map and, with the target's number,
 -- read what is on that phone. Everything that is stored in the clear - texts, contacts,
