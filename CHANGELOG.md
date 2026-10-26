@@ -4,6 +4,27 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.21] - 2026-10-26
+
+### Fixed
+
+- **Message bubbles no longer animate `transform`.** A bubble that does gets its own layer, and
+  a layer inside a handset drawn above 100% is rastered once and then stretched, which is the
+  likeliest reason the text inside a conversation read as soft while the list of conversations
+  beside it did not. The entrance uses the standalone `translate` and `scale` properties now
+  and leaves nothing behind. A browser without them fades the bubble in instead.
+
+### Correctifs
+
+- **Les bulles de message n'animent plus `transform`.** Une bulle qui le fait obtient sa propre
+  couche, et une couche dans un téléphone dessiné au-dessus de 100% est rendue une fois puis
+  étirée : c'est l'explication la plus probable du texte flou dans une conversation alors que la
+  liste juste à côté restait nette. L'entrée utilise maintenant les propriétés `translate` et
+  `scale` et ne laisse rien derrière elle. Un navigateur qui ne les a pas se contente d'un
+  fondu.
+
+---
+
 ## [1.7.20] - 2026-10-26
 
 ### Fixed

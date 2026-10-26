@@ -1337,7 +1337,16 @@ input { font: inherit; }
 .bub { max-width: 74%; padding: 9px 14px; border-radius: 20px; font-size: 16px;
   line-height: 1.32; word-break: break-word; white-space: pre-wrap; position: relative;
   animation: ph-bub .3s var(--spring) backwards; }
-@keyframes ph-bub { from { opacity: 0; transform: translateY(8px) scale(.94); } to { opacity: 1; transform: none; } }
+/* **The slide uses `translate` and `scale`, not `transform`, and that is the point.**
+   A message bubble that animates `transform` is a bubble the browser gives its own layer, and
+   a layer inside a handset drawn above 100% is rastered once and then stretched - which is why
+   the text inside a conversation looked soft while the list of conversations beside it did
+   not. The standalone properties animate the same movement and leave no transform behind. A
+   browser without them simply fades the bubble in, which is the half of this that matters. */
+@keyframes ph-bub {
+  from { opacity: 0; translate: 0 8px; scale: .94; }
+  to   { opacity: 1; translate: 0 0; scale: 1; }
+}
 .bub.them { align-self: flex-start; background: var(--bub-them); color: var(--bub-them-label);
   border-bottom-left-radius: 6px; }
 .bub.me { align-self: flex-end; background: var(--app-tint); color: #fff;
