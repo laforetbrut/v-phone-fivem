@@ -1750,9 +1750,9 @@ input { font: inherit; }
   font-size: 9px; font-weight: 700; letter-spacing: .06em; background: rgba(0,0,0,.55);
   color: #fff; line-height: 1.5; }
 
-.compose { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px;
-  padding: 8px 12px 14px; background: var(--app-bg); }
-.compose .field { margin: 0; border-radius: 20px; padding: 9px 14px; }
+.compose { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 6px;
+  padding: 8px 10px 14px; background: var(--app-bg); }
+.compose .field { margin: 0; border-radius: 20px; padding: 9px 12px; }
 .compose .sendbtn { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%;
   background: var(--app-tint); color: #fff; display: flex; align-items: center;
   justify-content: center; transition: transform .16s var(--snap); }
@@ -2496,7 +2496,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .locbtn svg { width: 18px; height: 18px; }
 
 /* The attach button beside the compose field. */
-.compose .attach { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%;
+.compose .attach { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: var(--app-fill); color: var(--app-label2); font-size: 22px; line-height: 1; }
 .gpick { display: flex; align-items: center; gap: 10px; padding: 9px 4px; font-size: 15px;
@@ -2811,7 +2811,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 .emojigrid button:active { background: rgba(255,255,255,.14); transform: scale(1.25); }
 
 /* The composer's emoji trigger sits next to the attach button. */
-.compose .emoji { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+.compose .emoji { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
   font-size: 18px; background: rgba(120,120,128,.24); display: flex; align-items: center;
   justify-content: center; }
 
@@ -14180,6 +14180,14 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
    wraps; everything else about it stays exactly as the field it replaced, so the composer row
    is unchanged. */
 .compose .msgbox {
+  /* **It takes the row, and the buttons take what they need.** `.field` is `width: 100%`, which
+     in a flex row is a basis the four buttons then squeeze: the box ended up 113 pixels wide,
+     the French placeholder wrapped onto a second line and the box was too short to show it, so
+     the message field read as half-drawn. `min-width: 0` is the half people forget - without it
+     a flex item refuses to go below its content width and the row overflows instead. */
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
   margin-bottom: 0;
   min-height: 38px;
   max-height: 112px;

@@ -287,6 +287,7 @@ local T = {
 
     -- ── Messages & contacts ──
     ['ph.write']        = 'Write a message',
+    ['ph.write_ph']     = 'Message',  -- the composer's own, short enough to sit on one line
     ['ph.no_messages']  = 'No conversations yet',
     ['ph.no_contacts']  = 'No contacts yet',
     ['ph.garages']     = 'Garages',

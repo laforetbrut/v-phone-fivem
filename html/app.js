@@ -6158,7 +6158,7 @@ function paintThread(messages, service) {
     // starts one line high and grows with the text, up to a ceiling, so the thread above it
     // is not pushed off the screen by somebody writing an essay.
     '<textarea class="field msgbox" id="msg" rows="1" maxlength="250" ' +
-      'placeholder="' + esc(L('ph.write')) + '" aria-label="' + esc(L('ph.write')) + '"></textarea>' +
+      'placeholder="' + esc(L('ph.write_ph')) + '" aria-label="' + esc(L('ph.write')) + '"></textarea>' +
     `<button class="sendbtn" id="sendmsg" type="button" aria-label="${esc(L('ph.send'))}">${svg('send')}</button></div>`);
   byId('attach').addEventListener('click', () => attachSheet());
   byId('msggif').addEventListener('click', () => gifSheet());
@@ -9097,7 +9097,21 @@ function applyDevice() {
   const d = byId('device');
   const size = deviceSize(p.size);
 
-  // **The size is a transform, and `zoom` is not used at all.**
+  // **Two ways to be bigger, and the operator picks.**
+  //
+  // A transform stretches a phone that has already been drawn: hit-testing is exact, and text
+  // above 100% is resampled, which reads as soft in dense places like a conversation. `zoom`
+  // lays the page out again at the real size, so text is DRAWN at that size and stays crisp.
+  //
+  // `zoom` was the default once and was blamed for a phone where nothing worked above 100%.
+  // That was not `zoom`: the entrance animation ended on `transform: none` and threw the size
+  // away, so the handset was drawn at 100% while the page believed the chosen size, and every
+  // click landed beside its target. That bug is fixed - the keyframes carry the scale now - so
+  // `zoom` is offered again, as a choice rather than a default: a server that finds it misbehaves
+  // in its own CEF build switches back and loses nothing but sharpness.
+  const wantZoom = state.scaleMode === 'zoom'
+    && !!(window.CSS && CSS.supports && CSS.supports('zoom', '1.25'));
+  // **The size is carried by whichever one the operator chose.**
   //
   // `zoom` was the whole idea behind the handset sizes: it lays the page out again at the real
   // size, so text is drawn rather than magnified, and it looked right in a desktop browser. In
@@ -9112,9 +9126,10 @@ function applyDevice() {
   // relayout above 100%, and on the screens these sizes exist for - 1440p and 4K - there are
   // enough device pixels that it is hard to see. A phone you can use beats a phone you cannot.
   //
-  // The property is cleared rather than left alone: a handset carrying a `zoom` from an earlier
-  // build keeps it otherwise, and that is the broken state this is removing.
-  d.style.zoom = '';
+  // Cleared rather than left alone when it is not wanted: a handset carrying a `zoom` from an
+  // earlier open would otherwise keep it.
+  const zoom = wantZoom ? size : 1;
+  d.style.zoom = (zoom === 1) ? '' : String(zoom);
   const viewport = window.visualViewport;
   const vw = (viewport && viewport.width) || window.innerWidth || 1280;
   const vh = (viewport && viewport.height) || window.innerHeight || 720;
@@ -9129,10 +9144,14 @@ function applyDevice() {
   const fit = Math.max(0.10, Math.min(cap,
     (vw - 24) / footprintW,
     (vh - 24) / footprintH));
-  // The size the player chose, and the shrink that keeps it inside the window.
-  const scale = size * fit;
+  // What the transform still has to carry: the shrink that keeps the handset inside the window,
+  // plus the size itself unless `zoom` already took it. The phone ends up at `size * fit` either
+  // way, which is what every measurement on this page divides back out.
+  const scale = (size / zoom) * fit;
   d.style.setProperty('--device-fit', String(fit));
-  d.style.setProperty('--device-scale', String(size * fit));
+  // What the TRANSFORM should be, because the entrance animation rebuilds that property from
+  // it. With `zoom` carrying the size, this is only the fit.
+  d.style.setProperty('--device-scale', String(scale));
   if (landscape) {
     // The phone lies on its side, centred so it cannot swing off-screen. The part before the
     // scale is published too: the entrance animation rebuilds the whole transform from these

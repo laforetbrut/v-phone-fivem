@@ -35,6 +35,7 @@ syntax error should not cost five minutes of screenshots to discover.
     run-probe        can a cursor reach every control in all 38 apps
     probe-input      real mouse input through the compositor
     probe-size-xl    every control still reachable at the largest handset size (250%)
+    probe-zoom       the same, with the handset laid out again rather than stretched
     make-shots       browser screenshots and UI assertions
 
 Exit code 1 if anything fails. Nothing here needs a database or a running server.
@@ -178,6 +179,8 @@ run('probe-input', ['node', 'tools/probe-input.js'], 'real mouse through the com
 # it, so every box the probe measures is a different box - and a control that only falls off
 # the screen at 150% is a control nobody would have found at the default size.
 run('probe-size-xl', ['node', 'tools/run-probe.js', '--size', '2.5'], 'every control at 250%')
+run('probe-zoom', ['node', 'tools/run-probe.js', '--size', '1.75', '--mode', 'zoom'],
+    'every control at 175% laid out again')
 if FAST:
     print('%-16s %-4s        skipped by --fast' % ('make-shots', '--'))
 else:

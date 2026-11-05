@@ -4,6 +4,47 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.24] - 2026-11-05
+
+### Fixed
+
+- **The message box was half the row and its placeholder was cut in two.** `.field` is
+  `width: 100%`, which in a flex row is a basis the four buttons then squeeze: the box ended up
+  108 pixels of text width while the French placeholder alone needs 127, so it wrapped onto a
+  second line the box was too short to show. The box takes the row now, the buttons give back
+  what they do not need, and the composer has its own short placeholder rather than borrowing
+  the one written for a button.
+
+### Added
+
+- **A choice of how a size above 100% is drawn, `Config.DeviceScaleMode`.** `transform`, the
+  default, draws the handset once and stretches it: exact where clicks land, slightly soft text
+  where it is dense. `zoom` lays the page out again at the real size, so text is drawn at that
+  size and stays crisp. `zoom` was blamed once for a handset where nothing worked above 100%;
+  that was the entrance animation throwing the size away, fixed in 1.7.17, so it is offered
+  again as a choice. The control probe now runs over all 38 apps in both modes.
+
+### Correctifs
+
+- **La zone de saisie prenait la moitié de la rangée et son texte d'invite était coupé en
+  deux.** `.field` est en `width: 100%`, ce qui dans une rangée flex est une base que les quatre
+  boutons compriment : il restait 108 pixels de texte alors que « Écrire un message » en demande
+  127, donc l'invite passait à la ligne et la boîte était trop courte pour l'afficher. La boîte
+  prend la rangée, les boutons rendent ce dont ils n'ont pas besoin, et la barre d'écriture a son
+  propre texte d'invite au lieu d'emprunter celui d'un bouton.
+
+### Ajouts
+
+- **Un choix pour la façon dont une taille supérieure à 100% est dessinée,
+  `Config.DeviceScaleMode`.** `transform`, par défaut, dessine le téléphone une fois puis
+  l'étire : les clics tombent au pixel près, le texte dense est légèrement adouci. `zoom` refait
+  la mise en page à la taille réelle, donc le texte est dessiné à cette taille et reste net.
+  `zoom` avait été accusé d'un téléphone où plus rien ne marchait au-dessus de 100% ; c'était
+  l'animation d'entrée qui jetait la taille, corrigée en 1.7.17, donc il revient comme option.
+  La sonde des contrôles parcourt les 38 apps dans les deux modes.
+
+---
+
 ## [1.7.23] - 2026-10-26
 
 ### Fixed

@@ -103,10 +103,18 @@ class CDP {
   //     node tools/run-probe.js --size 1.5
   const wantedSize = Number((process.argv.find((a) => a.startsWith('--size=')) || '').slice(7))
     || Number(process.argv[process.argv.indexOf('--size') + 1]) || 0;
-  if (wantedSize) {
-    await cdp.evalRaw(`state.prefs.size = ${wantedSize}; applyDevice(); 'ok'`);
+  // Which way the handset is made bigger. `zoom` lays the page out again, which moves every
+  // box the probe measures - a different thing to check than the same layout stretched.
+  //
+  //     node tools/run-probe.js --size 1.75 --mode zoom
+  const wantedMode = (process.argv[process.argv.indexOf('--mode') + 1] || '').trim();
+  if (wantedMode === 'zoom' || wantedMode === 'transform') {
+    await cdp.evalRaw(`state.scaleMode = '${wantedMode}'; 'ok'`);
+  }
+  if (wantedSize || wantedMode) {
+    await cdp.evalRaw(`state.prefs.size = ${wantedSize || 1}; applyDevice(); 'ok'`);
     await sleep(400);
-    console.log(`handset size ${wantedSize}`);
+    console.log(`handset size ${wantedSize || 1}${wantedMode ? ', ' + wantedMode : ''}`);
   }
 
   await cdp.evalRaw(fs.readFileSync(path.join(ROOT, 'tools', 'probe.js'), 'utf8'));

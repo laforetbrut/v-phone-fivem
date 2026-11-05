@@ -3477,6 +3477,9 @@ V.Callback('v-phone:open', function(src, resolve)
         -- the job the framework reports. nil leaves the game's own colour alone.
         -- See Config.RouteColour.
         routeColour = routeColourFor(p),
+        -- How the handset is made bigger: a transform, or a relayout with `zoom`.
+        -- See Config.DeviceScaleMode.
+        scaleMode = (tostring(Config.DeviceScaleMode or 'transform') == 'zoom') and 'zoom' or 'transform',
         -- Whose phone this actually is, when it is not yours.
         --
         -- `src` and not the wrapped player: `Core.GetPlayer` has already answered with the

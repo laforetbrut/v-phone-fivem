@@ -1889,6 +1889,17 @@ Config.DeviceSize = 'auto'     -- 'auto' | 0.85 .. 2.5
 -- Let the player pick their own size in Settings. Off, everybody gets `Config.DeviceSize`
 -- and the picker is not shown.
 Config.DeviceSizePlayer = true
+
+-- **How a size bigger than 100% is drawn.**
+--
+--   'transform'  the handset is drawn once and stretched. Clicks land exactly where the pixel
+--                is, and text above 100% is resampled, which reads as slightly soft in dense
+--                places like a conversation. The safe answer, and the default.
+--   'zoom'       the page is laid out again at the real size, so text is DRAWN at that size
+--                and stays crisp. It depends on the CEF build behaving, which is why it is not
+--                the default: if your server finds buttons that do not answer where they are
+--                drawn, put this back to 'transform' and nothing is lost but sharpness.
+Config.DeviceScaleMode = 'transform'
 Config.DeviceSide = 'right'    -- right | left
 
 -- ── Mail ───────────────────────────────────────────────────────
