@@ -23978,6 +23978,13 @@ function renderCall() {
   const avPhoto = (!conference && call.number) ? photoOfNumber(call.number) : null;
   av.classList.toggle('hasphoto', !!avPhoto);
   av.style.backgroundImage = avPhoto ? 'url("' + avPhoto + '")' : '';
+  // **The other person's photograph, behind the whole call.** A FaceTime screen is a picture of
+  // somebody, and with no live feed there is still one thing the phone knows about them. Blurred
+  // and darkened by the stylesheet, so the name and the buttons stay readable over it; with no
+  // photograph on file the screen keeps its plain gradient.
+  ui.classList.toggle('haspeer', !!(call.video && avPhoto));
+  if (call.video && avPhoto) ui.style.setProperty('--peer-photo', 'url("' + cssUrl(avPhoto) + '")');
+  else ui.style.removeProperty('--peer-photo');
   av.textContent = avPhoto ? '' : (conference ? String(others.length + 1) : name.slice(0, 1).toUpperCase());
   byId('callnum').textContent = name;
   byId('callstate').textContent = call.video

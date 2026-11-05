@@ -12300,6 +12300,23 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
   width: 128px; height: 128px; font-size: 52px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .12);
 }
+
+/* **The other person, behind the whole call.**
+   A video call is a picture of somebody filling the screen. There is no live picture by
+   default, but there is their photograph, so it goes behind everything, blurred and darkened
+   until it is a mood rather than a portrait - the portrait is the round avatar above it. It is
+   drawn on a pseudo-element rather than on the panel itself so the gradient underneath still
+   shows through where the photograph is dark, and so a call with no photograph on file simply
+   keeps that gradient. */
+.callui.facetime.haspeer::before {
+  content: '';
+  position: absolute; inset: 0; z-index: 0;
+  background-image: var(--peer-photo);
+  background-size: cover; background-position: center;
+  filter: blur(26px) saturate(.9) brightness(.38);
+  transform: scale(1.15);           /* the blur would otherwise show the edges */
+  border-radius: 47px;
+}
 /* The corner used to be an empty rectangle drawn here, which reads as a picture that failed
    rather than as a design. It is a real element now, carrying the photograph from your own
    card or your initial - see `faceSelfCard`. The frame is kept, as its backdrop. */

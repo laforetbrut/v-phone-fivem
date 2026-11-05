@@ -4,6 +4,26 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.25] - 2026-11-05
+
+### Changed
+
+- **A FaceTime call looks like one.** The other person's photograph now sits behind the whole
+  screen, blurred and darkened until it is a mood rather than a portrait, with their avatar
+  large above it, the name and timer under that, and your own card in the corner. A contact
+  with no photograph on file keeps the plain gradient, so nothing looks half-loaded. The live
+  picture, when a server turns it on, still covers all of it.
+
+### Modifications
+
+- **Un appel FaceTime ressemble à un appel FaceTime.** La photo du correspondant occupe
+  maintenant tout le fond, floutée et assombrie jusqu'à n'être qu'une ambiance plutôt qu'un
+  portrait, avec son avatar en grand par-dessus, le nom et le chrono en dessous, et votre propre
+  carte dans le coin. Un contact sans photo garde le dégradé sobre, donc rien n'a l'air
+  à moitié chargé. L'image en direct, quand un serveur l'active, recouvre toujours le tout.
+
+---
+
 ## [1.7.24] - 2026-11-05
 
 ### Fixed
