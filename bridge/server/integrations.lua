@@ -772,6 +772,17 @@ function Bridge.RemoveSociety(account, amount, reason)
         if done then return true end
     end
 
+    -- The other direction on ox, and the dangerous one, so it is read before it is written:
+    -- the balance check above already refused an overdraw wherever a balance could be read,
+    -- and `oxGroupBalance` is one of the places it can.
+    local oxId = oxGroupAccountId(account)
+    if oxId then
+        local ok, done = pcall(function()
+            return exports.ox_core:RemoveAccountBalance(oxId, amount) ~= false
+        end)
+        if ok and done then return true end
+    end
+
     return false
 end
 
@@ -807,6 +818,28 @@ end
 --- Returns the amount actually taken, which is 0 when there was nothing to take OR when the
 --- credit failed. The caller decides what a failure means: the store keeps the sale either way,
 --- because refusing to sell an app because a society account was misspelled would punish the
+--- **A group's account id in ox_core**, found the same way its balance is: in the table.
+---
+--- ox has no banking exports of its own and ox_banking is a face on these very rows, so a
+--- company account is reached by its id. The id is cached per group for as long as the server
+--- runs, because a group does not change account between two payments.
+local oxGroupAccountIds = {}
+
+local function oxGroupAccountId(account)
+    if Bridge.framework ~= 'ox' then return nil end
+    if oxGroupAccountIds[account] ~= nil then
+        return oxGroupAccountIds[account] or nil
+    end
+    local ok, id = pcall(function()
+        return MySQL.scalar.await(
+            'SELECT id FROM accounts WHERE `group` = ? ORDER BY isDefault DESC, id ASC LIMIT 1',
+            { account })
+    end)
+    local value = (ok and tonumber(id)) and math.floor(tonumber(id)) or false
+    oxGroupAccountIds[account] = value
+    return value or nil
+end
+
 --- player for the operator's typo.
 function Bridge.Revenue(cfg, amount, reason)
     if type(cfg) ~= 'table' then return 0 end
@@ -871,6 +904,20 @@ function Bridge.AddSociety(account, amount, reason)
             end)
         end)
         if ok and landed then return true end
+    end
+
+    -- **ox had no path here at all**, so every cut, fee and payout aimed at a company on an ox
+    -- server answered false: the tax on a Fruitee gift, a VineMarket posting fee, anything a
+    -- script pays a society. The money was not lost - the callers treat a failed credit as a
+    -- sink or refund the player - but it never arrived either, which is what "the ox banking
+    -- bridge is shaky" looks like from a server. ox_banking is a face on ox_core's accounts, so
+    -- this is the same door its own interface uses.
+    local oxId = oxGroupAccountId(account)
+    if oxId then
+        local ok, done = pcall(function()
+            return exports.ox_core:AddAccountBalance(oxId, amount) ~= false
+        end)
+        if ok and done then return true end
     end
 
     return false

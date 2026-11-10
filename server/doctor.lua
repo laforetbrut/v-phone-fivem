@@ -46,7 +46,7 @@ V.Callback('v-phone:doctor', function(src, resolve, data)
     -- a price that is right here and wrong in the store would mean the store is at fault - and
     -- one that is wrong here is the registry dropping it, which is what happened.
     local prices = {}
-    local ok, apps = pcall(function() return exports['v-phone']:GetApps(src) end)
+    local ok, apps = pcall(function() return exports[GetCurrentResourceName()]:GetApps(src) end)
     if ok and type(apps) == 'table' then
         for _, a in ipairs(apps) do
             if a.id then prices[tostring(a.id)] = math.floor(tonumber(a.price) or 0) end

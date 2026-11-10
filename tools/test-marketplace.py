@@ -52,6 +52,9 @@ PhoneStartPrivateCall = function(src, number)
     return true, 51
 end
 LP = function(_, key) return key end
+-- The phone calls itself by whatever its folder is really called, so the fixture answers that
+-- name - and the table is keyed on it rather than on the one in the documentation.
+GetCurrentResourceName = function() return 'v-phone' end
 exports = { ['v-phone'] = {
     GetNumber = function(_, cid) return cid == 'seller' and '555-2222' or '555-1111' end,
     Notify = function() end,

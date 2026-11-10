@@ -67,6 +67,14 @@ CreateThread(function()
     if GetResourceState('v-park') == 'started' then
         line('info', 'v-park detected: parked cars located through it')
     end
+    -- **The folder's name is part of the API.** Every example in the docs, and every script
+    -- that integrates with this phone, calls `exports['v-phone']`. The phone no longer calls
+    -- ITSELF by that name, so a renamed folder works on its own - but nothing else will find
+    -- it, which is a long afternoon of "the export returns nil".
+    if RES ~= 'v-phone' then
+        line('warn', ('WARNING: this folder is named "%s", not "v-phone"'):format(RES))
+        line('warn', "other scripts call exports['v-phone'] and will not find it")
+    end
     if fw == 'standalone' then
         line('warn', 'WARNING: no framework found, running standalone')
     end

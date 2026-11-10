@@ -4,6 +4,43 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.26] - 2026-11-10
+
+### Fixed
+
+- **A social account could not be created on a server whose folder is not named `v-phone`.**
+  The phone called itself through `exports['v-phone']` and gave up when a resource by that name
+  was not started - which is every server that cloned the repository, since that gives a folder
+  called `v-phone-fivem`. Sign-up asked for the player's number, got nothing back and answered
+  "that number does not exist", with the verification text silently going nowhere. The phone
+  now calls itself by its own name, in all thirteen places. The boot summary warns when the
+  folder is not `v-phone`, because other scripts and every example in the docs use that name.
+- **Company accounts on ox_core were never credited or debited.** `AddSociety` and
+  `RemoveSociety` had a branch for every banking script and none for ox, so a tax on a Fruitee
+  gift, a VineMarket posting fee or any payout aimed at a society answered false on an ox
+  server. Nothing was lost - a failed credit is treated as a sink, and the seller is refunded -
+  but nothing arrived either. Both go through ox_core's own accounts now, found by group the
+  same way their balance already was.
+
+### Correctifs
+
+- **Impossible de créer un compte social si le dossier ne s'appelle pas `v-phone`.** Le
+  téléphone s'appelait lui-même via `exports['v-phone']` et abandonnait si aucune ressource de
+  ce nom n'était démarrée, ce qui est le cas de tout serveur ayant cloné le dépôt, puisque cela
+  donne un dossier `v-phone-fivem`. L'inscription demandait le numéro du joueur, n'obtenait
+  rien et répondait « Ce numéro n'existe pas », le SMS de vérification partant dans le vide. Le
+  téléphone s'appelle désormais par son vrai nom, aux treize endroits concernés. Le résumé de
+  démarrage prévient quand le dossier n'est pas `v-phone`, car les autres scripts et tous les
+  exemples de la doc utilisent ce nom.
+- **Les comptes d'entreprise n'étaient ni crédités ni débités sur ox_core.** `AddSociety` et
+  `RemoveSociety` avaient une branche pour chaque script bancaire et aucune pour ox : la taxe
+  d'un don Fruitee, les frais de publication VineMarket ou tout versement vers une société
+  répondaient faux sur un serveur ox. Rien n'était perdu, un crédit échoué est traité comme un
+  puits et le vendeur est remboursé, mais rien n'arrivait non plus. Les deux passent maintenant
+  par les comptes d'ox_core, trouvés par groupe comme l'était déjà leur solde.
+
+---
+
 ## [1.7.25] - 2026-11-05
 
 ### Changed

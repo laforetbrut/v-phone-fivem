@@ -498,7 +498,11 @@ local function appsFor(src, p)
 
         if w and tonumber(w.enabled) == 0 then ok = false end
         -- An app that opens onto a stopped module is worse than an app that is not there.
-        if ok and a.owner and a.owner ~= 'v-phone' and GetResourceState(a.owner) ~= 'started' then ok = false end
+        -- `v-phone` is the sentinel for "the phone itself", and so is whatever this folder is
+        -- really called: a server that renamed it would otherwise have its own apps hidden for
+        -- naming a resource that is, from here, started by definition.
+        if ok and a.owner and a.owner ~= 'v-phone' and a.owner ~= GetCurrentResourceName()
+            and GetResourceState(a.owner) ~= 'started' then ok = false end
         -- The operator's own switch for the apps this resource answers for. Same function
         -- the server callbacks use, so an icon never opens onto "not available here".
         if ok and Bridge_AppEnabled and not Bridge_AppEnabled(id) then ok = false end

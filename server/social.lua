@@ -306,14 +306,19 @@ AddEventHandler('playerDropped', function()
     ResetTry[src] = nil
 end)
 
+-- **No resource-name guard, because this IS the resource.**
+--
+-- These two asked `GetResourceState('v-phone')` first and gave up when the answer was not
+-- `started` - which is every server whose folder is named anything else, and cloning the
+-- repository gives `v-phone-fivem`. The number came back nil, sign-up answered "that number
+-- does not exist", and no app could be finished. The phone is the one calling, so there is
+-- nothing to check.
 local function phoneNumberOf(src)
-    if GetResourceState('v-phone') ~= 'started' then return nil end
-    local ok, n = pcall(function() return exports['v-phone']:NumberOf(src) end)
+    local ok, n = pcall(function() return exports[GetCurrentResourceName()]:NumberOf(src) end)
     return ok and n or nil
 end
 
 local function smsCode(src, app, code)
-    if GetResourceState('v-phone') ~= 'started' then return end
     local name = APP_NAME[app] or 'iFruit'
     local text = (LP(src, 'ph.soc_code_sms')):format(code)
 
@@ -323,14 +328,14 @@ local function smsCode(src, app, code)
     pcall(function()
         local p = Core and Core.GetPlayer and Core.GetPlayer(src)
         if p and p.citizenid then
-            exports['v-phone']:SendServiceMessage(p.citizenid, name:sub(1, 12), text)
+            exports[GetCurrentResourceName()]:SendServiceMessage(p.citizenid, name:sub(1, 12), text)
         end
     end)
 
     -- And the banner as well, because the code is wanted immediately and the player is
     -- already looking at the sign-up screen rather than at Messages.
     pcall(function()
-        exports['v-phone']:Notify(src, app, name, text)
+        exports[GetCurrentResourceName()]:Notify(src, app, name, text)
     end)
 end
 
@@ -2049,11 +2054,11 @@ V.Callback('v-phone:soc:hushSay', function(src, resolve, data)
     -- The notification carries the FIRST NAME, which is all Hush ever shows of anybody. Not a
     -- handle - there is none - and certainly not a number.
     local target = Core.GetPlayerByCitizenId and Core.GetPlayerByCitizenId(other)
-    if target and target.source and GetResourceState('v-phone') == 'started' then
+    if target and target.source and true then
         local me = MySQL.single.await(
             'SELECT firstname FROM vphone_characters WHERE citizenid = ?', { p.citizenid })
         pcall(function()
-            exports['v-phone']:Notify(target.source, 'hush', me and me.firstname or '?',
+            exports[GetCurrentResourceName()]:Notify(target.source, 'hush', me and me.firstname or '?',
                 body ~= '' and body or (Locales.fr or {})['soc.dm_photo'] or 'Photo')
         end)
     end
@@ -3240,9 +3245,9 @@ V.Callback('v-phone:soc:dmSend', function(src, resolve, data)
     -- not arrive. Tell the phone, which knows how to put it on their screen.
     local me = accountOf(p.citizenid, app)
     local target = Core.GetPlayerByCitizenId and Core.GetPlayerByCitizenId(cid)
-    if target and target.source and GetResourceState('v-phone') == 'started' then
+    if target and target.source and true then
         pcall(function()
-            exports['v-phone']:Notify(target.source, app, '@' .. (me and me.handle or '?'),
+            exports[GetCurrentResourceName()]:Notify(target.source, app, '@' .. (me and me.handle or '?'),
                 body ~= '' and body or (Locales.fr or {})['soc.dm_photo'] or 'Photo')
         end)
     end

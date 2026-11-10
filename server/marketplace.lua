@@ -124,7 +124,7 @@ local function card(row, cid, detail)
         out.description = row.description
         out.showPhone = tonumber(row.show_phone) == 1
         if out.showPhone and active then
-            out.phone = exports['v-phone']:GetNumber(row.seller_cid)
+            out.phone = exports[GetCurrentResourceName()]:GetNumber(row.seller_cid)
         end
     end
     return out
@@ -307,7 +307,7 @@ V.Callback('v-phone:marketplace', function(src, resolve, data)
             resolve({ error = 'missing' }) return
         end
         if row.seller_cid == cid then resolve({ error = 'self' }) return end
-        local number = exports['v-phone']:GetNumber(row.seller_cid)
+        local number = exports[GetCurrentResourceName()]:GetNumber(row.seller_cid)
         if not number then resolve({ error = 'missing' }) return end
         local ok, answer = PhoneStartPrivateCall(src, number)
         resolve(ok and { ok = true, id = answer } or { error = answer or 'offline' })
@@ -362,7 +362,7 @@ V.Callback('v-phone:marketplace', function(src, resolve, data)
             local targetCid = row.seller_cid == cid and row.buyer_cid or row.seller_cid
             local target = Core.GetPlayerByCitizenId and Core.GetPlayerByCitizenId(targetCid)
             if target and target.source and PhoneHasApp(target.source, 'marketplace') then
-                exports['v-phone']:Notify(target.source, 'marketplace',
+                exports[GetCurrentResourceName()]:Notify(target.source, 'marketplace',
                     LP(target.source, 'app.marketplace'),
                     LP(target.source, 'ph.market_new_message'))
             end
