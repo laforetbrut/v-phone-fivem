@@ -1508,6 +1508,37 @@ function Bridge.Identity(citizenid, src)
         if ok and type(info) == 'table' then return info end
     end
 
+    --- **A date of birth, or nothing at all.**
+    ---
+    --- What comes back here is whatever the framework's own character creator wrote, through
+    --- whatever the SQL driver makes of it. ox declares the column as a DATE, which oxmysql may
+    --- hand over as text or as an epoch; older schemas and some character creators store free
+    --- text, and one of them writes the literal word "none" when the player skipped the field -
+    --- which the wallet then printed, on the card, as the character's date of birth.
+    ---
+    --- So: a real date comes back as `YYYY-MM-DD`, and anything that is not one comes back as
+    --- nil, which takes the line off the card rather than showing a value nobody wrote.
+    local function dobOf(value)
+        if type(value) == 'number' then
+            -- Seconds or milliseconds, both of which a driver may hand over for a DATE.
+            local seconds = value > 1e11 and math.floor(value / 1000) or math.floor(value)
+            local ok, text = pcall(os.date, '!%Y-%m-%d', seconds)
+            return (ok and type(text) == 'string') and text or nil
+        end
+        if type(value) ~= 'string' then return nil end
+        local text = value:gsub('^%s+', ''):gsub('%s+$', '')
+        -- `1998-04-23`, with or without a time after it.
+        local y, m, d = text:match('^(%d%d%d%d)-(%d%d)-(%d%d)')
+        -- `23/04/1998` and `23-04-1998`, which qb's creator writes.
+        if not y then
+            d, m, y = text:match('^(%d%d)[/%-](%d%d)[/%-](%d%d%d%d)$')
+        end
+        if not y then return nil end
+        local month, day = tonumber(m), tonumber(d)
+        if not month or not day or month < 1 or month > 12 or day < 1 or day > 31 then return nil end
+        return ('%s-%02d-%02d'):format(y, month, day)
+    end
+
     --- 0/1, 'm'/'f', 'male'/'female', or anything else, as 'm' or 'f' or nil.
     local function sexOf(value)
         if value == nil then return nil end
@@ -1523,7 +1554,7 @@ function Bridge.Identity(citizenid, src)
         if ok and type(info) == 'table' then
             return {
                 first = info.firstname, last = info.lastname,
-                dob = info.birthdate, sex = sexOf(info.gender),
+                dob = dobOf(info.birthdate), sex = sexOf(info.gender),
                 nationality = info.nationality, id = citizenid,
             }
         end
@@ -1534,7 +1565,7 @@ function Bridge.Identity(citizenid, src)
         if row then
             return {
                 first = row.firstName, last = row.lastName,
-                dob = row.dateofbirth, sex = sexOf(row.gender), id = citizenid,
+                dob = dobOf(row.dateofbirth), sex = sexOf(row.gender), id = citizenid,
             }
         end
 
@@ -1546,7 +1577,7 @@ function Bridge.Identity(citizenid, src)
         if row then
             return {
                 first = row.firstname, last = row.lastname,
-                dob = row.dateofbirth, sex = sexOf(row.sex),
+                dob = dobOf(row.dateofbirth), sex = sexOf(row.sex),
                 height = tonumber(row.height), id = citizenid,
             }
         end

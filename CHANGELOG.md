@@ -4,6 +4,29 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.27] - 2026-11-10
+
+### Fixed
+
+- **The wallet printed whatever the framework had instead of a date of birth.** The value was
+  passed through as text, so a character creator that writes `none` when the player skips the
+  field put that word on the identity card, under "Date of birth". A date is now recognised in
+  the shapes a framework or a driver can hand over - `YYYY-MM-DD`, with a time after it,
+  `DD/MM/YYYY`, or an epoch in seconds or milliseconds - and anything that is not one takes the
+  line off the card rather than showing a value nobody wrote.
+
+### Correctifs
+
+- **Le portefeuille affichait ce que le framework avait, à la place d'une date de naissance.**
+  La valeur était transmise telle quelle, donc un créateur de personnage qui écrit `none` quand
+  le joueur saute le champ mettait ce mot sur la carte d'identité, sous « Date de naissance ».
+  Une date est désormais reconnue dans les formes qu'un framework ou un pilote peut renvoyer -
+  `AAAA-MM-JJ`, avec une heure à la suite, `JJ/MM/AAAA`, ou un horodatage en secondes ou en
+  millisecondes - et tout ce qui n'en est pas une retire la ligne de la carte au lieu d'afficher
+  une valeur que personne n'a écrite.
+
+---
+
 ## [1.7.26] - 2026-11-10
 
 ### Fixed
